@@ -6,28 +6,58 @@ import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
-const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.coerce.number().default(4000),
+// Strict helper for positive ratio between 0 (exclusive) and 1 (inclusive)
+// Rejects: empty string "", 0, negative values, and non-numbers
+const strictPositiveRatio = (fieldName: string) =>
+  z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : val),
+    z.coerce
+      .number({ invalid_type_error: `${fieldName} must be a number` })
+      .gt(0, { message: `${fieldName} must be strictly greater than 0 (cannot be 0 or negative)` })
+      .lte(1, { message: `${fieldName} must be less than or equal to 1.0` })
+  );
 
-  // Supabase Configuration
-  SUPABASE_URL: z.string().url().or(z.string().min(1)),
-  SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).default('dummy-service-role-key-for-test'),
+const strictPositiveInt = (fieldName: string) =>
+  z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : val),
+    z.coerce
+      .number({ invalid_type_error: `${fieldName} must be an integer` })
+      .int({ message: `${fieldName} must be an integer` })
+      .gt(0, { message: `${fieldName} must be strictly greater than 0` })
+  );
 
-  // Application Domain & URLs
-  INTERNAL_EMAIL_DOMAIN: z.string().min(1).default('clinic.internal'),
-  APP_URL: z.string().url().default('http://localhost:3000'),
-  CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173'),
+export const envSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    PORT: z.coerce.number().default(4000),
 
-  // Biometric Calibration (Master Prompt v3 rule: NO default allowed for FACE_T_*)
-  FACE_T_ACCEPT: z.coerce.number().min(0).max(1),
-  FACE_T_REJECT: z.coerce.number().min(0).max(1),
-  FACE_T_MARGIN: z.coerce.number().min(0).max(1),
-  FACE_T_ENROLL_CONSISTENCY: z.coerce.number().min(0).max(1),
-  FACE_T_DUPLICATE: z.coerce.number().min(0).max(1),
-  FACE_CHALLENGE_EXPIRE_SECONDS: z.coerce.number().int().positive(),
-});
+    // Supabase Configuration
+    SUPABASE_URL: z.string().url().or(z.string().min(1)),
+    SUPABASE_ANON_KEY: z.string().min(1),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).default('dummy-service-role-key-for-test'),
+
+    // Application Domain & URLs
+    INTERNAL_EMAIL_DOMAIN: z.string().min(1).default('clinic.internal'),
+    APP_URL: z.string().url().default('http://localhost:3000'),
+    CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173'),
+
+    // Biometric Calibration (Master Prompt v3 rule: NO default allowed for FACE_T_*)
+    // Rejects empty string, 0, negative, and out-of-order thresholds
+    FACE_T_ACCEPT: strictPositiveRatio('FACE_T_ACCEPT'),
+    FACE_T_REJECT: strictPositiveRatio('FACE_T_REJECT'),
+    FACE_T_MARGIN: strictPositiveRatio('FACE_T_MARGIN'),
+    FACE_T_ENROLL_CONSISTENCY: strictPositiveRatio('FACE_T_ENROLL_CONSISTENCY'),
+    FACE_T_DUPLICATE: strictPositiveRatio('FACE_T_DUPLICATE'),
+    FACE_CHALLENGE_EXPIRE_SECONDS: strictPositiveInt('FACE_CHALLENGE_EXPIRE_SECONDS'),
+  })
+  .refine((data) => data.FACE_T_REJECT < data.FACE_T_ACCEPT, {
+    message: 'FACE_T_REJECT must be strictly less than FACE_T_ACCEPT (threshold order violation)',
+    path: ['FACE_T_REJECT'],
+  })
+  .refine((data) => data.FACE_T_ACCEPT < data.FACE_T_DUPLICATE, {
+    message: 'FACE_T_ACCEPT must be strictly less than FACE_T_DUPLICATE (threshold order violation)',
+    path: ['FACE_T_DUPLICATE'],
+  });
 
 export type Env = z.infer<typeof envSchema>;
 
@@ -37,11 +67,26 @@ export function parseEnv(rawEnv: Record<string, unknown> = process.env): Env {
     ...rawEnv,
     SUPABASE_URL: rawEnv.SUPABASE_URL || rawEnv.NEXT_PUBLIC_SUPABASE_URL,
     SUPABASE_ANON_KEY: rawEnv.SUPABASE_ANON_KEY || rawEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    FACE_T_ACCEPT: rawEnv.FACE_T_ACCEPT ?? rawEnv.FACE_SIMILARITY_THRESHOLD,
-    FACE_T_REJECT: rawEnv.FACE_T_REJECT ?? (rawEnv.FACE_SIMILARITY_THRESHOLD ? Number(rawEnv.FACE_SIMILARITY_THRESHOLD) - 0.15 : undefined),
-    FACE_T_MARGIN: rawEnv.FACE_T_MARGIN ?? rawEnv.FACE_MATCH_MARGIN,
-    FACE_T_ENROLL_CONSISTENCY: rawEnv.FACE_T_ENROLL_CONSISTENCY ?? 0.75, // Only if present
-    FACE_T_DUPLICATE: rawEnv.FACE_T_DUPLICATE ?? 0.85,
+    FACE_T_ACCEPT: rawEnv.FACE_T_ACCEPT !== undefined ? rawEnv.FACE_T_ACCEPT : rawEnv.FACE_SIMILARITY_THRESHOLD,
+    FACE_T_REJECT:
+      rawEnv.FACE_T_REJECT !== undefined
+        ? rawEnv.FACE_T_REJECT
+        : rawEnv.FACE_SIMILARITY_THRESHOLD
+        ? Number(rawEnv.FACE_SIMILARITY_THRESHOLD) - 0.15
+        : undefined,
+    FACE_T_MARGIN: rawEnv.FACE_T_MARGIN !== undefined ? rawEnv.FACE_T_MARGIN : rawEnv.FACE_MATCH_MARGIN,
+    FACE_T_ENROLL_CONSISTENCY:
+      rawEnv.FACE_T_ENROLL_CONSISTENCY !== undefined
+        ? rawEnv.FACE_T_ENROLL_CONSISTENCY
+        : rawEnv.NODE_ENV === 'test'
+        ? 0.75
+        : undefined,
+    FACE_T_DUPLICATE:
+      rawEnv.FACE_T_DUPLICATE !== undefined
+        ? rawEnv.FACE_T_DUPLICATE
+        : rawEnv.NODE_ENV === 'test'
+        ? 0.85
+        : undefined,
   };
 
   const parsed = envSchema.safeParse(normalized);

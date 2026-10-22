@@ -372,5 +372,98 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
         });
       }).toThrow(/Environment validation failed/);
     });
+
+    it('should fail-fast when FACE_T_* is an empty string ("")', async () => {
+      const { parseEnv } = await import('../config/env');
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: '',
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: 0.10,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+        });
+      }).toThrow(/Environment validation failed/);
+    });
+
+    it('should fail-fast when FACE_T_* is 0', async () => {
+      const { parseEnv } = await import('../config/env');
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: 0,
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: 0.10,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+        });
+      }).toThrow(/Environment validation failed/);
+    });
+
+    it('should fail-fast when FACE_T_* is negative (< 0)', async () => {
+      const { parseEnv } = await import('../config/env');
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: -0.60,
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: 0.10,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+        });
+      }).toThrow(/Environment validation failed/);
+
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: 0.60,
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: -0.10,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+        });
+      }).toThrow(/Environment validation failed/);
+    });
+
+    it('should fail-fast when FACE_T_* ordering is invalid (FACE_T_REJECT >= FACE_T_ACCEPT or FACE_T_ACCEPT >= FACE_T_DUPLICATE)', async () => {
+      const { parseEnv } = await import('../config/env');
+
+      // REJECT is higher than ACCEPT (reversed order)
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: 0.50,
+          FACE_T_REJECT: 0.70, // Inverted: REJECT > ACCEPT!
+          FACE_T_MARGIN: 0.10,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+        });
+      }).toThrow(/threshold order violation/);
+
+      // ACCEPT is higher than DUPLICATE (inverted order)
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: 0.90,
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: 0.10,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.80, // Inverted: ACCEPT > DUPLICATE!
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+        });
+      }).toThrow(/threshold order violation/);
+    });
   });
 });
