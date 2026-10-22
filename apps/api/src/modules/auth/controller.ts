@@ -70,6 +70,35 @@ export class AuthController {
     }
   };
 
+  refresh = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const refreshToken = req.cookies?.refresh_token || req.body?.refreshToken;
+      const result = await this.authService.refresh(refreshToken);
+
+      const isProd = process.env.NODE_ENV === 'production';
+
+      res.cookie('access_token', result.accessToken, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: 'strict',
+        maxAge: result.expiresIn * 1000,
+        path: '/',
+      });
+
+      res.cookie('refresh_token', result.refreshToken, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+      });
+
+      res.status(200).json({ ok: true, message: 'Session refreshed' });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   me = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       res.status(200).json({

@@ -84,8 +84,9 @@ export function errorHandler(
     name: err.name || 'Error',
   };
 
-  if ((req as any).log) {
-    (req as any).log.error(logData, 'Unhandled application error masked');
+  const reqWithLog = req as Request & { log?: { error: (data: unknown, msg: string) => void } };
+  if (reqWithLog.log) {
+    reqWithLog.log.error(logData, 'Unhandled application error masked');
   } else {
     logger.error(logData, 'Unhandled application error masked');
   }

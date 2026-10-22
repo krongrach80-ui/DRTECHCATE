@@ -56,7 +56,7 @@ async function runAnonRestSecurityTest() {
   console.log(`Target: ${supabaseUrl}`);
 
   // 1. POSITIVE CONTROL: Verify that the anon key is valid and can reach public endpoints
-  console.log('\n--- 1. Positive Control Check (Anon Key Validity) ---');
+  console.log('\n--- 1. Positive Control Check & Public Signup Lockdown ---');
   try {
     const positiveUrl = `${supabaseUrl}/auth/v1/settings`;
     const posRes = await fetch(positiveUrl, {
@@ -68,14 +68,49 @@ async function runAnonRestSecurityTest() {
     });
 
     if (posRes.status === 200) {
+      const settingsBody = (await posRes.json()) as { disable_signup?: boolean; [key: string]: unknown };
       console.log(`  ✓ PASS: Positive control endpoint /auth/v1/settings returned 200 OK (Key is active & valid)`);
-      totalPassed++;
+      
+      // REQUIREMENT 1: Assert disable_signup === true
+      if (settingsBody.disable_signup === true) {
+        console.log(`  ✓ PASS: Settings assertion passed (disable_signup === true: public signup is strictly disabled)`);
+        totalPassed++;
+      } else {
+        console.error(`  ✗ FAIL: Settings assertion failed! disable_signup is ${settingsBody.disable_signup}, expected true`);
+        totalFailed++;
+      }
     } else {
       console.error(`  ✗ FAIL: Positive control endpoint failed! Status: ${posRes.status}`);
       totalFailed++;
     }
+
+    // REQUIREMENT 1: Attempt POST /auth/v1/signup with anon key - MUST be rejected
+    const signupUrl = `${supabaseUrl}/auth/v1/signup`;
+    const signupRes = await fetch(signupUrl, {
+      method: 'POST',
+      headers: {
+        'apikey': anonKey,
+        'Authorization': `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: `unauthorized_signup_${Date.now()}@attacker.com`,
+        password: 'MaliciousPassword123!',
+      }),
+    });
+
+    const signupBody = (await signupRes.json()) as { code?: string; message?: string; msg?: string; error?: string };
+    const signupRejected = signupRes.status >= 400;
+
+    if (signupRejected) {
+      console.log(`  ✓ PASS: POST /auth/v1/signup rejected as expected (Status ${signupRes.status}: "${signupBody.message || signupBody.msg || signupBody.error || 'Signup disabled'}")`);
+      totalPassed++;
+    } else {
+      console.error(`  ✗ FAIL: POST /auth/v1/signup was NOT rejected! Status: ${signupRes.status}, Body: ${JSON.stringify(signupBody)}`);
+      totalFailed++;
+    }
   } catch (err: unknown) {
-    console.error(`  ✗ FAIL: Positive control connection error: ${(err as Error).message}`);
+    console.error(`  ✗ FAIL: Positive control / signup check error: ${(err as Error).message}`);
     totalFailed++;
   }
 

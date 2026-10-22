@@ -10,6 +10,9 @@ export function createAuthRouter(controller = new AuthController()): Router {
   // POST /api/auth/login (Public endpoint, protected by rateLimiter & csrfGuard)
   router.post('/login', validateBody(loginSchema), controller.login);
 
+  // POST /api/auth/refresh (Session refresh using refresh token cookie)
+  router.post('/refresh', controller.refresh);
+
   // POST /api/auth/logout (Authenticated session revocation)
   router.post('/logout', authenticate, controller.logout);
 

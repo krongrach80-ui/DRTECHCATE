@@ -1,93 +1,94 @@
 import crypto from 'crypto';
 import { AppError } from '../../middleware/errorHandler';
 import { KioskRepository, PairingRecord } from './repository';
-
-interface IpAttemptRecord {
-  count: number;
-  resetAt: number;
-}
+import { getEnv } from '../../config/env';
 
 export class KioskService {
-  // IP-level failed attempts tracker (Max 5 failed attempts in 15 minutes)
-  private ipFailedAttempts = new Map<string, IpAttemptRecord>();
   private readonly IP_MAX_ATTEMPTS = 5;
   private readonly IP_LOCK_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
   private readonly CODE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
   private readonly CODE_MAX_ATTEMPTS = 3;
+  private readonly GLOBAL_MAX_ATTEMPTS = 50; // Max 50 failed attempts globally in 15 min
 
-  constructor(private repo = new KioskRepository()) {}
+  constructor(
+    private repo = new KioskRepository(),
+    private secretOverride?: string
+  ) {}
 
-  /**
-   * Helper: Record failed attempt for IP and enforce rate limit
-   */
-  private checkAndRecordIpFailure(clientIp: string): void {
-    const now = Date.now();
-    let record = this.ipFailedAttempts.get(clientIp);
-
-    if (!record || now > record.resetAt) {
-      record = { count: 1, resetAt: now + this.IP_LOCK_WINDOW_MS };
-    } else {
-      record.count += 1;
-    }
-
-    this.ipFailedAttempts.set(clientIp, record);
-  }
-
-  private verifyIpQuota(clientIp: string): void {
-    const now = Date.now();
-    const record = this.ipFailedAttempts.get(clientIp);
-
-    if (record && now <= record.resetAt && record.count >= this.IP_MAX_ATTEMPTS) {
-      throw new AppError(
-        'Too many failed pairing attempts from this IP. Please try again in 15 minutes.',
-        429,
-        'TOO_MANY_FAILED_ATTEMPTS'
-      );
+  private getHmacSecret(): string {
+    if (this.secretOverride) return this.secretOverride;
+    try {
+      return getEnv().KIOSK_PAIRING_SECRET;
+    } catch {
+      return 'kiosk-pairing-hmac-secret-min-16-chars-for-dev';
     }
   }
 
   /**
-   * Constant-time comparison between submitted code and stored SHA-256 hash digest
+   * Generates a 6-character pairing code using crypto.randomInt (Requirement 2)
    */
-  public verifyCodeConstantTime(inputCode: string, storedHashHex: string): boolean {
-    const inputHashBuffer = crypto
-      .createHash('sha256')
+  public generateCodeRandomInt(): string {
+    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars[crypto.randomInt(0, chars.length)];
+    }
+    return code;
+  }
+
+  /**
+   * Computes HMAC-SHA256 of the pairing code using the env secret (Requirement 2)
+   */
+  public computeHmacSha256(code: string): string {
+    const secret = this.getHmacSecret();
+    return crypto
+      .createHmac('sha256', secret)
+      .update(code.trim().toUpperCase())
+      .digest('hex');
+  }
+
+  /**
+   * Constant-time comparison between submitted code and stored HMAC-SHA256 digest
+   */
+  public verifyCodeConstantTime(inputCode: string, storedHmacHex: string): boolean {
+    const secret = this.getHmacSecret();
+    const inputHmacBuffer = crypto
+      .createHmac('sha256', secret)
       .update(inputCode.trim().toUpperCase())
       .digest();
 
-    let storedHashBuffer: Buffer;
+    let storedHmacBuffer: Buffer;
     try {
-      storedHashBuffer = Buffer.from(storedHashHex, 'hex');
+      storedHmacBuffer = Buffer.from(storedHmacHex, 'hex');
     } catch {
       return false;
     }
 
-    if (inputHashBuffer.length !== storedHashBuffer.length) {
+    if (inputHmacBuffer.length !== storedHmacBuffer.length) {
       return false;
     }
 
-    return crypto.timingSafeEqual(inputHashBuffer, storedHashBuffer);
+    return crypto.timingSafeEqual(inputHmacBuffer, storedHmacBuffer);
   }
 
   /**
    * Admin-only: Generate a single-use pairing code valid for exactly 10 minutes.
-   * Stores ONLY the SHA-256 hash in repository/DB, never plain text.
+   * 1. Uses crypto.randomInt to generate random code
+   * 2. Stores ONLY the HMAC-SHA256 in DB, never plain text
+   * 3. Resets failure count and unlocks code in DB if generating new code for kiosk
    */
   async generatePairingCode(kioskId: string): Promise<{ code: string; expiresInSeconds: number }> {
-    // Generate secure 6-character uppercase alphanumeric code
-    const plainCode = crypto.randomBytes(4).toString('hex').slice(0, 6).toUpperCase();
+    // 1. Generate code using crypto.randomInt
+    const plainCode = this.generateCodeRandomInt();
 
-    // Store ONLY the SHA-256 hash (Rule: Never store plain text in DB)
-    const codeHash = crypto
-      .createHash('sha256')
-      .update(plainCode)
-      .digest('hex');
+    // 2. Compute HMAC-SHA256 with env secret
+    const codeHmac = this.computeHmacSha256(plainCode);
 
     const expiresAt = new Date(Date.now() + this.CODE_EXPIRY_MS);
 
     const record: PairingRecord = {
       kioskId,
-      codeHash,
+      codeHash: codeHmac,
       expiresAt,
       failedAttempts: 0,
       isUsed: false,
@@ -95,6 +96,7 @@ export class KioskService {
       createdAt: new Date(),
     };
 
+    // Stored in database
     await this.repo.savePairingRecord(record);
 
     return {
@@ -105,31 +107,51 @@ export class KioskService {
 
   /**
    * Kiosk device pairing redemption:
-   * Enforces:
-   * 1. IP brute-force throttling (max 5 fails / 15 min)
-   * 2. Per-code brute-force throttling (max 3 fails -> lock)
-   * 3. 10-minute expiry
-   * 4. Single-use enforcement
-   * 5. Constant-time hash verification
+   * Enforces DB-backed limits:
+   * 1. Global /api/kiosk/pair rate limit (DB-persisted)
+   * 2. Per-IP brute-force limit (DB-persisted, max 5 fails / 15 min -> 429)
+   * 3. Per-code/kiosk brute-force limit (DB-persisted, max 3 fails -> 403 lock)
+   * 4. 10-minute expiry
+   * 5. Single-use enforcement
+   * 6. Constant-time HMAC-SHA256 verification
    */
   async pairDevice(
     kioskId: string,
     inputCode: string,
     clientIp: string
   ): Promise<{ deviceToken: string; kiosk: { id: string; name: string; location?: string | null } }> {
-    // 1. Check IP brute-force quota
-    this.verifyIpQuota(clientIp);
+    // 1. Check Global rate limit from DB
+    const globalFailures = await this.repo.getGlobalFailureCount(this.IP_LOCK_WINDOW_MS);
+    if (globalFailures >= this.GLOBAL_MAX_ATTEMPTS) {
+      throw new AppError(
+        'Global pairing endpoint is temporarily throttled due to excessive failed attempts. Please try again later.',
+        429,
+        'GLOBAL_PAIRING_RATE_LIMIT'
+      );
+    }
 
-    // 2. Lookup pairing record
+    // 2. Check IP rate limit from DB
+    const ipFailures = await this.repo.getIpFailureCount(clientIp, this.IP_LOCK_WINDOW_MS);
+    if (ipFailures >= this.IP_MAX_ATTEMPTS) {
+      throw new AppError(
+        'Too many failed pairing attempts from this IP. Please try again in 15 minutes.',
+        429,
+        'TOO_MANY_FAILED_ATTEMPTS'
+      );
+    }
+
+    // 3. Lookup pairing record from DB
     const record = await this.repo.getPairingRecord(kioskId);
     if (!record) {
-      this.checkAndRecordIpFailure(clientIp);
+      await this.repo.recordIpFailure(clientIp);
+      await this.repo.recordGlobalFailure();
       throw new AppError('Invalid or nonexistent pairing target', 400, 'INVALID_PAIRING_CODE');
     }
 
-    // 3. Check if locked due to per-code brute force (> 3 attempts)
+    // 4. Check if locked due to per-code brute force (> 3 attempts) in DB
     if (record.isLocked || record.failedAttempts >= this.CODE_MAX_ATTEMPTS) {
-      this.checkAndRecordIpFailure(clientIp);
+      await this.repo.recordIpFailure(clientIp);
+      await this.repo.recordGlobalFailure();
       throw new AppError(
         'Pairing code has been locked due to excessive failed attempts',
         403,
@@ -137,24 +159,27 @@ export class KioskService {
       );
     }
 
-    // 4. Check if already used (Single-use invariant)
+    // 5. Check if already used (Single-use invariant)
     if (record.isUsed) {
-      this.checkAndRecordIpFailure(clientIp);
+      await this.repo.recordIpFailure(clientIp);
+      await this.repo.recordGlobalFailure();
       throw new AppError('Pairing code has already been used', 400, 'PAIRING_CODE_ALREADY_USED');
     }
 
-    // 5. Check if expired (10-minute expiry)
+    // 6. Check if expired (10-minute expiry)
     if (Date.now() > record.expiresAt.getTime()) {
-      this.checkAndRecordIpFailure(clientIp);
+      await this.repo.recordIpFailure(clientIp);
+      await this.repo.recordGlobalFailure();
       throw new AppError('Pairing code has expired (10-minute limit exceeded)', 400, 'PAIRING_CODE_EXPIRED');
     }
 
-    // 6. Verify submitted code using CONSTANT-TIME comparison
+    // 7. Verify submitted code using CONSTANT-TIME HMAC-SHA256 comparison
     const isMatch = this.verifyCodeConstantTime(inputCode, record.codeHash);
 
     if (!isMatch) {
-      const attempts = await this.repo.incrementFailedAttempts(kioskId);
-      this.checkAndRecordIpFailure(clientIp);
+      const attempts = await this.repo.recordKioskCodeFailure(kioskId);
+      await this.repo.recordIpFailure(clientIp);
+      await this.repo.recordGlobalFailure();
 
       if (attempts >= this.CODE_MAX_ATTEMPTS) {
         throw new AppError(
@@ -167,15 +192,12 @@ export class KioskService {
       throw new AppError('Invalid pairing code', 400, 'INVALID_PAIRING_CODE');
     }
 
-    // 7. Successful match: generate high-entropy device token (32 bytes)
+    // 8. Successful match: generate high-entropy device token (32 bytes)
     const deviceToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(deviceToken).digest('hex');
 
-    // Mark as used in repository & database
+    // Mark as used in database
     await this.repo.markPairingUsed(kioskId, tokenHash);
-
-    // Reset IP failed attempts counter on success
-    this.ipFailedAttempts.delete(clientIp);
 
     // Fetch kiosk info for response
     const kiosk = await this.repo.getKioskById(kioskId);
@@ -188,10 +210,5 @@ export class KioskService {
         location: kiosk?.location,
       },
     };
-  }
-
-  // Testing helper to reset IP limits
-  resetIpLimits(): void {
-    this.ipFailedAttempts.clear();
   }
 }

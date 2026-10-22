@@ -47,7 +47,7 @@ export function createHttpLogger(customLogger?: pino.Logger) {
     serializers: {
       err: (err) => ({
         type: err.type || err.name,
-        code: (err as any).code || 'INTERNAL_ERROR',
+        code: (err as Error & { code?: string }).code || 'INTERNAL_ERROR',
         // Deliberately omit err.message and err.stack to prevent leaking patient PII or DB queries into HTTP logs
       }),
     },

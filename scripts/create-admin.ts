@@ -211,7 +211,80 @@ async function createFirstSuperAdmin() {
   console.log('========================================================\n');
 }
 
-createFirstSuperAdmin().catch((err) => {
-  console.error('Unexpected error:', err);
-  process.exit(1);
-});
+export async function validateAdminParams(
+  username: string,
+  fullName: string,
+  password: string
+): Promise<string | null> {
+  if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+    return 'Username must be 3-30 characters (letters, numbers, underscore only).';
+  }
+  if (!fullName || fullName.trim().length === 0) {
+    return 'Full name is required.';
+  }
+  if (!password || password.length < 12) {
+    return 'Password must be at least 12 characters long according to hospital policy.';
+  }
+  return null;
+}
+
+export interface AdminSupabaseClient {
+  from: (table: string) => {
+    select: (fields: string) => {
+      eq: (column: string, val: string) => Promise<{ data: Array<{ id: string; username: string }> | null; error: Error | null }>;
+    };
+  };
+  auth: {
+    admin: {
+      createUser: (opts: { email: string; password: string; email_confirm: boolean; user_metadata: Record<string, unknown> }) => Promise<{ data: { user: { id: string } | null } | null; error: Error | null }>;
+    };
+  };
+}
+
+export async function createSuperAdminCore(
+  supabase: AdminSupabaseClient,
+  params: { username: string; fullName: string; password: string; phone?: string }
+): Promise<{ success: boolean; error?: string; userId?: string }> {
+  const validationError = await validateAdminParams(params.username, params.fullName, params.password);
+  if (validationError) {
+    return { success: false, error: validationError };
+  }
+
+  // 1. Verify no admin exists yet
+  const { data: existingAdmins, error: checkError } = await supabase
+    .from('profiles')
+    .select('id, username')
+    .eq('role', 'admin');
+
+  if (checkError) {
+    return { success: false, error: `Database error: ${checkError.message}` };
+  }
+
+  if (existingAdmins && existingAdmins.length > 0) {
+    return { success: false, error: 'An active Super Admin already exists in this database.' };
+  }
+
+  const emailDomain = process.env.INTERNAL_EMAIL_DOMAIN || 'clinic.internal';
+  const internalEmail = `${params.username.toLowerCase()}@${emailDomain}`;
+
+  const { data: authData, error: createAuthError } = await supabase.auth.admin.createUser({
+    email: internalEmail,
+    password: params.password,
+    email_confirm: true,
+    user_metadata: { role: 'admin', username: params.username, full_name: params.fullName },
+  });
+
+  if (createAuthError || !authData?.user) {
+    return { success: false, error: createAuthError?.message || 'Failed to create auth user' };
+  }
+
+  return { success: true, userId: authData.user.id };
+}
+
+if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+  createFirstSuperAdmin().catch((err) => {
+    console.error('Unexpected error:', err);
+    process.exit(1);
+  });
+}
+

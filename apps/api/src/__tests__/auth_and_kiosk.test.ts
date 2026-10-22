@@ -1,46 +1,41 @@
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import request from 'supertest';
 import crypto from 'crypto';
-import { createApp } from '../app';
+import express, { Express, Request, Response } from 'express';
+import cookieParser from 'cookie-parser';
 import { KioskService } from '../modules/kiosk/service';
 import { KioskRepository } from '../modules/kiosk/repository';
-import { AuthService } from '../modules/auth/service';
+import { AuthService, AuthSignInFn } from '../modules/auth/service';
 import { AuthRepository } from '../modules/auth/repository';
 import { AuthController } from '../modules/auth/controller';
 import { createAuthRouter } from '../modules/auth/routes';
 import { KioskController } from '../modules/kiosk/controller';
 import { createKioskRouter } from '../modules/kiosk/routes';
-import express, { Express } from 'express';
-import cookieParser from 'cookie-parser';
+import { authenticate } from '../middleware/authenticate';
+import { requireRole } from '../middleware/requireRole';
 import { errorHandler } from '../middleware/errorHandler';
+import { validateAdminParams, createSuperAdminCore } from '../../../../scripts/create-admin';
 
-describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Test Suite', () => {
-  let mainApp: Express;
+describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suite', () => {
+  const testKioskId = 'c0000000-0000-4000-8000-000000000001';
+  const testPairingSecret = 'kiosk-test-hmac-secret-min-16-chars-long';
 
   beforeAll(() => {
     (process.env as Record<string, string>).NODE_ENV = 'test';
     process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
     process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
     process.env.INTERNAL_EMAIL_DOMAIN = 'clinic.internal';
-    process.env.FACE_T_ACCEPT = '0.60';
-    process.env.FACE_T_REJECT = '0.45';
-    process.env.FACE_T_MARGIN = '0.10';
-    process.env.FACE_T_ENROLL_CONSISTENCY = '0.75';
-    process.env.FACE_T_DUPLICATE = '0.85';
-    process.env.FACE_CHALLENGE_EXPIRE_SECONDS = '60';
-
-    mainApp = createApp();
+    process.env.KIOSK_PAIRING_SECRET = testPairingSecret;
   });
 
-  describe('1. Kiosk Pairing Security & Constraints', () => {
+  describe('1. Kiosk Pairing Security & DB-Backed Constraints', () => {
     let kioskRepo: KioskRepository;
     let kioskService: KioskService;
     let kioskApp: Express;
-    const testKioskId = 'c0000000-0000-4000-8000-000000000001';
 
     beforeEach(() => {
       kioskRepo = new KioskRepository();
-      kioskService = new KioskService(kioskRepo);
+      kioskService = new KioskService(kioskRepo, testPairingSecret);
 
       kioskApp = express();
       kioskApp.use(express.json());
@@ -49,7 +44,35 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Test Suite', () =>
       kioskApp.use(errorHandler);
     });
 
-    it('1.1 [รหัสจับคู่ใช้ได้ครั้งเดียว]: Pairing code must be single-use and rejected on second attempt', async () => {
+    it('1.1 [crypto.randomInt & HMAC-SHA256]: Code must be generated with randomInt and stored as HMAC-SHA256', async () => {
+      // 1. Test randomInt generator
+      const code1 = kioskService.generateCodeRandomInt();
+      const code2 = kioskService.generateCodeRandomInt();
+      expect(code1).toHaveLength(6);
+      expect(code2).toHaveLength(6);
+      expect(code1).not.toBe(code2); // Statistical uniqueness
+
+      // 2. Generate and store
+      const { code: plainCode } = await kioskService.generatePairingCode(testKioskId);
+      const record = await kioskRepo.getPairingRecord(testKioskId);
+      expect(record).not.toBeNull();
+
+      // Plain code must NEVER be stored
+      expect((record as unknown as Record<string, unknown>).code).toBeUndefined();
+
+      // Hash must be HMAC-SHA256 (NOT plain SHA-256)
+      const expectedHmac = crypto
+        .createHmac('sha256', testPairingSecret)
+        .update(plainCode)
+        .digest('hex');
+      const plainSha256 = crypto.createHash('sha256').update(plainCode).digest('hex');
+
+      expect(record!.codeHash).toBe(expectedHmac);
+      expect(record!.codeHash).not.toBe(plainSha256); // Proves it is HMAC, not plain SHA-256
+      expect(record!.codeHash).toHaveLength(64);
+    });
+
+    it('1.2 [รหัสจับคู่ใช้ได้ครั้งเดียว]: Pairing code must be single-use and rejected on second attempt', async () => {
       const { code } = await kioskService.generatePairingCode(testKioskId);
 
       // First pairing attempt -> SUCCESS (200)
@@ -64,6 +87,7 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Test Suite', () =>
       expect(res1.headers['set-cookie']).toBeDefined();
       expect(res1.headers['set-cookie'][0]).toContain('kiosk_device_token=');
       expect(res1.headers['set-cookie'][0]).toContain('HttpOnly');
+      expect(res1.headers['set-cookie'][0]).toContain('SameSite=Strict');
 
       // Second pairing attempt with same code -> MUST FAIL (400 PAIRING_CODE_ALREADY_USED)
       const res2 = await request(kioskApp)
@@ -78,16 +102,14 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Test Suite', () =>
       });
     });
 
-    it('1.2 [หมดอายุ 10 นาที]: Pairing code must expire after 10 minutes and be rejected', async () => {
+    it('1.3 [หมดอายุ 10 นาที]: Pairing code must expire after 10 minutes and be rejected', async () => {
       const { code } = await kioskService.generatePairingCode(testKioskId);
 
-      // Simulate time passage beyond 10 minutes (10 mins + 1 second)
+      // Advance time past 10 minutes
       const record = await kioskRepo.getPairingRecord(testKioskId);
-      expect(record).not.toBeNull();
-      record!.expiresAt = new Date(Date.now() - 1000); // 1 second in the past
+      record!.expiresAt = new Date(Date.now() - 1000); // 1 second in past
       await kioskRepo.savePairingRecord(record!);
 
-      // Attempt to pair with expired code -> MUST FAIL (400 PAIRING_CODE_EXPIRED)
       const res = await request(kioskApp)
         .post('/api/kiosk/pair')
         .set('X-Requested-With', 'XMLHttpRequest')
@@ -100,58 +122,49 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Test Suite', () =>
       });
     });
 
-    it('1.3 [จำกัดการลองผิดต่อ IP]: Excessive failed attempts from same IP must be throttled with 429', async () => {
+    it('1.4 [ตัวนับการลองผิดต่อ IP ใน DB]: Excessive failed attempts from same IP must be throttled with 429', async () => {
       await kioskService.generatePairingCode(testKioskId);
 
-      // Fire 5 incorrect attempts (IP quota = 5)
+      // 5 failed attempts from same IP
       for (let i = 1; i <= 5; i++) {
+        const res = await request(kioskApp)
+          .post('/api/kiosk/pair')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ kiosk_id: testKioskId, code: `FAIL${i}` });
+
+        expect([400, 403]).toContain(res.status);
+      }
+
+      // 6th attempt from same IP -> 429
+      const res6 = await request(kioskApp)
+        .post('/api/kiosk/pair')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({ kiosk_id: testKioskId, code: 'FAIL06' });
+
+      expect(res6.status).toBe(429);
+      expect(res6.body.error.code).toBe('TOO_MANY_FAILED_ATTEMPTS');
+    });
+
+    it('1.5 [ตัวนับการลองผิดต่อรหัส/ตู้ ใน DB]: 3 failed attempts on code locks it permanently', async () => {
+      const { code: validCode } = await kioskService.generatePairingCode(testKioskId);
+
+      // 3 failed attempts
+      for (let i = 1; i <= 3; i++) {
         const res = await request(kioskApp)
           .post('/api/kiosk/pair')
           .set('X-Requested-With', 'XMLHttpRequest')
           .send({ kiosk_id: testKioskId, code: `WRONG${i}` });
 
-        expect([400, 403]).toContain(res.status);
+        if (i < 3) {
+          expect(res.status).toBe(400);
+          expect(res.body.error.code).toBe('INVALID_PAIRING_CODE');
+        } else {
+          expect(res.status).toBe(403);
+          expect(res.body.error.code).toBe('PAIRING_CODE_LOCKED');
+        }
       }
 
-      // 6th attempt from the same IP -> MUST be blocked with 429 TOO_MANY_FAILED_ATTEMPTS
-      const res6 = await request(kioskApp)
-        .post('/api/kiosk/pair')
-        .set('X-Requested-With', 'XMLHttpRequest')
-        .send({ kiosk_id: testKioskId, code: 'WRONG6' });
-
-      expect(res6.status).toBe(429);
-      expect(res6.body.error.code).toBe('TOO_MANY_FAILED_ATTEMPTS');
-      expect(res6.body.error.message).toContain('Too many failed pairing attempts from this IP');
-    });
-
-    it('1.4 [จำกัดการลองผิดต่อรหัส]: 3 failed attempts on a specific code must lock the code permanently', async () => {
-      const { code: validCode } = await kioskService.generatePairingCode(testKioskId);
-
-      // 1st wrong attempt
-      const res1 = await request(kioskApp)
-        .post('/api/kiosk/pair')
-        .set('X-Requested-With', 'XMLHttpRequest')
-        .send({ kiosk_id: testKioskId, code: 'BAD001' });
-      expect(res1.status).toBe(400);
-      expect(res1.body.error.code).toBe('INVALID_PAIRING_CODE');
-
-      // 2nd wrong attempt
-      const res2 = await request(kioskApp)
-        .post('/api/kiosk/pair')
-        .set('X-Requested-With', 'XMLHttpRequest')
-        .send({ kiosk_id: testKioskId, code: 'BAD002' });
-      expect(res2.status).toBe(400);
-      expect(res2.body.error.code).toBe('INVALID_PAIRING_CODE');
-
-      // 3rd wrong attempt -> reaches maximum threshold, locks the code
-      const res3 = await request(kioskApp)
-        .post('/api/kiosk/pair')
-        .set('X-Requested-With', 'XMLHttpRequest')
-        .send({ kiosk_id: testKioskId, code: 'BAD003' });
-      expect(res3.status).toBe(403);
-      expect(res3.body.error.code).toBe('PAIRING_CODE_LOCKED');
-
-      // Now even if the attacker / staff submits the CORRECT code, it MUST remain locked (403)
+      // Subsequent attempt even with the CORRECT code must be rejected with 403
       const resAfterLock = await request(kioskApp)
         .post('/api/kiosk/pair')
         .set('X-Requested-With', 'XMLHttpRequest')
@@ -161,105 +174,97 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Test Suite', () =>
       expect(resAfterLock.body.error.code).toBe('PAIRING_CODE_LOCKED');
     });
 
-    it('1.5 [เก็บเป็น hash]: Pairing code must NEVER be stored in plain text (stored ONLY as SHA-256 hash)', async () => {
-      const { code: plainCode } = await kioskService.generatePairingCode(testKioskId);
+    it('1.6 [Admin ออกรหัสใหม่]: Admin issuing new pairing code resets failed attempts and unlocks kiosk', async () => {
+      await kioskService.generatePairingCode(testKioskId);
 
+      // Lock the kiosk with 3 wrong attempts
+      for (let i = 1; i <= 3; i++) {
+        await request(kioskApp)
+          .post('/api/kiosk/pair')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ kiosk_id: testKioskId, code: `WRONG${i}` });
+      }
+
+      // Admin regenerates pairing code for kiosk
+      const { code: newCode } = await kioskService.generatePairingCode(testKioskId);
+
+      // Verify that failure count is reset to 0 and unlocked
       const record = await kioskRepo.getPairingRecord(testKioskId);
-      expect(record).not.toBeNull();
+      expect(record!.failedAttempts).toBe(0);
+      expect(record!.isLocked).toBe(false);
 
-      // Plain code must NOT be stored anywhere on the record
-      expect((record as any).code).toBeUndefined();
-      expect((record as any).plainCode).toBeUndefined();
+      // Now pairing with the new code succeeds with 200
+      const res = await request(kioskApp)
+        .post('/api/kiosk/pair')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({ kiosk_id: testKioskId, code: newCode });
 
-      // Hash must match SHA-256 of plain code
-      const expectedHash = crypto.createHash('sha256').update(plainCode).digest('hex');
-      expect(record!.codeHash).toBe(expectedHash);
-      expect(record!.codeHash).toHaveLength(64); // SHA-256 hex string is 64 characters
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
     });
 
-    it('1.6 [เทียบแบบ constant-time]: Hash comparison must use crypto.timingSafeEqual in constant time', () => {
-      const plainCode = 'ABC123';
-      const expectedHash = crypto.createHash('sha256').update(plainCode).digest('hex');
+    it('1.7 [เทียบแบบ constant-time]: HMAC verification uses constant-time crypto.timingSafeEqual', () => {
+      const plainCode = 'XY7890';
+      const hmac = kioskService.computeHmacSha256(plainCode);
 
-      // Exact match -> true
-      expect(kioskService.verifyCodeConstantTime('ABC123', expectedHash)).toBe(true);
-
-      // Case-insensitive match -> true
-      expect(kioskService.verifyCodeConstantTime('abc123', expectedHash)).toBe(true);
-
-      // Wrong code -> false
-      expect(kioskService.verifyCodeConstantTime('XYZ999', expectedHash)).toBe(false);
-
-      // Partial / prefix code -> false
-      expect(kioskService.verifyCodeConstantTime('ABC', expectedHash)).toBe(false);
-
-      // Empty string -> false
-      expect(kioskService.verifyCodeConstantTime('', expectedHash)).toBe(false);
-
-      // Corrupted hash string length -> false
-      expect(kioskService.verifyCodeConstantTime('ABC123', 'invalid-hex-short')).toBe(false);
+      expect(kioskService.verifyCodeConstantTime('XY7890', hmac)).toBe(true);
+      expect(kioskService.verifyCodeConstantTime('xy7890', hmac)).toBe(true); // case-insensitive
+      expect(kioskService.verifyCodeConstantTime('BAD123', hmac)).toBe(false);
+      expect(kioskService.verifyCodeConstantTime('', hmac)).toBe(false);
+      expect(kioskService.verifyCodeConstantTime('XY7890', 'short-hex')).toBe(false);
     });
   });
 
-  describe('2. Login Security: Identical Response for Nonexistent User vs Wrong Password', () => {
+  describe('2. Login Security, Timing Equalization & Persistent Throttling', () => {
+    let authRepo: AuthRepository;
+    let authService: AuthService;
     let authApp: Express;
 
-    // Mock repository to simulate both nonexistent user and wrong password
-    const mockAuthRepo: any = {
-      getProfileById: async (userId: string) => {
-        if (userId === 'user-somchai') {
-          return {
-            id: 'user-somchai',
-            role: 'pt',
-            first_name: 'Somchai',
-            last_name: 'Jaidee',
-            status: 'active',
-            force_logout_at: null,
-          };
-        }
-        return null;
-      },
-      recordStaffDevice: async () => {},
+    const mockProfile = {
+      id: 'pt-somchai-uuid',
+      role: 'pt',
+      first_name: 'Somchai',
+      last_name: 'Jaidee',
+      status: 'active',
+      force_logout_at: null,
     };
 
-    // Custom signIn implementation that simulates real Supabase Auth behavior
-    const mockSignIn: any = async ({ email, password }: { email: string; password: string }) => {
-      // 1. User does not exist in Auth
+    const mockSignIn: AuthSignInFn = async ({ email, password }) => {
+      // Nonexistent user
       if (email.startsWith('nonexistent_user@')) {
-        return {
-          data: null,
-          error: { message: 'Invalid login credentials', status: 400 },
-        };
+        return { data: null, error: { message: 'Invalid login credentials', status: 400 } };
       }
-
-      // 2. User exists, but password is wrong
+      // Existing user with wrong password
       if (email.startsWith('existing_pt@') && password !== 'CorrectPassword123!') {
-        return {
-          data: null,
-          error: { message: 'Invalid login credentials', status: 400 },
-        };
+        return { data: null, error: { message: 'Invalid login credentials', status: 400 } };
       }
-
-      // 3. User exists and password is correct
+      // Existing user with correct password
       if (email.startsWith('existing_pt@') && password === 'CorrectPassword123!') {
         return {
           data: {
-            user: { id: 'user-somchai', email },
+            user: { id: 'pt-somchai-uuid', email },
             session: {
-              access_token: 'mock-access-token-xyz',
-              refresh_token: 'mock-refresh-token-abc',
+              access_token: 'mock-access-token-123',
+              refresh_token: 'mock-refresh-token-456',
               expires_in: 3600,
             },
           },
           error: null,
         };
       }
-
       return { data: null, error: { message: 'Invalid login credentials', status: 400 } };
     };
 
     beforeEach(() => {
-      const authService = new AuthService(mockAuthRepo, mockSignIn);
+      authRepo = new AuthRepository();
+      authRepo.getProfileById = async (id: string) => (id === 'pt-somchai-uuid' ? mockProfile : null);
+
+      // In-memory mock for failure counters to avoid network latency jitter in timing tests
+      authRepo.getLoginFailuresByIp = async () => 0;
+      authRepo.getLoginFailuresByUsername = async () => 0;
+      authRepo.recordLoginFailure = async () => {};
+
+      authService = new AuthService(authRepo, mockSignIn);
       const authController = new AuthController(authService);
 
       authApp = express();
@@ -270,29 +275,19 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Test Suite', () =>
     });
 
     it('2.1 [login ตอบเหมือนกัน]: Nonexistent user vs wrong password must return IDENTICAL status and body', async () => {
-      // Case A: User does NOT exist
       const resNonexistent = await request(authApp)
         .post('/api/auth/login')
         .set('X-Requested-With', 'XMLHttpRequest')
-        .send({
-          username: 'nonexistent_user',
-          password: 'AnyPassword123!',
-        });
+        .send({ username: 'nonexistent_user', password: 'AnyPassword123!' });
 
-      // Case B: User DOES exist, but password is WRONG
       const resWrongPassword = await request(authApp)
         .post('/api/auth/login')
         .set('X-Requested-With', 'XMLHttpRequest')
-        .send({
-          username: 'existing_pt',
-          password: 'WrongPassword999!',
-        });
+        .send({ username: 'existing_pt', password: 'WrongPassword999!' });
 
-      // 1. Status codes MUST be identical (401 Unauthorized)
       expect(resNonexistent.status).toBe(401);
       expect(resWrongPassword.status).toBe(401);
 
-      // 2. Response error bodies MUST be 100% IDENTICAL
       expect(resNonexistent.body).toEqual({
         error: {
           code: 'INVALID_CREDENTIALS',
@@ -300,45 +295,271 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Test Suite', () =>
         },
       });
 
-      expect(resWrongPassword.body).toEqual({
-        error: {
-          code: 'INVALID_CREDENTIALS',
-          message: 'Invalid username or password',
-        },
-      });
-
-      // 3. No cookies must be set on failure in either case
+      expect(resWrongPassword.body).toEqual(resNonexistent.body);
       expect(resNonexistent.headers['set-cookie']).toBeUndefined();
       expect(resWrongPassword.headers['set-cookie']).toBeUndefined();
     });
 
-    it('2.2 Successful login should return user role & full_name, and set HttpOnly cookies', async () => {
+    it('2.2 [เวลาตอบใกล้เคียงกัน]: Response time difference between nonexistent user and wrong password must be within tight delta', async () => {
+      // Warm up JIT compiler
+      await request(authApp)
+        .post('/api/auth/login')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({ username: 'warmup_user', password: 'WarmupPassword123!' });
+
+      // Measure average duration for nonexistent user (3 runs)
+      let nonExistentTotal = 0;
+      for (let i = 0; i < 3; i++) {
+        const t0 = performance.now();
+        await request(authApp)
+          .post('/api/auth/login')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ username: `nonexistent_user_${i}`, password: 'AnyPassword123!' });
+        nonExistentTotal += performance.now() - t0;
+      }
+      const avgNonexistent = nonExistentTotal / 3;
+
+      // Measure average duration for existing user with wrong password (3 runs)
+      let wrongPwdTotal = 0;
+      for (let i = 0; i < 3; i++) {
+        const t1 = performance.now();
+        await request(authApp)
+          .post('/api/auth/login')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ username: 'existing_pt', password: `WrongPassword${i}!` });
+        wrongPwdTotal += performance.now() - t1;
+      }
+      const avgWrongPassword = wrongPwdTotal / 3;
+
+      const deltaMs = Math.abs(avgNonexistent - avgWrongPassword);
+      // Assert that delta is tight (< 75ms) thanks to cryptographic work equalization
+      expect(deltaMs).toBeLessThan(75);
+    });
+
+    it('2.3 [Throttle ต่อ IP & ต่อ Username แบบถาวร]: 5 failed logins triggers temporary lockout', async () => {
+      let failAttempts = 0;
+      authRepo.getLoginFailuresByUsername = async (u: string) => (u === 'targeted_pt' ? failAttempts : 0);
+      authRepo.recordLoginFailure = async (u: string) => {
+        if (u === 'targeted_pt') failAttempts++;
+      };
+
+      // 5 failed attempts for user "targeted_pt"
+      for (let i = 1; i <= 5; i++) {
+        const res = await request(authApp)
+          .post('/api/auth/login')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ username: 'targeted_pt', password: `WrongPwd${i}` });
+        expect(res.status).toBe(401);
+      }
+
+      // 6th attempt -> must be throttled with 429
+      const res6 = await request(authApp)
+        .post('/api/auth/login')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({ username: 'targeted_pt', password: 'WrongPwd6' });
+
+      expect(res6.status).toBe(429);
+      expect(['TOO_MANY_FAILED_ATTEMPTS', 'ACCOUNT_TEMPORARILY_LOCKED']).toContain(res6.body.error.code);
+    });
+
+    it('2.4 [Cookie flags & staff_device_id]: Successful login issues HttpOnly, SameSite=Strict cookies and tracks staff_device_id', async () => {
       const res = await request(authApp)
         .post('/api/auth/login')
         .set('X-Requested-With', 'XMLHttpRequest')
-        .send({
-          username: 'existing_pt',
-          password: 'CorrectPassword123!',
-        });
+        .send({ username: 'existing_pt', password: 'CorrectPassword123!' });
 
       expect(res.status).toBe(200);
-      expect(res.body.ok).toBe(true);
       expect(res.body.user).toEqual({
-        id: 'user-somchai',
+        id: 'pt-somchai-uuid',
         role: 'pt',
         full_name: 'Somchai Jaidee',
       });
 
-      // Must set HttpOnly cookies for access_token, refresh_token, and staff_device_id
       const cookies = res.headers['set-cookie'];
       expect(cookies).toBeDefined();
 
-      const cookieHeader = cookies.join('; ');
+      // Check all 3 cookies: access_token, refresh_token, staff_device_id
+      const cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : String(cookies || '');
       expect(cookieHeader).toContain('access_token=');
       expect(cookieHeader).toContain('refresh_token=');
       expect(cookieHeader).toContain('staff_device_id=');
       expect(cookieHeader).toContain('HttpOnly');
       expect(cookieHeader).toContain('SameSite=Strict');
+      expect(cookieHeader).toContain('Path=/');
+    });
+
+    it('2.5 [POST /logout & POST /refresh]: Handles session refresh and cookie clearing on logout', async () => {
+      // 1. Refresh endpoint
+      const refreshRes = await request(authApp)
+        .post('/api/auth/refresh')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', ['refresh_token=mock-refresh-token-xyz']);
+
+      expect(refreshRes.status).toBe(200);
+      expect(refreshRes.body.ok).toBe(true);
+      expect(refreshRes.headers['set-cookie']).toBeDefined();
+
+      // 2. Logout endpoint
+      const logoutRes = await request(authApp)
+        .post('/api/auth/logout')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', ['access_token=mock-token:pt-somchai-uuid:pt']);
+
+      expect(logoutRes.status).toBe(200);
+      expect(logoutRes.body.ok).toBe(true);
+      // Cleared cookies should expire immediately
+      const setCookies = logoutRes.headers['set-cookie'];
+      const logoutCookies = Array.isArray(setCookies) ? setCookies.join('; ') : String(setCookies || '');
+      expect(logoutCookies).toContain('access_token=;');
+      expect(logoutCookies).toContain('refresh_token=;');
+    });
+  });
+
+  describe('3. Authenticate & RequireRole Middleware Tests', () => {
+    let testApp: Express;
+
+    beforeAll(() => {
+      testApp = express();
+      testApp.use(cookieParser());
+
+      // Protected route for PT and Admin
+      testApp.get('/test-pt', authenticate, requireRole('pt', 'admin'), (req: Request, res: Response) => {
+        res.status(200).json({ ok: true, user: req.user });
+      });
+
+      // Admin-only route
+      testApp.get('/test-admin', authenticate, requireRole('admin'), (req: Request, res: Response) => {
+        res.status(200).json({ ok: true, user: req.user });
+      });
+
+      testApp.use(errorHandler);
+    });
+
+    it('3.1 should reject requests missing access token with 401 UNAUTHORIZED', async () => {
+      const res = await request(testApp).get('/test-pt');
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('UNAUTHORIZED');
+    });
+
+    it('3.2 should reject invalid / fake token with 401 UNAUTHORIZED', async () => {
+      const res = await request(testApp)
+        .get('/test-pt')
+        .set('Cookie', ['access_token=invalid-fake-token']);
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('UNAUTHORIZED');
+    });
+
+    it('3.3 should reject expired token with 401 UNAUTHORIZED', async () => {
+      const res = await request(testApp)
+        .get('/test-pt')
+        .set('Cookie', ['access_token=expired-token']);
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('UNAUTHORIZED');
+    });
+
+    it('3.4 should reject inactive / suspended user with 403 ACCOUNT_INACTIVE', async () => {
+      const res = await request(testApp)
+        .get('/test-pt')
+        .set('Cookie', ['access_token=mock-token:user-1:pt:suspended']);
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('ACCOUNT_INACTIVE');
+    });
+
+    it('3.5 should reject session revoked via force_logout_at with 401 SESSION_TERMINATED', async () => {
+      const res = await request(testApp)
+        .get('/test-pt')
+        .set('Cookie', ['access_token=mock-token:user-1:pt:active:revoked']);
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('SESSION_TERMINATED');
+    });
+
+    it('3.6 should enforce requireRole: PT cannot access admin-only route (403 FORBIDDEN)', async () => {
+      const res = await request(testApp)
+        .get('/test-admin')
+        .set('Cookie', ['access_token=mock-token:user-pt:pt']);
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('FORBIDDEN');
+    });
+
+    it('3.7 should allow access when role matches (200 OK)', async () => {
+      const res = await request(testApp)
+        .get('/test-admin')
+        .set('Cookie', ['access_token=mock-token:user-admin:admin']);
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.user.role).toBe('admin');
+    });
+  });
+
+  describe('4. Initial Super Admin Script Tests (create-admin.ts)', () => {
+    it('4.1 should reject admin creation if password is less than 12 characters', async () => {
+      const error = await validateAdminParams('admin_user', 'Admin Name', 'short123');
+      expect(error).toContain('at least 12 characters');
+    });
+
+    it('4.2 should reject invalid username formats', async () => {
+      const error = await validateAdminParams('a!', 'Admin Name', 'ValidPassword123!');
+      expect(error).toContain('Username must be 3-30 characters');
+    });
+
+    it('4.3 should reject when an active Super Admin already exists in the database', async () => {
+      const mockSupabase = {
+        from: () => ({
+          select: () => ({
+            eq: async () => ({
+              data: [{ id: 'existing-admin-id', username: 'superadmin' }],
+              error: null,
+            }),
+          }),
+        }),
+        auth: {
+          admin: {
+            createUser: async () => ({
+              data: null,
+              error: null,
+            }),
+          },
+        },
+      };
+
+      const result = await createSuperAdminCore(mockSupabase, {
+        username: 'new_admin',
+        fullName: 'New Admin',
+        password: 'ValidSuperPassword123!',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('already exists');
+    });
+
+    it('4.4 should successfully create Super Admin when parameters are valid and no admin exists', async () => {
+      const mockSupabase = {
+        from: () => ({
+          select: () => ({
+            eq: async () => ({
+              data: [], // 0 existing admins
+              error: null,
+            }),
+          }),
+        }),
+        auth: {
+          admin: {
+            createUser: async () => ({
+              data: { user: { id: 'created-admin-uuid' } },
+              error: null,
+            }),
+          },
+        },
+      };
+
+      const result = await createSuperAdminCore(mockSupabase, {
+        username: 'first_superadmin',
+        fullName: 'Super Administrator',
+        password: 'HospitalMasterPassword2026!',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.userId).toBe('created-admin-uuid');
     });
   });
 });

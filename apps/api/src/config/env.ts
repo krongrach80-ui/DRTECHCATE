@@ -12,7 +12,7 @@ const strictPositiveRatio = (fieldName: string) =>
   z.preprocess(
     (val) => (val === '' || val === null || val === undefined ? undefined : val),
     z.coerce
-      .number({ invalid_type_error: `${fieldName} must be a number` })
+      .number({ message: `${fieldName} must be a number` })
       .gt(0, { message: `${fieldName} must be strictly greater than 0 (cannot be 0 or negative)` })
       .lte(1, { message: `${fieldName} must be less than or equal to 1.0` })
   );
@@ -21,7 +21,7 @@ const strictPositiveInt = (fieldName: string) =>
   z.preprocess(
     (val) => (val === '' || val === null || val === undefined ? undefined : val),
     z.coerce
-      .number({ invalid_type_error: `${fieldName} must be an integer` })
+      .number({ message: `${fieldName} must be an integer` })
       .int({ message: `${fieldName} must be an integer` })
       .gt(0, { message: `${fieldName} must be strictly greater than 0` })
   );
@@ -40,6 +40,10 @@ export const envSchema = z
     INTERNAL_EMAIL_DOMAIN: z.string().min(1).default('clinic.internal'),
     APP_URL: z.string().url().default('http://localhost:3000'),
     CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173'),
+    KIOSK_PAIRING_SECRET: z
+      .string()
+      .min(16, 'KIOSK_PAIRING_SECRET must be at least 16 characters')
+      .default('kiosk-pairing-hmac-secret-min-16-chars-for-dev'),
 
     // Biometric Calibration (Master Prompt v3 - Section 11 & match_face_candidates)
     // NOTE: Values operate in COSINE SIMILARITY space (score = 1.0 - cosine_distance).

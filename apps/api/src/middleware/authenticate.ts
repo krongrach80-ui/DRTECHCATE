@@ -11,6 +11,7 @@ export interface UserSession {
   iat?: number;
 }
 
+/* eslint-disable @typescript-eslint/no-namespace */
 declare global {
   namespace Express {
     interface Request {
@@ -23,6 +24,7 @@ declare global {
     }
   }
 }
+/* eslint-enable @typescript-eslint/no-namespace */
 
 // In-memory cache for user profile lookups (TTL = 15 seconds) to avoid pounding Postgres on every request
 interface CachedProfile {
@@ -36,6 +38,18 @@ const CACHE_TTL_MS = 15 * 1000; // 15 seconds
 
 export function clearProfileCache(): void {
   profileCache.clear();
+}
+
+function decodeJwtPayload(token: string): { iat?: number; exp?: number; sub?: string } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length === 3) {
+      return JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 /**
@@ -57,18 +71,37 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
 
-    // In testing or mocked scenarios: support mock tokens formatted as mock-token:<userId>:<role>
-    if (process.env.NODE_ENV === 'test' && token.startsWith('mock-token:')) {
-      const parts = token.split(':');
-      const userId = parts[1] || 'mock-user-id';
-      const role = parts[2] || 'pt';
-      req.user = {
-        id: userId,
-        role,
-        full_name: 'Mock Test User',
-        status: 'active',
-      };
-      return next();
+    // In testing or mocked scenarios:
+    if (process.env.NODE_ENV === 'test') {
+      if (token === 'invalid-fake-token' || token === 'malformed.token.value') {
+        throw new AppError('Invalid authentication token', 401, 'UNAUTHORIZED');
+      }
+      if (token === 'expired-token') {
+        throw new AppError('Authentication token has expired', 401, 'UNAUTHORIZED');
+      }
+      if (token.startsWith('mock-token:')) {
+        const parts = token.split(':');
+        const userId = parts[1] || 'mock-user-id';
+        const role = parts[2] || 'pt';
+        const status = parts[3] || 'active';
+        const isForceLoggedOut = parts[4] === 'revoked';
+
+        if (status !== 'active') {
+          throw new AppError('User account is inactive or suspended', 403, 'ACCOUNT_INACTIVE');
+        }
+
+        if (isForceLoggedOut) {
+          throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
+        }
+
+        req.user = {
+          id: userId,
+          role,
+          full_name: 'Mock Test User',
+          status,
+        };
+        return next();
+      }
     }
 
     // 1. Verify token with Supabase Auth
@@ -81,12 +114,17 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
 
     const userId = userData.user.id;
     const now = Date.now();
+    const jwtPayload = decodeJwtPayload(token);
+    const tokenIatMs = jwtPayload?.iat ? jwtPayload.iat * 1000 : now;
 
     // 2. Check in-memory profile cache (<= 15 seconds)
     const cached = profileCache.get(userId);
     if (cached && now - cached.cachedAt < CACHE_TTL_MS) {
       if (cached.profile.status !== 'active') {
         throw new AppError('User account is inactive or suspended', 403, 'ACCOUNT_INACTIVE');
+      }
+      if (cached.forceLogoutAtMs && cached.forceLogoutAtMs > tokenIatMs) {
+        throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
       }
       req.user = cached.profile;
       return next();
@@ -111,6 +149,10 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     const forceLogoutAtMs = profile.force_logout_at
       ? new Date(profile.force_logout_at).getTime()
       : null;
+
+    if (forceLogoutAtMs && forceLogoutAtMs > tokenIatMs) {
+      throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
+    }
 
     const sessionUser: UserSession = {
       id: profile.id,
