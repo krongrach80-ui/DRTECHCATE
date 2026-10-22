@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
+import { logger } from './logger';
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -19,11 +20,12 @@ export class AppError extends Error {
 /**
  * Standard Error Handler Middleware
  * Strict rule: Format must be { "error": { "code", "message" } }
- * Never leak stack traces, SQL errors, or PII to the client.
+ * Never leak stack traces, SQL errors, or PII to the client or raw unredacted logs.
+ * Uses req.log (pino) logging ONLY safe metadata: ref, code, and error name.
  */
 export function errorHandler(
   err: Error & { statusCode?: number; code?: string; type?: string; status?: number; body?: unknown },
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void {
@@ -74,12 +76,19 @@ export function errorHandler(
   }
 
   // 5. Unhandled / Unexpected server errors
-  // Log internal details securely on server console (with reference ID)
-  console.error(`[Error Ref: ${errorRef}] Internal Error:`, {
-    name: err.name,
-    message: err.message,
-    stack: err.stack,
-  });
+  // Record ONLY safe metadata (ref, code, name) via pino logger (req.log or logger)
+  // NEVER log err.message or err.stack directly as it may contain patient clinical notes, PII or raw SQL
+  const logData = {
+    ref: errorRef,
+    code: err.code || 'INTERNAL_ERROR',
+    name: err.name || 'Error',
+  };
+
+  if ((req as any).log) {
+    (req as any).log.error(logData, 'Unhandled application error masked');
+  } else {
+    logger.error(logData, 'Unhandled application error masked');
+  }
 
   // Mask completely: return generic message with reference ID, NEVER leaking internal stack/DB info
   res.status(500).json({

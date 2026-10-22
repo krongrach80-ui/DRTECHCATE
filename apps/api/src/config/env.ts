@@ -41,8 +41,11 @@ export const envSchema = z
     APP_URL: z.string().url().default('http://localhost:3000'),
     CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173'),
 
-    // Biometric Calibration (Master Prompt v3 rule: NO default allowed for FACE_T_*)
-    // Rejects empty string, 0, negative, and out-of-order thresholds
+    // Biometric Calibration (Master Prompt v3 - Section 11 & match_face_candidates)
+    // NOTE: Values operate in COSINE SIMILARITY space (score = 1.0 - cosine_distance).
+    // Range is [-1.0, 1.0], where 1.0 = identical face. Higher score means MORE SIMILAR.
+    // In Similarity space: 0 < FACE_T_REJECT < FACE_T_ACCEPT < FACE_T_DUPLICATE <= 1.0
+    // Rejects empty string, 0, negative, and out-of-order thresholds.
     FACE_T_ACCEPT: strictPositiveRatio('FACE_T_ACCEPT'),
     FACE_T_REJECT: strictPositiveRatio('FACE_T_REJECT'),
     FACE_T_MARGIN: strictPositiveRatio('FACE_T_MARGIN'),
@@ -51,12 +54,16 @@ export const envSchema = z
     FACE_CHALLENGE_EXPIRE_SECONDS: strictPositiveInt('FACE_CHALLENGE_EXPIRE_SECONDS'),
   })
   .refine((data) => data.FACE_T_REJECT < data.FACE_T_ACCEPT, {
-    message: 'FACE_T_REJECT must be strictly less than FACE_T_ACCEPT (threshold order violation)',
+    message: 'threshold order violation: Similarity space invariant: FACE_T_REJECT must be strictly less than FACE_T_ACCEPT',
     path: ['FACE_T_REJECT'],
   })
   .refine((data) => data.FACE_T_ACCEPT < data.FACE_T_DUPLICATE, {
-    message: 'FACE_T_ACCEPT must be strictly less than FACE_T_DUPLICATE (threshold order violation)',
+    message: 'threshold order violation: Similarity space invariant: FACE_T_ACCEPT must be strictly less than FACE_T_DUPLICATE',
     path: ['FACE_T_DUPLICATE'],
+  })
+  .refine((data) => data.FACE_T_MARGIN > 0, {
+    message: 'FACE_T_MARGIN must be strictly greater than 0',
+    path: ['FACE_T_MARGIN'],
   });
 
 export type Env = z.infer<typeof envSchema>;

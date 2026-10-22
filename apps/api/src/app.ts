@@ -1,7 +1,8 @@
 import express, { Express, Request, Response } from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import { httpLogger } from './middleware/logger';
+import { Logger } from 'pino';
+import { httpLogger, createHttpLogger } from './middleware/logger';
 import { createCorsMiddleware } from './middleware/cors';
 import { banCheck } from './middleware/banCheck';
 import { apiRateLimiter, createRateLimiter } from './middleware/rateLimit';
@@ -9,8 +10,10 @@ import { csrfGuard } from './middleware/csrfGuard';
 import { errorHandler, AppError } from './middleware/errorHandler';
 import { healthRoutes } from './modules/health/routes';
 import { eventRoutes } from './modules/events/routes';
+import { authRoutes } from './modules/auth/routes';
+import { kioskRoutes } from './modules/kiosk/routes';
 
-export function createApp(): Express {
+export function createApp(customLogger?: Logger): Express {
   const app: Express = express();
 
   // Explicitly set trust proxy to false by default (prevents client X-Forwarded-For spoofing attacks)
@@ -33,7 +36,7 @@ export function createApp(): Express {
   );
 
   // 2. Structured Request Logging (Pino, redacts PII and vectors)
-  app.use(httpLogger);
+  app.use(customLogger ? createHttpLogger(customLogger) : httpLogger);
 
   // 3. CORS with explicit origin allowlist
   app.use(createCorsMiddleware());
@@ -56,6 +59,8 @@ export function createApp(): Express {
   // 9. Public / System routes
   app.use('/api', healthRoutes);
   app.use('/api', eventRoutes);
+  app.use('/api/auth', authRoutes);
+  app.use('/api/kiosk', kioskRoutes);
 
   // Testing-only endpoints
   if (process.env.NODE_ENV === 'test') {
@@ -93,6 +98,9 @@ export function createApp(): Express {
         const dbErr = new Error('syntax error at or near "SELECT * FROM secret_passwords"');
         (dbErr as Error & { table?: string }).table = 'secret_passwords';
         throw dbErr;
+      }
+      if (req.body?.type === 'patient_leak') {
+        throw new Error('Database query failed for patient HN-998877 (Somchai Jaidee, diagnosis: HIV, stroke)');
       }
       throw new Error('Unexpected crash simulation');
     });

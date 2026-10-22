@@ -143,6 +143,47 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
       expect(bodyString).not.toContain('Error:');
     });
 
+    it('should NEVER leak patient data into logs or client response when an unexpected error occurs', async () => {
+      let loggedChunks = '';
+      const logStream = new Writable({
+        write(chunk, _encoding, callback) {
+          loggedChunks += chunk.toString();
+          callback();
+        },
+      });
+
+      const capturingLogger = createLogger(logStream, 'info');
+      const testApp = createApp(capturingLogger);
+
+      const res = await request(testApp)
+        .post('/api/test-error')
+        .set('Origin', 'http://localhost:3000')
+        .send({ type: 'patient_leak' });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBeDefined();
+      expect(res.body.error.code).toBe('INTERNAL_SERVER_ERROR');
+      expect(res.body.error.message).toBe('An unexpected internal error occurred');
+      expect(res.body.error.ref).toBeDefined();
+
+      // Ensure client response NEVER contains patient data
+      const clientResponseBody = JSON.stringify(res.body);
+      expect(clientResponseBody).not.toContain('HN-998877');
+      expect(clientResponseBody).not.toContain('Somchai Jaidee');
+      expect(clientResponseBody).not.toContain('HIV');
+      expect(clientResponseBody).not.toContain('stroke');
+
+      // CRITICAL: Ensure log stream NEVER contains patient data or clinical details
+      expect(loggedChunks).not.toContain('HN-998877');
+      expect(loggedChunks).not.toContain('Somchai Jaidee');
+      expect(loggedChunks).not.toContain('HIV');
+      expect(loggedChunks).not.toContain('stroke');
+
+      // Ensure log stream DOES contain only the safe metadata (ref, code, name)
+      expect(loggedChunks).toContain('Unhandled application error masked');
+      expect(loggedChunks).toContain(res.body.error.ref);
+    });
+
     it('should safely handle malformed JSON syntax errors with 400 Bad Request', async () => {
       const res = await request(app)
         .post('/api/test-echo')
@@ -464,6 +505,52 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
           FACE_CHALLENGE_EXPIRE_SECONDS: 60,
         });
       }).toThrow(/threshold order violation/);
+    });
+
+    it('should fail-fast when FACE_T_MARGIN is 0, negative, or empty string (must be strictly > 0)', async () => {
+      const { parseEnv } = await import('../config/env');
+
+      // FACE_T_MARGIN = 0
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: 0.60,
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: 0,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+        });
+      }).toThrow(/FACE_T_MARGIN must be strictly greater than 0/);
+
+      // FACE_T_MARGIN = -0.05
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: 0.60,
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: -0.05,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+        });
+      }).toThrow(/FACE_T_MARGIN must be strictly greater than 0/);
+
+      // FACE_T_MARGIN = ""
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: 0.60,
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: '',
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+        });
+      }).toThrow(/Environment validation failed/);
     });
   });
 });

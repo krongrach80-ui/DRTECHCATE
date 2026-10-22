@@ -33,3 +33,16 @@ export function validate(schema: {
     }
   };
 }
+
+export function validateBody(bodySchema: z.ZodTypeAny) {
+  return validate({ body: bodySchema });
+}
+
+export function validateQuery(querySchema: z.ZodTypeAny) {
+  return validate({ query: querySchema });
+}
+
+export function validateParams(paramsSchema: z.ZodTypeAny) {
+  return validate({ params: paramsSchema });
+}
+

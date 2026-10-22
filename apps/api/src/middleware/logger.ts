@@ -44,6 +44,13 @@ export function createHttpLogger(customLogger?: pino.Logger) {
       if (res.statusCode >= 400) return 'warn';
       return 'info';
     },
+    serializers: {
+      err: (err) => ({
+        type: err.type || err.name,
+        code: (err as any).code || 'INTERNAL_ERROR',
+        // Deliberately omit err.message and err.stack to prevent leaking patient PII or DB queries into HTTP logs
+      }),
+    },
   });
 }
 

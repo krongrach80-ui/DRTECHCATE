@@ -54,9 +54,33 @@ async function runAnonRestSecurityTest() {
   let totalFailed = 0;
 
   console.log(`Target: ${supabaseUrl}`);
-  console.log('Verifying that anon key CANNOT read any table or invoke private RPCs...\n');
 
-  // 1. Test all 27 tables via PostgREST
+  // 1. POSITIVE CONTROL: Verify that the anon key is valid and can reach public endpoints
+  console.log('\n--- 1. Positive Control Check (Anon Key Validity) ---');
+  try {
+    const positiveUrl = `${supabaseUrl}/auth/v1/settings`;
+    const posRes = await fetch(positiveUrl, {
+      method: 'GET',
+      headers: {
+        'apikey': anonKey,
+        'Authorization': `Bearer ${anonKey}`,
+      },
+    });
+
+    if (posRes.status === 200) {
+      console.log(`  ✓ PASS: Positive control endpoint /auth/v1/settings returned 200 OK (Key is active & valid)`);
+      totalPassed++;
+    } else {
+      console.error(`  ✗ FAIL: Positive control endpoint failed! Status: ${posRes.status}`);
+      totalFailed++;
+    }
+  } catch (err: unknown) {
+    console.error(`  ✗ FAIL: Positive control connection error: ${(err as Error).message}`);
+    totalFailed++;
+  }
+
+  // 2. NEGATIVE CONTROLS: Verify all 27 tables return Status 401 with PostgreSQL Error Code 42501 (insufficient_privilege)
+  console.log('\n--- 2. Table Zero-Trust Verification (Checking Code 42501) ---');
   for (const table of EXPECTED_TABLES) {
     const url = `${supabaseUrl}/rest/v1/${table}?select=*`;
     try {
@@ -68,30 +92,27 @@ async function runAnonRestSecurityTest() {
         },
       });
 
-      const body = await res.json();
+      const body = (await res.json()) as { code?: string; message?: string };
 
-      // For RLS with REVOKE ALL from anon:
-      // PostgREST will either return 401/403/404 or empty array []
-      // It must NEVER return records.
-      const isBlocked = res.status === 401 ||
-                        res.status === 403 ||
-                        (res.ok && Array.isArray(body) && body.length === 0);
+      // Requirement: Check Postgres error code 42501 in body (insufficient_privilege)
+      const hasCode42501 = body?.code === '42501';
+      const isDenied = res.status === 401 && hasCode42501;
 
-      if (isBlocked) {
-        console.log(`  ✓ PASS: Table "${table}" blocked for anon (Status ${res.status})`);
+      if (isDenied) {
+        console.log(`  ✓ PASS: Table "${table}" blocked with code 42501 (Status ${res.status}: "${body.message}")`);
         totalPassed++;
       } else {
-        console.error(`  ✗ FAIL: Table "${table}" leaked data to anon! Status: ${res.status}, Records: ${Array.isArray(body) ? body.length : 'non-array'}`);
+        console.error(`  ✗ FAIL: Table "${table}" did NOT return code 42501! Status: ${res.status}, Body: ${JSON.stringify(body)}`);
         totalFailed++;
       }
     } catch (err: unknown) {
-      console.log(`  ✓ PASS: Table "${table}" connection refused/blocked: ${(err as Error).message}`);
-      totalPassed++;
+      console.error(`  ✗ FAIL: Table "${table}" request error: ${(err as Error).message}`);
+      totalFailed++;
     }
   }
 
-  // 2. Test match_face_candidates RPC with anon key (MUST fail)
-  console.log('\n--- Checking RPC match_face_candidates with anon key ---');
+  // 3. NEGATIVE CONTROL: Verify match_face_candidates RPC returns Status 401 with Code 42501
+  console.log('\n--- 3. Biometric RPC Zero-Trust Verification (Checking Code 42501) ---');
   const rpcUrl = `${supabaseUrl}/rest/v1/rpc/match_face_candidates`;
   try {
     const res = await fetch(rpcUrl, {
@@ -108,17 +129,20 @@ async function runAnonRestSecurityTest() {
       }),
     });
 
-    if (res.status === 401 || res.status === 403 || res.status === 404) {
-      console.log(`  ✓ PASS: RPC match_face_candidates strictly blocked for anon (Status ${res.status})`);
+    const body = (await res.json()) as { code?: string; message?: string };
+    const hasCode42501 = body?.code === '42501';
+    const isDenied = res.status === 401 && hasCode42501;
+
+    if (isDenied) {
+      console.log(`  ✓ PASS: RPC match_face_candidates blocked with code 42501 (Status ${res.status}: "${body.message}")`);
       totalPassed++;
     } else {
-      const body = await res.text();
-      console.error(`  ✗ FAIL: RPC match_face_candidates executable by anon! Status: ${res.status}, Body: ${body}`);
+      console.error(`  ✗ FAIL: RPC match_face_candidates did NOT return code 42501! Status: ${res.status}, Body: ${JSON.stringify(body)}`);
       totalFailed++;
     }
   } catch (err: unknown) {
-    console.log(`  ✓ PASS: RPC match_face_candidates blocked: ${(err as Error).message}`);
-    totalPassed++;
+    console.error(`  ✗ FAIL: RPC match_face_candidates request error: ${(err as Error).message}`);
+    totalFailed++;
   }
 
   console.log('\n========================================================================');

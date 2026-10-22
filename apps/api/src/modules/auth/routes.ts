@@ -1,0 +1,22 @@
+import { Router } from 'express';
+import { AuthController } from './controller';
+import { loginSchema } from './schema';
+import { validateBody } from '../../middleware/validate';
+import { authenticate } from '../../middleware/authenticate';
+
+export function createAuthRouter(controller = new AuthController()): Router {
+  const router = Router();
+
+  // POST /api/auth/login (Public endpoint, protected by rateLimiter & csrfGuard)
+  router.post('/login', validateBody(loginSchema), controller.login);
+
+  // POST /api/auth/logout (Authenticated session revocation)
+  router.post('/logout', authenticate, controller.logout);
+
+  // GET /api/auth/me (Returns active user profile)
+  router.get('/me', authenticate, controller.me);
+
+  return router;
+}
+
+export const authRoutes = createAuthRouter();
