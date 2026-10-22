@@ -29,6 +29,9 @@ GRANT EXECUTE ON FUNCTION current_user_role() TO authenticated;
 REVOKE EXECUTE ON FUNCTION is_patient_accessible_by_pt(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION is_patient_accessible_by_pt(UUID) TO authenticated;
 
+-- Revoke all table permissions on strictly backend-only tables from authenticated (Defense-in-depth)
+REVOKE ALL ON TABLE face_templates, face_challenges, kiosk_devices, staff_devices, bans FROM authenticated;
+
 -- ------------------------------------------------------------------------
 -- 2. ENABLE ROW LEVEL SECURITY ON ALL 27 TABLES
 -- ------------------------------------------------------------------------
