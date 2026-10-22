@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DRTECHCARE
 
-## Getting Started
+Hospital Physical Therapy Management & Face-Recognition Kiosk System (ระบบกายภาพบำบัดโรงพยาบาล)
 
-First, run the development server:
+## Architecture Overview (Master Prompt v3)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+DrTech.Care is a decoupled physical therapy system designed for hospitals, featuring:
+- **Express 5 API Server** (`apps/api`): Clean REST API with strict Supabase service-role backend connection.
+- **Admin Dashboard** (`apps/admin`): Clinic management, PT roster, course & exercise templates, device management, audit logs.
+- **PT Clinical Portal** (`apps/pt`): Patient assignment, clinical notes (append-only), exercise prescriptions, case transfers.
+- **Check-in Kiosk** (`apps/kiosk`): Biometric face verification with challenge-response liveness detection, telephone keypad backup, thermal queue ticket printing.
+- **Database Architecture** (`supabase/migrations`): 27 PostgreSQL tables with Row Level Security (RLS), append-only triggers on clinical/audit records, `pgvector` HNSW cosine similarity search on 512-dim face embeddings, and zero public/anon privileges.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Database Migrations
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `supabase/migrations/20261022000001_extensions_and_enums.sql`: Vector, UUID, pg_trgm extensions, enums, HN sequence.
+- `supabase/migrations/20261022000002_core_schema.sql`: 27 relational tables with HNSW & GIN indexes.
+- `supabase/migrations/20261022000003_triggers_and_invariants.sql`: Append-only triggers & business logic constraints.
+- `supabase/migrations/20261022000004_rls_and_policies.sql`: Default privilege revoking & comprehensive RLS policies.
+- `supabase/migrations/20261022000005_storage_and_biometrics.sql`: Private storage buckets & `match_face_candidates` RPC.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Security & Privacy Invariants
 
-## Learn More
+1. **Zero Anon Privileges**: Anon role has 0 table access and 0 RPC execution privileges.
+2. **Append-Only Clinical History**: `medical_notes`, `treatment_results`, and `audit_logs` cannot be updated or deleted.
+3. **Biometric Protection**: Biometric embeddings and face matching RPC are accessible exclusively via backend `service_role`.
+4. **Decoupled Patients**: Patient records are independent of `auth.users` to prevent identity provider lock-in.
 
-To learn more about Next.js, take a look at the following resources:
+## Documentation
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Architecture Decisions: [`docs/DECISIONS.md`](docs/DECISIONS.md)
+- Legacy Security Audit: [`docs/LEGACY_AUDIT.md`](docs/LEGACY_AUDIT.md)
