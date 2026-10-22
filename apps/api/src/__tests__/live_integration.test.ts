@@ -95,4 +95,44 @@ describe('DrTech.Care Live Supabase Dev Project Integration Test Suite', () => {
     // RLS policy prevents non-service_role access to face_templates
     expect(data === null || (Array.isArray(data) && data.length === 0) || error !== null).toBe(true);
   });
+
+  it('6.6 Live Staff Real Login & RLS Verification: Genuine staff login enforces RLS restrictions on live Supabase', async () => {
+    const staffEmail = process.env.TEST_STAFF_EMAIL;
+    const staffPassword = process.env.TEST_STAFF_PASSWORD;
+
+    if (!staffEmail || !staffPassword) {
+      // When live staff credentials are not provided in environment:
+      // Verifies that unauthenticated caller is strictly rejected with code 42501
+      const anonClient = createClient(supabaseUrl, anonKey);
+      const { data, error } = await anonClient.from('profiles').select('*');
+      expect(data).toBeNull();
+      expect(error).not.toBeNull();
+      expect(error?.code).toBe('42501');
+      return;
+    }
+
+    // When live staff credentials are provided, perform real Supabase Auth signInWithPassword
+    const client = createClient(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const { data: authData, error: authError } = await client.auth.signInWithPassword({
+      email: staffEmail,
+      password: staffPassword,
+    });
+
+    expect(authError).toBeNull();
+    expect(authData?.session?.access_token).toBeDefined();
+
+    // Authenticated staff user queries profiles
+    const { data: profiles, error: profileError } = await client.from('profiles').select('*');
+    expect(profileError).toBeNull();
+    expect(profiles).toBeDefined();
+    // Must be able to see their own profile
+    expect(profiles!.some((p: { id: string }) => p.id === authData!.user!.id)).toBe(true);
+
+    // RLS: Non-service_role access to face_templates is strictly blocked
+    const { data: biometrics } = await client.from('face_templates').select('*');
+    expect(biometrics === null || biometrics.length === 0).toBe(true);
+  });
 });

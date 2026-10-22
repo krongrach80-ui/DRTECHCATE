@@ -385,7 +385,14 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suit
       expect(cookieHeader).toContain('staff_device_id=');
       expect(cookieHeader).toContain('HttpOnly');
       expect(cookieHeader).toContain('SameSite=Strict');
-      expect(cookieHeader).toContain('Path=/');
+
+      // Refresh token MUST have restricted Path=/api/auth
+      const cookieList = Array.isArray(cookies) ? cookies : [String(cookies || '')];
+      const refreshTokenCookie = cookieList.find((c) => c.startsWith('refresh_token='));
+      expect(refreshTokenCookie).toContain('Path=/api/auth');
+
+      const accessTokenCookie = cookieList.find((c) => c.startsWith('access_token='));
+      expect(accessTokenCookie).toContain('Path=/');
     });
 
     it('2.5 [POST /logout & POST /refresh]: Handles session refresh and cookie clearing on logout', async () => {
@@ -412,6 +419,25 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suit
       const logoutCookies = Array.isArray(setCookies) ? setCookies.join('; ') : String(setCookies || '');
       expect(logoutCookies).toContain('access_token=;');
       expect(logoutCookies).toContain('refresh_token=;');
+    });
+
+    it('2.6 [Cookie Secure Flag in Production]: Sets Secure flag when NODE_ENV=production and verifies restricted Path', async () => {
+      const prevEnv = process.env.NODE_ENV;
+      try {
+        (process.env as Record<string, string>).NODE_ENV = 'production';
+        const res = await request(authApp)
+          .post('/api/auth/login')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ username: 'existing_pt', password: 'CorrectPassword123!' });
+
+        expect(res.status).toBe(200);
+        const cookies = res.headers['set-cookie'] || [];
+        const cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : String(cookies);
+        expect(cookieHeader).toContain('Secure');
+        expect(cookieHeader).toContain('Path=/api/auth');
+      } finally {
+        (process.env as Record<string, string>).NODE_ENV = prevEnv;
+      }
     });
   });
 

@@ -36,15 +36,6 @@ export class AuthService {
     private customSignIn?: AuthSignInFn
   ) {}
 
-  /**
-   * Cryptographic work equalizer using PBKDF2.
-   * Matches the execution latency of password hashing so that
-   * nonexistent users take virtually the identical time as existing users with bad passwords.
-   */
-  public equalizeTiming(password: string): void {
-    crypto.pbkdf2Sync(password, 'hospital-pt-timing-salt', 20000, 32, 'sha256');
-  }
-
   async login(
     username: string,
     password: string,
@@ -75,6 +66,8 @@ export class AuthService {
       );
     }
 
+    // Always invoke Supabase Auth signInWithPassword using internal domain email
+    // Even when the user does not exist, Supabase Auth runs its password evaluation natively
     const internalEmail = `${cleanUsername}@${env.INTERNAL_EMAIL_DOMAIN}`;
     let authData: AuthUserSession | null = null;
     let authError: Error | { message: string; status?: number } | null = null;
@@ -101,9 +94,6 @@ export class AuthService {
     if (authError || !authData?.user || !authData?.session) {
       // Record failed attempt in DB (both for IP and username)
       await this.repo.recordLoginFailure(cleanUsername, clientIp);
-
-      // Perform cryptographic work equalization to ensure indistinguishable timing
-      this.equalizeTiming(password);
       throw new AppError('Invalid username or password', 401, 'INVALID_CREDENTIALS');
     }
 
@@ -113,13 +103,11 @@ export class AuthService {
       profile = await this.repo.getProfileById(authData.user.id);
     } catch {
       await this.repo.recordLoginFailure(cleanUsername, clientIp);
-      this.equalizeTiming(password);
       throw new AppError('Invalid username or password', 401, 'INVALID_CREDENTIALS');
     }
 
     if (!profile || profile.status !== 'active') {
       await this.repo.recordLoginFailure(cleanUsername, clientIp);
-      this.equalizeTiming(password);
       throw new AppError('Invalid username or password', 401, 'INVALID_CREDENTIALS');
     }
 

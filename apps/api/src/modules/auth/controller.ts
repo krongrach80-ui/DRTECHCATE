@@ -34,7 +34,7 @@ export class AuthController {
         secure: isProd,
         sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        path: '/',
+        path: '/api/auth',
       });
 
       res.cookie('staff_device_id', result.deviceId, {
@@ -62,7 +62,7 @@ export class AuthController {
 
       // Clear all auth cookies
       res.clearCookie('access_token', { path: '/' });
-      res.clearCookie('refresh_token', { path: '/' });
+      res.clearCookie('refresh_token', { path: '/api/auth' });
 
       res.status(200).json({ ok: true, message: 'Logged out successfully' });
     } catch (err) {
@@ -90,7 +90,7 @@ export class AuthController {
         secure: isProd,
         sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60 * 1000,
-        path: '/',
+        path: '/api/auth',
       });
 
       res.status(200).json({ ok: true, message: 'Session refreshed' });

@@ -57,6 +57,7 @@ export function createApp(customLogger?: Logger): Express {
   app.use('/api', csrfGuard);
 
   // 9. Public / System routes
+  app.use('/', healthRoutes);
   app.use('/api', healthRoutes);
   app.use('/api', eventRoutes);
   app.use('/api/auth', authRoutes);

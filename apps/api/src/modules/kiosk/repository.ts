@@ -133,10 +133,11 @@ export class KioskRepository {
     try {
       const adminClient = getAdminClient();
       await adminClient.from('audit_logs').insert({
+        actor_type: 'kiosk',
         action: 'KIOSK_PAIR_FAIL_CODE',
-        target_table: 'kiosk_devices',
-        target_id: kioskId,
-        details: {
+        entity: 'kiosk_devices',
+        entity_id: kioskId,
+        metadata: {
           kioskId,
           failedAttempts: record.failedAttempts,
           isLocked: record.isLocked,
@@ -160,10 +161,11 @@ export class KioskRepository {
     try {
       const adminClient = getAdminClient();
       await adminClient.from('audit_logs').insert({
+        actor_type: 'kiosk',
         action: 'KIOSK_PAIR_FAIL_IP',
-        target_table: 'bans',
-        details: {
-          ip,
+        entity: 'kiosk_devices',
+        ip,
+        metadata: {
           timestamp: new Date().toISOString(),
         },
       });
@@ -186,7 +188,7 @@ export class KioskRepository {
         .from('audit_logs')
         .select('id', { count: 'exact', head: true })
         .eq('action', 'KIOSK_PAIR_FAIL_IP')
-        .contains('details', { ip })
+        .eq('ip', ip)
         .gte('created_at', cutoffIso);
 
       if (typeof count === 'number' && count > 0) {
@@ -209,9 +211,10 @@ export class KioskRepository {
     try {
       const adminClient = getAdminClient();
       await adminClient.from('audit_logs').insert({
+        actor_type: 'kiosk',
         action: 'KIOSK_PAIR_FAIL_GLOBAL',
-        target_table: 'kiosk_devices',
-        details: {
+        entity: 'kiosk_devices',
+        metadata: {
           timestamp: new Date().toISOString(),
         },
       });

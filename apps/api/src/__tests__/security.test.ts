@@ -387,6 +387,14 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
       expect(typeof res.body.uptime).toBe('number');
       expect(new Date(res.body.timestamp).getTime()).not.toBeNaN();
     });
+
+    it('GET /health root endpoint should return complete system health status', async () => {
+      const res = await request(app).get('/health');
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('ok');
+      expect(res.body.service).toBe('drtechcare-api');
+    });
   });
 
   describe('10. Fail-Fast Environment Validation', () => {

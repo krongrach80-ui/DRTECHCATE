@@ -67,11 +67,12 @@ export class AuthRepository {
     try {
       const adminClient = getAdminClient();
       await adminClient.from('audit_logs').insert({
+        actor_type: 'system',
         action: 'STAFF_LOGIN_FAILED',
-        target_table: 'profiles',
-        details: {
-          username,
-          ip,
+        entity: 'profiles',
+        ip,
+        metadata: {
+          username: username.toLowerCase(),
           timestamp: new Date().toISOString(),
         },
       });
@@ -92,7 +93,7 @@ export class AuthRepository {
         .from('audit_logs')
         .select('id', { count: 'exact', head: true })
         .eq('action', 'STAFF_LOGIN_FAILED')
-        .contains('details', { ip })
+        .eq('ip', ip)
         .gte('created_at', cutoffIso);
 
       if (typeof count === 'number' && count > 0) {
@@ -117,7 +118,7 @@ export class AuthRepository {
         .from('audit_logs')
         .select('id', { count: 'exact', head: true })
         .eq('action', 'STAFF_LOGIN_FAILED')
-        .contains('details', { username: username.toLowerCase() })
+        .contains('metadata', { username: username.toLowerCase() })
         .gte('created_at', cutoffIso);
 
       if (typeof count === 'number' && count > 0) {

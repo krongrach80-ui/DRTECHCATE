@@ -79,6 +79,11 @@ function runBundleCheck(): void {
 
   console.log(`\nScanned ${totalScanned} files across frontend directories.`);
 
+  if (totalScanned === 0) {
+    console.error('\n❌ CRITICAL CI ERROR: Zero files were scanned! Bundle check requires real frontend files to inspect.');
+    process.exit(1);
+  }
+
   if (totalViolations.length > 0) {
     console.error('\n❌ CRITICAL SECURITY VIOLATIONS DETECTED IN FRONTEND BUNDLE:');
     totalViolations.forEach((v) => console.error(` - ${v}`));

@@ -84,7 +84,7 @@ async function runAnonRestSecurityTest() {
       totalFailed++;
     }
 
-    // REQUIREMENT 1: Attempt POST /auth/v1/signup with anon key - MUST be rejected
+    // REQUIREMENT 1: Attempt POST /auth/v1/signup with anon key - MUST be rejected specifically because signup is disabled (NOT 429 rate limit)
     const signupUrl = `${supabaseUrl}/auth/v1/signup`;
     const signupRes = await fetch(signupUrl, {
       method: 'POST',
@@ -99,14 +99,26 @@ async function runAnonRestSecurityTest() {
       }),
     });
 
-    const signupBody = (await signupRes.json()) as { code?: string; message?: string; msg?: string; error?: string };
-    const signupRejected = signupRes.status >= 400;
+    const signupBody = (await signupRes.json()) as { code?: string | number; error_code?: string; message?: string; msg?: string; error?: string; error_description?: string };
+    
+    // Explicitly check for signup disabled condition (Gotrue returns 400 or 403 or code signup_disabled / Signups not allowed)
+    const errorText = `${signupBody.code || ''} ${signupBody.error_code || ''} ${signupBody.message || ''} ${signupBody.msg || ''} ${signupBody.error || ''} ${signupBody.error_description || ''}`.toLowerCase();
+    const isSignupDisabled = signupRes.status !== 429 && (
+      signupBody.code === 'signup_disabled' ||
+      signupBody.error_code === 'signup_disabled' ||
+      errorText.includes('signup') ||
+      errorText.includes('signups not allowed') ||
+      errorText.includes('signup disabled')
+    );
 
-    if (signupRejected) {
-      console.log(`  ✓ PASS: POST /auth/v1/signup rejected as expected (Status ${signupRes.status}: "${signupBody.message || signupBody.msg || signupBody.error || 'Signup disabled'}")`);
+    if (signupRes.status === 429) {
+      console.error(`  ✗ FAIL: POST /auth/v1/signup returned 429 Rate Limit (Status 429: "${signupBody.message || signupBody.msg || 'Rate limit'}"). Cannot verify signup lockdown from 429! Must disable signups in Supabase dashboard.`);
+      totalFailed++;
+    } else if (isSignupDisabled) {
+      console.log(`  ✓ PASS: POST /auth/v1/signup rejected specifically because signup is disabled (Status ${signupRes.status}: "${signupBody.message || signupBody.msg || signupBody.error_code || 'Signups not allowed'}")`);
       totalPassed++;
     } else {
-      console.error(`  ✗ FAIL: POST /auth/v1/signup was NOT rejected! Status: ${signupRes.status}, Body: ${JSON.stringify(signupBody)}`);
+      console.error(`  ✗ FAIL: POST /auth/v1/signup was NOT rejected with signup_disabled! Status: ${signupRes.status}, Body: ${JSON.stringify(signupBody)}`);
       totalFailed++;
     }
   } catch (err: unknown) {

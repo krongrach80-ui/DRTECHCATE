@@ -178,7 +178,7 @@ async function createFirstSuperAdmin() {
     username,
     full_name: fullName,
     phone: phone || null,
-    is_active: true,
+    status: 'active',
   });
 
   if (profileError) {
@@ -190,6 +190,7 @@ async function createFirstSuperAdmin() {
 
   // 5. Record Audit Log
   await supabase.from('audit_logs').insert({
+    actor_type: 'staff',
     actor_id: userId,
     action: 'CREATE_FIRST_SUPER_ADMIN',
     entity: 'profiles',
