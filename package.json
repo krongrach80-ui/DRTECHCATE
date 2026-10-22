@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:rls": "tsx scripts/test-rls.ts",
     "admin:create": "tsx scripts/create-admin.ts",
-    "db:migrate": "tsx scripts/run-migration.ts"
+    "db:migrate": "tsx scripts/run-migration.ts",
+    "ci:bundle": "tsx scripts/check-bundle.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

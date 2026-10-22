@@ -15,6 +15,44 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Frontend applications must NEVER import @supabase/supabase-js or adminClient (Master Prompt v3 - Section 4)
+  {
+    files: ["apps/admin/**", "apps/pt/**", "apps/kiosk/**", "packages/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@supabase/supabase-js",
+              message: "Frontend apps must NEVER import Supabase directly. All operations must go through Express API.",
+            },
+            {
+              name: "@supabase/ssr",
+              message: "Frontend apps must NEVER import Supabase SSR directly.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // API Controllers must NOT import adminClient directly (must use userClient or privileged services)
+  {
+    files: ["apps/api/src/modules/**/controller.ts", "apps/api/src/modules/**/routes.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/adminClient*"],
+              message: "API routes and controllers must use userClient to enforce RLS. adminClient is restricted to authorized services/repositories only.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",

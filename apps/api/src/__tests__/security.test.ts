@@ -209,4 +209,30 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
       expect(new Date(res.body.timestamp).getTime()).not.toBeNaN();
     });
   });
+
+  describe('8. Fail-Fast Environment Validation (Checklist 2)', () => {
+    it('should throw an error and refuse to start if required FACE_T_* or Supabase env is missing', async () => {
+      const { parseEnv } = await import('../config/env');
+
+      // 1. Missing FACE_T_ACCEPT
+      expect(() => {
+        parseEnv({
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          // FACE_T_ACCEPT is missing
+        });
+      }).toThrow(/Environment validation failed/);
+
+      // 2. Missing SUPABASE_URL
+      expect(() => {
+        parseEnv({
+          FACE_T_ACCEPT: 0.60,
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: 0.10,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
+          // SUPABASE_URL is missing
+        });
+      }).toThrow(/Environment validation failed/);
+    });
+  });
 });
