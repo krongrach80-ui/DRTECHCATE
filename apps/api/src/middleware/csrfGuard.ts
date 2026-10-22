@@ -13,6 +13,7 @@ export function csrfGuard(req: Request, res: Response, next: NextFunction): void
   const env = getEnv();
   const allowedOrigins = env.CORS_ORIGINS.split(',').map((o) => o.trim());
 
+  // 1. If Origin is present, it MUST match an allowed origin
   if (origin) {
     const isAllowed = allowedOrigins.some((allowed) => origin.startsWith(allowed));
     if (!isAllowed) {
@@ -26,14 +27,13 @@ export function csrfGuard(req: Request, res: Response, next: NextFunction): void
     }
   }
 
-  // Check X-Requested-With header for mutating requests
+  // 2. If Origin is absent, request MUST contain X-Requested-With header
   const xRequestedWith = req.headers['x-requested-with'];
-  // If no origin and no X-Requested-With on browser request, reject
-  if (!origin && !xRequestedWith && process.env.NODE_ENV === 'production') {
+  if (!origin && !xRequestedWith) {
     res.status(403).json({
       error: {
         code: 'CSRF_REJECTED',
-        message: 'Missing CSRF verification header',
+        message: 'Missing CSRF verification header (X-Requested-With required when Origin is omitted)',
       },
     });
     return;

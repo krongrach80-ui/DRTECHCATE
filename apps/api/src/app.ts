@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import { httpLogger } from './middleware/logger';
 import { createCorsMiddleware } from './middleware/cors';
 import { banCheck } from './middleware/banCheck';
-import { apiRateLimiter } from './middleware/rateLimit';
+import { apiRateLimiter, createRateLimiter } from './middleware/rateLimit';
 import { csrfGuard } from './middleware/csrfGuard';
 import { errorHandler, AppError } from './middleware/errorHandler';
 import { healthRoutes } from './modules/health/routes';
@@ -12,6 +12,9 @@ import { eventRoutes } from './modules/events/routes';
 
 export function createApp(): Express {
   const app: Express = express();
+
+  // Explicitly set trust proxy to false by default (prevents client X-Forwarded-For spoofing attacks)
+  app.set('trust proxy', false);
 
   // 1. Security Headers (Helmet)
   app.use(
@@ -47,15 +50,40 @@ export function createApp(): Express {
   // 7. General API Rate Limiter
   app.use('/api', apiRateLimiter);
 
-  // 8. CSRF Guard for mutating methods
+  // 8. CSRF Guard for mutating methods (POST, PUT, PATCH, DELETE)
   app.use('/api', csrfGuard);
 
   // 9. Public / System routes
   app.use('/api', healthRoutes);
   app.use('/api', eventRoutes);
 
-  // Testing-only error simulation endpoint
+  // Testing-only endpoints
   if (process.env.NODE_ENV === 'test') {
+    // Tight rate limiter endpoint for quota testing (max 5 requests)
+    const tightLimiter = createRateLimiter({
+      max: 5,
+      windowMs: 60 * 1000,
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+    app.get('/api/test-tight-rate-limit', tightLimiter, (_req: Request, res: Response) => {
+      res.status(200).json({ ok: true });
+    });
+
+    // Mutating endpoints for testing CSRF across POST, PUT, PATCH, DELETE
+    app.post('/api/test-csrf', (_req: Request, res: Response) => {
+      res.status(200).json({ method: 'POST', ok: true });
+    });
+    app.put('/api/test-csrf', (_req: Request, res: Response) => {
+      res.status(200).json({ method: 'PUT', ok: true });
+    });
+    app.patch('/api/test-csrf', (_req: Request, res: Response) => {
+      res.status(200).json({ method: 'PATCH', ok: true });
+    });
+    app.delete('/api/test-csrf', (_req: Request, res: Response) => {
+      res.status(200).json({ method: 'DELETE', ok: true });
+    });
+
     app.post('/api/test-error', (req: Request, _res: Response) => {
       if (req.body?.type === 'app') {
         throw new AppError('Custom operational failure', 400, 'CUSTOM_BAD_REQUEST');

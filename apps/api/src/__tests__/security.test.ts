@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { addBannedIp, removeBannedIp } from '../middleware/banCheck';
+import { createLogger } from '../middleware/logger';
+import { Writable } from 'stream';
 import { Express } from 'express';
 
 describe('DrTech.Care Express API Core — Security & Error Masking Test Suite', () => {
@@ -12,8 +14,11 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
     (process.env as Record<string, string>).NODE_ENV = 'test';
     process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
     process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
-    process.env.FACE_SIMILARITY_THRESHOLD = '0.60';
-    process.env.FACE_MATCH_MARGIN = '0.10';
+    process.env.FACE_T_ACCEPT = '0.60';
+    process.env.FACE_T_REJECT = '0.45';
+    process.env.FACE_T_MARGIN = '0.10';
+    process.env.FACE_T_ENROLL_CONSISTENCY = '0.75';
+    process.env.FACE_T_DUPLICATE = '0.85';
     process.env.FACE_CHALLENGE_EXPIRE_SECONDS = '60';
     process.env.CORS_ORIGINS = 'http://localhost:3000,http://localhost:5173';
 
@@ -167,37 +172,170 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
     });
   });
 
-  describe('5. Rate Limiting Headers', () => {
-    it('should return standard RateLimit headers', async () => {
-      const res = await request(app).get('/api/health');
+  describe('5. CSRF Guard: Mutating Methods Protection (POST, PUT, PATCH, DELETE)', () => {
+    const mutatingMethods = ['post', 'put', 'patch', 'delete'] as const;
 
-      expect(res.status).toBe(200);
-      // Standard RateLimit headers enabled in config
-      expect(res.headers['ratelimit-limit']).toBeDefined();
-      expect(res.headers['ratelimit-remaining']).toBeDefined();
-      expect(res.headers['ratelimit-reset']).toBeDefined();
+    mutatingMethods.forEach((method) => {
+      it(`[${method.toUpperCase()}] should block mutating requests missing both Origin and X-Requested-With`, async () => {
+        const res = await (request(app)[method])('/api/test-csrf');
+
+        expect(res.status).toBe(403);
+        expect(res.body).toEqual({
+          error: {
+            code: 'CSRF_REJECTED',
+            message: 'Missing CSRF verification header (X-Requested-With required when Origin is omitted)',
+          },
+        });
+      });
+
+      it(`[${method.toUpperCase()}] should block mutating requests with an unauthorized foreign Origin`, async () => {
+        const res = await (request(app)[method])('/api/test-csrf')
+          .set('Origin', 'http://evil-cross-origin.com');
+
+        expect(res.status).toBe(403);
+        expect(['CSRF_REJECTED', 'CORS_REJECTED']).toContain(res.body.error.code);
+      });
+
+      it(`[${method.toUpperCase()}] should block mutating requests with an unauthorized foreign Referer`, async () => {
+        const res = await (request(app)[method])('/api/test-csrf')
+          .set('Referer', 'http://evil-cross-origin.com/attack');
+
+        expect(res.status).toBe(403);
+        expect(res.body.error.code).toBe('CSRF_REJECTED');
+      });
+
+      it(`[${method.toUpperCase()}] should allow mutating requests with valid Origin`, async () => {
+        const res = await (request(app)[method])('/api/test-csrf')
+          .set('Origin', 'http://localhost:3000');
+
+        expect(res.status).toBe(200);
+        expect(res.body.ok).toBe(true);
+      });
+
+      it(`[${method.toUpperCase()}] should allow mutating requests with X-Requested-With header (API/AJAX clients)`, async () => {
+        const res = await (request(app)[method])('/api/test-csrf')
+          .set('X-Requested-With', 'XMLHttpRequest');
+
+        expect(res.status).toBe(200);
+        expect(res.body.ok).toBe(true);
+      });
     });
   });
 
-  describe('6. Security Ban Check Middleware', () => {
-    it('should immediately block requests from banned IPs with 403 ACCESS_DENIED', async () => {
-      const testIp = '198.51.100.42';
-      addBannedIp(testIp);
+  describe('6. Rate Limiting: Quota Exceeded Enforcement', () => {
+    it('should return 429 RATE_LIMIT_EXCEEDED when quota is exhausted', async () => {
+      // Endpoint /api/test-tight-rate-limit has max quota of 5 requests
+      for (let i = 1; i <= 5; i++) {
+        const res = await request(app).get('/api/test-tight-rate-limit');
+        expect(res.status).toBe(200);
+        expect(Number(res.headers['ratelimit-remaining'])).toBe(5 - i);
+      }
+
+      // 6th request exceeds quota -> MUST return 429
+      const overLimitRes = await request(app).get('/api/test-tight-rate-limit');
+      expect(overLimitRes.status).toBe(429);
+      expect(overLimitRes.body).toEqual({
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Too many requests, please try again later',
+        },
+      });
+    });
+  });
+
+  describe('7. Logger PII, Token & Biometrics Redaction', () => {
+    it('should strictly redact password, token, and embeddings in logger output', () => {
+      let loggedChunks = '';
+      const customStream = new Writable({
+        write(chunk, _encoding, callback) {
+          loggedChunks += chunk.toString();
+          callback();
+        },
+      });
+
+      const testLogger = createLogger(customStream, 'info');
+
+      // Log simulated request containing highly sensitive credentials and biometric vectors
+      testLogger.info({
+        req: {
+          headers: {
+            authorization: 'Bearer secret-jwt-token-abcdef123456',
+            cookie: 'access_token=cookie-secret-token-789',
+          },
+          body: {
+            password: 'super-secret-password-xyz',
+            token: 'refresh-token-value-999',
+            embedding: [0.1234567, 0.9876543, 0.456789],
+            vector: [0.555, 0.666],
+          },
+        },
+        msg: 'User authentication and biometric check',
+      });
+
+      // Assert that sensitive values are COMPLETELY censored
+      expect(loggedChunks).toContain('[REDACTED]');
+      expect(loggedChunks).not.toContain('secret-jwt-token-abcdef123456');
+      expect(loggedChunks).not.toContain('cookie-secret-token-789');
+      expect(loggedChunks).not.toContain('super-secret-password-xyz');
+      expect(loggedChunks).not.toContain('refresh-token-value-999');
+      expect(loggedChunks).not.toContain('0.1234567');
+      expect(loggedChunks).not.toContain('0.9876543');
+      expect(loggedChunks).not.toContain('0.555');
+    });
+  });
+
+  describe('8. Trust Proxy Security & Spoofing Resistance', () => {
+    it('spoofed X-Forwarded-For must NOT allow banned clients to bypass banCheck', async () => {
+      // Mock ban on localhost client socket IP
+      const localIp = '::ffff:127.0.0.1';
+      addBannedIp(localIp);
+      addBannedIp('127.0.0.1');
 
       try {
-        const _res = await request(app)
+        // Attacker attempts to forge X-Forwarded-For header to look like a clean IP
+        const res = await request(app)
           .get('/api/health')
-          .set('X-Forwarded-For', testIp);
+          .set('X-Forwarded-For', '203.0.113.195');
 
-        // Note: supertest mock IP handling
-        // If app uses req.ip, let's verify ban behavior
+        // Because trust proxy is disabled, Express relies on real socket address
+        // The attacker remains BANNED (403)
+        expect(res.status).toBe(403);
+        expect(res.body).toEqual({
+          error: {
+            code: 'ACCESS_DENIED',
+            message: 'Access restricted by administrator',
+          },
+        });
       } finally {
-        removeBannedIp(testIp);
+        removeBannedIp(localIp);
+        removeBannedIp('127.0.0.1');
       }
+    });
+
+    it('spoofed X-Forwarded-For rotation must NOT allow clients to evade rate limiting', async () => {
+      // Create fresh app to test rate limit spoofing
+      const freshApp = createApp();
+
+      // Attacker fires 5 requests, rotating fake X-Forwarded-For on each request
+      for (let i = 1; i <= 5; i++) {
+        const res = await request(freshApp)
+          .get('/api/test-tight-rate-limit')
+          .set('X-Forwarded-For', `198.51.100.${i}`);
+        expect(res.status).toBe(200);
+      }
+
+      // 6th request with yet another fake IP
+      const overLimitRes = await request(freshApp)
+        .get('/api/test-tight-rate-limit')
+        .set('X-Forwarded-For', '198.51.100.99');
+
+      // Must STILL be rejected with 429 because trust proxy is disabled
+      expect(overLimitRes.status).toBe(429);
+      expect(overLimitRes.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
     });
   });
 
-  describe('7. Health Endpoint Contract', () => {
+  describe('9. Health Endpoint Contract', () => {
     it('GET /api/health should return complete system health status', async () => {
       const res = await request(app).get('/api/health');
 
@@ -210,7 +348,7 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
     });
   });
 
-  describe('8. Fail-Fast Environment Validation (Checklist 2)', () => {
+  describe('10. Fail-Fast Environment Validation', () => {
     it('should throw an error and refuse to start if required FACE_T_* or Supabase env is missing', async () => {
       const { parseEnv } = await import('../config/env');
 
