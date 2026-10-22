@@ -3,6 +3,8 @@
 -- pgTAP Test Suite: RLS, Security Policies, Immutability & Triggers
 -- ========================================================================
 
+CREATE EXTENSION IF NOT EXISTS pgtap;
+
 BEGIN;
 SELECT plan(76);
 
