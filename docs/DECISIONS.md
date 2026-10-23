@@ -71,10 +71,10 @@ frame-ancestors 'none';
 
 ---
 
-## ADR-003: Definition of Complete Demographic Data for Patient State Machine (Assumption & Clarification Needed)
+## ADR-003: Definition of Complete Demographic Data for Patient State Machine
 
 ### Status
-Proposed / Awaiting Confirmation
+Accepted (Confirmed by client 2026-10-24)
 
 ### Context
 Section 7.3.7 of Master Prompt v3 defines patient registration state transitions:
@@ -84,16 +84,15 @@ Section 7.3.7 of Master Prompt v3 defines patient registration state transitions
    - If demographic data is incomplete -> Status transitions to `face_enrolled`.
 3. If demographic data is completed later (via `PATCH /api/patients/:id`) -> Status transitions from `face_enrolled` to `active`.
 
-### Current Assumption
-The codebase currently implements the completeness check as:
+### Decision
+The client confirmed the mandatory 5-field demographic completeness criterion:
 - `first_name` IS NOT NULL AND length > 0
 - `last_name` IS NOT NULL AND length > 0
 - `age` IS NOT NULL AND age > 0
 - `sex` IS NOT NULL AND length > 0
 - `injury` IS NOT NULL AND length > 0
 
-### Open Decision for Client
-Clarification is requested from the project owner regarding whether `injury` is strictly mandatory for demographic completeness in cases of preventative therapy or wellness check-ins, or if the mandatory set should be strictly `[first_name, last_name, age, sex]`.
+All 5 fields must be populated for a patient to transition to `active`. The `injury` field is confirmed mandatory.
 
 ---
 
@@ -128,7 +127,7 @@ This ensures baseline migrations succeed deterministically across all environmen
 ## ADR-005: Course Modification Policy When Patient Has Left Active PT Care
 
 ### Status
-Pending Decision by Client (Rules strictly maintained as-is until decided)
+Accepted — Alternative 1: Strict Lock (Confirmed by client 2026-10-24)
 
 ### Context
 When a patient moves out of a PT's active care (e.g. temporary case delegation window has expired or the patient has been transferred/reassigned to another PT), the PT may still have created past courses for that patient.
@@ -141,12 +140,51 @@ END IF;
 ```
 Both `UPDATE` and `DELETE` on the course are completely blocked for the original creator PT.
 
-### Two Alternatives for Client Decision
-1. **Alternative 1 (Strict Lock - Current Implementation)**:
-   - Keep course modification completely blocked once patient is no longer accessible. Only the currently assigned PT or an Admin may modify or cancel the course.
-   - *Advantage*: Prevents former PTs from tampering with care plans of patients they no longer treat.
-2. **Alternative 2 (Status Cancellation Only)**:
-   - Permit the creator PT to update `status` to `'cancelled'` (so they can close out unfinished regimens they prescribed), while disallowing modification of dates, exercises, or items.
-   - *Advantage*: Gives prescribing PTs a clean mechanism to close out their historical courses.
+### Decision
+**Alternative 1 (Strict Lock)** was chosen by the client:
+- Course modification is completely blocked once patient is no longer accessible.
+- Only the currently assigned PT or an Admin may modify or cancel the course.
+- This aligns with Rule 0 (patient safety first) and Rule 1 (only currently responsible PT or Admin can modify care plans).
 
+---
 
+## ADR-006: match_face_candidates Must Exclude Templates from Superseded Enrollments
+
+### Status
+Accepted (2026-10-24)
+
+### Context
+When a patient re-enrolls biometrically (e.g., due to appearance change or improved image quality), `enroll_face_atomic` marks the previous `face_enrollments` record as `status = 'superseded'`, but the associated `face_templates` rows remain in the database (they are not deleted). This is by design for audit trail and potential forensic review.
+
+However, `match_face_candidates()` was previously querying `face_templates` directly without checking whether the enrollment was still active, causing stale/superseded templates to pollute matching results.
+
+### Decision
+Added `INNER JOIN public.face_enrollments fe ON fe.id = ft.enrollment_id` with filter `fe.status = 'active'` inside `match_face_candidates()`. This ensures only templates from the patient's current active enrollment are used for cosine similarity scoring.
+
+### Verification
+pgTAP test F1 creates a patient, enrolls twice (superseding the first), and verifies that `match_face_candidates` returns exactly 1 result (the active enrollment's template only).
+
+---
+
+## ADR-007: enroll_face_atomic Supports Re-enrollment from face_enrolled and active States
+
+### Status
+Accepted (2026-10-24)
+
+### Context
+The original compare-and-set guard in `enroll_face_atomic` only permitted enrollment from the `awaiting_face` state:
+```sql
+WHERE id = p_patient_id AND registration_status = 'awaiting_face'
+```
+This blocked legitimate re-enrollment scenarios where a patient in `face_enrolled` or `active` state needs updated biometric data (e.g., changed appearance, improved photo quality, or enrollment error correction).
+
+The function already handled superseding old enrollments (Step 1), but the CAS guard prevented the patient status update, causing a misleading rollback exception.
+
+### Decision
+Expanded the compare-and-set to accept `registration_status IN ('awaiting_face', 'face_enrolled', 'active')`. Only `'archived'` patients are rejected with `RAISE EXCEPTION`. The exception message was updated to clearly state: "Patient % is archived or does not exist. Re-enrollment denied."
+
+### Verification
+pgTAP tests F2, F3, and F4 verify:
+- F2: Re-enrollment from `face_enrolled` state succeeds
+- F3: Re-enrollment from `active` state succeeds and keeps status as `active`
+- F4: Enrollment of `archived` patient is still rejected

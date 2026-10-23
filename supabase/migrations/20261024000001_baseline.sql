@@ -486,7 +486,9 @@ BEGIN
         ORDER BY (ft.embedding OPERATOR(extensions.<=>) probe) ASC
       ) AS rank
     FROM public.face_templates ft
+    INNER JOIN public.face_enrollments fe ON fe.id = ft.enrollment_id
     WHERE ft.patient_id = ANY(candidate_ids)
+      AND fe.status = 'active'
   ),
   top3_scores AS (
     SELECT
@@ -589,20 +591,21 @@ BEGIN
   FROM public.patients
   WHERE id = p_patient_id;
 
-  -- Atomic compare-and-set on registration_status: Patient MUST be in awaiting_face status
-  -- Archived/active/other states must be rejected and roll back the transaction
+  -- Atomic compare-and-set on registration_status:
+  -- Allowed source states: 'awaiting_face', 'face_enrolled', 'active' (supports re-enrollment).
+  -- Rejected state: 'archived' (or patient not found) -> RAISE EXCEPTION and rollback.
   IF v_is_complete THEN
     UPDATE public.patients
     SET registration_status = 'active', started_at = COALESCE(started_at, now())
-    WHERE id = p_patient_id AND registration_status = 'awaiting_face';
+    WHERE id = p_patient_id AND registration_status IN ('awaiting_face', 'face_enrolled', 'active');
   ELSE
     UPDATE public.patients
     SET registration_status = 'face_enrolled'
-    WHERE id = p_patient_id AND registration_status = 'awaiting_face';
+    WHERE id = p_patient_id AND registration_status IN ('awaiting_face', 'face_enrolled', 'active');
   END IF;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Patient % is not in awaiting_face status or does not exist.', p_patient_id;
+    RAISE EXCEPTION 'Patient % is archived or does not exist. Re-enrollment denied.', p_patient_id;
   END IF;
 
   -- 5. Mark enrollment ticket used if provided

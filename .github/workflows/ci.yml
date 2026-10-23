@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'chore/**' ]
   pull_request:
     branches: [ main ]
 
@@ -63,8 +63,13 @@ jobs:
       - name: Run pgTAP Database Security & RLS Tests
         run: supabase test db
 
-      - name: Run Vitest Unit Tests
+      - name: Run Vitest Unit & Live Integration Tests (290 Tests — Real Postgres)
+        env:
+          LIVE_TESTS: '1'
         run: npx vitest run --reporter=verbose
 
-      - name: Run Integration Tests Against Real Postgres (All Repository Modules)
-        run: LIVE_TESTS=1 npx vitest run apps/api/src/__tests__/repositories_integration.test.ts apps/api/src/__tests__/live_integration.test.ts --reporter=verbose
+      - name: Run Integration Tests Against Real Postgres (22 Tests — MUST NOT be skipped)
+        env:
+          LIVE_TESTS: '1'
+        run: npx vitest run apps/api/src/__tests__/repositories_integration.test.ts apps/api/src/__tests__/live_integration.test.ts --reporter=verbose
+

@@ -7,7 +7,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap;
 
 BEGIN;
-SELECT plan(111);
+SELECT plan(117);
 
 -- 1. EXTENSIONS (4)
 SELECT has_extension('uuid-ossp', 'Extension uuid-ossp must be installed');
@@ -404,7 +404,7 @@ END $$;
 SELECT throws_ok(
   'SELECT public.enroll_face_atomic((SELECT id FROM public.patients WHERE registration_status = ''archived'' LIMIT 1), ''11111111-1111-1111-1111-111111111111''::uuid, ''v1.0.0'', ARRAY[''front''::public.pose_type], ARRAY[array_to_string(array_fill(0.01::numeric, ARRAY[512]), '','')::extensions.vector(512)])',
   NULL,
-  'enroll_face_atomic on archived patient must throw exception and roll back'
+  'enroll_face_atomic on archived patient must throw exception (re-enrollment denied) and roll back'
 );
 
 -- A3: mission_runs and mission_steps are SELECT only for authenticated
@@ -506,6 +506,190 @@ SET LOCAL ROLE anon;
 SELECT throws_ok('SELECT * FROM consents LIMIT 1', '42501', 'anon cannot SELECT from consents');
 SELECT throws_ok('SELECT * FROM checkins LIMIT 1', '42501', 'anon cannot SELECT from checkins');
 RESET ROLE;
+
+-- ========================================================================
+-- 12. ROUND 3 FIX VERIFICATION: match_face_candidates excludes superseded,
+--     enroll_face_atomic supports re-enrollment from face_enrolled & active
+-- ========================================================================
+
+-- F1: match_face_candidates must exclude templates from superseded enrollments
+DO $$
+DECLARE
+  v_test_pat_id UUID := gen_random_uuid();
+  v_staff_id UUID := '11111111-1111-1111-1111-111111111111';
+  v_old_enroll_id UUID;
+  v_new_enroll_id UUID;
+  v_vec extensions.vector(512);
+BEGIN
+  v_vec := array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',')::extensions.vector(512);
+
+  -- Create patient with complete demographics (will transition to 'active')
+  INSERT INTO public.patients (id, first_name, last_name, age, sex, injury)
+  VALUES (v_test_pat_id, 'MatchTest', 'Patient', 30, 'M', 'Knee');
+
+  -- First enrollment (will be superseded later)
+  v_old_enroll_id := public.enroll_face_atomic(
+    v_test_pat_id, v_staff_id, 'v1.0.0',
+    ARRAY['front'::public.pose_type], ARRAY[v_vec]
+  );
+
+  -- Second enrollment (supersedes the first)
+  v_new_enroll_id := public.enroll_face_atomic(
+    v_test_pat_id, v_staff_id, 'v2.0.0',
+    ARRAY['front'::public.pose_type], ARRAY[v_vec]
+  );
+
+  -- Verify: old enrollment must now be 'superseded'
+  IF NOT EXISTS (
+    SELECT 1 FROM public.face_enrollments
+    WHERE id = v_old_enroll_id AND status = 'superseded'
+  ) THEN
+    RAISE EXCEPTION 'Old enrollment was not marked as superseded';
+  END IF;
+
+  -- Verify: new enrollment must be 'active'
+  IF NOT EXISTS (
+    SELECT 1 FROM public.face_enrollments
+    WHERE id = v_new_enroll_id AND status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'New enrollment is not active';
+  END IF;
+
+  -- Verify: templates linked to old enrollment exist (they are NOT deleted)
+  IF NOT EXISTS (
+    SELECT 1 FROM public.face_templates WHERE enrollment_id = v_old_enroll_id
+  ) THEN
+    RAISE EXCEPTION 'Old templates should still exist in face_templates table';
+  END IF;
+END $$;
+
+-- Verify match_face_candidates only returns templates from active enrollments
+SELECT results_eq(
+  'SELECT count(*)::int FROM public.match_face_candidates(
+    array_to_string(array_fill(0.05::numeric, ARRAY[512]), '','')::extensions.vector(512),
+    ARRAY[(SELECT id FROM public.patients WHERE first_name = ''MatchTest'' LIMIT 1)],
+    10
+  )',
+  ARRAY[1],
+  'match_face_candidates must return exactly 1 result (only from active enrollment, superseded excluded)'
+);
+
+-- F2: enroll_face_atomic re-enrollment from face_enrolled state
+DO $$
+DECLARE
+  v_re_pat_id UUID := gen_random_uuid();
+  v_staff_id UUID := '11111111-1111-1111-1111-111111111111';
+  v_enroll1 UUID;
+  v_enroll2 UUID;
+  v_vec extensions.vector(512);
+  v_status TEXT;
+BEGIN
+  v_vec := array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',')::extensions.vector(512);
+
+  -- Create incomplete patient (will transition to face_enrolled)
+  INSERT INTO public.patients (id, first_name, last_name, age, sex, injury)
+  VALUES (v_re_pat_id, 'ReEnroll', '', 25, 'F', '');
+
+  -- First enrollment -> should set face_enrolled (incomplete demographics)
+  v_enroll1 := public.enroll_face_atomic(
+    v_re_pat_id, v_staff_id, 'v1.0.0',
+    ARRAY['front'::public.pose_type], ARRAY[v_vec]
+  );
+
+  SELECT registration_status::text INTO v_status
+  FROM public.patients WHERE id = v_re_pat_id;
+
+  IF v_status IS DISTINCT FROM 'face_enrolled' THEN
+    RAISE EXCEPTION 'Expected face_enrolled but got %', v_status;
+  END IF;
+
+  -- Re-enroll from face_enrolled state -> should still be face_enrolled (still incomplete)
+  v_enroll2 := public.enroll_face_atomic(
+    v_re_pat_id, v_staff_id, 'v2.0.0',
+    ARRAY['front'::public.pose_type], ARRAY[v_vec]
+  );
+
+  SELECT registration_status::text INTO v_status
+  FROM public.patients WHERE id = v_re_pat_id;
+
+  IF v_status IS DISTINCT FROM 'face_enrolled' THEN
+    RAISE EXCEPTION 'Re-enrollment from face_enrolled should keep status as face_enrolled, got %', v_status;
+  END IF;
+END $$;
+
+SELECT pass('enroll_face_atomic succeeds for re-enrollment from face_enrolled state');
+
+-- F3: enroll_face_atomic re-enrollment from active state (complete demographics)
+DO $$
+DECLARE
+  v_active_pat_id UUID := gen_random_uuid();
+  v_staff_id UUID := '11111111-1111-1111-1111-111111111111';
+  v_enroll1 UUID;
+  v_enroll2 UUID;
+  v_vec extensions.vector(512);
+  v_status TEXT;
+BEGIN
+  v_vec := array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',')::extensions.vector(512);
+
+  -- Create complete patient (will transition to active after enrollment)
+  INSERT INTO public.patients (id, first_name, last_name, age, sex, injury)
+  VALUES (v_active_pat_id, 'ActiveReEnroll', 'Test', 40, 'M', 'ACL Tear');
+
+  -- First enrollment -> should set active
+  v_enroll1 := public.enroll_face_atomic(
+    v_active_pat_id, v_staff_id, 'v1.0.0',
+    ARRAY['front'::public.pose_type], ARRAY[v_vec]
+  );
+
+  SELECT registration_status::text INTO v_status
+  FROM public.patients WHERE id = v_active_pat_id;
+
+  IF v_status IS DISTINCT FROM 'active' THEN
+    RAISE EXCEPTION 'Expected active but got %', v_status;
+  END IF;
+
+  -- Re-enroll from active state (e.g., biometric update) -> should remain active
+  v_enroll2 := public.enroll_face_atomic(
+    v_active_pat_id, v_staff_id, 'v2.0.0',
+    ARRAY['front'::public.pose_type], ARRAY[v_vec]
+  );
+
+  SELECT registration_status::text INTO v_status
+  FROM public.patients WHERE id = v_active_pat_id;
+
+  IF v_status IS DISTINCT FROM 'active' THEN
+    RAISE EXCEPTION 'Re-enrollment from active should keep status as active, got %', v_status;
+  END IF;
+
+  -- Verify old enrollment is superseded
+  IF NOT EXISTS (
+    SELECT 1 FROM public.face_enrollments WHERE id = v_enroll1 AND status = 'superseded'
+  ) THEN
+    RAISE EXCEPTION 'First enrollment should be superseded after re-enrollment';
+  END IF;
+END $$;
+
+SELECT pass('enroll_face_atomic succeeds for re-enrollment from active state');
+
+-- F4: Archived patient re-enrollment is rejected
+SELECT throws_ok(
+  'SELECT public.enroll_face_atomic((SELECT id FROM public.patients WHERE registration_status = ''archived'' LIMIT 1), ''11111111-1111-1111-1111-111111111111''::uuid, ''v3.0.0'', ARRAY[''front''::public.pose_type], ARRAY[array_to_string(array_fill(0.01::numeric, ARRAY[512]), '','')::extensions.vector(512)])',
+  NULL,
+  'enroll_face_atomic on archived patient must throw re-enrollment denied exception'
+);
+
+-- F5: Verify superseded enrollment template count vs active
+SELECT results_eq(
+  'SELECT count(*)::int FROM public.face_enrollments WHERE patient_id = (SELECT id FROM public.patients WHERE first_name = ''MatchTest'' LIMIT 1) AND status = ''active''',
+  ARRAY[1],
+  'MatchTest patient must have exactly 1 active enrollment after re-enrollment'
+);
+
+SELECT results_eq(
+  'SELECT count(*)::int FROM public.face_enrollments WHERE patient_id = (SELECT id FROM public.patients WHERE first_name = ''MatchTest'' LIMIT 1) AND status = ''superseded''',
+  ARRAY[1],
+  'MatchTest patient must have exactly 1 superseded enrollment after re-enrollment'
+);
 
 SELECT * FROM finish();
 ROLLBACK;
