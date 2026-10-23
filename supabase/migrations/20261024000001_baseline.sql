@@ -1210,8 +1210,8 @@ GRANT SELECT ON public.mission_runs TO authenticated;
 GRANT SELECT ON public.mission_steps TO authenticated;
 GRANT SELECT, INSERT ON public.medical_notes TO authenticated;
 GRANT SELECT, INSERT ON public.treatment_results TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.consents TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.checkins TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.consents TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.checkins TO authenticated;
 
 -- F. SEQUENCE USAGE FOR AUTHENTICATED
 GRANT USAGE, SELECT ON SEQUENCE patient_hn_seq TO authenticated;

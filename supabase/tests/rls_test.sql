@@ -435,13 +435,13 @@ SELECT throws_ok(
   'authenticated role cannot UPDATE mission_runs (SELECT only)'
 );
 SELECT throws_ok(
-  'SET LOCAL ROLE authenticated; INSERT INTO public.mission_steps (mission_run_id, step_index, status) VALUES (gen_random_uuid(), 1, ''completed''); RESET ROLE;',
+  'SET LOCAL ROLE authenticated; INSERT INTO public.mission_steps (mission_run_id, step_type) VALUES (gen_random_uuid(), ''exercise''); RESET ROLE;',
   '42501',
   NULL,
   'authenticated role cannot INSERT into mission_steps (SELECT only)'
 );
 SELECT throws_ok(
-  'SET LOCAL ROLE authenticated; UPDATE public.mission_steps SET status = ''completed'' WHERE id = gen_random_uuid(); RESET ROLE;',
+  'SET LOCAL ROLE authenticated; UPDATE public.mission_steps SET step_type = ''minigame'' WHERE id = gen_random_uuid(); RESET ROLE;',
   '42501',
   NULL,
   'authenticated role cannot UPDATE mission_steps (SELECT only)'
