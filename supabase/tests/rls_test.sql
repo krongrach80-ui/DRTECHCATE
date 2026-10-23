@@ -350,7 +350,7 @@ DECLARE
   v_vec extensions.vector(512);
 BEGIN
   -- Generate dummy 512-dim vector string
-  v_vec := array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',')::extensions.vector(512);
+  v_vec := ('[' || array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',') || ']')::extensions.vector(512);
 
   -- 1. Complete patient: has first_name, last_name, age > 0, sex, and injury
   INSERT INTO public.patients (id, first_name, last_name, age, sex, injury)
