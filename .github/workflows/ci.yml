@@ -57,7 +57,8 @@ jobs:
           echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> $GITHUB_ENV
           echo "DATABASE_URL=$DB_URL" >> $GITHUB_ENV
 
-      # Note: 'supabase start' automatically executes all migrations in supabase/migrations/
+      - name: Reset Database and Re-apply Baseline Migrations
+        run: supabase db reset
 
       - name: Run pgTAP Database Security & RLS Tests
         run: supabase test db
