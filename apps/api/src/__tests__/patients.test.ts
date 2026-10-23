@@ -444,5 +444,61 @@ describe('[UNIT] DrTech.Care System 5B: Patients & Registration Complete Test Su
 
       expect(getRes.body.data.registration_status).toBe('awaiting_face');
     });
+
+    it('5.5 should transition face_enrolled to active when demographics are completed later via PATCH', async () => {
+      // 1. Create patient with missing info (only first and last name)
+      const pRes = await request(app)
+        .post('/api/patients')
+        .set('Cookie', ['access_token=mock-token:admin-001:admin:active'])
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({
+          first_name: 'กฤษดา',
+          last_name: 'ยังไม่ครบ',
+        });
+
+      const patientId = pRes.body.data.id;
+      expect(pRes.body.data.registration_status).toBe('awaiting_face');
+
+      // 2. Simulate face enrolled first while demographics still incomplete -> face_enrolled
+      await defaultPatientRepository.updatePatient(
+        patientId,
+        { registration_status: 'face_enrolled', version: 1 },
+        1
+      );
+
+      let cur = await defaultPatientRepository.getPatientById(patientId);
+      expect(cur?.registration_status).toBe('face_enrolled');
+      expect(cur?.version).toBe(2);
+
+      // 3. Partial update that is still incomplete (missing sex, injury) -> stays face_enrolled
+      const partialRes = await request(app)
+        .patch(`/api/patients/${patientId}`)
+        .set('Cookie', ['access_token=mock-token:admin-001:admin:active'])
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({
+          age: 35,
+          version: 2,
+        });
+
+      expect(partialRes.status).toBe(200);
+      expect(partialRes.body.data.registration_status).toBe('face_enrolled');
+      expect(partialRes.body.data.version).toBe(3);
+
+      // 4. Complete all remaining fields (sex, injury) -> transitions to active!
+      const completeRes = await request(app)
+        .patch(`/api/patients/${patientId}`)
+        .set('Cookie', ['access_token=mock-token:admin-001:admin:active'])
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({
+          sex: 'male',
+          injury: 'Lumbar disc herniation',
+          version: 3,
+        });
+
+      expect(completeRes.status).toBe(200);
+      expect(completeRes.body.data.registration_status).toBe('active');
+      expect(completeRes.body.data.version).toBe(4);
+      expect(completeRes.body.data.started_at).toBeDefined();
+    });
   });
 });

@@ -209,6 +209,7 @@ export class FakePatientRepository implements IPatientRepository {
       ...existing,
       ...input,
       phone: input.phone ? normalizePhone(input.phone) : existing.phone,
+      started_at: input.registration_status === 'active' ? (existing.started_at || new Date().toISOString()) : existing.started_at,
       version: existing.version + 1,
       updated_at: new Date().toISOString(),
     };

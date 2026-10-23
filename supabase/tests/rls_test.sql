@@ -7,7 +7,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap;
 
 BEGIN;
-SELECT plan(85);
+SELECT plan(111);
 
 -- 1. EXTENSIONS (4)
 SELECT has_extension('uuid-ossp', 'Extension uuid-ossp must be installed');
@@ -120,12 +120,12 @@ SELECT ok(
           'profiles', 'pts', 'patients', 'patient_pt_assignments', 'case_transfers',
           'exercises', 'minigames', 'minigame_questions', 'modpacks', 'modpack_items',
           'courses', 'course_items', 'mission_runs', 'mission_steps',
-          'medical_notes', 'treatment_results'
+          'medical_notes', 'treatment_results', 'consents', 'checkins'
         )
     ),
     false
   ),
-  'authenticated must have 0 privileges on any private table (face_*, kiosk_devices, staff_*, bans, audit_logs, consents, checkins)'
+  'authenticated must have 0 privileges on any private table (face_*, kiosk_devices, staff_*, bans, audit_logs)'
 );
 
 -- 7. SERVICE_ROLE FULL ACCESS ON PRIVATE TABLES (Item A3)
@@ -198,7 +198,7 @@ BEGIN
   ON CONFLICT (user_id) DO NOTHING;
 
   -- Patients: Patient 1 assigned to PT1, Patient 2 assigned to PT2
-  INSERT INTO public.patients (id, first_name, last_name, age, sex, injury, assigned_pt_id) VALUES
+  INSERT INTO public.patients (id, first_name, last_name, age, sex, injury, responsible_pt_id) VALUES
     (v_pat1_id, 'Somchai', 'Dee', 45, 'M', 'Knee Strain', v_pt1_id),
     (v_pat2_id, 'Wanna', 'Thong', 52, 'F', 'Frozen Shoulder', v_pt2_id)
   ON CONFLICT (id) DO NOTHING;
@@ -312,12 +312,10 @@ SELECT throws_ok('SELECT * FROM face_enrollments LIMIT 1', '42501', 'authenticat
 SELECT throws_ok('SELECT * FROM face_templates LIMIT 1', '42501', 'authenticated role cannot SELECT from face_templates');
 SELECT throws_ok('SELECT * FROM face_challenges LIMIT 1', '42501', 'authenticated role cannot SELECT from face_challenges');
 SELECT throws_ok('SELECT * FROM enrollment_tickets LIMIT 1', '42501', 'authenticated role cannot SELECT from enrollment_tickets');
-SELECT throws_ok('SELECT * FROM checkins LIMIT 1', '42501', 'authenticated role cannot SELECT from checkins');
 SELECT throws_ok('SELECT * FROM kiosk_devices LIMIT 1', '42501', 'authenticated role cannot SELECT from kiosk_devices');
 SELECT throws_ok('SELECT * FROM staff_devices LIMIT 1', '42501', 'authenticated role cannot SELECT from staff_devices');
 SELECT throws_ok('SELECT * FROM staff_calls LIMIT 1', '42501', 'authenticated role cannot SELECT from staff_calls');
 SELECT throws_ok('SELECT * FROM bans LIMIT 1', '42501', 'authenticated role cannot SELECT from bans');
-SELECT throws_ok('SELECT * FROM consents LIMIT 1', '42501', 'authenticated role cannot SELECT from consents');
 SELECT throws_ok('SELECT * FROM audit_logs LIMIT 1', '42501', 'authenticated role cannot SELECT from audit_logs');
 RESET ROLE;
 
@@ -345,15 +343,15 @@ BEGIN
   VALUES (v_comp_pat_id, 'Prasert', 'Srisuk', 35, 'M', 'ACL Tear');
 
   -- 2. Incomplete patient: missing last_name and injury
-  INSERT INTO public.patients (id, first_name, age, sex)
-  VALUES (v_incomp_pat_id, 'Nong', 20, 'F');
+  INSERT INTO public.patients (id, first_name, last_name, age, sex, injury)
+  VALUES (v_incomp_pat_id, 'Nong', '', 20, 'F', '');
 
   -- Enroll Complete Patient -> Expected status = 'active'
   PERFORM public.enroll_face_atomic(
     v_comp_pat_id,
     v_staff_id,
     'v1.0.0',
-    ARRAY['frontal'::public.pose_type],
+    ARRAY['front'::public.pose_type],
     ARRAY[v_vec]
   );
 
@@ -362,7 +360,7 @@ BEGIN
     v_incomp_pat_id,
     v_staff_id,
     'v1.0.0',
-    ARRAY['frontal'::public.pose_type],
+    ARRAY['front'::public.pose_type],
     ARRAY[v_vec]
   );
 END $$;
@@ -378,6 +376,136 @@ SELECT results_eq(
   ARRAY['face_enrolled'::public.registration_status],
   'enroll_face_atomic sets registration_status = face_enrolled when demographics are incomplete'
 );
+
+-- ========================================================================
+-- 11. ROUND 3 TARGETED TESTS (A1, A2, A3, A4, B3, C1)
+-- ========================================================================
+
+-- A1: Trigger Privilege Verification & Service Role / Admin Bypass
+SELECT lives_ok(
+  'UPDATE public.profiles SET role = ''admin'' WHERE id = ''22222222-2222-2222-2222-222222222222'';',
+  'admin / postgres can update profile role successfully'
+);
+
+SELECT lives_ok(
+  'UPDATE public.profiles SET role = ''pt'' WHERE id = ''22222222-2222-2222-2222-222222222222'';',
+  'admin can revert profile role successfully'
+);
+
+-- A2: enroll_face_atomic CAS test on archived patient
+DO $$
+DECLARE
+  v_arch_id UUID := gen_random_uuid();
+BEGIN
+  INSERT INTO public.patients (id, first_name, last_name, age, sex, injury, registration_status)
+  VALUES (v_arch_id, 'Archived', 'Patient', 50, 'M', 'Chronic Back', 'archived');
+END $$;
+
+SELECT throws_ok(
+  'SELECT public.enroll_face_atomic((SELECT id FROM public.patients WHERE registration_status = ''archived'' LIMIT 1), ''11111111-1111-1111-1111-111111111111''::uuid, ''v1.0.0'', ARRAY[''front''::public.pose_type], ARRAY[array_to_string(array_fill(0.01::numeric, ARRAY[512]), '','')::extensions.vector(512)])',
+  NULL,
+  'enroll_face_atomic on archived patient must throw exception and roll back'
+);
+
+-- A3: mission_runs and mission_steps are SELECT only for authenticated
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  'INSERT INTO public.mission_runs (patient_id, course_id, status) VALUES (''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', gen_random_uuid(), ''in_progress'')',
+  '42501',
+  'authenticated role cannot INSERT into mission_runs (SELECT only)'
+);
+SELECT throws_ok(
+  'UPDATE public.mission_runs SET status = ''completed'' WHERE id = gen_random_uuid()',
+  '42501',
+  'authenticated role cannot UPDATE mission_runs (SELECT only)'
+);
+SELECT throws_ok(
+  'INSERT INTO public.mission_steps (mission_run_id, step_index, status) VALUES (gen_random_uuid(), 1, ''completed'')',
+  '42501',
+  'authenticated role cannot INSERT into mission_steps (SELECT only)'
+);
+SELECT throws_ok(
+  'UPDATE public.mission_steps SET status = ''completed'' WHERE id = gen_random_uuid()',
+  '42501',
+  'authenticated role cannot UPDATE mission_steps (SELECT only)'
+);
+
+-- A3: Profiles Column-Level Privileges
+SELECT throws_ok(
+  'UPDATE public.profiles SET username = ''pt1_hacked'' WHERE id = ''22222222-2222-2222-2222-222222222222''',
+  '42501',
+  'authenticated role cannot UPDATE username on profiles'
+);
+SELECT throws_ok(
+  'UPDATE public.profiles SET status = ''suspended'' WHERE id = ''22222222-2222-2222-2222-222222222222''',
+  '42501',
+  'authenticated role cannot UPDATE status on profiles'
+);
+SELECT lives_ok(
+  'UPDATE public.profiles SET full_name = ''PT One Updated'', phone = ''0819998888'', bio = ''Sports rehab'' WHERE id = ''22222222-2222-2222-2222-222222222222''',
+  'authenticated role can UPDATE allowed columns (full_name, phone, bio) on profiles'
+);
+RESET ROLE;
+
+-- A4: PT INSERT real row into all tables allowed for PT to catch hidden permission denied
+SELECT lives_ok(
+  'INSERT INTO public.patients (id, first_name, last_name, age, sex, injury, responsible_pt_id) VALUES (gen_random_uuid(), ''Real'', ''Insert'', 30, ''F'', ''Neck Sprain'', ''22222222-2222-2222-2222-222222222222'')',
+  'PT can INSERT real row into patients'
+);
+SELECT lives_ok(
+  'INSERT INTO public.exercises (id, title, target_joint, created_by) VALUES (gen_random_uuid(), ''Real PT Exercise'', ''Ankle'', ''22222222-2222-2222-2222-222222222222'')',
+  'PT can INSERT real row into exercises'
+);
+SELECT lives_ok(
+  'INSERT INTO public.minigames (id, title, created_by) VALUES (gen_random_uuid(), ''Real Minigame'', ''22222222-2222-2222-2222-222222222222'')',
+  'PT can INSERT real row into minigames'
+);
+SELECT lives_ok(
+  'INSERT INTO public.modpacks (id, title, created_by) VALUES (gen_random_uuid(), ''Real Modpack'', ''22222222-2222-2222-2222-222222222222'')',
+  'PT can INSERT real row into modpacks'
+);
+SELECT lives_ok(
+  'INSERT INTO public.courses (id, patient_id, pt_id, start_date, end_date) VALUES (gen_random_uuid(), ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', ''22222222-2222-2222-2222-222222222222'', ''2026-10-25'', ''2026-11-25'')',
+  'PT can INSERT real row into courses for accessible patient'
+);
+SELECT lives_ok(
+  'INSERT INTO public.medical_notes (id, patient_id, author_id, note_type, content) VALUES (gen_random_uuid(), ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', ''22222222-2222-2222-2222-222222222222'', ''soap_s'', ''Patient reports improved mobility'')',
+  'PT can INSERT real row into medical_notes for accessible patient'
+);
+SELECT lives_ok(
+  'INSERT INTO public.treatment_results (id, patient_id, author_id, pain_score_before, pain_score_after) VALUES (gen_random_uuid(), ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', ''22222222-2222-2222-2222-222222222222'', 7, 3)',
+  'PT can INSERT real row into treatment_results for accessible patient'
+);
+SELECT lives_ok(
+  'INSERT INTO public.consents (id, subject_type, subject_id, type, text_version) VALUES (gen_random_uuid(), ''patient'', ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', ''biometrics'', ''v1'')',
+  'PT can INSERT real row into consents for accessible patient'
+);
+SELECT lives_ok(
+  'INSERT INTO public.checkins (id, patient_id, checked_in_by, date) VALUES (gen_random_uuid(), ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', ''22222222-2222-2222-2222-222222222222'', ''2026-10-25'')',
+  'PT can INSERT real row into checkins for accessible patient'
+);
+
+-- B3 & C1: Consents & Checkins RLS Policies & Delete Restrictions
+SELECT lives_ok(
+  'DELETE FROM public.consents WHERE subject_id = ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'';',
+  'admin can DELETE from consents'
+);
+SELECT throws_ok(
+  'SET LOCAL ROLE authenticated; DELETE FROM public.consents WHERE subject_id = ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa''; RESET ROLE;',
+  NULL,
+  'PT cannot DELETE from consents'
+);
+SELECT throws_ok(
+  'SET LOCAL ROLE authenticated; DELETE FROM public.checkins WHERE patient_id = ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa''; RESET ROLE;',
+  NULL,
+  'PT cannot DELETE from checkins'
+);
+
+-- Anon cannot SELECT consents or checkins
+SET LOCAL ROLE anon;
+SELECT throws_ok('SELECT * FROM consents LIMIT 1', '42501', 'anon cannot SELECT from consents');
+SELECT throws_ok('SELECT * FROM checkins LIMIT 1', '42501', 'anon cannot SELECT from checkins');
+RESET ROLE;
 
 SELECT * FROM finish();
 ROLLBACK;
