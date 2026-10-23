@@ -918,18 +918,18 @@ CREATE POLICY "exercises_insert" ON public.exercises
   WITH CHECK ((SELECT public.current_user_role()) IN ('admin', 'pt'));
 CREATE POLICY "exercises_update" ON public.exercises
   FOR UPDATE TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()))
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
   WITH CHECK ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
 CREATE POLICY "exercises_delete" ON public.exercises
   FOR DELETE TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'));
 
 -- 7. minigames
 CREATE POLICY "minigames_select" ON public.minigames
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "minigames_all" ON public.minigames
   FOR ALL TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()))
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
   WITH CHECK ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
 
 -- 8. minigame_questions
@@ -937,7 +937,7 @@ CREATE POLICY "minigame_questions_select" ON public.minigame_questions
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "minigame_questions_all" ON public.minigame_questions
   FOR ALL TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()))
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
   WITH CHECK ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
 
 -- 9. modpacks
@@ -945,7 +945,7 @@ CREATE POLICY "modpacks_select" ON public.modpacks
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "modpacks_all" ON public.modpacks
   FOR ALL TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()))
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
   WITH CHECK ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
 
 -- 10. modpack_items

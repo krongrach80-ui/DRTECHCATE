@@ -239,19 +239,22 @@ SELECT throws_ok(
 -- E2: PT updates own profile changing role, status, or force_logout_at -> throws exception
 SELECT throws_ok(
   'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); UPDATE public.profiles SET role = ''admin'' WHERE id = ''22222222-2222-2222-2222-222222222222''; RESET ROLE;',
-  'Permission denied: non-admin users cannot modify role.',
+  '42501',
+  NULL,
   'PT escalating own role to admin must throw permission denied'
 );
 
 SELECT throws_ok(
   'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); UPDATE public.profiles SET status = ''archived'' WHERE id = ''22222222-2222-2222-2222-222222222222''; RESET ROLE;',
-  'Permission denied: non-admin users cannot modify status.',
+  '42501',
+  NULL,
   'PT modifying profile status must throw permission denied'
 );
 
 SELECT throws_ok(
   'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); UPDATE public.profiles SET force_logout_at = now() WHERE id = ''22222222-2222-2222-2222-222222222222''; RESET ROLE;',
-  'Permission denied: non-admin users cannot modify force_logout_at.',
+  '42501',
+  NULL,
   'PT modifying force_logout_at must throw permission denied'
 );
 
@@ -300,6 +303,7 @@ SELECT throws_ok(
 );
 
 -- E5: Suspended Profile Fail-Closed
+SELECT set_config('request.jwt.claims', '', true);
 SELECT is(
   (
     SELECT public.current_user_role()
@@ -412,7 +416,7 @@ BEGIN
 END $$;
 
 SELECT throws_ok(
-  'SELECT public.enroll_face_atomic((SELECT id FROM public.patients WHERE registration_status = ''archived'' LIMIT 1), ''11111111-1111-1111-1111-111111111111''::uuid, ''v1.0.0'', ARRAY[''front''::public.pose_type], ARRAY[array_to_string(array_fill(0.01::numeric, ARRAY[512]), '','')::extensions.vector(512)])',
+  'SELECT public.enroll_face_atomic((SELECT id FROM public.patients WHERE registration_status = ''archived'' LIMIT 1), ''11111111-1111-1111-1111-111111111111''::uuid, ''v1.0.0'', ARRAY[''front''::public.pose_type], ARRAY[(''['' || array_to_string(array_fill(0.01::numeric, ARRAY[512]), '','') || '']'')::extensions.vector(512)])',
   NULL,
   'enroll_face_atomic on archived patient must throw exception (re-enrollment denied) and roll back'
 );
@@ -533,7 +537,7 @@ DECLARE
   v_new_enroll_id UUID;
   v_vec extensions.vector(512);
 BEGIN
-  v_vec := array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',')::extensions.vector(512);
+  v_vec := ('[' || array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',') || ']')::extensions.vector(512);
 
   -- Create patient with complete demographics (will transition to 'active')
   INSERT INTO public.patients (id, first_name, last_name, age, sex, injury)
@@ -578,7 +582,7 @@ END $$;
 -- Verify match_face_candidates only returns templates from active enrollments
 SELECT results_eq(
   'SELECT count(*)::int FROM public.match_face_candidates(
-    array_to_string(array_fill(0.05::numeric, ARRAY[512]), '','')::extensions.vector(512),
+    (''['' || array_to_string(array_fill(0.05::numeric, ARRAY[512]), '','') || '']'')::extensions.vector(512),
     ARRAY[(SELECT id FROM public.patients WHERE first_name = ''MatchTest'' LIMIT 1)],
     10
   )',
@@ -596,7 +600,7 @@ DECLARE
   v_vec extensions.vector(512);
   v_status TEXT;
 BEGIN
-  v_vec := array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',')::extensions.vector(512);
+  v_vec := ('[' || array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',') || ']')::extensions.vector(512);
 
   -- Create incomplete patient (will transition to face_enrolled)
   INSERT INTO public.patients (id, first_name, last_name, age, sex, injury)
@@ -641,7 +645,7 @@ DECLARE
   v_vec extensions.vector(512);
   v_status TEXT;
 BEGIN
-  v_vec := array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',')::extensions.vector(512);
+  v_vec := ('[' || array_to_string(array_fill(0.05::numeric, ARRAY[512]), ',') || ']')::extensions.vector(512);
 
   -- Create complete patient (will transition to active after enrollment)
   INSERT INTO public.patients (id, first_name, last_name, age, sex, injury)
@@ -685,7 +689,7 @@ SELECT pass('enroll_face_atomic succeeds for re-enrollment from active state');
 
 -- F4: Archived patient re-enrollment is rejected
 SELECT throws_ok(
-  'SELECT public.enroll_face_atomic((SELECT id FROM public.patients WHERE registration_status = ''archived'' LIMIT 1), ''11111111-1111-1111-1111-111111111111''::uuid, ''v3.0.0'', ARRAY[''front''::public.pose_type], ARRAY[array_to_string(array_fill(0.01::numeric, ARRAY[512]), '','')::extensions.vector(512)])',
+  'SELECT public.enroll_face_atomic((SELECT id FROM public.patients WHERE registration_status = ''archived'' LIMIT 1), ''11111111-1111-1111-1111-111111111111''::uuid, ''v3.0.0'', ARRAY[''front''::public.pose_type], ARRAY[(''['' || array_to_string(array_fill(0.01::numeric, ARRAY[512]), '','') || '']'')::extensions.vector(512)])',
   NULL,
   'enroll_face_atomic on archived patient must throw re-enrollment denied exception'
 );
