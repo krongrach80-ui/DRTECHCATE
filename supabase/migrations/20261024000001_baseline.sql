@@ -431,13 +431,6 @@ AS $$
 DECLARE
   v_uid UUID;
   v_role public.user_role;
-BEGIN
-  -- Allow service_role and postgres superuser directly (Item A4)
-  IF CURRENT_USER IN ('service_role', 'postgres', 'supabase_admin') 
-     OR NULLIF(current_setting('request.jwt.claim.role', true), '') = 'service_role' THEN
-    RETURN true;
-  END IF;
-
   v_uid := (SELECT auth.uid());
   v_role := public.current_user_role();
 
@@ -587,23 +580,29 @@ BEGIN
 
   -- 4. Check if patient demographic data is complete per Spec 7.3.7:
   -- Complete: first_name, last_name, age > 0, sex, and injury are all provided.
-  SELECT (first_name IS NOT NULL AND first_name != '' AND
-          last_name IS NOT NULL AND last_name != '' AND
+  SELECT (first_name IS NOT NULL AND length(trim(first_name)) > 0 AND
+          last_name IS NOT NULL AND length(trim(last_name)) > 0 AND
           age IS NOT NULL AND age > 0 AND
-          sex IS NOT NULL AND sex != '' AND
-          injury IS NOT NULL AND injury != '')
+          sex IS NOT NULL AND length(trim(sex::text)) > 0 AND
+          injury IS NOT NULL AND length(trim(injury)) > 0)
   INTO v_is_complete
   FROM public.patients
   WHERE id = p_patient_id;
 
+  -- Atomic compare-and-set on registration_status: Patient MUST be in awaiting_face status
+  -- Archived/active/other states must be rejected and roll back the transaction
   IF v_is_complete THEN
     UPDATE public.patients
     SET registration_status = 'active', started_at = COALESCE(started_at, now())
-    WHERE id = p_patient_id;
+    WHERE id = p_patient_id AND registration_status = 'awaiting_face';
   ELSE
     UPDATE public.patients
     SET registration_status = 'face_enrolled'
-    WHERE id = p_patient_id;
+    WHERE id = p_patient_id AND registration_status = 'awaiting_face';
+  END IF;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Patient % is not in awaiting_face status or does not exist.', p_patient_id;
   END IF;
 
   -- 5. Mark enrollment ticket used if provided
@@ -625,15 +624,13 @@ $$;
 CREATE OR REPLACE FUNCTION public.check_profile_update_privileges()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
   v_role public.user_role;
 BEGIN
-  -- Allow service_role and postgres superuser directly (Item A4)
-  IF CURRENT_USER IN ('service_role', 'postgres', 'supabase_admin') 
-     OR NULLIF(current_setting('request.jwt.claim.role', true), '') = 'service_role' THEN
+  -- Allow service_role and postgres superuser directly (SECURITY INVOKER)
+  IF CURRENT_USER IN ('service_role', 'postgres', 'supabase_admin') THEN
     RETURN NEW;
   END IF;
 
@@ -665,16 +662,14 @@ FOR EACH ROW EXECUTE FUNCTION public.check_profile_update_privileges();
 CREATE OR REPLACE FUNCTION public.enforce_content_ownership()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
   v_role public.user_role;
   v_uid UUID;
 BEGIN
-  -- Allow service_role and postgres superuser directly (Item A4)
-  IF CURRENT_USER IN ('service_role', 'postgres', 'supabase_admin') 
-     OR NULLIF(current_setting('request.jwt.claim.role', true), '') = 'service_role' THEN
+  -- Allow service_role and postgres superuser directly (SECURITY INVOKER)
+  IF CURRENT_USER IN ('service_role', 'postgres', 'supabase_admin') THEN
     IF TG_OP = 'DELETE' THEN
       RETURN OLD;
     END IF;
@@ -725,16 +720,14 @@ FOR EACH ROW EXECUTE FUNCTION public.enforce_content_ownership();
 CREATE OR REPLACE FUNCTION public.check_course_ownership()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
   v_role public.user_role;
   v_uid UUID;
 BEGIN
-  -- Allow service_role and postgres superuser directly (Item A4)
-  IF CURRENT_USER IN ('service_role', 'postgres', 'supabase_admin') 
-     OR NULLIF(current_setting('request.jwt.claim.role', true), '') = 'service_role' THEN
+  -- Allow service_role and postgres superuser directly (SECURITY INVOKER)
+  IF CURRENT_USER IN ('service_role', 'postgres', 'supabase_admin') THEN
     IF TG_OP = 'DELETE' THEN
       RETURN OLD;
     END IF;
@@ -786,7 +779,6 @@ FOR EACH ROW EXECUTE FUNCTION public.check_course_ownership();
 CREATE OR REPLACE FUNCTION public.prevent_audit_logs_tampering()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
@@ -803,7 +795,6 @@ FOR EACH ROW EXECUTE FUNCTION public.prevent_audit_logs_tampering();
 CREATE OR REPLACE FUNCTION public.prevent_medical_notes_tampering()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
@@ -820,7 +811,6 @@ FOR EACH ROW EXECUTE FUNCTION public.prevent_medical_notes_tampering();
 CREATE OR REPLACE FUNCTION public.prevent_treatment_results_tampering()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
@@ -1004,25 +994,14 @@ CREATE POLICY "course_items_all" ON public.course_items
   USING (true)
   WITH CHECK (true);
 
--- 13. mission_runs
+-- 13. mission_runs (Spec Section 9: Server/Kiosk recorded only, SELECT only for authenticated)
 CREATE POLICY "mission_runs_select" ON public.mission_runs
   FOR SELECT TO authenticated
   USING ((SELECT public.current_user_role()) = 'admin' OR public.is_patient_accessible_by_pt(patient_id));
-CREATE POLICY "mission_runs_insert" ON public.mission_runs
-  FOR INSERT TO authenticated
-  WITH CHECK ((SELECT public.current_user_role()) IN ('admin', 'pt'));
-CREATE POLICY "mission_runs_update" ON public.mission_runs
-  FOR UPDATE TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR public.is_patient_accessible_by_pt(patient_id))
-  WITH CHECK ((SELECT public.current_user_role()) = 'admin' OR public.is_patient_accessible_by_pt(patient_id));
 
--- 14. mission_steps
+-- 14. mission_steps (Spec Section 9: Server/Kiosk recorded only, SELECT only for authenticated)
 CREATE POLICY "mission_steps_select" ON public.mission_steps
   FOR SELECT TO authenticated USING (true);
-CREATE POLICY "mission_steps_all" ON public.mission_steps
-  FOR ALL TO authenticated
-  USING (true)
-  WITH CHECK (true);
 
 -- 15. medical_notes (append-only)
 CREATE POLICY "medical_notes_select" ON public.medical_notes
@@ -1039,6 +1018,79 @@ CREATE POLICY "treatment_results_select" ON public.treatment_results
 CREATE POLICY "treatment_results_insert" ON public.treatment_results
   FOR INSERT TO authenticated
   WITH CHECK ((SELECT public.current_user_role()) = 'pt' AND author_id = (SELECT auth.uid()));
+
+-- 17. consents (Client Decision B3 & Rule 2.12: Accessible by admin and assigned PT)
+CREATE POLICY "consents_select" ON public.consents
+  FOR SELECT TO authenticated
+  USING (
+    (SELECT public.current_user_role()) = 'admin'
+    OR (subject_type = 'patient' AND public.is_patient_accessible_by_pt(subject_id))
+    OR (subject_type = 'staff' AND subject_id = (SELECT auth.uid()))
+  );
+
+CREATE POLICY "consents_insert" ON public.consents
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    (SELECT public.current_user_role()) = 'admin'
+    OR ((SELECT public.current_user_role()) = 'pt' AND subject_type = 'patient' AND public.is_patient_accessible_by_pt(subject_id))
+  );
+
+CREATE POLICY "consents_update" ON public.consents
+  FOR UPDATE TO authenticated
+  USING (
+    (SELECT public.current_user_role()) = 'admin'
+    OR ((SELECT public.current_user_role()) = 'pt' AND subject_type = 'patient' AND public.is_patient_accessible_by_pt(subject_id))
+  )
+  WITH CHECK (
+    (SELECT public.current_user_role()) = 'admin'
+    OR ((SELECT public.current_user_role()) = 'pt' AND subject_type = 'patient' AND public.is_patient_accessible_by_pt(subject_id))
+  );
+
+CREATE POLICY "consents_delete" ON public.consents
+  FOR DELETE TO authenticated
+  USING ((SELECT public.current_user_role()) = 'admin');
+
+-- 22. checkins (Client Decision B3 & Rule 2.12: Accessible by admin and assigned PT)
+CREATE POLICY "checkins_select" ON public.checkins
+  FOR SELECT TO authenticated
+  USING (
+    (SELECT public.current_user_role()) = 'admin'
+    OR public.is_patient_accessible_by_pt(patient_id)
+  );
+
+CREATE POLICY "checkins_insert" ON public.checkins
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    (SELECT public.current_user_role()) = 'admin'
+    OR (
+      (SELECT public.current_user_role()) = 'pt'
+      AND checked_in_by = (SELECT auth.uid())
+      AND public.is_patient_accessible_by_pt(patient_id)
+    )
+  );
+
+CREATE POLICY "checkins_update" ON public.checkins
+  FOR UPDATE TO authenticated
+  USING (
+    (SELECT public.current_user_role()) = 'admin'
+    OR (
+      (SELECT public.current_user_role()) = 'pt'
+      AND checked_in_by = (SELECT auth.uid())
+      AND public.is_patient_accessible_by_pt(patient_id)
+    )
+  )
+  WITH CHECK (
+    (SELECT public.current_user_role()) = 'admin'
+    OR (
+      (SELECT public.current_user_role()) = 'pt'
+      AND checked_in_by = (SELECT auth.uid())
+      AND public.is_patient_accessible_by_pt(patient_id)
+    )
+  );
+
+CREATE POLICY "checkins_delete" ON public.checkins
+  FOR DELETE TO authenticated
+  USING ((SELECT public.current_user_role()) = 'admin');
 
 -- ============================================================================
 -- 9. STORAGE BUCKETS & POLICIES (All Private per Spec Section 4)
@@ -1101,29 +1153,31 @@ REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA extensions FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA extensions FROM PUBLIC, anon;
 
--- B. ALTER DEFAULT PRIVILEGES (FOR ROLE postgres and supabase_admin - Item A2)
+-- B. ALTER DEFAULT PRIVILEGES (FOR ROLE postgres and supabase_admin - Item A2 & A5)
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM PUBLIC, anon, authenticated;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON ROUTINES FROM PUBLIC, anon, authenticated;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA extensions REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA extensions REVOKE ALL ON ROUTINES FROM PUBLIC, anon, authenticated;
-
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
-    ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated;
-    ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON SEQUENCES FROM PUBLIC, anon, authenticated;
-    ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated;
-    ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON ROUTINES FROM PUBLIC, anon, authenticated;
+    BEGIN
+      ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated;
+      ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON SEQUENCES FROM PUBLIC, anon, authenticated;
+      ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated;
+      ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON ROUTINES FROM PUBLIC, anon, authenticated;
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE NOTICE 'Skipping ALTER DEFAULT PRIVILEGES for supabase_admin: insufficient privilege';
+    END;
   END IF;
 END $$;
 
--- C. SCHEMA USAGE GRANTS (Item A3)
+-- C. SCHEMA USAGE & EXTENSION FUNCTION GRANTS (Item A3 & A4)
 GRANT USAGE ON SCHEMA public TO postgres, service_role, authenticated;
 GRANT USAGE ON SCHEMA extensions TO postgres, service_role, authenticated;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA extensions TO postgres, service_role, authenticated;
 REVOKE ALL ON SCHEMA public FROM anon, PUBLIC;
 REVOKE ALL ON SCHEMA extensions FROM anon, PUBLIC;
 
@@ -1132,11 +1186,12 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL ROUTINES IN SCHEMA public TO service_role;
 
--- E. ALLOWLIST TABLE GRANTS FOR AUTHENTICATED (16 tables)
-GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
-GRANT SELECT, INSERT, UPDATE ON public.pts TO authenticated;
+-- E. ALLOWLIST TABLE GRANTS FOR AUTHENTICATED (18 tables strictly scoped)
+GRANT SELECT ON public.profiles TO authenticated;
+GRANT UPDATE (full_name, phone, bio) ON public.profiles TO authenticated;
+GRANT SELECT ON public.pts TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.patients TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.patient_pt_assignments TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.patient_pt_assignments TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.case_transfers TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.exercises TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.minigames TO authenticated;
@@ -1144,11 +1199,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.minigame_questions TO authenticat
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.modpacks TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.modpack_items TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.courses TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.course_items TO authenticated;
-GRANT SELECT, INSERT, UPDATE ON public.mission_runs TO authenticated;
-GRANT SELECT, INSERT, UPDATE ON public.mission_steps TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.course_items TO authenticated;
+GRANT SELECT ON public.mission_runs TO authenticated;
+GRANT SELECT ON public.mission_steps TO authenticated;
 GRANT SELECT, INSERT ON public.medical_notes TO authenticated;
 GRANT SELECT, INSERT ON public.treatment_results TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.consents TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.checkins TO authenticated;
 
 -- F. SEQUENCE USAGE FOR AUTHENTICATED
 GRANT USAGE, SELECT ON SEQUENCE patient_hn_seq TO authenticated;
@@ -1174,6 +1231,4 @@ REVOKE ALL ON public.kiosk_devices FROM anon, authenticated, PUBLIC;
 REVOKE ALL ON public.staff_devices FROM anon, authenticated, PUBLIC;
 REVOKE ALL ON public.staff_calls FROM anon, authenticated, PUBLIC;
 REVOKE ALL ON public.bans FROM anon, authenticated, PUBLIC;
-REVOKE ALL ON public.consents FROM anon, authenticated, PUBLIC;
-REVOKE ALL ON public.checkins FROM anon, authenticated, PUBLIC;
 REVOKE ALL ON public.audit_logs FROM anon, authenticated, PUBLIC;
