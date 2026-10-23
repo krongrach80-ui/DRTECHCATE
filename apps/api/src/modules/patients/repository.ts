@@ -241,7 +241,12 @@ export class PatientRepository implements IPatientRepository {
       if (input.injury !== undefined) updateData.injury = input.injury;
       if (input.history !== undefined) updateData.history = input.history;
       if (input.responsible_pt_id !== undefined) updateData.responsible_pt_id = input.responsible_pt_id;
-      if (input.registration_status !== undefined) updateData.registration_status = input.registration_status;
+      if (input.registration_status !== undefined) {
+        updateData.registration_status = input.registration_status;
+        if (input.registration_status === 'active') {
+          updateData.started_at = nowIso;
+        }
+      }
 
       const { data, error } = await adminClient
         .from('patients')

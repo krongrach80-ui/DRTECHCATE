@@ -129,6 +129,32 @@ export class PatientService {
       }
     }
 
+    // Item A2: Automatic transition face_enrolled -> active when demographic data becomes complete
+    if (current.registration_status === 'face_enrolled') {
+      const mergedFirstName = (input.first_name !== undefined ? input.first_name : current.first_name)?.trim();
+      const mergedLastName = (input.last_name !== undefined ? input.last_name : current.last_name)?.trim();
+      const mergedAge = input.age !== undefined ? input.age : current.age;
+      const mergedSex = (input.sex !== undefined ? input.sex : current.sex)?.toString().trim();
+      const mergedInjury = (input.injury !== undefined ? input.injury : current.injury)?.trim();
+
+      const isComplete = Boolean(
+        mergedFirstName &&
+        mergedFirstName.length > 0 &&
+        mergedLastName &&
+        mergedLastName.length > 0 &&
+        typeof mergedAge === 'number' &&
+        mergedAge > 0 &&
+        mergedSex &&
+        mergedSex.length > 0 &&
+        mergedInjury &&
+        mergedInjury.length > 0
+      );
+
+      if (isComplete) {
+        input.registration_status = 'active';
+      }
+    }
+
     // Perform atomic update with optimistic locking
     const updated = await this.repo.updatePatient(id, input, input.version);
 
