@@ -5,10 +5,10 @@ import { beforeEach, afterEach, afterAll } from 'vitest';
 
 // 1. Force environment variables strictly to 127.0.0.1 loopback for tests (Item H7)
 (process.env as Record<string, string | undefined>).NODE_ENV = 'test';
-process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
-process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:54321';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key-strictly-isolated-127-0-0-1';
-process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key-strictly-isolated-127-0-0-1';
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'http://127.0.0.1:54321';
+process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:54321';
+process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'test-anon-key-strictly-isolated-127-0-0-1';
+process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-service-role-key-strictly-isolated-127-0-0-1';
 process.env.INTERNAL_EMAIL_DOMAIN = 'clinic.internal';
 process.env.APP_URL = 'http://127.0.0.1:3000';
 process.env.CORS_ORIGINS = 'http://localhost:3000,http://localhost:5173';

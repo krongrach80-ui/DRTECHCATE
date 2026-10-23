@@ -9,7 +9,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
-import { getAdminClient } from '../lib/supabase/adminClient';
+import { getAdminClient, resetAdminClient } from '../lib/supabase/adminClient';
+import { resetCachedEnv } from '../config/env';
 import { AuthRepository } from '../modules/auth/repository';
 import { StaffRepository } from '../modules/staff/repository';
 import { PatientRepository } from '../modules/patients/repository';
@@ -33,6 +34,8 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
   beforeAll(async () => {
     dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
     dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+    resetCachedEnv();
+    resetAdminClient();
 
     authRepo = new AuthRepository();
     staffRepo = new StaffRepository();
