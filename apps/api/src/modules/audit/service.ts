@@ -1,4 +1,4 @@
-import { AuditRepository, defaultAuditRepository } from './repository';
+import { defaultAuditRepository, IAuditRepository } from './repository';
 import { AuditWriteInput, AuditQueryFilter, AuditLogRecord } from './schema';
 import { dispatchHospitalEvent } from '../events/routes';
 
@@ -60,9 +60,12 @@ function sanitizeMetadata(data: unknown): Record<string, unknown> {
 
   return sanitized;
 }
-
 export class AuditService {
-  constructor(private repo: AuditRepository = defaultAuditRepository) {}
+  constructor(private repo: IAuditRepository = defaultAuditRepository) {}
+
+  setRepository(repo: IAuditRepository): void {
+    this.repo = repo;
+  }
 
   /**
    * Records an audit log entry.

@@ -1,13 +1,96 @@
 import { getAdminClient } from '../../lib/supabase/adminClient';
+import { AppError } from '../../middleware/errorHandler';
+import { logger } from '../../middleware/logger';
 import { StaffProfileRecord, StaffRole, StaffStatus, StaffQueryFilter } from './schema';
 
-export class StaffRepository {
-  private inMemoryStaff: Map<string, StaffProfileRecord> = new Map();
+export interface IStaffRepository {
+  getStaffById(id: string): Promise<StaffProfileRecord | null>;
+  getStaffByUsername(username: string): Promise<StaffProfileRecord | null>;
+  listStaff(filter?: StaffQueryFilter): Promise<StaffProfileRecord[]>;
+  createStaff(
+    profileData: {
+      id: string;
+      role: StaffRole;
+      username: string;
+      full_name: string;
+      phone?: string | null;
+      bio?: string | null;
+      status?: StaffStatus;
+    },
+    ptData?: {
+      license_no: string;
+      license_expiry?: string | null;
+      specialty?: string | null;
+      age?: number | null;
+      sex?: string | null;
+    }
+  ): Promise<StaffProfileRecord>;
+  updateStaff(
+    id: string,
+    profileUpdates: Partial<{
+      role: StaffRole;
+      username: string;
+      full_name: string;
+      phone: string | null;
+      bio: string | null;
+      status: StaffStatus;
+      avatar_url: string | null;
+    }>,
+    ptUpdates?: Partial<{
+      license_no: string;
+      license_expiry: string | null;
+      specialty: string | null;
+      age: number | null;
+      sex: string | null;
+    }>
+  ): Promise<StaffProfileRecord>;
+  uploadAvatar(
+    ownerId: string,
+    fileBuffer: Buffer,
+    mimeType: string,
+    extension: string
+  ): Promise<string>;
+  createAuthUser(email: string, password: string): Promise<string>;
+  resetAuthPassword(userId: string, newPassword: string): Promise<void>;
+}
 
-  clearInMemoryStaff(): void {
-    this.inMemoryStaff.clear();
+export class StaffRepository implements IStaffRepository {
+  async createAuthUser(email: string, password: string): Promise<string> {
+    try {
+      const adminClient = getAdminClient();
+      const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      });
+
+      if (authError || !authData?.user) {
+        logger.error({ authError, email }, 'Failed to create auth user in Supabase');
+        throw new AppError('Database service unavailable during staff creation', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return authData.user.id;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, email }, 'Unexpected error creating staff auth user');
+      throw new AppError('Database service unavailable during staff creation', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
+  async resetAuthPassword(userId: string, newPassword: string): Promise<void> {
+    try {
+      const adminClient = getAdminClient();
+      const { error: resetError } = await adminClient.auth.admin.updateUserById(userId, { password: newPassword });
+      if (resetError) {
+        logger.error({ resetError, userId }, 'Database error updating user password in Supabase');
+        throw new AppError('Database service unavailable during password reset', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, userId }, 'Unexpected error communicating with Supabase Auth during password reset');
+      throw new AppError('Database service unavailable during password reset', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
   async getStaffById(id: string): Promise<StaffProfileRecord | null> {
     try {
       const adminClient = getAdminClient();
@@ -17,14 +100,17 @@ export class StaffRepository {
         .eq('id', id)
         .maybeSingle();
 
-      if (!error && profile) {
-        return this.mapDbRecord(profile);
+      if (error) {
+        logger.error({ error, id }, 'Database error querying staff by id');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return this.inMemoryStaff.get(id) || null;
+      return profile ? this.mapDbRecord(profile) : null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in getStaffById');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async getStaffByUsername(username: string): Promise<StaffProfileRecord | null> {
@@ -37,20 +123,17 @@ export class StaffRepository {
         .ilike('username', cleanUsername)
         .maybeSingle();
 
-      if (!error && profile) {
-        return this.mapDbRecord(profile);
+      if (error) {
+        logger.error({ error, cleanUsername }, 'Database error querying staff by username');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    for (const s of this.inMemoryStaff.values()) {
-      if (s.username.toLowerCase() === cleanUsername) {
-        return s;
-      }
+      return profile ? this.mapDbRecord(profile) : null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, cleanUsername }, 'Unexpected error in getStaffByUsername');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    return null;
   }
 
   async listStaff(filter?: StaffQueryFilter): Promise<StaffProfileRecord[]> {
@@ -73,31 +156,17 @@ export class StaffRepository {
       }
 
       const { data, error } = await query;
-      if (!error && data) {
-        return data.map((d) => this.mapDbRecord(d));
+      if (error) {
+        logger.error({ error, filter }, 'Database error listing staff profiles');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    let results = Array.from(this.inMemoryStaff.values()).sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-
-    if (filter?.role) {
-      results = results.filter((s) => s.role === filter.role);
+      return data ? data.map((d) => this.mapDbRecord(d)) : [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, filter }, 'Unexpected error in listStaff');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-    if (filter?.status) {
-      results = results.filter((s) => s.status === filter.status);
-    }
-    if (filter?.search) {
-      const q = filter.search.toLowerCase();
-      results = results.filter(
-        (s) => s.full_name.toLowerCase().includes(q) || s.username.toLowerCase().includes(q)
-      );
-    }
-
-    return results;
   }
 
   async createStaff(
@@ -119,63 +188,52 @@ export class StaffRepository {
     }
   ): Promise<StaffProfileRecord> {
     const nowIso = new Date().toISOString();
-    const record: StaffProfileRecord = {
-      id: profileData.id,
-      role: profileData.role,
-      username: profileData.username,
-      full_name: profileData.full_name,
-      phone: profileData.phone || null,
-      bio: profileData.bio || null,
-      avatar_url: null,
-      status: profileData.status || 'active',
-      force_logout_at: null,
-      last_login_at: null,
-      created_at: nowIso,
-      updated_at: nowIso,
-      pt_details:
-        profileData.role === 'pt' && ptData
-          ? {
-              license_no: ptData.license_no,
-              license_expiry: ptData.license_expiry || null,
-              specialty: ptData.specialty || null,
-              age: ptData.age || null,
-              sex: ptData.sex || null,
-            }
-          : null,
-    };
-
-    // Store in memory
-    this.inMemoryStaff.set(record.id, record);
 
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('profiles').insert({
-        id: record.id,
-        role: record.role,
-        username: record.username,
-        full_name: record.full_name,
-        phone: record.phone,
-        bio: record.bio,
-        status: record.status,
-        created_at: record.created_at,
-        updated_at: record.updated_at,
+      const { error: profileError } = await adminClient.from('profiles').insert({
+        id: profileData.id,
+        role: profileData.role,
+        username: profileData.username,
+        full_name: profileData.full_name,
+        phone: profileData.phone || null,
+        bio: profileData.bio || null,
+        status: profileData.status || 'active',
+        created_at: nowIso,
+        updated_at: nowIso,
       });
 
-      if (record.role === 'pt' && ptData) {
-        await adminClient.from('pts').insert({
-          user_id: record.id,
+      if (profileError) {
+        logger.error({ profileError, profileData }, 'Database error inserting profile');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      if (profileData.role === 'pt' && ptData) {
+        const { error: ptError } = await adminClient.from('pts').insert({
+          user_id: profileData.id,
           license_no: ptData.license_no,
           license_expiry: ptData.license_expiry || null,
           specialty: ptData.specialty || null,
           age: ptData.age || null,
           sex: ptData.sex || null,
         });
-      }
-    } catch {
-      // In-memory fallback
-    }
 
-    return record;
+        if (ptError) {
+          logger.error({ ptError, ptData, userId: profileData.id }, 'Database error inserting pt details');
+          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
+      }
+
+      const created = await this.getStaffById(profileData.id);
+      if (!created) {
+        throw new AppError('Failed to retrieve newly created staff record', 500, 'CREATE_STAFF_FAILED');
+      }
+      return created;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, profileData }, 'Unexpected error in createStaff');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async updateStaff(
@@ -199,48 +257,46 @@ export class StaffRepository {
   ): Promise<StaffProfileRecord> {
     const existing = await this.getStaffById(id);
     if (!existing) {
-      throw new Error(`Staff profile ${id} not found`);
+      throw new AppError(`Staff profile ${id} not found`, 404, 'NOT_FOUND');
     }
-
-    const updatedRecord: StaffProfileRecord = {
-      ...existing,
-      ...profileUpdates,
-      updated_at: new Date().toISOString(),
-      pt_details:
-        existing.role === 'pt'
-          ? {
-              license_no: ptUpdates?.license_no ?? existing.pt_details?.license_no ?? '',
-              license_expiry: ptUpdates?.license_expiry ?? existing.pt_details?.license_expiry ?? null,
-              specialty: ptUpdates?.specialty ?? existing.pt_details?.specialty ?? null,
-              age: ptUpdates?.age ?? existing.pt_details?.age ?? null,
-              sex: ptUpdates?.sex ?? existing.pt_details?.sex ?? null,
-            }
-          : null,
-    };
-
-    this.inMemoryStaff.set(id, updatedRecord);
 
     try {
       const adminClient = getAdminClient();
-      await adminClient
+      const { error: updateError } = await adminClient
         .from('profiles')
         .update({
           ...profileUpdates,
-          updated_at: updatedRecord.updated_at,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', id);
 
+      if (updateError) {
+        logger.error({ updateError, id, profileUpdates }, 'Database error updating profile');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
       if (existing.role === 'pt' && ptUpdates) {
-        await adminClient
+        const { error: ptError } = await adminClient
           .from('pts')
           .update(ptUpdates)
           .eq('user_id', id);
-      }
-    } catch {
-      // in-memory fallback
-    }
 
-    return updatedRecord;
+        if (ptError) {
+          logger.error({ ptError, id, ptUpdates }, 'Database error updating pt details');
+          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
+      }
+
+      const updated = await this.getStaffById(id);
+      if (!updated) {
+        throw new AppError(`Staff profile ${id} not found after update`, 404, 'NOT_FOUND');
+      }
+      return updated;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in updateStaff');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async uploadAvatar(
@@ -259,20 +315,26 @@ export class StaffRepository {
           upsert: true,
         });
 
-      if (!uploadError) {
-        // Return signed URL or storage path
-        const { data } = await adminClient.storage
-          .from('avatars')
-          .createSignedUrl(filePath, 3600 * 24); // 24 hours signed URL
-        if (data?.signedUrl) {
-          return data.signedUrl;
-        }
+      if (uploadError) {
+        logger.error({ uploadError, ownerId, filePath }, 'Storage error uploading avatar');
+        throw new AppError('Storage service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return `/storage/avatars/${filePath}`;
+      const { data, error: signedError } = await adminClient.storage
+        .from('avatars')
+        .createSignedUrl(filePath, 3600 * 24);
+
+      if (signedError || !data?.signedUrl) {
+        logger.error({ signedError, filePath }, 'Storage error creating signed URL for avatar');
+        throw new AppError('Storage service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return data.signedUrl;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, ownerId }, 'Unexpected error in uploadAvatar');
+      throw new AppError('Storage service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   private mapDbRecord(dbItem: Record<string, unknown>): StaffProfileRecord {
@@ -306,4 +368,24 @@ export class StaffRepository {
   }
 }
 
-export const defaultStaffRepository = new StaffRepository();
+let currentStaffRepository: IStaffRepository = new StaffRepository();
+
+export function setDefaultStaffRepository(repo: IStaffRepository): void {
+  currentStaffRepository = repo;
+}
+
+export const defaultStaffRepository: IStaffRepository = new Proxy(
+  {} as unknown as IStaffRepository,
+  {
+    get(_target, prop) {
+      const val = Reflect.get(currentStaffRepository, prop);
+      if (typeof val === 'function') {
+        return (val as (...args: unknown[]) => unknown).bind(currentStaffRepository);
+      }
+      return val;
+    },
+    set(_target, prop, value) {
+      return Reflect.set(currentStaffRepository, prop, value);
+    },
+  }
+);

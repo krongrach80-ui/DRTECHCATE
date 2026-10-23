@@ -1,4 +1,6 @@
 import { getAdminClient } from '../../lib/supabase/adminClient';
+import { logger } from '../../middleware/logger';
+import { AppError } from '../../middleware/errorHandler';
 
 export interface UserProfileRecord {
   id: string;
@@ -9,16 +11,17 @@ export interface UserProfileRecord {
   force_logout_at: string | null;
 }
 
-export interface FailedLoginEntry {
-  username: string;
-  ip: string;
-  timestamp: number;
+export interface IAuthRepository {
+  getProfileById(userId: string): Promise<UserProfileRecord | null>;
+  forceLogout(userId: string): Promise<void>;
+  recordStaffDevice(userId: string, deviceId: string, userAgent?: string): Promise<void>;
+  recordLoginFailure(username: string, ip: string): Promise<void>;
+  getLoginFailuresByIp(ip: string, windowMs: number): Promise<number>;
+  getLoginFailuresByUsername(username: string, windowMs: number): Promise<number>;
+  getLoginFailuresByUsernameAndIp(username: string, ip: string, windowMs: number): Promise<number>;
 }
 
-export class AuthRepository {
-  // In-memory store for test/offline mirroring
-  private loginFailures: FailedLoginEntry[] = [];
-
+export class AuthRepository implements IAuthRepository {
   async getProfileById(userId: string): Promise<UserProfileRecord | null> {
     try {
       const adminClient = getAdminClient();
@@ -28,32 +31,42 @@ export class AuthRepository {
         .eq('id', userId)
         .maybeSingle();
 
-      if (error || !data) {
-        return null;
+      if (error) {
+        logger.error({ error, userId }, 'Failed to query profile from Supabase');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return data as UserProfileRecord;
-    } catch {
-      return null;
+      return (data as UserProfileRecord) || null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, userId }, 'Unexpected database connection error in getProfileById');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
   async forceLogout(userId: string): Promise<void> {
     try {
       const adminClient = getAdminClient();
-      await adminClient
+      const { error } = await adminClient
         .from('profiles')
         .update({ force_logout_at: new Date().toISOString() })
         .eq('id', userId);
-    } catch {
-      // Ignore
+
+      if (error) {
+        logger.error({ error, userId }, 'Failed to execute forceLogout in Supabase');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, userId }, 'Unexpected database error in forceLogout');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
   async recordStaffDevice(userId: string, deviceId: string, userAgent?: string): Promise<void> {
     try {
       const adminClient = getAdminClient();
-      await adminClient
+      const { error } = await adminClient
         .from('staff_devices')
         .upsert(
           {
@@ -64,21 +77,26 @@ export class AuthRepository {
           },
           { onConflict: 'user_id,device_id' }
         );
-    } catch {
-      // Non-blocking
+
+      if (error) {
+        logger.error({ error, userId, deviceId }, 'Failed to record staff device in Supabase');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, userId }, 'Unexpected error in recordStaffDevice');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
   /**
-   * Persistently records failed login attempts in DB (audit_logs table)
+   * Persistently records failed login attempts in DB (audit_logs table).
+   * Fail closed: Throws 503 if database insertion fails.
    */
   async recordLoginFailure(username: string, ip: string): Promise<void> {
-    const now = Date.now();
-    this.loginFailures.push({ username, ip, timestamp: now });
-
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('audit_logs').insert({
+      const { error } = await adminClient.from('audit_logs').insert({
         actor_type: 'system',
         action: 'STAFF_LOGIN_FAILED',
         entity: 'profiles',
@@ -88,73 +106,86 @@ export class AuthRepository {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch {
-      // Fallback in offline/mock test environment
+
+      if (error) {
+        logger.error({ error, username, ip }, 'Failed to record login failure audit log in Supabase');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, username, ip }, 'Unexpected database error in recordLoginFailure');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
   /**
-   * Gets failed login attempts by IP in window from DB
+   * Gets failed login attempts by IP in window from DB.
+   * Fail closed: Throws 503 if database query fails.
    */
   async getLoginFailuresByIp(ip: string, windowMs: number): Promise<number> {
     const cutoff = Date.now() - windowMs;
     try {
       const adminClient = getAdminClient();
       const cutoffIso = new Date(cutoff).toISOString();
-      const { count } = await adminClient
+      const { count, error } = await adminClient
         .from('audit_logs')
         .select('id', { count: 'exact', head: true })
         .eq('action', 'STAFF_LOGIN_FAILED')
         .eq('ip', ip)
         .gte('created_at', cutoffIso);
 
-      if (typeof count === 'number' && count > 0) {
-        return count;
+      if (error) {
+        logger.error({ error, ip }, 'Failed to get login failures by IP from Supabase');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback
-    }
 
-    return this.loginFailures.filter((f) => f.ip === ip && f.timestamp >= cutoff).length;
+      return count || 0;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, ip }, 'Unexpected database error in getLoginFailuresByIp');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   /**
-   * Gets failed login attempts by username in window from DB
+   * Gets failed login attempts by username in window from DB.
+   * Fail closed: Throws 503 if database query fails.
    */
   async getLoginFailuresByUsername(username: string, windowMs: number): Promise<number> {
     const cutoff = Date.now() - windowMs;
     try {
       const adminClient = getAdminClient();
       const cutoffIso = new Date(cutoff).toISOString();
-      const { count } = await adminClient
+      const { count, error } = await adminClient
         .from('audit_logs')
         .select('id', { count: 'exact', head: true })
         .eq('action', 'STAFF_LOGIN_FAILED')
         .contains('metadata', { username: username.toLowerCase() })
         .gte('created_at', cutoffIso);
 
-      if (typeof count === 'number' && count > 0) {
-        return count;
+      if (error) {
+        logger.error({ error, username }, 'Failed to get login failures by username from Supabase');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback
-    }
 
-    return this.loginFailures.filter(
-      (f) => f.username.toLowerCase() === username.toLowerCase() && f.timestamp >= cutoff
-    ).length;
+      return count || 0;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, username }, 'Unexpected database error in getLoginFailuresByUsername');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   /**
    * Gets failed login attempts for specific username + IP pair in window from DB.
-   * Enforces exponential throttling per (username + IP) without globally locking the account.
+   * Fail closed: Throws 503 if database query fails.
    */
   async getLoginFailuresByUsernameAndIp(username: string, ip: string, windowMs: number): Promise<number> {
     const cutoff = Date.now() - windowMs;
     try {
       const adminClient = getAdminClient();
       const cutoffIso = new Date(cutoff).toISOString();
-      const { count } = await adminClient
+      const { count, error } = await adminClient
         .from('audit_logs')
         .select('id', { count: 'exact', head: true })
         .eq('action', 'STAFF_LOGIN_FAILED')
@@ -162,19 +193,38 @@ export class AuthRepository {
         .contains('metadata', { username: username.toLowerCase() })
         .gte('created_at', cutoffIso);
 
-      if (typeof count === 'number' && count > 0) {
-        return count;
+      if (error) {
+        logger.error({ error, username, ip }, 'Failed to get login failures by username+IP from Supabase');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback
+
+      return count || 0;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, username, ip }, 'Unexpected database error in getLoginFailuresByUsernameAndIp');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    return this.loginFailures.filter(
-      (f) => f.username.toLowerCase() === username.toLowerCase() && f.ip === ip && f.timestamp >= cutoff
-    ).length;
-  }
-
-  clearFailures(): void {
-    this.loginFailures = [];
   }
 }
+
+let currentAuthRepository: IAuthRepository = new AuthRepository();
+
+export function setDefaultAuthRepository(repo: IAuthRepository): void {
+  currentAuthRepository = repo;
+}
+
+export const defaultAuthRepository: IAuthRepository = new Proxy(
+  {} as unknown as IAuthRepository,
+  {
+    get(_target, prop) {
+      const val = Reflect.get(currentAuthRepository, prop);
+      if (typeof val === 'function') {
+        return (val as (...args: unknown[]) => unknown).bind(currentAuthRepository);
+      }
+      return val;
+    },
+    set(_target, prop, value) {
+      return Reflect.set(currentAuthRepository, prop, value);
+    },
+  }
+);

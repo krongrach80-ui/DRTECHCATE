@@ -12,7 +12,13 @@ export function validate(schema: {
         req.body = schema.body.parse(req.body);
       }
       if (schema.query) {
-        req.query = schema.query.parse(req.query) as unknown as Request['query'];
+        const parsed = schema.query.parse(req.query);
+        Object.defineProperty(req, 'query', {
+          value: parsed,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
       }
       if (schema.params) {
         req.params = schema.params.parse(req.params) as Record<string, string>;

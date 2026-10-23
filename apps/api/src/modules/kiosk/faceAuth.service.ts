@@ -7,9 +7,9 @@
 import crypto from 'crypto';
 import { AppError } from '../../middleware/errorHandler';
 import { getEnv } from '../../config/env';
-import { KioskRepository, defaultKioskRepository } from './repository';
-import { CourseRepository, defaultCourseRepository } from '../courses/repository';
-import { PatientRepository, defaultPatientRepository } from '../patients/repository';
+import { IKioskRepository, defaultKioskRepository } from './repository';
+import { ICourseRepository, defaultCourseRepository } from '../courses/repository';
+import { IPatientRepository, defaultPatientRepository } from '../patients/repository';
 import { dispatchHospitalEvent } from '../events/routes';
 import { VerifyFaceInput } from './schema';
 
@@ -18,10 +18,22 @@ export class KioskFaceAuthService {
   private readonly MAX_FAILED_ATTEMPTS = 3;
 
   constructor(
-    private kioskRepo: KioskRepository = defaultKioskRepository,
-    private courseRepo: CourseRepository = defaultCourseRepository,
-    private patientRepo: PatientRepository = defaultPatientRepository
+    private kioskRepo: IKioskRepository = defaultKioskRepository,
+    private courseRepo: ICourseRepository = defaultCourseRepository,
+    private patientRepo: IPatientRepository = defaultPatientRepository
   ) {}
+
+  public setKioskRepository(repo: IKioskRepository): void {
+    this.kioskRepo = repo;
+  }
+
+  public setCourseRepository(repo: ICourseRepository): void {
+    this.courseRepo = repo;
+  }
+
+  public setPatientRepository(repo: IPatientRepository): void {
+    this.patientRepo = repo;
+  }
 
   /**
    * 1. POST /api/kiosk/challenge
@@ -76,6 +88,25 @@ export class KioskFaceAuthService {
     const T_ACCEPT = env.FACE_T_ACCEPT;
     const T_MARGIN = env.FACE_T_MARGIN;
     const T_REJECT = env.FACE_T_REJECT;
+
+    // Enforce Biometric Thresholds & PAD Provider requirements (Fail-Closed per Master Prompt v3)
+    if (!T_ACCEPT || !T_MARGIN || !T_REJECT) {
+      throw new AppError(
+        'Face verification rejected: Biometric calibration thresholds (FACE_T_*) are not configured',
+        500,
+        'FACE_THRESHOLDS_MISSING'
+      );
+    }
+
+    // PAD Provider is configured strictly server-side (PAD_PROVIDER + PAD_MODE)
+    const padProvider = env.PAD_PROVIDER;
+    if (!padProvider) {
+      throw new AppError(
+        'Face verification rejected: Presentation Attack Detection (PAD) provider is not configured on server',
+        500,
+        'PAD_PROVIDER_REQUIRED'
+      );
+    }
 
     // 1. Nonce single-use & expiration verification
     const challenge = await this.kioskRepo.getChallenge(input.nonce);
@@ -169,6 +200,22 @@ export class KioskFaceAuthService {
     // Issue active 15-minute kiosk session
     const session = await this.kioskRepo.createKioskSession(input.kiosk_id, topCandidate.patient_id);
 
+    // Record Audit Log (Item H5 & Spec 7.4 Line 207)
+    const { audit } = await import('../audit');
+    await audit.write({
+      actor_type: 'patient',
+      actor_id: topCandidate.patient_id,
+      action: 'FACE_VERIFY_SUCCESS',
+      entity: 'kiosk_session',
+      entity_id: session.token,
+      device_id: input.kiosk_id,
+      metadata: {
+        kiosk_id: input.kiosk_id,
+        pad_mode: env.PAD_MODE,
+        decision: 'accepted',
+      },
+    }).catch(() => {});
+
     // Fetch patient record for privacy-minimized display
     const patient = await this.patientRepo.getPatientById(topCandidate.patient_id);
 
@@ -261,6 +308,27 @@ export class KioskFaceAuthService {
    */
   private async handleVerificationFailure(kioskId: string, reason: string): Promise<void> {
     const failedCount = this.kioskRepo.incrementFailedFaceAttempts(kioskId);
+
+    // Record Audit Log (Item H5 & Spec 7.4 Line 207)
+    try {
+      const env = getEnv();
+      const { audit } = await import('../audit');
+      await audit.write({
+        actor_type: 'system',
+        action: 'FACE_VERIFY_FAILURE',
+        entity: 'kiosk_devices',
+        entity_id: kioskId,
+        device_id: kioskId,
+        metadata: {
+          kiosk_id: kioskId,
+          pad_mode: env.PAD_MODE,
+          reason,
+          decision: 'rejected',
+        },
+      });
+    } catch {
+      // Ignore in-memory mock errors in unit tests
+    }
 
     if (failedCount >= this.MAX_FAILED_ATTEMPTS) {
       const call = await this.kioskRepo.createStaffCall(

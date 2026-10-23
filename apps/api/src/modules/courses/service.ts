@@ -10,17 +10,29 @@ import {
   CalendarViewFilter,
   CourseItemInput,
 } from './schema';
-import { CourseRepository, defaultCourseRepository } from './repository';
-import { PatientRepository, defaultPatientRepository } from '../patients/repository';
-import { DirectoryRepository, defaultDirectoryRepository } from '../directory/repository';
+import { defaultCourseRepository, ICourseRepository } from './repository';
+import { defaultPatientRepository, IPatientRepository } from '../patients/repository';
+import { defaultDirectoryRepository, IDirectoryRepository } from '../directory/repository';
 
 export class CourseService {
   constructor(
-    private repo: CourseRepository = defaultCourseRepository,
-    private patientRepo: PatientRepository = defaultPatientRepository,
-    private directoryRepo: DirectoryRepository = defaultDirectoryRepository,
+    private repo: ICourseRepository = defaultCourseRepository,
+    private patientRepo: IPatientRepository = defaultPatientRepository,
+    private directoryRepo: IDirectoryRepository = defaultDirectoryRepository,
     private auditService: AuditService = defaultAuditService
   ) {}
+
+  setRepository(repo: ICourseRepository) {
+    this.repo = repo;
+  }
+
+  setPatientRepository(repo: IPatientRepository) {
+    this.patientRepo = repo;
+  }
+
+  setDirectoryRepository(repo: IDirectoryRepository) {
+    this.directoryRepo = repo;
+  }
 
   // =========================================================================
   // 1. CREATE COURSE (PRESCRIPTION PLAN)
@@ -147,7 +159,7 @@ export class CourseService {
       }
     }
 
-    const updated = await this.repo.updateCourse(id, input, input.version);
+    const updated = await this.repo.updateCourse(id, input, input.version ?? existing.version);
 
     await this.auditService.write({
       actor_type: 'staff',
@@ -191,7 +203,10 @@ export class CourseService {
   // =========================================================================
   // 5. LIST COURSES
   // =========================================================================
-  async listCourses(filter: CourseQueryFilter, actor: UserSession): Promise<CourseRecord[]> {
+  async listCourses(
+    filter: CourseQueryFilter,
+    actor: UserSession
+  ): Promise<{ courses: CourseRecord[]; total: number; page: number; limit: number }> {
     let accessibleIds: string[] | null = null;
     if (actor.role === 'pt') {
       accessibleIds = await this.patientRepo.getAccessiblePatientIdsForPt(actor.id);
@@ -244,4 +259,7 @@ export class CourseService {
   }
 }
 
-export const defaultCourseService = new CourseService();
+export let defaultCourseService = new CourseService();
+export const setDefaultCourseService = (service: CourseService) => {
+  defaultCourseService = service;
+};

@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from './errorHandler';
+import { logger } from './logger';
 import { getAdminClient } from '../lib/supabase/adminClient';
 import { getAuthClient } from '../lib/supabase/authClient';
+import { getEnv } from '../config/env';
 
 export interface UserSession {
   id: string;
@@ -11,7 +13,6 @@ export interface UserSession {
   iat?: number;
 }
 
-/* eslint-disable @typescript-eslint/no-namespace */
 declare global {
   namespace Express {
     interface Request {
@@ -24,7 +25,6 @@ declare global {
     }
   }
 }
-/* eslint-enable @typescript-eslint/no-namespace */
 
 // In-memory cache for user profile lookups (TTL = 15 seconds) to avoid pounding Postgres on every request
 interface CachedProfile {
@@ -63,6 +63,20 @@ function decodeJwtPayload(token: string): { iat?: number; exp?: number; sub?: st
   return null;
 }
 
+export type AuthTokenVerifier = (token: string) => Promise<{
+  id: string;
+  role: string;
+  full_name: string;
+  status: string;
+  force_logout_at?: string | null;
+} | null>;
+
+let customTokenVerifier: AuthTokenVerifier | null = null;
+
+export function setAuthTokenVerifier(verifier: AuthTokenVerifier | null): void {
+  customTokenVerifier = verifier;
+}
+
 /**
  * Authentication Middleware
  * 1. Checks access token in HttpOnly cookie or Authorization Bearer header
@@ -72,9 +86,14 @@ function decodeJwtPayload(token: string): { iat?: number; exp?: number; sub?: st
  */
 export async function authenticate(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
+    const env = getEnv();
+    const isProd = env.NODE_ENV === 'production';
+    const allowBearerInProd = env.ALLOW_BEARER_IN_PROD;
+    const bearerAllowed = !isProd || allowBearerInProd;
+
     const token =
       req.cookies?.access_token ||
-      (req.headers.authorization?.startsWith('Bearer ')
+      (bearerAllowed && req.headers.authorization?.startsWith('Bearer ')
         ? req.headers.authorization.slice(7)
         : undefined);
 
@@ -82,51 +101,75 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
 
-    // In testing or mocked scenarios:
-    if (process.env.NODE_ENV === 'test') {
-      if (token === 'invalid-fake-token' || token === 'malformed.token.value') {
-        throw new AppError('Invalid authentication token', 401, 'UNAUTHORIZED');
+    // If a custom token verifier has been injected (e.g. by test suite fixture), use it
+    if (customTokenVerifier) {
+      const verified = await customTokenVerifier(token);
+      if (!verified) {
+        throw new AppError('Invalid or expired authentication session', 401, 'UNAUTHORIZED');
       }
-      if (token === 'expired-token') {
-        throw new AppError('Authentication token has expired', 401, 'UNAUTHORIZED');
+      if (verified.status !== 'active') {
+        throw new AppError('User account is inactive or suspended', 403, 'ACCOUNT_INACTIVE');
       }
-      if (token.startsWith('mock-token:')) {
-        const parts = token.split(':');
-        const userId = parts[1] || 'mock-user-id';
-        const role = parts[2] || 'pt';
-        const status = parts[3] || 'active';
-        const isForceLoggedOut = parts[4] === 'revoked';
-
-        if (status !== 'active') {
-          throw new AppError('User account is inactive or suspended', 403, 'ACCOUNT_INACTIVE');
-        }
-
-        if (isForceLoggedOut || forceLoggedOutUsers.has(userId)) {
-          throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
-        }
-
-        req.user = {
-          id: userId,
-          role,
-          full_name: 'Mock Test User',
-          status,
-        };
-        return next();
+      if (
+        forceLoggedOutUsers.has(verified.id) ||
+        Boolean(verified.force_logout_at)
+      ) {
+        throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
       }
+      req.user = {
+        id: verified.id,
+        role: verified.role,
+        full_name: verified.full_name,
+        status: verified.status,
+      };
+      return next();
     }
 
     // 1. Verify token with Supabase Auth
-    const authClient = getAuthClient();
-    const { data: userData, error: authError } = await authClient.auth.getUser(token);
+    let authUser: { id: string; email?: string } | null = null;
+    try {
+      const authClient = getAuthClient();
+      const res = await authClient.auth.getUser(token);
+      if (res.error) {
+        const errStatus = (res.error as { status?: number }).status;
+        const errMsg = String(res.error.message || '').toLowerCase();
+        const isNetworkOr5xx =
+          (typeof errStatus === 'number' && errStatus >= 500) ||
+          res.error.name === 'AuthRetryableFetchError' ||
+          errMsg.includes('fetch failed') ||
+          errMsg.includes('econnrefused') ||
+          errMsg.includes('network') ||
+          errMsg.includes('timeout') ||
+          errMsg.includes('unavailable');
 
-    if (authError || !userData?.user) {
+        if (isNetworkOr5xx) {
+          logger.error({ error: res.error }, 'Supabase Auth network/service outage during token verification');
+          throw new AppError('Authentication service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
+
+        // Token is genuinely invalid, expired, or malformed -> 401
+        throw new AppError('Invalid or expired authentication session', 401, 'UNAUTHORIZED');
+      }
+      if (res.data?.user) {
+        authUser = { id: res.data.user.id, email: res.data.user.email };
+      }
+    } catch (authErr) {
+      if (authErr instanceof AppError) throw authErr;
+      logger.error({ authErr }, 'Network error communicating with Supabase Auth');
+      throw new AppError('Authentication service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+
+    if (!authUser) {
       throw new AppError('Invalid or expired authentication session', 401, 'UNAUTHORIZED');
     }
 
-    const userId = userData.user.id;
+    const userId = authUser.id;
     const now = Date.now();
     const jwtPayload = decodeJwtPayload(token);
-    const tokenIatMs = jwtPayload?.iat ? jwtPayload.iat * 1000 : now;
+    if (!jwtPayload || typeof jwtPayload.iat !== 'number') {
+      throw new AppError('Invalid token: missing issued-at (iat) timestamp', 401, 'UNAUTHORIZED');
+    }
+    const tokenIatMs = jwtPayload.iat * 1000;
 
     // 2. Check in-memory profile cache (<= 15 seconds)
     const cached = profileCache.get(userId);
@@ -149,7 +192,12 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       .eq('id', userId)
       .single();
 
-    if (profileError || !profile) {
+    if (profileError) {
+      logger.error({ profileError, userId }, 'Failed to query user profile from Supabase during authentication');
+      throw new AppError('Database service unavailable during authentication', 503, 'SERVICE_UNAVAILABLE');
+    }
+
+    if (!profile) {
       throw new AppError('User profile not found', 401, 'UNAUTHORIZED');
     }
 

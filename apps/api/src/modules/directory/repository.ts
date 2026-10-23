@@ -1,7 +1,9 @@
 import { randomUUID } from 'crypto';
 import { getAdminClient } from '../../lib/supabase/adminClient';
+import { AppError } from '../../middleware/errorHandler';
+import { logger } from '../../middleware/logger';
 import { StaffProfileRecord } from '../staff/schema';
-import { StaffRepository, defaultStaffRepository } from '../staff/repository';
+import { IStaffRepository, defaultStaffRepository } from '../staff/repository';
 import {
   ExerciseRecord,
   ExerciseQueryFilter,
@@ -12,29 +14,42 @@ import {
   CreateMinigameInput,
   CreateMinigameQuestionInput,
   ModpackRecord,
-  ModpackItemRecord,
   CreateModpackInput,
   UpdateModpackInput,
   CaseTransferRecord,
   CreateCaseTransferInput,
 } from './schema';
 
-export class DirectoryRepository {
-  private inMemoryExercises: Map<string, ExerciseRecord> = new Map();
-  private inMemoryMinigames: Map<string, MinigameRecord> = new Map();
-  private inMemoryQuestions: Map<string, MinigameQuestionRecord> = new Map();
-  private inMemoryModpacks: Map<string, ModpackRecord> = new Map();
-  private inMemoryTransfers: Map<string, CaseTransferRecord> = new Map();
+export interface IDirectoryRepository {
+  listActivePts(): Promise<StaffProfileRecord[]>;
+  createExercise(input: CreateExerciseInput, createdBy: string): Promise<ExerciseRecord>;
+  getExerciseById(id: string): Promise<ExerciseRecord | null>;
+  updateExercise(id: string, input: UpdateExerciseInput): Promise<ExerciseRecord>;
+  deleteExercise(id: string): Promise<void>;
+  listExercises(filter?: ExerciseQueryFilter): Promise<ExerciseRecord[]>;
+  uploadExerciseMedia(id: string, fileBuffer: Buffer, mimeType: string, extension: string): Promise<string>;
+  createMinigame(input: CreateMinigameInput, createdBy: string): Promise<MinigameRecord>;
+  getMinigameById(id: string): Promise<MinigameRecord | null>;
+  listMinigames(): Promise<MinigameRecord[]>;
+  createMinigameQuestion(input: CreateMinigameQuestionInput): Promise<MinigameQuestionRecord>;
+  listMinigameQuestions(minigameId: string): Promise<MinigameQuestionRecord[]>;
+  createQuestion(minigameId: string, input: CreateMinigameQuestionInput, createdBy: string): Promise<MinigameQuestionRecord>;
+  listQuestionsByMinigame(minigameId: string): Promise<MinigameQuestionRecord[]>;
+  deleteQuestion(id: string): Promise<void>;
+  createModpack(input: CreateModpackInput, createdBy: string): Promise<ModpackRecord>;
+  getModpackById(id: string): Promise<ModpackRecord | null>;
+  updateModpack(id: string, input: UpdateModpackInput): Promise<ModpackRecord>;
+  deleteModpack(id: string): Promise<void>;
+  listModpacks(targetJoint?: string): Promise<ModpackRecord[]>;
+  createCaseTransfer(input: CreateCaseTransferInput, fromPtIdOrCreatedBy?: string, createdBy?: string): Promise<CaseTransferRecord>;
+  listCaseTransfers(ptId?: string): Promise<CaseTransferRecord[]>;
+  getCaseTransferById(id: string): Promise<CaseTransferRecord | null>;
+  cancelCaseTransfer(id: string): Promise<void>;
+  isPatientDelegatedToPt(patientId: string, ptId: string, today: string): Promise<boolean>;
+}
 
-  constructor(private staffRepo: StaffRepository = defaultStaffRepository) {}
-
-  clearAllInMemory(): void {
-    this.inMemoryExercises.clear();
-    this.inMemoryMinigames.clear();
-    this.inMemoryQuestions.clear();
-    this.inMemoryModpacks.clear();
-    this.inMemoryTransfers.clear();
-  }
+export class DirectoryRepository implements IDirectoryRepository {
+  constructor(private staffRepo: IStaffRepository = defaultStaffRepository) {}
 
   // =========================================================================
   // 1. PTs Directory
@@ -48,48 +63,42 @@ export class DirectoryRepository {
   // =========================================================================
   async createExercise(input: CreateExerciseInput, createdBy: string): Promise<ExerciseRecord> {
     const nowIso = new Date().toISOString();
-    const record: ExerciseRecord = {
-      id: randomUUID(),
-      title: input.title,
-      image_path: input.image_path || null,
-      description: input.description || null,
-      target_joint: input.target_joint || null,
-      suitable_for: input.suitable_for || null,
-      warnings: input.warnings || null,
-      default_sets: input.default_sets ?? 3,
-      default_reps: input.default_reps ?? 10,
-      difficulty: input.difficulty ?? 'beginner',
-      created_by: createdBy,
-      is_active: true,
-      created_at: nowIso,
-      updated_at: nowIso,
-    };
-
-    this.inMemoryExercises.set(record.id, record);
+    const id = randomUUID();
 
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('exercises').insert({
-        id: record.id,
-        title: record.title,
-        image_path: record.image_path,
-        description: record.description,
-        target_joint: record.target_joint,
-        suitable_for: record.suitable_for,
-        warnings: record.warnings,
-        default_sets: record.default_sets,
-        default_reps: record.default_reps,
-        difficulty: record.difficulty,
-        created_by: record.created_by,
-        is_active: record.is_active,
-        created_at: record.created_at,
-        updated_at: record.updated_at,
-      });
-    } catch {
-      // in-memory fallback
-    }
+      const { data, error } = await adminClient
+        .from('exercises')
+        .insert({
+          id,
+          title: input.title,
+          image_path: input.image_path || null,
+          description: input.description || null,
+          target_joint: input.target_joint || null,
+          suitable_for: input.suitable_for || null,
+          warnings: input.warnings || null,
+          default_sets: input.default_sets ?? 3,
+          default_reps: input.default_reps ?? 10,
+          difficulty: input.difficulty ?? 'beginner',
+          created_by: createdBy,
+          is_active: true,
+          created_at: nowIso,
+          updated_at: nowIso,
+        })
+        .select('*')
+        .single();
 
-    return record;
+      if (error || !data) {
+        logger.error({ error, input }, 'Database error creating exercise');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return data as ExerciseRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, input }, 'Unexpected error in createExercise');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async getExerciseById(id: string): Promise<ExerciseRecord | null> {
@@ -101,24 +110,68 @@ export class DirectoryRepository {
         .eq('id', id)
         .maybeSingle();
 
-      if (!error && data) {
-        return data as ExerciseRecord;
+      if (error) {
+        logger.error({ error, id }, 'Database error querying exercise by id');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return this.inMemoryExercises.get(id) || null;
+      return (data as ExerciseRecord) || null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in getExerciseById');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
+
+  async updateExercise(id: string, input: UpdateExerciseInput): Promise<ExerciseRecord> {
+    try {
+      const adminClient = getAdminClient();
+      const { data, error } = await adminClient
+        .from('exercises')
+        .update({
+          ...input,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+
+      if (error || !data) {
+        logger.error({ error, id, input }, 'Database error updating exercise');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return data as ExerciseRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in updateExercise');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
+
+  async deleteExercise(id: string): Promise<void> {
+    try {
+      const adminClient = getAdminClient();
+      const { error } = await adminClient
+        .from('exercises')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        logger.error({ error, id }, 'Database error deleting exercise');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in deleteExercise');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async listExercises(filter?: ExerciseQueryFilter): Promise<ExerciseRecord[]> {
     try {
       const adminClient = getAdminClient();
-      let query = adminClient
-        .from('exercises')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
+      let query = adminClient.from('exercises').select('*').order('created_at', { ascending: false });
 
       if (filter?.target_joint) {
         query = query.eq('target_joint', filter.target_joint);
@@ -131,145 +184,76 @@ export class DirectoryRepository {
       }
 
       const { data, error } = await query;
-      if (!error && data) {
-        return data as ExerciseRecord[];
+      if (error) {
+        logger.error({ error, filter }, 'Database error listing exercises');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    let results = Array.from(this.inMemoryExercises.values()).filter((e) => e.is_active);
-    if (filter?.target_joint) {
-      results = results.filter((e) => e.target_joint === filter.target_joint);
+      return (data as ExerciseRecord[]) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, filter }, 'Unexpected error in listExercises');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-    if (filter?.difficulty) {
-      results = results.filter((e) => e.difficulty === filter.difficulty);
-    }
-    if (filter?.search) {
-      const s = filter.search.toLowerCase();
-      results = results.filter((e) => e.title.toLowerCase().includes(s));
-    }
-
-    return results;
   }
 
-  async updateExercise(id: string, updates: UpdateExerciseInput): Promise<ExerciseRecord> {
-    const existing = await this.getExerciseById(id);
-    if (!existing) {
-      throw new Error(`Exercise ${id} not found`);
-    }
-
-    const updated: ExerciseRecord = {
-      ...existing,
-      ...updates,
-      updated_at: new Date().toISOString(),
-    };
-
-    this.inMemoryExercises.set(id, updated);
-
+  async uploadExerciseMedia(id: string, fileBuffer: Buffer, mimeType: string, extension: string): Promise<string> {
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('exercises').update(updates).eq('id', id);
-    } catch {
-      // fallback
-    }
-
-    return updated;
-  }
-
-  async deleteExercise(id: string): Promise<boolean> {
-    try {
-      const adminClient = getAdminClient();
-      const { error } = await adminClient.from('exercises').delete().eq('id', id);
-      if (!error) {
-        this.inMemoryExercises.delete(id);
-        return true;
-      }
-    } catch {
-      // fallback
-    }
-
-    const had = this.inMemoryExercises.has(id);
-    this.inMemoryExercises.delete(id);
-    return had;
-  }
-
-  async uploadExerciseMedia(
-    exerciseId: string,
-    fileBuffer: Buffer,
-    mimeType: string,
-    extension: string
-  ): Promise<string> {
-    const filePath = `${exerciseId}/media_${Date.now()}.${extension}`;
-    try {
-      const adminClient = getAdminClient();
+      const filePath = `${id}/media_${Date.now()}.${extension}`;
       const { error } = await adminClient.storage
         .from('exercise-media')
-        .upload(filePath, fileBuffer, {
-          contentType: mimeType,
-          upsert: true,
-        });
+        .upload(filePath, fileBuffer, { contentType: mimeType, upsert: true });
 
-      if (!error) {
-        const { data } = await adminClient.storage
-          .from('exercise-media')
-          .createSignedUrl(filePath, 3600 * 24);
-        if (data?.signedUrl) {
-          return data.signedUrl;
-        }
+      if (error) {
+        logger.error({ error, id }, 'Database storage error uploading exercise media');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return `/storage/exercise-media/${filePath}`;
+      const { data } = adminClient.storage.from('exercise-media').getPublicUrl(filePath);
+      return data.publicUrl;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error uploading exercise media');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   // =========================================================================
-  // 3. Minigames & Questions
+  // 3. Minigames
   // =========================================================================
   async createMinigame(input: CreateMinigameInput, createdBy: string): Promise<MinigameRecord> {
     const nowIso = new Date().toISOString();
-    const record: MinigameRecord = {
-      id: randomUUID(),
-      title: input.title,
-      description: input.description || null,
-      category: input.category || null,
-      is_active: true,
-      created_by: createdBy,
-      created_at: nowIso,
-      updated_at: nowIso,
-    };
+    const id = randomUUID();
 
-    this.inMemoryMinigames.set(record.id, record);
-
-    try {
-      const adminClient = getAdminClient();
-      await adminClient.from('minigames').insert(record);
-    } catch {
-      // fallback
-    }
-
-    return record;
-  }
-
-  async listMinigames(): Promise<MinigameRecord[]> {
     try {
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('minigames')
+        .insert({
+          id,
+          title: input.title,
+          description: input.description || null,
+          category: input.category || null,
+          is_active: true,
+          created_by: createdBy,
+          created_at: nowIso,
+          updated_at: nowIso,
+        })
         .select('*')
-        .eq('is_active', true)
-        .order('title', { ascending: true });
+        .single();
 
-      if (!error && data) {
-        return data as MinigameRecord[];
+      if (error || !data) {
+        logger.error({ error, input }, 'Database error creating minigame');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return Array.from(this.inMemoryMinigames.values()).filter((m) => m.is_active);
+      return data as MinigameRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, input }, 'Unexpected error in createMinigame');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async getMinigameById(id: string): Promise<MinigameRecord | null> {
@@ -281,341 +265,300 @@ export class DirectoryRepository {
         .eq('id', id)
         .maybeSingle();
 
-      if (!error && data) {
-        return data as MinigameRecord;
+      if (error) {
+        logger.error({ error, id }, 'Database error querying minigame by id');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return this.inMemoryMinigames.get(id) || null;
+      return (data as MinigameRecord) || null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in getMinigameById');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
-  async createQuestion(
-    minigameId: string,
-    input: CreateMinigameQuestionInput,
-    createdBy: string
-  ): Promise<MinigameQuestionRecord> {
-    const record: MinigameQuestionRecord = {
-      id: randomUUID(),
-      minigame_id: minigameId,
-      prompt: input.prompt,
-      choices: input.choices,
-      answer: input.answer,
-      created_by: createdBy,
-      created_at: new Date().toISOString(),
-    };
+  async listMinigames(): Promise<MinigameRecord[]> {
+    try {
+      const adminClient = getAdminClient();
+      const { data, error } = await adminClient
+        .from('minigames')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    this.inMemoryQuestions.set(record.id, record);
+      if (error) {
+        logger.error({ error }, 'Database error listing minigames');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return (data as MinigameRecord[]) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err }, 'Unexpected error in listMinigames');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
+
+  async createMinigameQuestion(input: CreateMinigameQuestionInput & { minigame_id?: string }, createdBy: string = 'admin'): Promise<MinigameQuestionRecord> {
+    const id = randomUUID();
+    const nowIso = new Date().toISOString();
 
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('minigame_questions').insert(record);
-    } catch {
-      // fallback
-    }
+      const { data, error } = await adminClient
+        .from('minigame_questions')
+        .insert({
+          id,
+          minigame_id: input.minigame_id || '',
+          prompt: input.prompt,
+          choices: input.choices,
+          answer: input.answer,
+          created_by: createdBy,
+          created_at: nowIso,
+        })
+        .select('*')
+        .single();
 
-    return record;
+      if (error || !data) {
+        logger.error({ error, input }, 'Database error creating minigame question');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return data as MinigameQuestionRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, input }, 'Unexpected error in createMinigameQuestion');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
-  async listQuestionsByMinigame(minigameId: string): Promise<MinigameQuestionRecord[]> {
+  async listMinigameQuestions(minigameId: string): Promise<MinigameQuestionRecord[]> {
     try {
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('minigame_questions')
         .select('*')
-        .eq('minigame_id', minigameId)
-        .order('created_at', { ascending: true });
+        .eq('minigame_id', minigameId);
 
-      if (!error && data) {
-        return data as MinigameQuestionRecord[];
+      if (error) {
+        logger.error({ error, minigameId }, 'Database error listing minigame questions');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return Array.from(this.inMemoryQuestions.values()).filter(
-      (q) => q.minigame_id === minigameId
-    );
+      return (data as MinigameQuestionRecord[]) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, minigameId }, 'Unexpected error in listMinigameQuestions');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
-  async deleteQuestion(questionId: string): Promise<boolean> {
+  async createQuestion(minigameId: string, input: CreateMinigameQuestionInput, createdBy: string): Promise<MinigameQuestionRecord> {
+    return this.createMinigameQuestion({ ...input, minigame_id: minigameId }, createdBy);
+  }
+
+  async listQuestionsByMinigame(minigameId: string): Promise<MinigameQuestionRecord[]> {
+    return this.listMinigameQuestions(minigameId);
+  }
+
+  async deleteQuestion(id: string): Promise<void> {
     try {
       const adminClient = getAdminClient();
-      const { error } = await adminClient.from('minigame_questions').delete().eq('id', questionId);
-      if (!error) {
-        this.inMemoryQuestions.delete(questionId);
-        return true;
+      const { error } = await adminClient.from('minigame_questions').delete().eq('id', id);
+      if (error) {
+        logger.error({ error, id }, 'Database error deleting minigame question');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in deleteQuestion');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    const had = this.inMemoryQuestions.has(questionId);
-    this.inMemoryQuestions.delete(questionId);
-    return had;
   }
 
   // =========================================================================
-  // 4. Modpacks (Curated Bundles)
+  // 4. Modpacks (Exercise Bundles)
   // =========================================================================
   async createModpack(input: CreateModpackInput, createdBy: string): Promise<ModpackRecord> {
-    const modpackId = randomUUID();
+    const id = randomUUID();
     const nowIso = new Date().toISOString();
-
-    const items: ModpackItemRecord[] = input.items.map((item) => ({
-      id: randomUUID(),
-      modpack_id: modpackId,
-      exercise_id: item.exercise_id,
-      sets: item.sets,
-      reps: item.reps,
-      position: item.position,
-      exercise: this.inMemoryExercises.get(item.exercise_id) || null,
-    }));
-
-    const modpack: ModpackRecord = {
-      id: modpackId,
-      name: input.name,
-      description: input.description || null,
-      created_by: createdBy,
-      created_at: nowIso,
-      updated_at: nowIso,
-      items,
-    };
-
-    this.inMemoryModpacks.set(modpackId, modpack);
 
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('modpacks').insert({
-        id: modpack.id,
-        name: modpack.name,
-        description: modpack.description,
-        created_by: modpack.created_by,
-        created_at: modpack.created_at,
-        updated_at: modpack.updated_at,
-      });
+      const { data: pack, error: packErr } = await adminClient
+        .from('modpacks')
+        .insert({
+          id,
+          name: input.name,
+          description: input.description || null,
+          created_by: createdBy,
+          is_active: true,
+          created_at: nowIso,
+          updated_at: nowIso,
+        })
+        .select('*')
+        .single();
 
-      const dbItems = items.map((i) => ({
-        id: i.id,
-        modpack_id: i.modpack_id,
-        exercise_id: i.exercise_id,
-        sets: i.sets,
-        reps: i.reps,
-        position: i.position,
+      if (packErr || !pack) {
+        logger.error({ packErr, input }, 'Database error creating modpack');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      const items = (input.items || []).map((it, idx) => ({
+        id: randomUUID(),
+        modpack_id: id,
+        exercise_id: it.exercise_id,
+        sets: it.sets ?? 3,
+        reps: it.reps ?? 10,
+        position: it.position ?? idx + 1,
       }));
 
-      await adminClient.from('modpack_items').insert(dbItems);
-    } catch {
-      // fallback
-    }
+      if (items.length > 0) {
+        const { error: itemsErr } = await adminClient.from('modpack_items').insert(items);
+        if (itemsErr) {
+          logger.error({ itemsErr, id }, 'Database error inserting modpack items');
+          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
+      }
 
-    return modpack;
+      return {
+        ...pack,
+        items,
+      } as ModpackRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, input }, 'Unexpected error in createModpack');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async getModpackById(id: string): Promise<ModpackRecord | null> {
     try {
       const adminClient = getAdminClient();
-      const { data, error } = await adminClient
+      const { data: pack, error: packErr } = await adminClient
         .from('modpacks')
-        .select('*, modpack_items(*, exercises(*))')
+        .select('*, items:modpack_items(*)')
         .eq('id', id)
         .maybeSingle();
 
-      if (!error && data) {
-        return {
-          id: data.id,
-          name: data.name,
-          description: data.description,
-          created_by: data.created_by,
-          created_at: data.created_at,
-          updated_at: data.updated_at,
-          items: Array.isArray(data.modpack_items)
-            ? data.modpack_items.map((i: Record<string, unknown>) => ({
-                id: String(i.id),
-                modpack_id: String(i.modpack_id),
-                exercise_id: String(i.exercise_id),
-                sets: Number(i.sets),
-                reps: Number(i.reps),
-                position: Number(i.position),
-                exercise: i.exercises as ExerciseRecord | null,
-              }))
-            : [],
-        };
+      if (packErr) {
+        logger.error({ packErr, id }, 'Database error querying modpack by id');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return this.inMemoryModpacks.get(id) || null;
+      return (pack as ModpackRecord) || null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in getModpackById');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
-  async listModpacks(): Promise<ModpackRecord[]> {
+  async updateModpack(id: string, input: UpdateModpackInput): Promise<ModpackRecord> {
     try {
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('modpacks')
-        .select('*, modpack_items(*, exercises(*))')
-        .order('name', { ascending: true });
-
-      if (!error && data) {
-        return data.map((d) => ({
-          id: d.id,
-          name: d.name,
-          description: d.description,
-          created_by: d.created_by,
-          created_at: d.created_at,
-          updated_at: d.updated_at,
-          items: Array.isArray(d.modpack_items)
-            ? d.modpack_items.map((i: Record<string, unknown>) => ({
-                id: String(i.id),
-                modpack_id: String(i.modpack_id),
-                exercise_id: String(i.exercise_id),
-                sets: Number(i.sets),
-                reps: Number(i.reps),
-                position: Number(i.position),
-                exercise: i.exercises as ExerciseRecord | null,
-              }))
-            : [],
-        }));
-      }
-    } catch {
-      // fallback
-    }
-
-    return Array.from(this.inMemoryModpacks.values());
-  }
-
-  async updateModpack(id: string, updates: UpdateModpackInput): Promise<ModpackRecord> {
-    const existing = await this.getModpackById(id);
-    if (!existing) {
-      throw new Error(`Modpack ${id} not found`);
-    }
-
-    let items = existing.items;
-    if (updates.items) {
-      items = updates.items.map((item) => ({
-        id: randomUUID(),
-        modpack_id: id,
-        exercise_id: item.exercise_id,
-        sets: item.sets,
-        reps: item.reps,
-        position: item.position,
-        exercise: this.inMemoryExercises.get(item.exercise_id) || null,
-      }));
-    }
-
-    const updated: ModpackRecord = {
-      ...existing,
-      name: updates.name ?? existing.name,
-      description: updates.description !== undefined ? updates.description : existing.description,
-      items,
-      updated_at: new Date().toISOString(),
-    };
-
-    this.inMemoryModpacks.set(id, updated);
-
-    try {
-      const adminClient = getAdminClient();
-      await adminClient
-        .from('modpacks')
         .update({
-          name: updated.name,
-          description: updated.description,
-          updated_at: updated.updated_at,
+          ...input,
+          updated_at: new Date().toISOString(),
         })
-        .eq('id', id);
+        .eq('id', id)
+        .select('*, items:modpack_items(*)')
+        .maybeSingle();
 
-      if (updates.items) {
-        await adminClient.from('modpack_items').delete().eq('modpack_id', id);
-        const dbItems = items.map((i) => ({
-          id: i.id,
-          modpack_id: i.modpack_id,
-          exercise_id: i.exercise_id,
-          sets: i.sets,
-          reps: i.reps,
-          position: i.position,
-        }));
-        await adminClient.from('modpack_items').insert(dbItems);
+      if (error || !data) {
+        logger.error({ error, id, input }, 'Database error updating modpack');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return updated;
+      return data as ModpackRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in updateModpack');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
-  async deleteModpack(id: string): Promise<boolean> {
+  async deleteModpack(id: string): Promise<void> {
     try {
       const adminClient = getAdminClient();
       const { error } = await adminClient.from('modpacks').delete().eq('id', id);
-      if (!error) {
-        this.inMemoryModpacks.delete(id);
-        return true;
+      if (error) {
+        logger.error({ error, id }, 'Database error deleting modpack');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in deleteModpack');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    const had = this.inMemoryModpacks.has(id);
-    this.inMemoryModpacks.delete(id);
-    return had;
   }
 
-  // =========================================================================
-  // 5. Case Transfers (ฝากเคสชั่วคราว)
-  // =========================================================================
-  async createCaseTransfer(
-    input: CreateCaseTransferInput,
-    fromPtId: string,
-    createdBy: string
-  ): Promise<CaseTransferRecord> {
-    const record: CaseTransferRecord = {
-      id: randomUUID(),
-      patient_id: input.patient_id,
-      from_pt_id: input.from_pt_id || fromPtId,
-      to_pt_id: input.to_pt_id,
-      start_date: input.start_date,
-      end_date: input.end_date,
-      created_by: createdBy,
-      status: 'active',
-      created_at: new Date().toISOString(),
-    };
-
-    this.inMemoryTransfers.set(record.id, record);
-
+  async listModpacks(targetJoint?: string): Promise<ModpackRecord[]> {
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('case_transfers').insert(record);
-    } catch {
-      // fallback
-    }
-
-    return record;
-  }
-
-  async listCaseTransfers(ptId?: string): Promise<CaseTransferRecord[]> {
-    try {
-      const adminClient = getAdminClient();
-      let query = adminClient.from('case_transfers').select('*').order('created_at', { ascending: false });
-
-      if (ptId) {
-        query = query.or(`from_pt_id.eq.${ptId},to_pt_id.eq.${ptId}`);
+      let query = adminClient.from('modpacks').select('*, items:modpack_items(*)').order('created_at', { ascending: false });
+      if (targetJoint) {
+        query = query.eq('target_joint', targetJoint);
       }
 
       const { data, error } = await query;
-      if (!error && data) {
-        return data as CaseTransferRecord[];
+      if (error) {
+        logger.error({ error, targetJoint }, 'Database error listing modpacks');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    let results = Array.from(this.inMemoryTransfers.values());
-    if (ptId) {
-      results = results.filter((t) => t.from_pt_id === ptId || t.to_pt_id === ptId);
+      return (data as ModpackRecord[]) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, targetJoint }, 'Unexpected error in listModpacks');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-    return results;
+  }
+
+  // =========================================================================
+  // 5. Case Transfers
+  // =========================================================================
+  async createCaseTransfer(
+    input: CreateCaseTransferInput,
+    fromPtIdOrCreatedBy?: string,
+    createdBy?: string
+  ): Promise<CaseTransferRecord> {
+    const id = randomUUID();
+    const nowIso = new Date().toISOString();
+    const from_pt_id = input.from_pt_id || (createdBy ? fromPtIdOrCreatedBy : undefined) || 'pt-001';
+    const creator = createdBy || fromPtIdOrCreatedBy || from_pt_id;
+
+    try {
+      const adminClient = getAdminClient();
+      const { data, error } = await adminClient
+        .from('case_transfers')
+        .insert({
+          id,
+          patient_id: input.patient_id,
+          from_pt_id,
+          to_pt_id: input.to_pt_id,
+          start_date: input.start_date,
+          end_date: input.end_date,
+          status: 'active',
+          created_by: creator,
+          created_at: nowIso,
+        })
+        .select('*')
+        .single();
+
+      if (error || !data) {
+        logger.error({ error, input }, 'Database error creating case transfer');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return data as CaseTransferRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, input }, 'Unexpected error in createCaseTransfer');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async getCaseTransferById(id: string): Promise<CaseTransferRecord | null> {
@@ -627,78 +570,105 @@ export class DirectoryRepository {
         .eq('id', id)
         .maybeSingle();
 
-      if (!error && data) {
-        return data as CaseTransferRecord;
+      if (error) {
+        logger.error({ error, id }, 'Database error querying case transfer by id');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return this.inMemoryTransfers.get(id) || null;
+      return (data as CaseTransferRecord) || null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in getCaseTransferById');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async cancelCaseTransfer(id: string): Promise<void> {
-    const existing = await this.getCaseTransferById(id);
-    if (!existing) {
-      throw new Error(`Case transfer ${id} not found`);
-    }
-
-    const updated: CaseTransferRecord = {
-      ...existing,
-      status: 'cancelled',
-    };
-    this.inMemoryTransfers.set(id, updated);
-
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('case_transfers').update({ status: 'cancelled' }).eq('id', id);
-    } catch {
-      // fallback
+      const { error } = await adminClient
+        .from('case_transfers')
+        .update({ status: 'cancelled' })
+        .eq('id', id);
+
+      if (error) {
+        logger.error({ error, id }, 'Database error cancelling case transfer');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected error in cancelCaseTransfer');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
-  /**
-   * Helper function to check if a patient is delegated to a given PT on a target date.
-   */
-  async isPatientDelegatedToPt(patientId: string, ptId: string, dateStr: string): Promise<boolean> {
-    const targetDate = new Date(dateStr).getTime();
+  async listCaseTransfers(ptId?: string): Promise<CaseTransferRecord[]> {
+    try {
+      const adminClient = getAdminClient();
+      let query = adminClient.from('case_transfers').select('*').order('created_at', { ascending: false });
+      if (ptId) {
+        query = query.or(`from_pt_id.eq.${ptId},to_pt_id.eq.${ptId}`);
+      }
 
-    // Check DB
+      const { data, error } = await query;
+      if (error) {
+        logger.error({ error, ptId }, 'Database error listing case transfers');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return (data as CaseTransferRecord[]) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, ptId }, 'Unexpected error in listCaseTransfers');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
+
+  async isPatientDelegatedToPt(patientId: string, ptId: string, today: string): Promise<boolean> {
     try {
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('case_transfers')
-        .select('*')
+        .select('id')
         .eq('patient_id', patientId)
         .eq('to_pt_id', ptId)
+        .lte('start_date', today)
+        .gte('end_date', today)
         .eq('status', 'active')
-        .lte('start_date', dateStr)
-        .gte('end_date', dateStr);
+        .maybeSingle();
 
-      if (!error && data && data.length > 0) {
-        return true;
+      if (error) {
+        logger.error({ error, patientId, ptId }, 'Database error checking delegation');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    // Check in-memory
-    for (const t of this.inMemoryTransfers.values()) {
-      if (
-        t.patient_id === patientId &&
-        t.to_pt_id === ptId &&
-        t.status === 'active'
-      ) {
-        const start = new Date(t.start_date).getTime();
-        const end = new Date(t.end_date).getTime();
-        if (targetDate >= start && targetDate <= end) {
-          return true;
-        }
-      }
+      return !!data;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId, ptId }, 'Unexpected error in isPatientDelegatedToPt');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    return false;
   }
 }
 
-export const defaultDirectoryRepository = new DirectoryRepository();
+let currentDirectoryRepository: IDirectoryRepository = new DirectoryRepository();
+
+export function setDefaultDirectoryRepository(repo: IDirectoryRepository): void {
+  currentDirectoryRepository = repo;
+}
+
+export const defaultDirectoryRepository: IDirectoryRepository = new Proxy(
+  {} as unknown as IDirectoryRepository,
+  {
+    get(_target, prop) {
+      const val = Reflect.get(currentDirectoryRepository, prop);
+      if (typeof val === 'function') {
+        return (val as (...args: unknown[]) => unknown).bind(currentDirectoryRepository);
+      }
+      return val;
+    },
+    set(_target, prop, value) {
+      return Reflect.set(currentDirectoryRepository, prop, value);
+    },
+  }
+);

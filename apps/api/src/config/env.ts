@@ -2,9 +2,13 @@ import { z } from 'zod';
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load environment files
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+// Load environment files: In test mode, strictly load .env.test and ignore .env.local (Item H7)
+if (process.env.NODE_ENV === 'test') {
+  dotenv.config({ path: path.resolve(process.cwd(), '.env.test') });
+} else {
+  dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+  dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+}
 
 // Strict helper for positive ratio between 0 (exclusive) and 1 (inclusive)
 // Rejects: empty string "", 0, negative values, and non-numbers
@@ -26,15 +30,20 @@ const strictPositiveInt = (fieldName: string) =>
       .gt(0, { message: `${fieldName} must be strictly greater than 0` })
   );
 
+// Item H5: Only active_challenge_tracker is implemented. Unimplemented silent_liveness_v1 is removed.
+export const REGISTERED_PAD_PROVIDERS = [
+  'active_challenge_tracker',
+] as const;
+
 export const envSchema = z
   .object({
-    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-    PORT: z.coerce.number().default(4000),
+    NODE_ENV: z.enum(['development', 'production', 'test']),
+    PORT: z.coerce.number().default(3000),
 
     // Supabase Configuration
     SUPABASE_URL: z.string().url().or(z.string().min(1)),
     SUPABASE_ANON_KEY: z.string().min(1),
-    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).default('dummy-service-role-key-for-test'),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
     // Application Domain & URLs
     INTERNAL_EMAIL_DOMAIN: z.string().min(1).default('clinic.internal'),
@@ -42,10 +51,23 @@ export const envSchema = z
     CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173'),
     KIOSK_PAIRING_SECRET: z
       .string()
-      .min(16, 'KIOSK_PAIRING_SECRET must be at least 16 characters')
-      .default('kiosk-pairing-hmac-secret-min-16-chars-for-dev'),
-    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(1),
+      .min(16, 'KIOSK_PAIRING_SECRET must be at least 16 characters'),
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0),
     HOSPITAL_IPS: z.string().default('127.0.0.1,::1,localhost'),
+    IP_LOGIN_MAX_FAILURES: z.coerce.number().int().min(10).default(50),
+    HOSPITAL_IP_LOGIN_MAX_FAILURES: z.coerce.number().int().min(10).default(200),
+
+    // Cloud Storage Host for CSP (Storage signed URLs only - Master Prompt v3 Section 4)
+    STORAGE_HOST: z.string().trim().url({ message: 'STORAGE_HOST must be a valid URL' }).optional().or(z.literal('')),
+
+    // Presentation Attack Detection (PAD) Configuration (Server-Side Only - Master Prompt v3 Section 7 & Item H5)
+    // Rule: No default for PAD_MODE (Item I4 & I7)
+    PAD_MODE: z.enum(['active_only', 'passive_only', 'active_plus_passive']),
+    PAD_PROVIDER: z.string().min(1).optional(),
+
+    // Security & Cookie Flags
+    ALLOW_INSECURE_COOKIES: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
+    ALLOW_BEARER_IN_PROD: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
 
     // Biometric Calibration (Master Prompt v3 - Section 11 & match_face_candidates)
     // NOTE: Values operate in COSINE SIMILARITY space (score = 1.0 - cosine_distance).
@@ -57,7 +79,8 @@ export const envSchema = z
     FACE_T_MARGIN: strictPositiveRatio('FACE_T_MARGIN'),
     FACE_T_ENROLL_CONSISTENCY: strictPositiveRatio('FACE_T_ENROLL_CONSISTENCY'),
     FACE_T_DUPLICATE: strictPositiveRatio('FACE_T_DUPLICATE'),
-    FACE_CHALLENGE_EXPIRE_SECONDS: strictPositiveInt('FACE_CHALLENGE_EXPIRE_SECONDS'),
+    FACE_MIN_IOD: strictPositiveInt('FACE_MIN_IOD'),
+    FACE_CHALLENGE_EXPIRE_SECONDS: strictPositiveInt('FACE_CHALLENGE_EXPIRE_SECONDS').default(60),
   })
   .refine((data) => data.FACE_T_REJECT < data.FACE_T_ACCEPT, {
     message: 'threshold order violation: Similarity space invariant: FACE_T_REJECT must be strictly less than FACE_T_ACCEPT',
@@ -70,36 +93,131 @@ export const envSchema = z
   .refine((data) => data.FACE_T_MARGIN > 0, {
     message: 'FACE_T_MARGIN must be strictly greater than 0',
     path: ['FACE_T_MARGIN'],
+  })
+  .superRefine((data, ctx) => {
+    // In test mode: SUPABASE_URL must strictly point to 127.0.0.1 loopback (Item H7)
+    if (data.NODE_ENV === 'test') {
+      const isLoopback =
+        data.SUPABASE_URL.includes('127.0.0.1') ||
+        data.SUPABASE_URL.includes('localhost') ||
+        data.SUPABASE_URL.includes('::1');
+      if (!isLoopback) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['SUPABASE_URL'],
+          message: `In test mode, SUPABASE_URL must strictly point to 127.0.0.1 loopback (received: '${data.SUPABASE_URL}')`,
+        });
+      }
+    }
+
+    // PAD Validation (Spec 7.5.1 / Item F2 & Item H5)
+    // If PAD_MODE requires passive verification, server must fail closed because no certified passive PAD provider exists.
+    if (data.PAD_MODE === 'active_plus_passive' || data.PAD_MODE === 'passive_only') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PAD_MODE'],
+        message: `PAD_MODE='${data.PAD_MODE}' cannot be enabled: No certified passive PAD provider is implemented in registry. Only 'active_challenge_tracker' is available. Face login is disabled in passive modes. Set PAD_MODE=active_only to proceed.`,
+      });
+    } else if (data.PAD_MODE === 'active_only') {
+      if (data.PAD_PROVIDER && data.PAD_PROVIDER !== 'active_challenge_tracker') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['PAD_PROVIDER'],
+          message: `When PAD_MODE=active_only, PAD_PROVIDER must be 'active_challenge_tracker' (received: '${data.PAD_PROVIDER}')`,
+        });
+      }
+    }
+
+    // Cookie Security Rule (Item F3)
+    if (data.ALLOW_INSECURE_COOKIES && data.NODE_ENV !== 'development') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ALLOW_INSECURE_COOKIES'],
+        message: 'ALLOW_INSECURE_COOKIES=true is strictly forbidden outside development mode',
+      });
+    }
+
+    if (data.NODE_ENV === 'production') {
+      if (!data.SUPABASE_SERVICE_ROLE_KEY || data.SUPABASE_SERVICE_ROLE_KEY === 'dummy-service-role-key-for-test') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['SUPABASE_SERVICE_ROLE_KEY'],
+          message: 'In production, SUPABASE_SERVICE_ROLE_KEY must be explicitly set and cannot use the development default',
+        });
+      }
+      if (!data.KIOSK_PAIRING_SECRET || data.KIOSK_PAIRING_SECRET === 'kiosk-pairing-hmac-secret-min-16-chars-for-dev') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['KIOSK_PAIRING_SECRET'],
+          message: 'In production, KIOSK_PAIRING_SECRET must be explicitly set and cannot use the development default',
+        });
+      }
+      if (!data.CORS_ORIGINS || data.CORS_ORIGINS.trim() === '' || data.CORS_ORIGINS === 'http://localhost:3000,http://localhost:5173') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['CORS_ORIGINS'],
+          message: 'In production, CORS_ORIGINS must be explicitly configured from environment variables (no default allowed)',
+        });
+        return;
+      }
+      if (!data.HOSPITAL_IPS || data.HOSPITAL_IPS.trim() === '' || data.HOSPITAL_IPS === '127.0.0.1,::1,localhost') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['HOSPITAL_IPS'],
+          message: 'In production, HOSPITAL_IPS must be explicitly configured from environment variables (no default allowed)',
+        });
+      }
+      const origins = (data.CORS_ORIGINS || '')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean);
+      for (const origin of origins) {
+        if (origin.startsWith('http://') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['CORS_ORIGINS'],
+            message: `In production, CORS_ORIGINS must NOT contain localhost, 127.0.0.1, or insecure http:// (received: "${origin}"). Must be https:// only.`,
+          });
+        }
+      }
+    }
   });
 
 export type Env = z.infer<typeof envSchema>;
 
+export function isCookieSecure(env?: Env): boolean {
+  try {
+    const currentEnv = env || getEnv();
+    if (currentEnv.NODE_ENV === 'development' && currentEnv.ALLOW_INSECURE_COOKIES) {
+      return false;
+    }
+    return true;
+  } catch {
+    // If env is not loaded, default to secure true
+    return true;
+  }
+}
+
 export function parseEnv(rawEnv: Record<string, unknown> = process.env): Env {
-  // Map aliases / NEXT_PUBLIC_* equivalents if needed
+  const nodeEnv = (rawEnv.NODE_ENV as string) || (process.env.NODE_ENV as string) || 'development';
+  const defaultCors = nodeEnv === 'production' ? undefined : 'http://localhost:3000,http://localhost:5173';
+  const defaultHospitalIps = nodeEnv === 'production' ? undefined : '127.0.0.1,::1,localhost';
+
+  // Map aliases / NEXT_PUBLIC_* equivalents if needed (STRICT: NO GUESSING OR DEFAULTS FOR FACE_T_*)
   const normalized = {
+    SUPABASE_SERVICE_ROLE_KEY: rawEnv.SUPABASE_SERVICE_ROLE_KEY || (nodeEnv === 'test' ? process.env.SUPABASE_SERVICE_ROLE_KEY : undefined),
+    KIOSK_PAIRING_SECRET: rawEnv.KIOSK_PAIRING_SECRET || (nodeEnv === 'test' ? process.env.KIOSK_PAIRING_SECRET : undefined),
+    CORS_ORIGINS: rawEnv.CORS_ORIGINS !== undefined ? rawEnv.CORS_ORIGINS : defaultCors,
+    HOSPITAL_IPS: rawEnv.HOSPITAL_IPS !== undefined ? rawEnv.HOSPITAL_IPS : defaultHospitalIps,
     ...rawEnv,
     SUPABASE_URL: rawEnv.SUPABASE_URL || rawEnv.NEXT_PUBLIC_SUPABASE_URL,
     SUPABASE_ANON_KEY: rawEnv.SUPABASE_ANON_KEY || rawEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    FACE_T_ACCEPT: rawEnv.FACE_T_ACCEPT !== undefined ? rawEnv.FACE_T_ACCEPT : rawEnv.FACE_SIMILARITY_THRESHOLD,
-    FACE_T_REJECT:
-      rawEnv.FACE_T_REJECT !== undefined
-        ? rawEnv.FACE_T_REJECT
-        : rawEnv.FACE_SIMILARITY_THRESHOLD
-        ? Number(rawEnv.FACE_SIMILARITY_THRESHOLD) - 0.15
-        : undefined,
-    FACE_T_MARGIN: rawEnv.FACE_T_MARGIN !== undefined ? rawEnv.FACE_T_MARGIN : rawEnv.FACE_MATCH_MARGIN,
-    FACE_T_ENROLL_CONSISTENCY:
-      rawEnv.FACE_T_ENROLL_CONSISTENCY !== undefined
-        ? rawEnv.FACE_T_ENROLL_CONSISTENCY
-        : rawEnv.NODE_ENV === 'test'
-        ? 0.75
-        : undefined,
-    FACE_T_DUPLICATE:
-      rawEnv.FACE_T_DUPLICATE !== undefined
-        ? rawEnv.FACE_T_DUPLICATE
-        : rawEnv.NODE_ENV === 'test'
-        ? 0.85
-        : undefined,
+    FACE_T_ACCEPT: rawEnv.FACE_T_ACCEPT,
+    FACE_T_REJECT: rawEnv.FACE_T_REJECT,
+    FACE_T_MARGIN: rawEnv.FACE_T_MARGIN ?? rawEnv.FACE_MARGIN,
+    FACE_T_ENROLL_CONSISTENCY: rawEnv.FACE_T_ENROLL_CONSISTENCY,
+    FACE_T_DUPLICATE: rawEnv.FACE_T_DUPLICATE,
+    FACE_MIN_IOD: rawEnv.FACE_MIN_IOD || (nodeEnv === 'test' ? process.env.FACE_MIN_IOD : undefined),
   };
 
   const parsed = envSchema.safeParse(normalized);
@@ -121,4 +239,8 @@ export function getEnv(): Env {
     cachedEnv = parseEnv();
   }
   return cachedEnv;
+}
+
+export function resetCachedEnv(): void {
+  cachedEnv = null;
 }

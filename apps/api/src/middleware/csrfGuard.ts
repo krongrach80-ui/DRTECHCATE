@@ -11,11 +11,14 @@ export function csrfGuard(req: Request, res: Response, next: NextFunction): void
 
   const origin = req.headers.origin || req.headers.referer;
   const env = getEnv();
-  const allowedOrigins = env.CORS_ORIGINS.split(',').map((o) => o.trim());
+  const allowedOrigins = (env.CORS_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
 
-  // 1. If Origin is present, it MUST match an allowed origin
+  // 1. If Origin or Referer is present, it MUST match an allowed origin
   if (origin) {
-    const isAllowed = allowedOrigins.some((allowed) => origin.startsWith(allowed));
+    const isAllowed = allowedOrigins.some((allowed) => origin === allowed || origin.startsWith(allowed + '/'));
     if (!isAllowed) {
       res.status(403).json({
         error: {

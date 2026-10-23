@@ -1,11 +1,9 @@
-import { randomUUID } from 'crypto';
 import { AppError } from '../../middleware/errorHandler';
-import { getEnv } from '../../config/env';
-import { getAdminClient } from '../../lib/supabase/adminClient';
 import { UserSession } from '../../middleware/authenticate';
 import { audit } from '../audit';
 import { AuthService } from '../auth/service';
-import { StaffRepository, defaultStaffRepository } from './repository';
+import { getEnv } from '../../config/env';
+import { IStaffRepository, defaultStaffRepository } from './repository';
 import {
   CreateStaffInput,
   UpdateStaffInput,
@@ -15,9 +13,13 @@ import {
 
 export class StaffService {
   constructor(
-    private repo: StaffRepository = defaultStaffRepository,
+    private repo: IStaffRepository = defaultStaffRepository,
     private authService: AuthService = new AuthService()
   ) {}
+
+  public setRepository(repo: IStaffRepository): void {
+    this.repo = repo;
+  }
 
   async createStaff(
     input: CreateStaffInput,
@@ -35,30 +37,10 @@ export class StaffService {
       throw new AppError(`Username '${cleanUsername}' is already taken`, 409, 'USERNAME_EXISTS');
     }
 
-    let authUserId: string = randomUUID();
-    let emailDomain = 'drtech.care';
-    try {
-      emailDomain = getEnv().INTERNAL_EMAIL_DOMAIN;
-    } catch {
-      // fallback
-    }
-
+    const emailDomain = getEnv().INTERNAL_EMAIL_DOMAIN;
     const internalEmail = `${cleanUsername}@${emailDomain}`;
 
-    try {
-      const adminClient = getAdminClient();
-      const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-        email: internalEmail,
-        password: input.password,
-        email_confirm: true,
-      });
-
-      if (!authError && authData?.user) {
-        authUserId = authData.user.id;
-      }
-    } catch {
-      // In isolated testing or offline DB, keep fallback UUID
-    }
+    const authUserId = await this.repo.createAuthUser(internalEmail, input.password);
 
     const created = await this.repo.createStaff(
       {
@@ -245,12 +227,7 @@ export class StaffService {
       throw new AppError(`Staff member ${id} not found`, 404, 'NOT_FOUND');
     }
 
-    try {
-      const adminClient = getAdminClient();
-      await adminClient.auth.admin.updateUserById(id, { password: newPassword });
-    } catch {
-      // In-memory fallback
-    }
+    await this.repo.resetAuthPassword(id, newPassword);
 
     // Immediately revoke existing sessions for security
     await this.authService.forceLogout(id, adminUser, clientIp, clientDeviceId, 'Password reset by administrator');
@@ -301,4 +278,8 @@ export class StaffService {
   }
 }
 
-export const defaultStaffService = new StaffService();
+export let defaultStaffService = new StaffService();
+
+export function setDefaultStaffService(service: StaffService): void {
+  defaultStaffService = service;
+}

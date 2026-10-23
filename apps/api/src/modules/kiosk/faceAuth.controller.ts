@@ -6,6 +6,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { KioskFaceAuthService } from './faceAuth.service';
+import { isCookieSecure } from '../../config/env';
 import {
   ChallengeRequestInput,
   VerifyFaceInput,
@@ -64,10 +65,22 @@ export class KioskFaceAuthController {
 
       const result = await this.service.confirmIdentity(session_token, confirmed);
 
+      if (result.ok && result.confirmed) {
+        res.cookie('kiosk_session', session_token, {
+          httpOnly: true,
+          secure: isCookieSecure(),
+          sameSite: 'strict',
+          maxAge: 15 * 60 * 1000,
+        });
+      } else {
+        res.clearCookie('kiosk_session');
+      }
+
       res.status(200).json({
         ok: result.ok,
         confirmed: result.confirmed,
         patient: result.patient,
+        session_token,
         message: result.message,
       });
     } catch (err) {

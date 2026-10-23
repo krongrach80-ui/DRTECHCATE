@@ -10,13 +10,17 @@ import {
   EnrollmentTicketRecord,
   CheckinRecord,
 } from './schema';
-import { PatientRepository, defaultPatientRepository } from './repository';
+import { IPatientRepository, defaultPatientRepository } from './repository';
 
 export class PatientService {
   constructor(
-    private repo: PatientRepository = defaultPatientRepository,
+    private repo: IPatientRepository = defaultPatientRepository,
     private auditService: AuditService = defaultAuditService
   ) {}
+
+  public setRepository(repo: IPatientRepository): void {
+    this.repo = repo;
+  }
 
   // =========================================================================
   // 1. CREATE PATIENT
@@ -303,4 +307,8 @@ export class PatientService {
   }
 }
 
-export const defaultPatientService = new PatientService();
+export let defaultPatientService = new PatientService();
+
+export function setDefaultPatientService(service: PatientService): void {
+  defaultPatientService = service;
+}

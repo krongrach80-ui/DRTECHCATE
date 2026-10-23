@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { getAdminClient } from '../../lib/supabase/adminClient';
+import { logger } from '../../middleware/logger';
+import { AppError } from '../../middleware/errorHandler';
 
 export interface PairingRecord {
   kioskId: string;
@@ -21,22 +23,67 @@ export interface KioskDeviceRecord {
   is_active: boolean;
 }
 
-export interface AttemptEntry {
-  key: string;
-  type: 'ip' | 'kiosk' | 'global';
-  timestamp: number;
+export interface MissionRunRecord {
+  id: string;
+  patient_id: string;
+  course_id: string;
+  run_date: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
 }
 
-export class KioskRepository {
-  // In-memory cache for fast lookups, mirrored to PostgreSQL
-  private pairingStore = new Map<string, PairingRecord>();
-  // In-memory attempt log for test environments, mirrored to PostgreSQL audit_logs
-  private attemptsLog: AttemptEntry[] = [];
-  // In-memory devices store for test environments
-  private devices: KioskDeviceRecord[] = [];
-  // In-memory daily mission runs and steps
-  private missionRuns = new Map<string, MissionRunRecord>();
-  private missionSteps: MissionStepRecord[] = [];
+export interface MissionStepRecord {
+  id: string;
+  run_id: string;
+  step_type: 'exercise' | 'minigame' | 'rest';
+  ref_id?: string | null;
+  score?: unknown;
+  completed_at: string;
+  created_at: string;
+}
+
+export interface IKioskRepository {
+  getKioskById(kioskId: string): Promise<KioskDeviceRecord | null>;
+  getKioskByTokenHash(tokenHash: string): Promise<KioskDeviceRecord | null>;
+  savePairingRecord(record: PairingRecord): Promise<void>;
+  getPairingRecord(kioskId: string): Promise<PairingRecord | null>;
+  recordKioskCodeFailure(kioskId: string): Promise<number>;
+  recordIpFailure(ip: string): Promise<void>;
+  getIpFailureCount(ip: string, windowMs: number): Promise<number>;
+  recordGlobalFailure(): Promise<void>;
+  getGlobalFailureCount(windowMs: number): Promise<number>;
+  markPairingUsed(kioskId: string, tokenHash: string): Promise<void>;
+  saveChallenge(nonce: string, kioskId: string, steps: string[], expiresAt: Date): Promise<void>;
+  getChallenge(nonce: string): Promise<{ nonce: string; device_id: string; steps: string[]; expires_at: Date; used_at: Date | null; created_at: Date } | null>;
+  markChallengeUsed(nonce: string): Promise<void>;
+  saveFaceTemplate(patientId: string, embedding: number[], pose?: 'front' | 'left' | 'right' | 'nod'): Promise<void>;
+  matchFaceCandidates(probe: number[], candidateIds: string[]): Promise<Array<{ patient_id: string; score: number }>>;
+  createStaffCall(kioskId: string, reason: string): Promise<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }>;
+  listStaffCalls(kioskId?: string): Promise<Array<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }>>;
+  handleStaffCall(id: string, staffId: string): Promise<boolean>;
+  createKioskSession(kioskId: string, patientId: string): Promise<{ token: string; kiosk_id: string; patient_id: string; expires_at: Date; confirmed_at: Date | null; is_active: boolean; created_at: Date }>;
+  getKioskSession(token: string): Promise<{ token: string; kiosk_id: string; patient_id: string; expires_at: Date; confirmed_at: Date | null; is_active: boolean; created_at: Date } | null>;
+  confirmKioskSession(token: string): Promise<{ token: string; kiosk_id: string; patient_id: string; expires_at: Date; confirmed_at: Date | null; is_active: boolean; created_at: Date } | null>;
+  invalidateKioskSession(token: string): Promise<void>;
+  listDevices(): Promise<KioskDeviceRecord[]>;
+  createDevice(name: string, location?: string | null): Promise<KioskDeviceRecord>;
+  getOrCreateMissionRun(patientId: string, courseId: string, runDate: string): Promise<MissionRunRecord>;
+  recordMissionStep(runId: string, stepType: 'exercise' | 'minigame' | 'rest', refId?: string | null, score?: unknown): Promise<MissionStepRecord>;
+  completeMissionRun(patientId: string, courseId: string, runDate: string): Promise<MissionRunRecord>;
+  getMissionRunByPatientAndCourse(patientId: string, courseId: string, runDate: string): Promise<MissionRunRecord | null>;
+  getFailedFaceAttempts(kioskId: string): number;
+  incrementFailedFaceAttempts(kioskId: string): number;
+  resetFailedFaceAttempts(kioskId: string): void;
+  clearPairings(): void;
+}
+
+export class KioskRepository implements IKioskRepository {
+  // Ephemeral in-memory state for active sessions & lockout counters
+  private failedFaceAttempts = new Map<string, number>();
+  private kioskSessions = new Map<string, { token: string; kiosk_id: string; patient_id: string; expires_at: Date; confirmed_at: Date | null; is_active: boolean; created_at: Date }>();
+  private ephemeralStaffCalls: Array<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }> = [];
 
   async getKioskById(kioskId: string): Promise<KioskDeviceRecord | null> {
     try {
@@ -47,20 +94,41 @@ export class KioskRepository {
         .eq('id', kioskId)
         .maybeSingle();
 
-      if (error || !data) {
-        return this.devices.find((d) => d.id === kioskId) || null;
+      if (error) {
+        logger.error({ error, kioskId }, 'Failed to query kiosk_devices from Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-      return data as KioskDeviceRecord;
-    } catch {
-      return this.devices.find((d) => d.id === kioskId) || null;
+
+      return (data as KioskDeviceRecord) || null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, kioskId }, 'Database connection error in getKioskById');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
+
+  async getKioskByTokenHash(tokenHash: string): Promise<KioskDeviceRecord | null> {
+    try {
+      const adminClient = getAdminClient();
+      const { data, error } = await adminClient
+        .from('kiosk_devices')
+        .select('id, name, location, token_hash, pairing_code_hash, paired_at, is_active')
+        .eq('token_hash', tokenHash)
+        .maybeSingle();
+
+      if (error) {
+        logger.error({ error }, 'Database error in getKioskByTokenHash');
+        return null;
+      }
+
+      return (data as KioskDeviceRecord) || null;
+    } catch (err) {
+      logger.error({ err }, 'Error in getKioskByTokenHash');
+      return null;
     }
   }
 
   async savePairingRecord(record: PairingRecord): Promise<void> {
-    this.pairingStore.set(record.kioskId, { ...record });
-
-    // Synchronize to PostgreSQL kiosk_devices table
-    // Serializes HMAC, expiry, attempt count and lock status into pairing_code_hash metadata
     const metadataString = JSON.stringify({
       hmac: record.codeHash,
       expires_at: record.expiresAt.getTime(),
@@ -71,60 +139,54 @@ export class KioskRepository {
 
     try {
       const adminClient = getAdminClient();
-      await adminClient
+      const { error } = await adminClient
         .from('kiosk_devices')
         .update({
           pairing_code_hash: metadataString,
         })
         .eq('id', record.kioskId);
-    } catch {
-      // Non-blocking in mock/offline environment
+
+      if (error) {
+        logger.error({ error, kioskId: record.kioskId }, 'Failed to update pairing_code_hash in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, kioskId: record.kioskId }, 'Database error in savePairingRecord');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
   async getPairingRecord(kioskId: string): Promise<PairingRecord | null> {
-    const cached = this.pairingStore.get(kioskId);
-    if (cached) {
-      return { ...cached };
-    }
-
-    // Load from PostgreSQL kiosk_devices
     const kiosk = await this.getKioskById(kioskId);
-    if (kiosk?.pairing_code_hash) {
-      try {
-        const parsed = JSON.parse(kiosk.pairing_code_hash);
-        const record: PairingRecord = {
-          kioskId: kiosk.id,
-          codeHash: parsed.hmac || kiosk.pairing_code_hash,
-          expiresAt: new Date(parsed.expires_at || Date.now() + 10 * 60 * 1000),
-          failedAttempts: parsed.failed_attempts || 0,
-          isUsed: !!parsed.is_used || !!kiosk.paired_at,
-          isLocked: !!parsed.is_locked,
-          createdAt: new Date(),
-        };
-        this.pairingStore.set(kioskId, record);
-        return record;
-      } catch {
-        const fallbackRecord: PairingRecord = {
-          kioskId: kiosk.id,
-          codeHash: kiosk.pairing_code_hash,
-          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-          failedAttempts: 0,
-          isUsed: !!kiosk.paired_at,
-          isLocked: false,
-          createdAt: new Date(),
-        };
-        this.pairingStore.set(kioskId, fallbackRecord);
-        return fallbackRecord;
-      }
+    if (!kiosk || !kiosk.pairing_code_hash) {
+      return null;
     }
 
-    return null;
+    try {
+      const parsed = JSON.parse(kiosk.pairing_code_hash);
+      return {
+        kioskId: kiosk.id,
+        codeHash: parsed.hmac || kiosk.pairing_code_hash,
+        expiresAt: new Date(parsed.expires_at || Date.now() + 10 * 60 * 1000),
+        failedAttempts: parsed.failed_attempts || 0,
+        isUsed: !!parsed.is_used || !!kiosk.paired_at,
+        isLocked: !!parsed.is_locked,
+        createdAt: new Date(),
+      };
+    } catch {
+      return {
+        kioskId: kiosk.id,
+        codeHash: kiosk.pairing_code_hash,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        failedAttempts: 0,
+        isUsed: !!kiosk.paired_at,
+        isLocked: false,
+        createdAt: new Date(),
+      };
+    }
   }
 
-  /**
-   * Records a failed pairing attempt for a specific kiosk code in DB
-   */
   async recordKioskCodeFailure(kioskId: string): Promise<number> {
     const record = await this.getPairingRecord(kioskId);
     if (!record) return 0;
@@ -135,10 +197,9 @@ export class KioskRepository {
     }
     await this.savePairingRecord(record);
 
-    // Also record in DB audit_logs
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('audit_logs').insert({
+      const { error } = await adminClient.from('audit_logs').insert({
         actor_type: 'kiosk',
         action: 'KIOSK_PAIR_FAIL_CODE',
         entity: 'kiosk_devices',
@@ -150,23 +211,24 @@ export class KioskRepository {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch {
-      // Fallback
+
+      if (error) {
+        logger.error({ error, kioskId }, 'Failed to record kiosk code failure in audit_logs');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, kioskId }, 'Database error in recordKioskCodeFailure');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
 
     return record.failedAttempts;
   }
 
-  /**
-   * Records an IP-level failure in DB
-   */
   async recordIpFailure(ip: string): Promise<void> {
-    const now = Date.now();
-    this.attemptsLog.push({ key: ip, type: 'ip', timestamp: now });
-
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('audit_logs').insert({
+      const { error } = await adminClient.from('audit_logs').insert({
         actor_type: 'kiosk',
         action: 'KIOSK_PAIR_FAIL_IP',
         entity: 'kiosk_devices',
@@ -175,48 +237,47 @@ export class KioskRepository {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch {
-      // Fallback
+
+      if (error) {
+        logger.error({ error, ip }, 'Failed to record IP failure in audit_logs');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, ip }, 'Database error in recordIpFailure');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
-  /**
-   * Gets IP-level failure count in window from DB
-   */
   async getIpFailureCount(ip: string, windowMs: number): Promise<number> {
-    const cutoff = Date.now() - windowMs;
+    const cutoffIso = new Date(Date.now() - windowMs).toISOString();
 
-    // Check DB audit_logs
     try {
       const adminClient = getAdminClient();
-      const cutoffIso = new Date(cutoff).toISOString();
-      const { count } = await adminClient
+      const { count, error } = await adminClient
         .from('audit_logs')
         .select('id', { count: 'exact', head: true })
         .eq('action', 'KIOSK_PAIR_FAIL_IP')
         .eq('ip', ip)
         .gte('created_at', cutoffIso);
 
-      if (typeof count === 'number' && count > 0) {
-        return count;
+      if (error) {
+        logger.error({ error, ip }, 'Failed to get IP failure count from Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback
-    }
 
-    return this.attemptsLog.filter((a) => a.type === 'ip' && a.key === ip && a.timestamp >= cutoff).length;
+      return count ?? 0;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, ip }, 'Database error in getIpFailureCount');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
-  /**
-   * Records a Global failure in DB
-   */
   async recordGlobalFailure(): Promise<void> {
-    const now = Date.now();
-    this.attemptsLog.push({ key: 'global', type: 'global', timestamp: now });
-
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('audit_logs').insert({
+      const { error } = await adminClient.from('audit_logs').insert({
         actor_type: 'kiosk',
         action: 'KIOSK_PAIR_FAIL_GLOBAL',
         entity: 'kiosk_devices',
@@ -224,49 +285,46 @@ export class KioskRepository {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch {
-      // Fallback
+
+      if (error) {
+        logger.error({ error }, 'Failed to record global failure in audit_logs');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err }, 'Database error in recordGlobalFailure');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
-  /**
-   * Gets Global failure count in window from DB
-   */
   async getGlobalFailureCount(windowMs: number): Promise<number> {
-    const cutoff = Date.now() - windowMs;
+    const cutoffIso = new Date(Date.now() - windowMs).toISOString();
 
     try {
       const adminClient = getAdminClient();
-      const cutoffIso = new Date(cutoff).toISOString();
-      const { count } = await adminClient
+      const { count, error } = await adminClient
         .from('audit_logs')
         .select('id', { count: 'exact', head: true })
         .eq('action', 'KIOSK_PAIR_FAIL_GLOBAL')
         .gte('created_at', cutoffIso);
 
-      if (typeof count === 'number' && count > 0) {
-        return count;
+      if (error) {
+        logger.error({ error }, 'Failed to get global failure count from Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback
-    }
 
-    return this.attemptsLog.filter((a) => a.type === 'global' && a.timestamp >= cutoff).length;
+      return count ?? 0;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err }, 'Database error in getGlobalFailureCount');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
-  /**
-   * Marks pairing code as used in DB
-   */
   async markPairingUsed(kioskId: string, tokenHash: string): Promise<void> {
-    const record = await this.getPairingRecord(kioskId);
-    if (record) {
-      record.isUsed = true;
-      await this.savePairingRecord(record);
-    }
-
     try {
       const adminClient = getAdminClient();
-      await adminClient
+      const { error } = await adminClient
         .from('kiosk_devices')
         .update({
           token_hash: tokenHash,
@@ -276,48 +334,44 @@ export class KioskRepository {
           last_seen_at: new Date().toISOString(),
         })
         .eq('id', kioskId);
-    } catch {
-      // Non-blocking
+
+      if (error) {
+        logger.error({ error, kioskId }, 'Failed to mark pairing used in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, kioskId }, 'Database error in markPairingUsed');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
   // =========================================================================
   // FACE AUTHENTICATION & CHALLENGE STORE
   // =========================================================================
-  private challenges = new Map<string, { nonce: string; device_id: string; steps: string[]; expires_at: Date; used_at: Date | null; created_at: Date }>();
-  private faceTemplates: Array<{ id: string; patient_id: string; enrollment_id: string; embedding: number[]; pose: 'front' | 'left' | 'right' | 'nod'; model_version: string; created_at: string }> = [];
-  private staffCalls: Array<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }> = [];
-  private failedFaceAttempts = new Map<string, number>();
-  private kioskSessions = new Map<string, { token: string; kiosk_id: string; patient_id: string; expires_at: Date; confirmed_at: Date | null; is_active: boolean; created_at: Date }>();
 
   async saveChallenge(nonce: string, kioskId: string, steps: string[], expiresAt: Date): Promise<void> {
-    const record = {
-      nonce,
-      device_id: kioskId,
-      steps,
-      expires_at: expiresAt,
-      used_at: null,
-      created_at: new Date(),
-    };
-    this.challenges.set(nonce, record);
-
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('face_challenges').insert({
+      const { error } = await adminClient.from('face_challenges').insert({
         nonce,
         device_id: kioskId,
         steps,
         expires_at: expiresAt.toISOString(),
       });
-    } catch {
-      // fallback
+
+      if (error) {
+        logger.error({ error, nonce, kioskId }, 'Failed to save challenge in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, nonce, kioskId }, 'Database error in saveChallenge');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
   async getChallenge(nonce: string): Promise<{ nonce: string; device_id: string; steps: string[]; expires_at: Date; used_at: Date | null; created_at: Date } | null> {
-    const mem = this.challenges.get(nonce);
-    if (mem) return mem;
-
     try {
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
@@ -326,37 +380,45 @@ export class KioskRepository {
         .eq('nonce', nonce)
         .maybeSingle();
 
-      if (!error && data) {
-        return {
-          nonce: data.nonce,
-          device_id: data.device_id,
-          steps: data.steps,
-          expires_at: new Date(data.expires_at),
-          used_at: data.used_at ? new Date(data.used_at) : null,
-          created_at: new Date(data.created_at),
-        };
+      if (error) {
+        logger.error({ error, nonce }, 'Failed to get challenge from Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
+
+      if (!data) return null;
+
+      return {
+        nonce: data.nonce,
+        device_id: data.device_id,
+        steps: data.steps,
+        expires_at: new Date(data.expires_at),
+        used_at: data.used_at ? new Date(data.used_at) : null,
+        created_at: new Date(data.created_at),
+      };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, nonce }, 'Database error in getChallenge');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-    return null;
   }
 
   async markChallengeUsed(nonce: string): Promise<void> {
-    const mem = this.challenges.get(nonce);
-    const now = new Date();
-    if (mem) {
-      mem.used_at = now;
-    }
-
+    const now = new Date().toISOString();
     try {
       const adminClient = getAdminClient();
-      await adminClient
+      const { error } = await adminClient
         .from('face_challenges')
-        .update({ used_at: now.toISOString() })
+        .update({ used_at: now })
         .eq('nonce', nonce);
-    } catch {
-      // fallback
+
+      if (error) {
+        logger.error({ error, nonce }, 'Failed to mark challenge used in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, nonce }, 'Database error in markChallengeUsed');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
@@ -365,29 +427,35 @@ export class KioskRepository {
     embedding: number[],
     pose: 'front' | 'left' | 'right' | 'nod' = 'front'
   ): Promise<void> {
-    const template = {
-      id: Math.random().toString(36).slice(2),
-      patient_id: patientId,
-      enrollment_id: Math.random().toString(36).slice(2),
-      embedding,
-      pose,
-      model_version: 'adaface-ir50-v1',
-      created_at: new Date().toISOString(),
-    };
-    this.faceTemplates.push(template);
+    const id = crypto.randomUUID();
+    const enrollmentId = crypto.randomUUID();
 
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('face_templates').insert({
-        id: template.id,
+      await adminClient.from('face_enrollments').upsert({
+        id: enrollmentId,
         patient_id: patientId,
-        enrollment_id: template.enrollment_id,
+        status: 'active',
+        model_version: 'adaface-ir50-v1',
+      });
+
+      const { error } = await adminClient.from('face_templates').insert({
+        id,
+        patient_id: patientId,
+        enrollment_id: enrollmentId,
         embedding: `[${embedding.join(',')}]`,
         pose,
         model_version: 'adaface-ir50-v1',
       });
-    } catch {
-      // fallback
+
+      if (error) {
+        logger.error({ error, patientId }, 'Failed to save face template in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId }, 'Database error in saveFaceTemplate');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
@@ -407,73 +475,99 @@ export class KioskRepository {
         k: 10,
       });
 
-      if (!error && data && Array.isArray(data) && data.length > 0) {
-        return data as Array<{ patient_id: string; score: number }>;
+      if (error) {
+        logger.error({ error, candidateCount: candidateIds.length }, 'Failed to match face candidates via Supabase RPC');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
+
+      return (data as Array<{ patient_id: string; score: number }>) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, candidateCount: candidateIds.length }, 'Database error in matchFaceCandidates');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    // In-Memory matching: Cosine similarity of probe against candidate templates
-    const candidateSet = new Set(candidateIds);
-    const scoresByPatient = new Map<string, number[]>();
-
-    for (const t of this.faceTemplates) {
-      if (candidateSet.has(t.patient_id)) {
-        // Dot product between normalized vectors
-        let dot = 0;
-        for (let i = 0; i < probe.length; i++) {
-          dot += probe[i] * t.embedding[i];
-        }
-        const existing = scoresByPatient.get(t.patient_id) || [];
-        existing.push(dot);
-        scoresByPatient.set(t.patient_id, existing);
-      }
-    }
-
-    const results: Array<{ patient_id: string; score: number }> = [];
-    for (const [patientId, scores] of scoresByPatient.entries()) {
-      // Top 3 scores average
-      scores.sort((a, b) => b - a);
-      const top3 = scores.slice(0, 3);
-      const avg = top3.reduce((sum, v) => sum + v, 0) / top3.length;
-      results.push({ patient_id: patientId, score: avg });
-    }
-
-    results.sort((a, b) => b.score - a.score);
-    return results;
   }
 
   async createStaffCall(kioskId: string, reason: string): Promise<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }> {
-    const call = {
-      id: Math.random().toString(36).slice(2),
-      kiosk_id: kioskId,
-      reason,
-      created_at: new Date().toISOString(),
-      handled_by: null,
-      handled_at: null,
-    };
-    this.staffCalls.push(call);
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
 
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('staff_calls').insert({
-        id: call.id,
+      const { data, error } = await adminClient.from('staff_calls').insert({
+        id,
         kiosk_id: kioskId,
         reason,
-      });
-    } catch {
-      // fallback
-    }
+        created_at: createdAt,
+      }).select().single();
 
-    return call;
+      if (error) {
+        logger.error({ error, kioskId, reason }, 'Failed to create staff call in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      const record = data as { id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null };
+      this.ephemeralStaffCalls.unshift(record);
+      return record;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, kioskId }, 'Database error in createStaffCall');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
+
+  async listStaffCalls(kioskId?: string): Promise<Array<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }>> {
+    try {
+      const adminClient = getAdminClient();
+      let query = adminClient
+        .from('staff_calls')
+        .select('id, kiosk_id, reason, created_at, handled_by, handled_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (kioskId) {
+        query = query.eq('kiosk_id', kioskId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        logger.error({ error, kioskId }, 'Failed to list staff calls from Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return (data as Array<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }>) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, kioskId }, 'Database error in listStaffCalls');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   getStaffCalls(kioskId?: string): Array<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }> {
-    if (kioskId) {
-      return this.staffCalls.filter((c) => c.kiosk_id === kioskId);
+    return this.ephemeralStaffCalls.filter((s) => !kioskId || s.kiosk_id === kioskId);
+  }
+
+  async handleStaffCall(id: string, staffId: string): Promise<boolean> {
+    const handledAt = new Date().toISOString();
+    try {
+      const adminClient = getAdminClient();
+      const { error } = await adminClient
+        .from('staff_calls')
+        .update({ handled_by: staffId, handled_at: handledAt })
+        .eq('id', id);
+
+      if (error) {
+        logger.error({ error, id, staffId }, 'Failed to handle staff call in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return true;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id, staffId }, 'Database error in handleStaffCall');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-    return this.staffCalls;
   }
 
   getFailedFaceAttempts(kioskId: string): number {
@@ -492,7 +586,7 @@ export class KioskRepository {
   }
 
   async createKioskSession(kioskId: string, patientId: string): Promise<{ token: string; kiosk_id: string; patient_id: string; expires_at: Date; confirmed_at: Date | null; is_active: boolean; created_at: Date }> {
-    const token = `ksession_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+    const token = `ksession_${crypto.randomUUID()}_${Date.now()}`;
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
     const session = {
       token,
@@ -536,13 +630,18 @@ export class KioskRepository {
         .from('kiosk_devices')
         .select('id, name, location, token_hash, pairing_code_hash, paired_at, is_active')
         .order('name');
-      if (!error && data && data.length > 0) {
-        return data as KioskDeviceRecord[];
+
+      if (error) {
+        logger.error({ error }, 'Failed to list devices from Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
+
+      return (data as KioskDeviceRecord[]) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err }, 'Database error in listDevices');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-    return [...this.devices];
   }
 
   async createDevice(name: string, location?: string | null): Promise<KioskDeviceRecord> {
@@ -557,65 +656,36 @@ export class KioskRepository {
       paired_at: null,
       is_active: false,
     };
-    try {
-      const adminClient = getAdminClient();
-      await adminClient.from('kiosk_devices').insert(record);
-    } catch {
-      // fallback
-    }
-    this.devices.push(record);
-    return record;
-  }
 
-  async listStaffCalls(): Promise<Array<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }>> {
     try {
       const adminClient = getAdminClient();
-      const { data, error } = await adminClient
-        .from('staff_calls')
-        .select('id, kiosk_id, reason, created_at, handled_by, handled_at')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (!error && data && data.length > 0) {
-        return data;
+      const { error } = await adminClient.from('kiosk_devices').insert(record);
+
+      if (error) {
+        logger.error({ error, name }, 'Failed to create device in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
-    return [...this.staffCalls].reverse();
-  }
 
-  async handleStaffCall(id: string, staffId: string): Promise<boolean> {
-    const mem = this.staffCalls.find((c) => c.id === id);
-    if (mem) {
-      mem.handled_by = staffId;
-      mem.handled_at = new Date().toISOString();
-    }
-    try {
-      const adminClient = getAdminClient();
-      await adminClient
-        .from('staff_calls')
-        .update({ handled_by: staffId, handled_at: new Date().toISOString() })
-        .eq('id', id);
-      return true;
-    } catch {
-      return !!mem;
+      return record;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, name }, 'Database error in createDevice');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
   // =========================================================================
   // 5. DAILY MISSION RUNS & MISSION STEPS (Master Prompt v3 Section 9 & 14)
   // =========================================================================
+
   async getOrCreateMissionRun(
     patientId: string,
     courseId: string,
     runDate: string
   ): Promise<MissionRunRecord> {
-    const key = `${patientId}:${courseId}:${runDate}`;
-    let run = this.missionRuns.get(key);
-
     try {
       const adminClient = getAdminClient();
-      const { data, error } = await adminClient
+      const { data: existing, error: selectError } = await adminClient
         .from('mission_runs')
         .select('*')
         .eq('patient_id', patientId)
@@ -623,17 +693,16 @@ export class KioskRepository {
         .eq('run_date', runDate)
         .maybeSingle();
 
-      if (!error && data) {
-        run = data as MissionRunRecord;
-        this.missionRuns.set(key, run);
-        return run;
+      if (selectError) {
+        logger.error({ error: selectError, patientId, courseId, runDate }, 'Failed to query mission_runs in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    if (!run) {
-      run = {
+      if (existing) {
+        return existing as MissionRunRecord;
+      }
+
+      const newRun: MissionRunRecord = {
         id: crypto.randomUUID(),
         patient_id: patientId,
         course_id: courseId,
@@ -641,22 +710,26 @@ export class KioskRepository {
         status: 'pending',
         started_at: null,
         finished_at: null,
-        pain_score: null,
-        feedback: null,
         created_at: new Date().toISOString(),
       };
 
-      try {
-        const adminClient = getAdminClient();
-        await adminClient.from('mission_runs').insert(run);
-      } catch {
-        // fallback
+      const { data: inserted, error: insertError } = await adminClient
+        .from('mission_runs')
+        .insert(newRun)
+        .select()
+        .single();
+
+      if (insertError) {
+        logger.error({ error: insertError, patientId, courseId, runDate }, 'Failed to insert mission_run in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      this.missionRuns.set(key, run);
+      return inserted as MissionRunRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId, courseId, runDate }, 'Database error in getOrCreateMissionRun');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    return run;
   }
 
   async recordMissionStep(
@@ -675,69 +748,60 @@ export class KioskRepository {
       created_at: new Date().toISOString(),
     };
 
-    // Update parent mission run status to in_progress if currently pending
-    for (const run of this.missionRuns.values()) {
-      if (run.id === runId) {
-        if (run.status === 'pending') {
-          run.status = 'in_progress';
-          run.started_at = new Date().toISOString();
-        }
-        break;
-      }
-    }
-
     try {
       const adminClient = getAdminClient();
-      await adminClient.from('mission_steps').insert(step);
+      const { error: stepError } = await adminClient.from('mission_steps').insert(step);
+      if (stepError) {
+        logger.error({ error: stepError, runId, stepType }, 'Failed to insert mission_step in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
       await adminClient
         .from('mission_runs')
         .update({ status: 'in_progress', started_at: new Date().toISOString() })
         .eq('id', runId)
         .eq('status', 'pending');
-    } catch {
-      // fallback
-    }
 
-    this.missionSteps.push(step);
-    return step;
+      return step;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, runId, stepType }, 'Database error in recordMissionStep');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async completeMissionRun(
     patientId: string,
     courseId: string,
-    runDate: string,
-    painScore?: number,
-    feedback?: string
-  ): Promise<MissionRunRecord | null> {
-    const key = `${patientId}:${courseId}:${runDate}`;
-    let run = this.missionRuns.get(key);
-
-    if (!run) {
-      run = await this.getOrCreateMissionRun(patientId, courseId, runDate);
-    }
-
+    runDate: string
+  ): Promise<MissionRunRecord> {
     const nowIso = new Date().toISOString();
-    run.status = 'completed';
-    run.finished_at = nowIso;
-    if (painScore !== undefined) run.pain_score = painScore;
-    if (feedback !== undefined) run.feedback = feedback;
 
     try {
+      const run = await this.getOrCreateMissionRun(patientId, courseId, runDate);
+
       const adminClient = getAdminClient();
-      await adminClient
+      const { data, error } = await adminClient
         .from('mission_runs')
         .update({
           status: 'completed',
           finished_at: nowIso,
-          pain_score: painScore ?? null,
-          feedback: feedback ?? null,
         })
-        .eq('id', run.id);
-    } catch {
-      // fallback
-    }
+        .eq('id', run.id)
+        .select()
+        .single();
 
-    return run;
+      if (error) {
+        logger.error({ error, runId: run.id }, 'Failed to complete mission_run in Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return data as MissionRunRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId, courseId, runDate }, 'Database error in completeMissionRun');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async getMissionRunByPatientAndCourse(
@@ -745,10 +809,6 @@ export class KioskRepository {
     courseId: string,
     runDate: string
   ): Promise<MissionRunRecord | null> {
-    const key = `${patientId}:${courseId}:${runDate}`;
-    const mem = this.missionRuns.get(key);
-    if (mem) return mem;
-
     try {
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
@@ -759,52 +819,36 @@ export class KioskRepository {
         .eq('run_date', runDate)
         .maybeSingle();
 
-      if (!error && data) {
-        return data as MissionRunRecord;
+      if (error) {
+        logger.error({ error, patientId, courseId, runDate }, 'Failed to get mission_run from Supabase');
+        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return null;
+      return (data as MissionRunRecord) || null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId, courseId, runDate }, 'Database error in getMissionRunByPatientAndCourse');
+      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   clearPairings(): void {
-    this.pairingStore.clear();
-    this.attemptsLog = [];
-    this.challenges.clear();
-    this.faceTemplates = [];
-    this.staffCalls = [];
     this.failedFaceAttempts.clear();
     this.kioskSessions.clear();
-    this.devices = [];
-    this.missionRuns.clear();
-    this.missionSteps = [];
+    this.ephemeralStaffCalls = [];
   }
 }
 
-export interface MissionRunRecord {
-  id: string;
-  patient_id: string;
-  course_id: string;
-  run_date: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  started_at: string | null;
-  finished_at: string | null;
-  pain_score?: number | null;
-  feedback?: string | null;
-  created_at: string;
-}
-
-export interface MissionStepRecord {
-  id: string;
-  run_id: string;
-  step_type: 'exercise' | 'minigame' | 'rest';
-  ref_id?: string | null;
-  score?: unknown;
-  completed_at: string;
-  created_at: string;
-}
-
-export const defaultKioskRepository = new KioskRepository();
-
+let _currentKioskRepo: IKioskRepository = new KioskRepository();
+export const defaultKioskRepository: IKioskRepository = new Proxy({} as IKioskRepository, {
+  get(_target, prop) {
+    const val = Reflect.get(_currentKioskRepo, prop);
+    return typeof val === 'function' ? (val as (...args: unknown[]) => unknown).bind(_currentKioskRepo) : val;
+  },
+  set(_target, prop, value) {
+    return Reflect.set(_currentKioskRepo, prop, value);
+  },
+});
+export const setDefaultKioskRepository = (repo: IKioskRepository) => {
+  _currentKioskRepo = repo;
+};

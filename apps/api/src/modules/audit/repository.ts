@@ -1,65 +1,59 @@
 import { randomUUID } from 'crypto';
 import { getAdminClient } from '../../lib/supabase/adminClient';
 import { AuditWriteInput, AuditQueryFilter, AuditLogRecord } from './schema';
+import { logger } from '../../middleware/logger';
+import { AppError } from '../../middleware/errorHandler';
 
-export class AuditRepository {
-  private inMemoryLogs: AuditLogRecord[] = [];
+export interface IAuditRepository {
+  write(input: AuditWriteInput): Promise<AuditLogRecord>;
+  query(filter: AuditQueryFilter): Promise<{ logs: AuditLogRecord[]; total: number }>;
+  clearInMemoryLogs(): void;
+}
 
-  clearInMemoryLogs(): void {
-    this.inMemoryLogs = [];
-  }
-
+export class AuditRepository implements IAuditRepository {
   /**
    * Persistently appends an audit log into the DB audit_logs table (insert-only).
+   * Fail closed: Throws 503 if database insertion fails.
    */
   async write(input: AuditWriteInput): Promise<AuditLogRecord> {
-    const record: AuditLogRecord = {
-      id: randomUUID(),
-      actor_type: input.actor_type,
-      actor_id: input.actor_id || null,
-      action: input.action,
-      entity: input.entity,
-      entity_id: input.entity_id || null,
-      ip: input.ip || null,
-      device_id: input.device_id || null,
-      metadata: input.metadata || {},
-      created_at: new Date().toISOString(),
-    };
-
-    // Keep in memory for fast local queries / mock test runs
-    this.inMemoryLogs.unshift(record);
+    const recordId = randomUUID();
+    const createdAt = new Date().toISOString();
 
     try {
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('audit_logs')
         .insert({
-          id: record.id,
-          actor_type: record.actor_type,
-          actor_id: record.actor_id,
-          action: record.action,
-          entity: record.entity,
-          entity_id: record.entity_id,
-          ip: record.ip,
-          device_id: record.device_id,
-          metadata: record.metadata,
-          created_at: record.created_at,
+          id: recordId,
+          actor_type: input.actor_type,
+          actor_id: input.actor_id || null,
+          action: input.action,
+          entity: input.entity,
+          entity_id: input.entity_id || null,
+          ip: input.ip || null,
+          device_id: input.device_id || null,
+          metadata: input.metadata || {},
+          created_at: createdAt,
         })
         .select()
         .single();
 
-      if (!error && data) {
-        return data as AuditLogRecord;
+      if (error) {
+        logger.error({ error, action: input.action, entity: input.entity }, 'Failed to insert audit log in Supabase');
+        throw new AppError('Audit service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // In-memory fallback if database is offline or in isolated unit test
-    }
 
-    return record;
+      return data as AuditLogRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, action: input.action, entity: input.entity }, 'Unexpected database connection error in audit write');
+      throw new AppError('Audit service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   /**
    * Queries audit logs with pagination and filters (actor, action, date range).
+   * Fail closed: Throws 503 if database query fails.
    */
   async query(filter: AuditQueryFilter): Promise<{ logs: AuditLogRecord[]; total: number }> {
     const page = filter.page || 1;
@@ -90,50 +84,49 @@ export class AuditRepository {
 
       query = query
         .order('created_at', { ascending: false })
-        .range(offset, offset + filter.limit - 1);
+        .range(offset, offset + limit - 1);
 
       const { data, count, error } = await query;
 
-      if (!error && data) {
-        return {
-          logs: data as AuditLogRecord[],
-          total: count ?? data.length,
-        };
+      if (error) {
+        logger.error({ error, filter }, 'Failed to query audit logs from Supabase');
+        throw new AppError('Audit service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback to in-memory filter
-    }
 
-    // Filter in-memory logs
-    let filtered = [...this.inMemoryLogs];
+      return {
+        logs: (data as AuditLogRecord[]) || [],
+        total: count ?? (data?.length || 0),
+      };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, filter }, 'Unexpected database error in audit query');
+      throw new AppError('Audit service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
 
-    if (filter.actor_id) {
-      filtered = filtered.filter((l) => l.actor_id === filter.actor_id);
-    }
-    if (filter.action) {
-      filtered = filtered.filter((l) => l.action === filter.action);
-    }
-    if (filter.entity) {
-      filtered = filtered.filter((l) => l.entity === filter.entity);
-    }
-    if (filter.from) {
-      const fromTime = new Date(filter.from).getTime();
-      filtered = filtered.filter((l) => new Date(l.created_at).getTime() >= fromTime);
-    }
-    if (filter.to) {
-      const toTime = new Date(filter.to).getTime();
-      filtered = filtered.filter((l) => new Date(l.created_at).getTime() <= toTime);
-    }
-
-    const total = filtered.length;
-    const paginated = filtered.slice(offset, offset + limit);
-
-    return {
-      logs: paginated,
-      total,
-    };
+  clearInMemoryLogs(): void {
+    // No-op in fail-closed architecture; provided for backwards compatibility in test suites
   }
 }
 
-export const defaultAuditRepository = new AuditRepository();
+let currentAuditRepository: IAuditRepository = new AuditRepository();
 
+export function setDefaultAuditRepository(repo: IAuditRepository): void {
+  currentAuditRepository = repo;
+}
+
+export const defaultAuditRepository: IAuditRepository = new Proxy(
+  {} as unknown as IAuditRepository,
+  {
+    get(_target, prop) {
+      const val = Reflect.get(currentAuditRepository, prop);
+      if (typeof val === 'function') {
+        return (val as (...args: unknown[]) => unknown).bind(currentAuditRepository);
+      }
+      return val;
+    },
+    set(_target, prop, value) {
+      return Reflect.set(currentAuditRepository, prop, value);
+    },
+  }
+);

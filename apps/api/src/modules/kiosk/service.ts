@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { AppError } from '../../middleware/errorHandler';
-import { KioskRepository, defaultKioskRepository, PairingRecord, MissionRunRecord, MissionStepRecord } from './repository';
+import { IKioskRepository, defaultKioskRepository, PairingRecord, KioskDeviceRecord, MissionRunRecord, MissionStepRecord } from './repository';
 import { getEnv } from '../../config/env';
 import { defaultCourseRepository } from '../courses/repository';
 import { defaultPatientRepository } from '../patients/repository';
@@ -16,9 +16,13 @@ export class KioskService {
   private readonly GLOBAL_MAX_ATTEMPTS = 50; // Max 50 failed attempts globally in 15 min
 
   constructor(
-    private repo: KioskRepository = defaultKioskRepository,
+    private repo: IKioskRepository = defaultKioskRepository,
     private secretOverride?: string
   ) {}
+
+  public setRepository(repo: IKioskRepository): void {
+    this.repo = repo;
+  }
 
   private getHmacSecret(): string {
     if (this.secretOverride) return this.secretOverride;
@@ -246,6 +250,10 @@ export class KioskService {
     return this.repo.handleStaffCall(id, staffId);
   }
 
+  async getKioskSession(token: string) {
+    return this.repo.getKioskSession(token);
+  }
+
   // =========================================================================
   // DAILY MISSION METHODS (Master Prompt v3 Section 9 & 14)
   // =========================================================================
@@ -351,19 +359,30 @@ export class KioskService {
     };
   }
 
-  async recordStep(input: KioskMissionStepInput): Promise<{ step: MissionStepRecord; run: MissionRunRecord }> {
+  async verifyKioskDevice(deviceIdOrToken: string): Promise<KioskDeviceRecord | null> {
+    const byId = await this.repo.getKioskById(deviceIdOrToken);
+    if (byId) return byId;
+
+    const tokenHash = crypto.createHash('sha256').update(deviceIdOrToken).digest('hex');
+    const byHash = await this.repo.getKioskByTokenHash(tokenHash);
+    if (byHash) return byHash;
+
+    return this.repo.getKioskByTokenHash(deviceIdOrToken);
+  }
+
+  async recordStep(patientId: string, input: KioskMissionStepInput): Promise<{ step: MissionStepRecord; run: MissionRunRecord }> {
     const todayStr = new Date().toISOString().split('T')[0];
-    const run = await this.repo.getOrCreateMissionRun(input.patient_id, input.course_id, todayStr);
+    const run = await this.repo.getOrCreateMissionRun(patientId, input.course_id, todayStr);
     const step = await this.repo.recordMissionStep(run.id, input.step_type, input.ref_id, input.score);
 
     // Notify listeners via SSE (PT & Admin dashboard realtime queue status)
     dispatchHospitalEvent({
       event: 'kiosk_mission_step',
-      patientId: input.patient_id,
+      patientId,
       data: {
         runId: run.id,
         courseId: input.course_id,
-        patientId: input.patient_id,
+        patientId,
         stepType: input.step_type,
         refId: input.ref_id,
         status: 'in_progress',
@@ -374,25 +393,22 @@ export class KioskService {
     return { step, run };
   }
 
-  async finishMission(input: KioskFinishMissionInput): Promise<{ run: MissionRunRecord | null }> {
+  async finishMission(patientId: string, input: KioskFinishMissionInput): Promise<{ run: MissionRunRecord | null }> {
     const todayStr = new Date().toISOString().split('T')[0];
     const run = await this.repo.completeMissionRun(
-      input.patient_id,
+      patientId,
       input.course_id,
-      todayStr,
-      input.pain_score,
-      input.feedback
+      todayStr
     );
 
     // Notify listeners via SSE (Patient finished treatment)
     dispatchHospitalEvent({
       event: 'kiosk_mission_completed',
-      patientId: input.patient_id,
+      patientId,
       data: {
         courseId: input.course_id,
-        patientId: input.patient_id,
+        patientId,
         status: 'completed',
-        painScore: input.pain_score,
         finishedAt: run?.finished_at,
       },
     });

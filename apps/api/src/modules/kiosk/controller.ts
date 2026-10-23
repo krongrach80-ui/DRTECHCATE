@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { KioskService } from './service';
 import { PairKioskInput, CreatePairCodeInput } from './schema';
+import { isCookieSecure } from '../../config/env';
 
 export class KioskController {
   constructor(private kioskService = new KioskService()) {}
@@ -27,12 +28,12 @@ export class KioskController {
 
       const result = await this.kioskService.pairDevice(kiosk_id, code, clientIp);
 
-      const isProd = process.env.NODE_ENV === 'production';
+      const secure = isCookieSecure();
 
       // Set HttpOnly device cookie (Master prompt: DB keeps hash only, JS doesn't hold token)
       res.cookie('kiosk_device_token', result.deviceToken, {
         httpOnly: true,
-        secure: isProd,
+        secure,
         sameSite: 'strict',
         maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
         path: '/',
@@ -104,20 +105,59 @@ export class KioskController {
   };
 
   // =========================================================================
-  // DAILY MISSION HANDLERS (Master Prompt v3 Section 9 & 14)
+  // DAILY MISSION HANDLERS (Master Prompt v3 Section 9 & 14, Item F6)
   // =========================================================================
+  private async resolveKioskSession(req: Request): Promise<{ patient_id: string; kiosk_id: string } | null> {
+    // 1. Strictly cookie only! (Item F6: reject reading x-kiosk-session header)
+    const sessionToken = req.cookies?.kiosk_session;
+    if (!sessionToken) {
+      return null;
+    }
+
+    const kioskSession = await this.kioskService.getKioskSession(sessionToken);
+    if (!kioskSession || !kioskSession.is_active || new Date() > kioskSession.expires_at) {
+      return null;
+    }
+
+    // 2. Strict Kiosk Device Binding (Item F6: session must match the device cookie of that specific kiosk)
+    const deviceTokenOrId =
+      req.cookies?.kiosk_device_token ||
+      req.cookies?.kiosk_device_id ||
+      req.cookies?.kiosk_id;
+
+    if (!deviceTokenOrId) {
+      // Missing kiosk device cookie -> 401
+      return null;
+    }
+
+    // Verify that this device token/id corresponds to kioskSession.kiosk_id
+    const kioskDevice = await this.kioskService.verifyKioskDevice(deviceTokenOrId);
+    if (!kioskDevice || kioskDevice.id !== kioskSession.kiosk_id) {
+      // Session from kiosk 1 used at kiosk 2 (or spoofed/unmatched device) -> 401
+      return null;
+    }
+
+    return {
+      patient_id: kioskSession.patient_id,
+      kiosk_id: kioskSession.kiosk_id,
+    };
+  }
+
   getPlan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const patientId = (req.query.patient_id as string) || '';
-      const kioskId = req.query.kiosk_id as string | undefined;
-      if (!patientId) {
-        res.status(400).json({
+      const session = await this.resolveKioskSession(req);
+      if (!session) {
+        res.status(401).json({
           ok: false,
-          error: { code: 'BAD_REQUEST', message: 'patient_id query parameter is required' },
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Active kiosk session and matching device cookie required',
+          },
         });
         return;
       }
-      const plan = await this.kioskService.getPlan(patientId, kioskId);
+
+      const plan = await this.kioskService.getPlan(session.patient_id, session.kiosk_id);
       res.status(200).json({ ok: true, data: { plan } });
     } catch (err) {
       next(err);
@@ -126,7 +166,19 @@ export class KioskController {
 
   recordStep = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const result = await this.kioskService.recordStep(req.body);
+      const session = await this.resolveKioskSession(req);
+      if (!session) {
+        res.status(401).json({
+          ok: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Active kiosk session and matching device cookie required',
+          },
+        });
+        return;
+      }
+
+      const result = await this.kioskService.recordStep(session.patient_id, req.body);
       res.status(201).json({ ok: true, data: result });
     } catch (err) {
       next(err);
@@ -135,7 +187,19 @@ export class KioskController {
 
   finishMission = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const result = await this.kioskService.finishMission(req.body);
+      const session = await this.resolveKioskSession(req);
+      if (!session) {
+        res.status(401).json({
+          ok: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Active kiosk session and matching device cookie required',
+          },
+        });
+        return;
+      }
+
+      const result = await this.kioskService.finishMission(session.patient_id, req.body);
       res.status(200).json({ ok: true, data: result });
     } catch (err) {
       next(err);

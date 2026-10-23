@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { AppError } from '../../middleware/errorHandler';
 import { getEnv } from '../../config/env';
-import { AuthRepository, UserProfileRecord } from './repository';
+import { defaultAuthRepository, IAuthRepository, UserProfileRecord } from './repository';
 import { getAuthClient } from '../../lib/supabase/authClient';
 import { clearProfileCache, markUserForceLoggedOut, UserSession } from '../../middleware/authenticate';
 import { audit } from '../audit';
@@ -39,10 +39,14 @@ export class AuthService {
   private readonly LOCK_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
   constructor(
-    private repo = new AuthRepository(),
+    private repo: IAuthRepository = defaultAuthRepository,
     private customSignIn?: AuthSignInFn,
     private customRefresh?: AuthRefreshFn
   ) {}
+
+  setRepository(repo: IAuthRepository): void {
+    this.repo = repo;
+  }
 
   async login(
     username: string,
@@ -54,19 +58,13 @@ export class AuthService {
     const env = getEnv();
     const cleanUsername = username.trim().toLowerCase();
 
-    // 1. General brute-force throttle per IP (DB-persisted)
-    const ipFailures = await this.repo.getLoginFailuresByIp(clientIp, this.LOCK_WINDOW_MS);
-    if (ipFailures >= this.MAX_IP_ATTEMPTS) {
-      throw new AppError(
-        'Too many failed login attempts from this IP. Please wait 15 minutes.',
-        429,
-        'TOO_MANY_FAILED_ATTEMPTS',
-        true,
-        900
-      );
+    // Check account ban
+    const { isAccountBanned } = await import('../../middleware/banCheck');
+    if (isAccountBanned(cleanUsername)) {
+      throw new AppError('Account is banned by administrator', 403, 'ACCOUNT_BANNED');
     }
 
-    // 2. Exponential backoff per (username + IP)
+    // 1. Primary Security: Exponential backoff per (username + IP)
     // NEVER locks an account purely by username to prevent DoS attacks against legitimate staff
     const pairFailures = await this.repo.getLoginFailuresByUsernameAndIp(cleanUsername, clientIp, this.LOCK_WINDOW_MS);
     if (pairFailures >= this.MAX_USERNAME_ATTEMPTS) {
@@ -77,6 +75,33 @@ export class AuthService {
         'TOO_MANY_FAILED_ATTEMPTS',
         true,
         retryAfterSeconds
+      );
+    }
+
+    // 2. IP-level spray protection across all usernames (Item I9):
+    // For regular external IPs: IP_LOGIN_MAX_FAILURES (default 50).
+    // For hospital NAT networks: higher threshold HOSPITAL_IP_LOGIN_MAX_FAILURES (default 200).
+    // An IP attempting a credential-stuffing spray across multiple usernames is blocked with 429 + Retry-After.
+    const hospitalIps = (env.HOSPITAL_IPS || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const isHospitalNetwork = hospitalIps.includes(clientIp.toLowerCase()) || clientIp === '127.0.0.1' || clientIp === '::1';
+
+    const maxIpFailures = isHospitalNetwork
+      ? (env.HOSPITAL_IP_LOGIN_MAX_FAILURES || 200)
+      : (env.IP_LOGIN_MAX_FAILURES || 50);
+
+    const ipFailures = await this.repo.getLoginFailuresByIp(clientIp, this.LOCK_WINDOW_MS);
+    if (ipFailures >= maxIpFailures) {
+      throw new AppError(
+        isHospitalNetwork
+          ? 'Too many failed login attempts across accounts from this hospital network IP. Please wait 15 minutes.'
+          : 'Too many failed login attempts from this untrusted IP. Please wait 15 minutes.',
+        429,
+        'TOO_MANY_FAILED_ATTEMPTS',
+        true,
+        900
       );
     }
 

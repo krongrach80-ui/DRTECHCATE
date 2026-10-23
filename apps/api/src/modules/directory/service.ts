@@ -2,7 +2,7 @@ import { AppError } from '../../middleware/errorHandler';
 import { UserSession } from '../../middleware/authenticate';
 import { audit } from '../audit';
 import { StaffProfileRecord } from '../staff/schema';
-import { DirectoryRepository, defaultDirectoryRepository } from './repository';
+import { IDirectoryRepository, defaultDirectoryRepository } from './repository';
 import {
   ExerciseRecord,
   ExerciseQueryFilter,
@@ -20,7 +20,11 @@ import {
 } from './schema';
 
 export class DirectoryService {
-  constructor(private repo: DirectoryRepository = defaultDirectoryRepository) {}
+  constructor(private repo: IDirectoryRepository = defaultDirectoryRepository) {}
+
+  public setRepository(repo: IDirectoryRepository): void {
+    this.repo = repo;
+  }
 
   // =========================================================================
   // 1. PTs Directory
@@ -430,4 +434,8 @@ export class DirectoryService {
   }
 }
 
-export const defaultDirectoryService = new DirectoryService();
+export let defaultDirectoryService = new DirectoryService();
+
+export function setDefaultDirectoryService(service: DirectoryService): void {
+  defaultDirectoryService = service;
+}

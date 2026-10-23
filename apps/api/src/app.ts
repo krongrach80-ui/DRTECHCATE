@@ -5,7 +5,7 @@ import { Logger } from 'pino';
 import { httpLogger, createHttpLogger } from './middleware/logger';
 import { createCorsMiddleware } from './middleware/cors';
 import { banCheck } from './middleware/banCheck';
-import { apiRateLimiter, createRateLimiter } from './middleware/rateLimit';
+import { apiRateLimiter } from './middleware/rateLimit';
 import { csrfGuard } from './middleware/csrfGuard';
 import { errorHandler, AppError } from './middleware/errorHandler';
 import { healthRoutes } from './modules/health/routes';
@@ -23,6 +23,7 @@ import { createPatientsRouter, createFaceRouter } from './modules/patients/route
 import { createCoursesRouter } from './modules/courses/routes';
 import { createRecordsRouter } from './modules/records/routes';
 import { authenticate } from './middleware/authenticate';
+import { getEnv } from './config/env';
 
 export function createApp(
   customLogger?: Logger,
@@ -31,27 +32,45 @@ export function createApp(
   auditController?: AuditController
 ): Express {
   const app: Express = express();
+  const env = getEnv();
 
   // Configure trust proxy based on actual reverse proxy hop count (default 1 for Caddy/Nginx)
-  // NEVER trusts arbitrary client-supplied X-Forwarded-For directly
-  const trustHops = process.env.TRUST_PROXY_HOPS !== undefined ? parseInt(process.env.TRUST_PROXY_HOPS, 10) : 1;
-  app.set('trust proxy', trustHops);
+  // NEVER trusts arbitrary client-supplied X-Forwarded-For directly (Item H10)
+  app.set('trust proxy', env.TRUST_PROXY_HOPS);
 
-  // 1. Security Headers (Helmet)
+  // 1. Security Headers (CSP compliant with 1b.6: connect-src 'self' only, STORAGE_HOST for signed URLs)
+  let storageHost: string | undefined;
+  try {
+    const rawStorageHost = env.STORAGE_HOST;
+    if (rawStorageHost) {
+      storageHost = new URL(rawStorageHost).origin;
+    }
+  } catch {
+    // Ignore invalid URL
+  }
+
   app.use(
     helmet({
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-          connectSrc: ["'self'", 'https:'],
+          scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
+          workerSrc: ["'self'", 'blob:'],
+          styleSrc: ["'self'"],
+          fontSrc: ["'self'"],
+          imgSrc: ["'self'", 'data:', 'blob:', ...(storageHost ? [storageHost] : [])],
+          connectSrc: ["'self'"],
+          frameAncestors: ["'none'"],
         },
       },
       crossOriginEmbedderPolicy: false,
     })
   );
+
+  app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(self)');
+    next();
+  });
 
   // 2. Structured Request Logging (Pino, redacts PII and vectors)
   app.use(customLogger ? createHttpLogger(customLogger) : httpLogger);
@@ -96,54 +115,6 @@ export function createApp(
   app.get(['/me', '/api/me'], authenticate, (req: Request, res: Response) => {
     res.status(200).json({ ok: true, data: req.user });
   });
-
-  // Testing-only endpoints
-  if (process.env.NODE_ENV === 'test') {
-    // Tight rate limiter endpoint for quota testing (max 5 requests)
-    const tightLimiter = createRateLimiter({
-      max: 5,
-      windowMs: 60 * 1000,
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
-    app.get('/api/test-tight-rate-limit', tightLimiter, (_req: Request, res: Response) => {
-      res.status(200).json({ ok: true });
-    });
-
-    // Mutating endpoints for testing CSRF across POST, PUT, PATCH, DELETE
-    app.post('/api/test-csrf', (_req: Request, res: Response) => {
-      res.status(200).json({ method: 'POST', ok: true });
-    });
-    app.put('/api/test-csrf', (_req: Request, res: Response) => {
-      res.status(200).json({ method: 'PUT', ok: true });
-    });
-    app.patch('/api/test-csrf', (_req: Request, res: Response) => {
-      res.status(200).json({ method: 'PATCH', ok: true });
-    });
-    app.delete('/api/test-csrf', (_req: Request, res: Response) => {
-      res.status(200).json({ method: 'DELETE', ok: true });
-    });
-
-    app.post('/api/test-error', (req: Request, _res: Response) => {
-      if (req.body?.type === 'app') {
-        throw new AppError('Custom operational failure', 400, 'CUSTOM_BAD_REQUEST');
-      }
-      if (req.body?.type === 'db') {
-        // Simulate an internal database error with stack & table leak
-        const dbErr = new Error('syntax error at or near "SELECT * FROM secret_passwords"');
-        (dbErr as Error & { table?: string }).table = 'secret_passwords';
-        throw dbErr;
-      }
-      if (req.body?.type === 'patient_leak') {
-        throw new Error('Database query failed for patient HN-998877 (Somchai Jaidee, diagnosis: HIV, stroke)');
-      }
-      throw new Error('Unexpected crash simulation');
-    });
-
-    app.post('/api/test-echo', (req: Request, res: Response) => {
-      res.status(200).json({ received: req.body });
-    });
-  }
 
   // 10. 404 Route Not Found
   app.use((_req: Request, _res: Response, next) => {

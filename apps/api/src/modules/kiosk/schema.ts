@@ -48,29 +48,30 @@ export type ConfirmIdentityInput = z.infer<typeof ConfirmIdentitySchema>;
 // =========================================================================
 // 2.1 DAILY MISSION SCHEMAS (Master Prompt v3 Section 9 & 14)
 // =========================================================================
-export const KioskPlanQuerySchema = z.object({
-  patient_id: z.string().trim().min(1, 'Patient ID is required'),
-  kiosk_id: z.string().trim().optional(),
-});
+export const KioskPlanQuerySchema = z
+  .object({
+    kiosk_id: z.string().trim().optional(),
+  })
+  .strict();
 
 export type KioskPlanQuery = z.infer<typeof KioskPlanQuerySchema>;
 
-export const KioskMissionStepSchema = z.object({
-  patient_id: z.string().trim().min(1, 'Patient ID is required'),
-  course_id: z.string().trim().min(1, 'Course ID is required'),
-  step_type: z.enum(['exercise', 'minigame', 'rest']),
-  ref_id: z.string().trim().optional(),
-  score: z.any().optional(),
-});
+export const KioskMissionStepSchema = z
+  .object({
+    course_id: z.string().trim().min(1, 'Course ID is required'),
+    step_type: z.enum(['exercise', 'minigame', 'rest']),
+    ref_id: z.string().trim().optional(),
+    score: z.any().optional(),
+  })
+  .strict();
 
 export type KioskMissionStepInput = z.infer<typeof KioskMissionStepSchema>;
 
-export const KioskFinishMissionSchema = z.object({
-  patient_id: z.string().trim().min(1, 'Patient ID is required'),
-  course_id: z.string().trim().min(1, 'Course ID is required'),
-  pain_score: z.number().min(0).max(10).optional(),
-  feedback: z.string().optional(),
-});
+export const KioskFinishMissionSchema = z
+  .object({
+    course_id: z.string().trim().min(1, 'Course ID is required'),
+  })
+  .strict();
 
 export type KioskFinishMissionInput = z.infer<typeof KioskFinishMissionSchema>;
 

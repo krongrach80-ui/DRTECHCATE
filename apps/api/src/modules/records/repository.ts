@@ -2,23 +2,42 @@
  * apps/api/src/modules/records/repository.ts
  * Repository for Medical Records (Notes & Versioned Treatment Results)
  * Implements strict append-only invariants per Master Prompt v3 System 9.
+ * Fail-Closed on DB failure: throws 503 with logger.error (Zero in-memory fallback).
  */
 
 import { randomUUID } from 'crypto';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { getAdminClient } from '../../lib/supabase/adminClient';
 import { AppError } from '../../middleware/errorHandler';
+import { logger } from '../../middleware/logger';
 import { MedicalNoteRecord, TreatmentResultRecord } from './schema';
 
-export class RecordsRepository {
-  private inMemoryNotes: Map<string, MedicalNoteRecord> = new Map();
-  private inMemoryTreatmentResults: Map<string, TreatmentResultRecord> = new Map();
+export interface IRecordsRepository {
+  getNotes(patientId: string, client?: SupabaseClient): Promise<MedicalNoteRecord[]>;
+  createNote(
+    patientId: string,
+    authorId: string,
+    body: string,
+    client?: SupabaseClient
+  ): Promise<MedicalNoteRecord>;
+  getTreatmentResults(
+    patientId: string,
+    client?: SupabaseClient
+  ): Promise<TreatmentResultRecord[]>;
+  createTreatmentResult(
+    patientId: string,
+    authorId: string,
+    body: string,
+    supersedesId?: string | null,
+    client?: SupabaseClient
+  ): Promise<TreatmentResultRecord>;
+  rejectDirectUpdateNote(noteId: string): Promise<void>;
+  rejectDirectDeleteNote(noteId: string): Promise<void>;
+  rejectDirectUpdateTreatmentResult(resultId: string): Promise<void>;
+  rejectDirectDeleteTreatmentResult(resultId: string): Promise<void>;
+}
 
-  clearInMemory(): void {
-    this.inMemoryNotes.clear();
-    this.inMemoryTreatmentResults.clear();
-  }
-
+export class RecordsRepository implements IRecordsRepository {
   // =========================================================================
   // 1. MEDICAL NOTES (APPEND-ONLY)
   // =========================================================================
@@ -33,24 +52,17 @@ export class RecordsRepository {
         .eq('patient_id', patientId)
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        return data as MedicalNoteRecord[];
+      if (error) {
+        logger.error({ error, patientId }, 'Database error querying medical notes');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback to in-memory
-    }
 
-    // In-Memory lookup
-    const notes: MedicalNoteRecord[] = [];
-    for (const note of this.inMemoryNotes.values()) {
-      if (note.patient_id === patientId) {
-        notes.push({ ...note });
-      }
+      return (data as MedicalNoteRecord[]) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId }, 'Unexpected database error in getNotes');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    // Sort newest first
-    notes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return notes;
   }
 
   async createNote(
@@ -76,28 +88,17 @@ export class RecordsRepository {
         .select('*, author:profiles!author_id(id, full_name, role)')
         .single();
 
-      if (!error && data) {
-        return data as MedicalNoteRecord;
+      if (error || !data) {
+        logger.error({ error, patientId, authorId }, 'Database error inserting medical note');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback to in-memory
+
+      return data as MedicalNoteRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId, authorId }, 'Unexpected database error in createNote');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    const noteRecord: MedicalNoteRecord = {
-      id,
-      patient_id: patientId,
-      author_id: authorId,
-      body,
-      created_at: createdAt,
-      author: {
-        id: authorId,
-        full_name: 'Physical Therapist',
-        role: 'pt',
-      },
-    };
-
-    this.inMemoryNotes.set(id, noteRecord);
-    return noteRecord;
   }
 
   // =========================================================================
@@ -118,24 +119,17 @@ export class RecordsRepository {
         .eq('patient_id', patientId)
         .order('version', { ascending: true });
 
-      if (!error && data) {
-        return data as TreatmentResultRecord[];
+      if (error) {
+        logger.error({ error, patientId }, 'Database error querying treatment results');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback to in-memory
-    }
 
-    // In-Memory lookup
-    const results: TreatmentResultRecord[] = [];
-    for (const res of this.inMemoryTreatmentResults.values()) {
-      if (res.patient_id === patientId) {
-        results.push({ ...res });
-      }
+      return (data as TreatmentResultRecord[]) || [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId }, 'Unexpected database error in getTreatmentResults');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    // Sort by version ascending so full history is readable
-    results.sort((a, b) => a.version - b.version);
-    return results;
   }
 
   async createTreatmentResult(
@@ -186,30 +180,17 @@ export class RecordsRepository {
         .select('*, author:profiles!author_id(id, full_name, role)')
         .single();
 
-      if (!error && data) {
-        return data as TreatmentResultRecord;
+      if (error || !data) {
+        logger.error({ error, patientId, authorId }, 'Database error inserting treatment result');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // Fallback to in-memory
+
+      return data as TreatmentResultRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId, authorId }, 'Unexpected database error in createTreatmentResult');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    const record: TreatmentResultRecord = {
-      id,
-      patient_id: patientId,
-      version: nextVersion,
-      body,
-      author_id: authorId,
-      supersedes_id: supersedesId || null,
-      created_at: createdAt,
-      author: {
-        id: authorId,
-        full_name: 'Physical Therapist',
-        role: 'pt',
-      },
-    };
-
-    this.inMemoryTreatmentResults.set(id, record);
-    return record;
   }
 
   // =========================================================================
@@ -234,6 +215,7 @@ export class RecordsRepository {
         );
       }
     } catch (err: unknown) {
+      if (err instanceof AppError) throw err;
       const error = err as Error;
       throw new AppError(
         `[IMMUTABLE_RECORD] Database trigger rejected note modification: ${error.message}`,
@@ -265,6 +247,7 @@ export class RecordsRepository {
         );
       }
     } catch (err: unknown) {
+      if (err instanceof AppError) throw err;
       const error = err as Error;
       throw new AppError(
         `[IMMUTABLE_RECORD] Database trigger rejected note deletion: ${error.message}`,
@@ -296,6 +279,7 @@ export class RecordsRepository {
         );
       }
     } catch (err: unknown) {
+      if (err instanceof AppError) throw err;
       const error = err as Error;
       throw new AppError(
         `[IMMUTABLE_RECORD] Database trigger rejected treatment result modification: ${error.message}`,
@@ -327,6 +311,7 @@ export class RecordsRepository {
         );
       }
     } catch (err: unknown) {
+      if (err instanceof AppError) throw err;
       const error = err as Error;
       throw new AppError(
         `[IMMUTABLE_RECORD] Database trigger rejected treatment result deletion: ${error.message}`,
@@ -343,4 +328,24 @@ export class RecordsRepository {
   }
 }
 
-export const defaultRecordsRepository = new RecordsRepository();
+let currentRecordsRepository: IRecordsRepository = new RecordsRepository();
+
+export function setDefaultRecordsRepository(repo: IRecordsRepository): void {
+  currentRecordsRepository = repo;
+}
+
+export const defaultRecordsRepository: IRecordsRepository = new Proxy(
+  {} as unknown as IRecordsRepository,
+  {
+    get(_target, prop) {
+      const val = Reflect.get(currentRecordsRepository, prop);
+      if (typeof val === 'function') {
+        return (val as (...args: unknown[]) => unknown).bind(currentRecordsRepository);
+      }
+      return val;
+    },
+    set(_target, prop, value) {
+      return Reflect.set(currentRecordsRepository, prop, value);
+    },
+  }
+);

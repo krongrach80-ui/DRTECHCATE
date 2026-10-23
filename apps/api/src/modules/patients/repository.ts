@@ -1,6 +1,6 @@
-import { randomUUID } from 'crypto';
 import { getAdminClient } from '../../lib/supabase/adminClient';
 import { AppError } from '../../middleware/errorHandler';
+import { logger } from '../../middleware/logger';
 import {
   PatientRecord,
   CreatePatientInput,
@@ -10,45 +10,66 @@ import {
   CheckinRecord,
   normalizePhone,
 } from './schema';
-import { DirectoryRepository, defaultDirectoryRepository } from '../directory/repository';
 
-export class PatientRepository {
-  private inMemoryPatients: Map<string, PatientRecord> = new Map();
-  private inMemoryAssignments: Map<string, { patientId: string; ptId: string; isPrimary: boolean }> = new Map();
-  private inMemoryTickets: Map<string, EnrollmentTicketRecord> = new Map();
-  private inMemoryCheckins: Map<string, CheckinRecord> = new Map();
-  private inMemoryHnCounter = 100001;
+export interface IPatientRepository {
+  isPatientAccessibleByPt(patientId: string, ptId: string): Promise<boolean>;
+  getAccessiblePatientIdsForPt(ptId: string): Promise<string[]>;
+  createPatient(
+    input: Partial<CreatePatientInput> & { first_name: string; last_name: string },
+    createdBy: string,
+    responsiblePtId?: string | null
+  ): Promise<PatientRecord>;
+  getPatientById(id: string): Promise<PatientRecord | null>;
+  updatePatient(
+    id: string,
+    input: UpdatePatientInput,
+    expectedVersion: number
+  ): Promise<PatientRecord>;
+  listPatients(
+    filter: PatientQueryFilter,
+    accessiblePatientIds?: string[] | null
+  ): Promise<{ patients: PatientRecord[]; total: number; page: number; limit: number }>;
+  createEnrollmentTicket(
+    patientId: string,
+    kioskId: string,
+    createdBy: string
+  ): Promise<EnrollmentTicketRecord>;
+  createCheckin(
+    patientId: string,
+    kioskId: string | null,
+    checkedInBy: string | null
+  ): Promise<CheckinRecord>;
+  getTodayCheckinPatientIds(dateStr: string): Promise<string[]>;
+  deleteBiometrics(patientId: string): Promise<void>;
+  cleanupExpiredPendingPatients(): Promise<number>;
+}
 
-  constructor(private directoryRepo: DirectoryRepository = defaultDirectoryRepository) {}
-
-  clearInMemory(): void {
-    this.inMemoryPatients.clear();
-    this.inMemoryAssignments.clear();
-    this.inMemoryTickets.clear();
-    this.inMemoryCheckins.clear();
-    this.inMemoryHnCounter = 100001;
-  }
-
+export class PatientRepository implements IPatientRepository {
   // =========================================================================
   // 1. PATIENT ACCESS CHECK (PRIMARY ASSIGNMENT OR ACTIVE CASE TRANSFER)
   // =========================================================================
   async isPatientAccessibleByPt(patientId: string, ptId: string): Promise<boolean> {
     const today = new Date().toISOString().split('T')[0];
 
-    // 1. Check primary or direct assignment
     try {
       const adminClient = getAdminClient();
-      const { data: assignment } = await adminClient
+      // 1. Direct or primary assignment
+      const { data: assignment, error: assignError } = await adminClient
         .from('patient_pt_assignments')
         .select('id')
         .eq('patient_id', patientId)
         .eq('pt_id', ptId)
         .maybeSingle();
 
+      if (assignError) {
+        logger.error({ assignError, patientId, ptId }, 'Database error checking patient assignment');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
       if (assignment) return true;
 
-      // 2. Check active case transfer in DB
-      const { data: transfer } = await adminClient
+      // 2. Active case transfer
+      const { data: transfer, error: transferError } = await adminClient
         .from('case_transfers')
         .select('id')
         .eq('patient_id', patientId)
@@ -58,19 +79,17 @@ export class PatientRepository {
         .eq('status', 'active')
         .maybeSingle();
 
-      if (transfer) return true;
-    } catch {
-      // fallback to in-memory
+      if (transferError) {
+        logger.error({ transferError, patientId, ptId }, 'Database error checking case transfer');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return !!transfer;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId, ptId }, 'Unexpected database connection error in isPatientAccessibleByPt');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    // In-Memory check:
-    const assigned = Array.from(this.inMemoryAssignments.values()).some(
-      (a) => a.patientId === patientId && a.ptId === ptId
-    );
-    if (assigned) return true;
-
-    // Check directory repo case transfers
-    return this.directoryRepo.isPatientDelegatedToPt(patientId, ptId, today);
   }
 
   async getAccessiblePatientIdsForPt(ptId: string): Promise<string[]> {
@@ -79,16 +98,21 @@ export class PatientRepository {
 
     try {
       const adminClient = getAdminClient();
-      const { data: assignments } = await adminClient
+      const { data: assignments, error: assignError } = await adminClient
         .from('patient_pt_assignments')
         .select('patient_id')
         .eq('pt_id', ptId);
+
+      if (assignError) {
+        logger.error({ assignError, ptId }, 'Database error querying accessible assignments');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
 
       if (assignments) {
         assignments.forEach((a: { patient_id: string }) => accessibleIds.add(a.patient_id));
       }
 
-      const { data: transfers } = await adminClient
+      const { data: transfers, error: transferError } = await adminClient
         .from('case_transfers')
         .select('patient_id')
         .eq('to_pt_id', ptId)
@@ -96,46 +120,42 @@ export class PatientRepository {
         .gte('end_date', today)
         .eq('status', 'active');
 
+      if (transferError) {
+        logger.error({ transferError, ptId }, 'Database error querying active case transfers');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
       if (transfers) {
         transfers.forEach((t: { patient_id: string }) => accessibleIds.add(t.patient_id));
       }
-    } catch {
-      // fallback
-    }
 
-    // Also collect in-memory
-    for (const a of this.inMemoryAssignments.values()) {
-      if (a.ptId === ptId) accessibleIds.add(a.patientId);
+      return Array.from(accessibleIds);
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, ptId }, 'Unexpected database connection error in getAccessiblePatientIdsForPt');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-    const inMemTransfers = await this.directoryRepo.listCaseTransfers(ptId);
-    for (const t of inMemTransfers) {
-      if (t.status === 'active' && t.start_date <= today && t.end_date >= today) {
-        accessibleIds.add(t.patient_id);
-      }
-    }
-
-    return Array.from(accessibleIds);
   }
 
   // =========================================================================
-  // 2. PATIENT CRUD
+  // 2. PATIENT CRUD (HN from PostgreSQL Sequence patient_hn_seq)
   // =========================================================================
   async createPatient(
     input: Partial<CreatePatientInput> & { first_name: string; last_name: string },
-    createdBy: string,
+    _createdBy: string,
     responsiblePtId?: string | null
   ): Promise<PatientRecord> {
-    const nowIso = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const ptId = responsiblePtId || input.responsible_pt_id || null;
 
     try {
       const adminClient = getAdminClient();
+      // Omit hn so Postgres DEFAULT ('HN' || lpad(nextval('patient_hn_seq')::text, 6, '0')) triggers
       const { data, error } = await adminClient
         .from('patients')
         .insert({
-          first_name: input.first_name,
-          last_name: input.last_name,
+          first_name: input.first_name.trim(),
+          last_name: input.last_name.trim(),
           age: input.age ?? null,
           sex: input.sex ?? null,
           phone: normalizePhone(input.phone),
@@ -150,54 +170,31 @@ export class PatientRepository {
         .select('*')
         .single();
 
-      if (!error && data) {
-        if (ptId) {
-          await adminClient
-            .from('patient_pt_assignments')
-            .upsert(
-              { patient_id: data.id, pt_id: ptId, is_primary: true },
-              { onConflict: 'patient_id,pt_id' }
-            );
-        }
-        return data as PatientRecord;
+      if (error || !data) {
+        logger.error({ error, input }, 'Failed to insert patient in Supabase');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
+
+      if (ptId) {
+        const { error: assignError } = await adminClient
+          .from('patient_pt_assignments')
+          .upsert(
+            { patient_id: data.id, pt_id: ptId, is_primary: true },
+            { onConflict: 'patient_id,pt_id' }
+          );
+
+        if (assignError) {
+          logger.error({ assignError, patientId: data.id, ptId }, 'Failed to upsert patient_pt_assignments in Supabase');
+          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
+      }
+
+      return data as PatientRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, input }, 'Unexpected database error in createPatient');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    // In-memory fallback
-    const patientId = randomUUID();
-    const hn = `HN${String(this.inMemoryHnCounter++).padStart(6, '0')}`;
-    const record: PatientRecord = {
-      id: patientId,
-      hn,
-      first_name: input.first_name,
-      last_name: input.last_name,
-      age: input.age ?? null,
-      sex: input.sex ?? null,
-      phone: normalizePhone(input.phone),
-      history: input.history || {},
-      injury: input.injury || null,
-      responsible_pt_id: ptId,
-      registration_status: 'awaiting_face',
-      registered_via: input.registered_via || 'reception',
-      pending_expires_at: expiresAt,
-      started_at: null,
-      version: 1,
-      created_at: nowIso,
-      updated_at: nowIso,
-    };
-
-    this.inMemoryPatients.set(patientId, record);
-    if (ptId) {
-      this.inMemoryAssignments.set(`${patientId}:${ptId}`, {
-        patientId,
-        ptId,
-        isPrimary: true,
-      });
-    }
-
-    return record;
   }
 
   async getPatientById(id: string): Promise<PatientRecord | null> {
@@ -209,14 +206,17 @@ export class PatientRepository {
         .eq('id', id)
         .maybeSingle();
 
-      if (!error && data) {
-        return data as PatientRecord;
+      if (error) {
+        logger.error({ error, id }, 'Database error querying patient by id');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    return this.inMemoryPatients.get(id) || null;
+      return (data as PatientRecord) || null;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id }, 'Unexpected database connection error in getPatientById');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   async updatePatient(
@@ -249,21 +249,31 @@ export class PatientRepository {
         .eq('id', id)
         .eq('version', expectedVersion)
         .select('*')
-        .single();
+        .maybeSingle();
 
-      if (!error && data) {
+      if (error) {
+        logger.error({ error, id, expectedVersion }, 'Database error during updatePatient');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      if (data) {
         if (input.responsible_pt_id) {
-          await adminClient
+          const { error: assignError } = await adminClient
             .from('patient_pt_assignments')
             .upsert(
               { patient_id: id, pt_id: input.responsible_pt_id, is_primary: true },
               { onConflict: 'patient_id,pt_id' }
             );
+
+          if (assignError) {
+            logger.error({ assignError, id }, 'Failed to update patient PT assignment');
+            throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+          }
         }
         return data as PatientRecord;
       }
 
-      // Check if version mismatch caused zero rows updated
+      // Check whether record does not exist or version conflict occurred
       const current = await this.getPatientById(id);
       if (!current) {
         throw new AppError('Patient not found', 404, 'PATIENT_NOT_FOUND');
@@ -275,50 +285,13 @@ export class PatientRepository {
           'CONFLICT'
         );
       }
+
+      throw new AppError('Failed to update patient record', 500, 'UPDATE_FAILED');
     } catch (err) {
       if (err instanceof AppError) throw err;
-      // fallback to in-memory
+      logger.error({ err, id }, 'Unexpected error in updatePatient');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    const current = this.inMemoryPatients.get(id);
-    if (!current) {
-      throw new AppError('Patient not found', 404, 'PATIENT_NOT_FOUND');
-    }
-
-    // Strict optimistic lock check
-    if (current.version !== expectedVersion) {
-      throw new AppError(
-        `Conflict: Patient record was modified by another user (expected version ${expectedVersion}, current version is ${current.version}). Please reload and try again.`,
-        409,
-        'CONFLICT'
-      );
-    }
-
-    const updated: PatientRecord = {
-      ...current,
-      first_name: input.first_name ?? current.first_name,
-      last_name: input.last_name ?? current.last_name,
-      age: input.age !== undefined ? input.age : current.age,
-      sex: input.sex !== undefined ? input.sex : current.sex,
-      phone: input.phone !== undefined ? normalizePhone(input.phone) : current.phone,
-      injury: input.injury !== undefined ? input.injury : current.injury,
-      history: input.history ?? current.history,
-      responsible_pt_id: input.responsible_pt_id !== undefined ? input.responsible_pt_id : current.responsible_pt_id,
-      registration_status: input.registration_status ?? current.registration_status,
-      version: current.version + 1,
-      updated_at: nowIso,
-    };
-
-    this.inMemoryPatients.set(id, updated);
-    if (input.responsible_pt_id) {
-      this.inMemoryAssignments.set(`${id}:${input.responsible_pt_id}`, {
-        patientId: id,
-        ptId: input.responsible_pt_id,
-        isPrimary: true,
-      });
-    }
-
-    return updated;
   }
 
   async listPatients(
@@ -327,50 +300,53 @@ export class PatientRepository {
   ): Promise<{ patients: PatientRecord[]; total: number; page: number; limit: number }> {
     const page = filter.page || 1;
     const limit = filter.limit || 20;
-
-    // In-memory implementation with full trigram/search & pagination support
-    let all = Array.from(this.inMemoryPatients.values());
-
-    // 1. Scope filter by role access
-    if (accessiblePatientIds !== null && accessiblePatientIds !== undefined) {
-      const allowedSet = new Set(accessiblePatientIds);
-      all = all.filter((p) => allowedSet.has(p.id));
-    }
-
-    // 2. Status filter
-    if (filter.status) {
-      all = all.filter((p) => p.registration_status === filter.status);
-    }
-
-    // 3. Responsible PT filter
-    if (filter.responsible_pt_id) {
-      all = all.filter((p) => p.responsible_pt_id === filter.responsible_pt_id);
-    }
-
-    // 4. Search query `q` (Thai names, phone, HN)
-    if (filter.q) {
-      const cleanQ = filter.q.trim().toLowerCase();
-      const cleanPhoneQ = normalizePhone(cleanQ) || '';
-
-      all = all.filter((p) => {
-        const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
-        const hnMatch = p.hn.toLowerCase().includes(cleanQ);
-        const nameMatch = fullName.includes(cleanQ) || p.first_name.toLowerCase().includes(cleanQ) || p.last_name.toLowerCase().includes(cleanQ);
-        const phoneMatch = cleanPhoneQ && p.phone ? p.phone.includes(cleanPhoneQ) : false;
-        return hnMatch || nameMatch || phoneMatch;
-      });
-    }
-
-    const total = all.length;
     const offset = (page - 1) * limit;
-    const paginated = all.slice(offset, offset + limit);
 
-    return {
-      patients: paginated,
-      total,
-      page,
-      limit,
-    };
+    try {
+      const adminClient = getAdminClient();
+      let query = adminClient
+        .from('patients')
+        .select('*, responsible_pt:profiles!responsible_pt_id(id, full_name, username)', { count: 'exact' });
+
+      if (accessiblePatientIds !== null && accessiblePatientIds !== undefined) {
+        if (accessiblePatientIds.length === 0) {
+          return { patients: [], total: 0, page, limit };
+        }
+        query = query.in('id', accessiblePatientIds);
+      }
+
+      if (filter.status) {
+        query = query.eq('registration_status', filter.status);
+      }
+
+      if (filter.responsible_pt_id) {
+        query = query.eq('responsible_pt_id', filter.responsible_pt_id);
+      }
+
+      if (filter.q) {
+        const cleanQ = filter.q.trim();
+        query = query.or(`first_name.ilike.%${cleanQ}%,last_name.ilike.%${cleanQ}%,hn.ilike.%${cleanQ}%,phone.ilike.%${cleanQ}%`);
+      }
+
+      query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
+
+      const { data, count, error } = await query;
+      if (error) {
+        logger.error({ error, filter }, 'Database error listing patients');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      return {
+        patients: (data as PatientRecord[]) || [],
+        total: count || 0,
+        page,
+        limit,
+      };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, filter }, 'Unexpected error in listPatients');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   // =========================================================================
@@ -381,9 +357,7 @@ export class PatientRepository {
     kioskId: string,
     createdBy: string
   ): Promise<EnrollmentTicketRecord> {
-    const now = Date.now();
-    const expiresAt = new Date(now + 10 * 60 * 1000).toISOString(); // 10 minutes
-    const nowIso = new Date(now).toISOString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     try {
       const adminClient = getAdminClient();
@@ -398,25 +372,17 @@ export class PatientRepository {
         .select('*')
         .single();
 
-      if (!error && data) {
-        return data as EnrollmentTicketRecord;
+      if (error || !data) {
+        logger.error({ error, patientId, kioskId }, 'Database error creating enrollment ticket');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
+
+      return data as EnrollmentTicketRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId, kioskId }, 'Unexpected error in createEnrollmentTicket');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    const ticket: EnrollmentTicketRecord = {
-      id: randomUUID(),
-      patient_id: patientId,
-      kiosk_id: kioskId,
-      created_by: createdBy,
-      expires_at: expiresAt,
-      used_at: null,
-      created_at: nowIso,
-    };
-
-    this.inMemoryTickets.set(ticket.id, ticket);
-    return ticket;
   }
 
   async createCheckin(
@@ -425,7 +391,6 @@ export class PatientRepository {
     checkedInBy: string | null
   ): Promise<CheckinRecord> {
     const today = new Date().toISOString().split('T')[0];
-    const nowIso = new Date().toISOString();
 
     try {
       const adminClient = getAdminClient();
@@ -443,54 +408,38 @@ export class PatientRepository {
         .select('*')
         .single();
 
-      if (!error && data) {
-        return data as CheckinRecord;
+      if (error || !data) {
+        logger.error({ error, patientId }, 'Database error recording checkin');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
+
+      return data as CheckinRecord;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId }, 'Unexpected error in createCheckin');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-
-    const key = `${patientId}:${today}`;
-    const existing = this.inMemoryCheckins.get(key);
-    if (existing) {
-      return existing;
-    }
-
-    const checkin: CheckinRecord = {
-      id: randomUUID(),
-      patient_id: patientId,
-      kiosk_id: kioskId,
-      checked_in_by: checkedInBy,
-      date: today,
-      created_at: nowIso,
-    };
-
-    this.inMemoryCheckins.set(key, checkin);
-    return checkin;
   }
 
   async getTodayCheckinPatientIds(dateStr: string): Promise<string[]> {
     try {
       const adminClient = getAdminClient();
-      const { data } = await adminClient
+      const { data, error } = await adminClient
         .from('checkins')
         .select('patient_id')
         .eq('date', dateStr);
 
-      if (data && data.length > 0) {
-        return data.map((d: { patient_id: string }) => d.patient_id);
+      if (error) {
+        logger.error({ error, dateStr }, 'Database error querying checkin patient ids');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    } catch {
-      // fallback
-    }
 
-    const ids: string[] = [];
-    for (const c of this.inMemoryCheckins.values()) {
-      if (c.date === dateStr) {
-        ids.push(c.patient_id);
-      }
+      return data ? data.map((d: { patient_id: string }) => d.patient_id) : [];
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, dateStr }, 'Unexpected error in getTodayCheckinPatientIds');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
-    return ids;
   }
 
   // =========================================================================
@@ -499,24 +448,30 @@ export class PatientRepository {
   async deleteBiometrics(patientId: string): Promise<void> {
     try {
       const adminClient = getAdminClient();
-      // 1. Delete templates
-      await adminClient.from('face_templates').delete().eq('patient_id', patientId);
-      // 2. Delete enrollments
-      await adminClient.from('face_enrollments').delete().eq('patient_id', patientId);
-      // 3. Reset patient registration status to awaiting_face
-      await adminClient
+      const { error: err1 } = await adminClient.from('face_templates').delete().eq('patient_id', patientId);
+      if (err1) {
+        logger.error({ err1, patientId }, 'Database error deleting face_templates');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      const { error: err2 } = await adminClient.from('face_enrollments').delete().eq('patient_id', patientId);
+      if (err2) {
+        logger.error({ err2, patientId }, 'Database error deleting face_enrollments');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      const { error: err3 } = await adminClient
         .from('patients')
         .update({ registration_status: 'awaiting_face', updated_at: new Date().toISOString() })
         .eq('id', patientId);
-    } catch {
-      // fallback
-    }
-
-    const patient = this.inMemoryPatients.get(patientId);
-    if (patient) {
-      patient.registration_status = 'awaiting_face';
-      patient.updated_at = new Date().toISOString();
-      patient.version += 1;
+      if (err3) {
+        logger.error({ err3, patientId }, 'Database error resetting patient status to awaiting_face');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId }, 'Unexpected error in deleteBiometrics');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 
@@ -525,24 +480,48 @@ export class PatientRepository {
   // =========================================================================
   async cleanupExpiredPendingPatients(): Promise<number> {
     const nowIso = new Date().toISOString();
-    let cleaned = 0;
 
-    for (const patient of this.inMemoryPatients.values()) {
-      if (
-        patient.registration_status === 'awaiting_face' &&
-        patient.pending_expires_at &&
-        patient.pending_expires_at <= nowIso
-      ) {
-        // Soft archive or mark cancelled
-        patient.registration_status = 'archived';
-        patient.updated_at = nowIso;
-        patient.version += 1;
-        cleaned++;
+    try {
+      const adminClient = getAdminClient();
+      const { data, error } = await adminClient
+        .from('patients')
+        .update({ registration_status: 'archived', updated_at: nowIso })
+        .eq('registration_status', 'awaiting_face')
+        .lte('pending_expires_at', nowIso)
+        .select('id');
+
+      if (error) {
+        logger.error({ error }, 'Database error during cleanupExpiredPendingPatients');
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-    }
 
-    return cleaned;
+      return data ? data.length : 0;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err }, 'Unexpected error in cleanupExpiredPendingPatients');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
   }
 }
 
-export const defaultPatientRepository = new PatientRepository();
+let currentPatientRepository: IPatientRepository = new PatientRepository();
+
+export function setDefaultPatientRepository(repo: IPatientRepository): void {
+  currentPatientRepository = repo;
+}
+
+export const defaultPatientRepository: IPatientRepository = new Proxy(
+  {} as unknown as IPatientRepository,
+  {
+    get(_target, prop) {
+      const val = Reflect.get(currentPatientRepository, prop);
+      if (typeof val === 'function') {
+        return (val as (...args: unknown[]) => unknown).bind(currentPatientRepository);
+      }
+      return val;
+    },
+    set(_target, prop, value) {
+      return Reflect.set(currentPatientRepository, prop, value);
+    },
+  }
+);

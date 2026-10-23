@@ -1,13 +1,18 @@
 import { AppError } from '../../middleware/errorHandler';
-import { getEnv } from '../../config/env';
 import { UserSession } from '../../middleware/authenticate';
 import { addActiveBan, removeActiveBan, syncActiveBans } from '../../middleware/banCheck';
 import { audit } from '../audit';
-import { SecurityRepository, defaultSecurityRepository } from './repository';
+import { logger } from '../../middleware/logger';
+import { ISecurityRepository, defaultSecurityRepository } from './repository';
 import { BanCreateInput, BanRecord, BanQueryFilter } from './schema';
+import { getEnv } from '../../config/env';
 
 export class SecurityService {
-  constructor(private repo: SecurityRepository = defaultSecurityRepository) {}
+  constructor(private repo: ISecurityRepository = defaultSecurityRepository) {}
+
+  public setRepository(repo: ISecurityRepository): void {
+    this.repo = repo;
+  }
 
   /**
    * Helper to check if an IP matches the hospital allowlist or loopback.
@@ -44,14 +49,7 @@ export class SecurityService {
 
     // 1. IP Ban Checks
     if (input.type === 'ip') {
-      let hospitalIpsSetting = process.env.HOSPITAL_IPS || '127.0.0.1,::1,localhost';
-      try {
-        if (!process.env.HOSPITAL_IPS) {
-          hospitalIpsSetting = getEnv().HOSPITAL_IPS;
-        }
-      } catch {
-        // fallback
-      }
+      const hospitalIpsSetting = getEnv().HOSPITAL_IPS;
 
       if (this.isHospitalOrLoopbackIp(targetValue, hospitalIpsSetting)) {
         throw new AppError(
@@ -169,13 +167,21 @@ export class SecurityService {
 
   /**
    * Initializes / syncs in-memory ban cache from DB on startup.
+   * Fail-Closed (1b.1): Must throw 503 and log error if database cannot be queried.
    */
   async syncCacheFromDb(): Promise<void> {
     try {
       const activeBans = await this.repo.getActiveBans();
       syncActiveBans(activeBans);
-    } catch {
-      // Non-fatal if DB not yet reachable
+    } catch (err) {
+      logger.error({ err }, 'Failed to synchronize active bans from database: failing closed');
+      throw new AppError('Security service unavailable: failed to load active ban cache from database', 503, 'SERVICE_UNAVAILABLE');
     }
   }
+}
+
+export let defaultSecurityService = new SecurityService();
+
+export function setDefaultSecurityService(service: SecurityService): void {
+  defaultSecurityService = service;
 }

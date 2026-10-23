@@ -1,5 +1,6 @@
 import pinoHttp from 'pino-http';
 import pino, { DestinationStream } from 'pino';
+import { getEnv } from '../config/env';
 
 export const REDACT_PATHS = [
   'req.headers.authorization',
@@ -22,9 +23,18 @@ export const REDACT_PATHS = [
 ];
 
 export function createLogger(destination?: DestinationStream, level?: string) {
+  let resolvedLevel = level;
+  if (!resolvedLevel) {
+    try {
+      resolvedLevel = getEnv().NODE_ENV === 'test' ? 'silent' : 'info';
+    } catch {
+      resolvedLevel = 'info';
+    }
+  }
+
   return pino(
     {
-      level: level || (process.env.NODE_ENV === 'test' ? 'silent' : 'info'),
+      level: resolvedLevel,
       redact: {
         paths: REDACT_PATHS,
         censor: '[REDACTED]',

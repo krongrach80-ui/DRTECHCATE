@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from 'express';
 // In-memory maps for active bans (value -> expiresAt in ms or null for permanent)
 const bannedIps = new Map<string, number | null>();
 const bannedDevices = new Map<string, number | null>();
+const bannedAccounts = new Map<string, number | null>();
 
 /**
  * Checks whether an entry is active in the map, expiring it if past expiresAt.
@@ -25,6 +26,10 @@ export function isDeviceBanned(deviceId: string): boolean {
   return isEntryActive(bannedDevices, deviceId);
 }
 
+export function isAccountBanned(account: string): boolean {
+  return isEntryActive(bannedAccounts, account.trim().toLowerCase());
+}
+
 export function addActiveBan(
   type: 'ip' | 'device' | 'account',
   value: string,
@@ -35,6 +40,8 @@ export function addActiveBan(
     bannedIps.set(value, expiresAtMs);
   } else if (type === 'device') {
     bannedDevices.set(value, expiresAtMs);
+  } else if (type === 'account') {
+    bannedAccounts.set(value.trim().toLowerCase(), expiresAtMs);
   }
 }
 
@@ -43,6 +50,8 @@ export function removeActiveBan(type: 'ip' | 'device' | 'account', value: string
     bannedIps.delete(value);
   } else if (type === 'device') {
     bannedDevices.delete(value);
+  } else if (type === 'account') {
+    bannedAccounts.delete(value.trim().toLowerCase());
   }
 }
 
@@ -51,6 +60,7 @@ export function syncActiveBans(
 ): void {
   bannedIps.clear();
   bannedDevices.clear();
+  bannedAccounts.clear();
   const now = Date.now();
 
   for (const b of bans) {
@@ -62,6 +72,8 @@ export function syncActiveBans(
       bannedIps.set(b.value, expiresAtMs);
     } else if (b.type === 'device') {
       bannedDevices.set(b.value, expiresAtMs);
+    } else if (b.type === 'account') {
+      bannedAccounts.set(b.value.trim().toLowerCase(), expiresAtMs);
     }
   }
 }
@@ -69,6 +81,28 @@ export function syncActiveBans(
 export function clearAllBans(): void {
   bannedIps.clear();
   bannedDevices.clear();
+  bannedAccounts.clear();
+}
+
+/**
+ * Hydrates in-memory active ban list directly from Postgres 'bans' table.
+ * If this query fails during boot, the error propagates so server refuses to start (fail-closed).
+ */
+export async function syncBansFromDatabase(): Promise<void> {
+  const { getAdminClient } = await import('../lib/supabase/adminClient');
+  const adminClient = getAdminClient();
+  const nowIso = new Date().toISOString();
+
+  const { data, error } = await adminClient
+    .from('bans')
+    .select('type, value, expires_at')
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
+
+  if (error) {
+    throw new Error(`FATAL: Failed to sync active bans from 'bans' table at startup: ${error.message}`);
+  }
+
+  syncActiveBans((data as Array<{ type: string; value: string; expires_at?: string | null }>) || []);
 }
 
 // Backward compatibility helpers for existing test suites

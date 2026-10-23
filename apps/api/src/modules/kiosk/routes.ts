@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { KioskController } from './controller';
 import { KioskFaceAuthController } from './faceAuth.controller';
 import {
@@ -7,12 +7,40 @@ import {
   ChallengeRequestSchema,
   VerifyFaceSchema,
   ConfirmIdentitySchema,
+  KioskPlanQuerySchema,
   KioskMissionStepSchema,
   KioskFinishMissionSchema,
 } from './schema';
-import { validateBody } from '../../middleware/validate';
+import { validateBody, validateQuery } from '../../middleware/validate';
 import { authenticate } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/requireRole';
+import { getEnv, REGISTERED_PAD_PROVIDERS } from '../../config/env';
+import { AppError } from '../../middleware/errorHandler';
+
+export function ensureFaceAuthEnabled(_req: Request, _res: Response, next: NextFunction): void {
+  try {
+    const env = getEnv();
+    if (!env.PAD_PROVIDER) {
+      throw new AppError(
+        'Presentation Attack Detection (PAD) provider is not configured on server',
+        500,
+        'PAD_PROVIDER_REQUIRED'
+      );
+    }
+    const isRegistered = REGISTERED_PAD_PROVIDERS.includes(env.PAD_PROVIDER as (typeof REGISTERED_PAD_PROVIDERS)[number]);
+    const isActiveOnly = env.PAD_MODE === 'active_only' && env.PAD_PROVIDER === 'active_challenge_tracker';
+    if (!isRegistered && !isActiveOnly) {
+      throw new AppError(
+        'Face verification endpoint is disabled: Presentation Attack Detection (PAD) provider not configured',
+        503,
+        'FACE_AUTH_DISABLED'
+      );
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
 
 export function createKioskRouter(
   deviceController = new KioskController(),
@@ -50,12 +78,13 @@ export function createKioskRouter(
 
 
   // =========================================================================
-  // SYSTEM 7: KIOSK FACE AUTHENTICATION & CHALLENGE
+  // SYSTEM 7: KIOSK FACE AUTHENTICATION & CHALLENGE (Fail-Closed if PAD not configured)
   // =========================================================================
 
   // POST /api/kiosk/challenge (Request single-use nonce & 2 gesture challenge)
   router.post(
     '/challenge',
+    ensureFaceAuthEnabled,
     validateBody(ChallengeRequestSchema),
     faceAuthController.challenge
   );
@@ -63,6 +92,7 @@ export function createKioskRouter(
   // POST /api/kiosk/verify (Submit 512-dim probe vector for dual-criteria match)
   router.post(
     '/verify',
+    ensureFaceAuthEnabled,
     validateBody(VerifyFaceSchema),
     faceAuthController.verify
   );
@@ -70,6 +100,7 @@ export function createKioskRouter(
   // POST /api/kiosk/verify-face (Client library alias)
   router.post(
     '/verify-face',
+    ensureFaceAuthEnabled,
     validateBody(VerifyFaceSchema),
     faceAuthController.verify
   );
@@ -88,11 +119,12 @@ export function createKioskRouter(
   );
 
   // =========================================================================
-  // SYSTEM 14: DAILY MISSION WORKFLOWS
+  // SYSTEM 14: DAILY MISSION WORKFLOWS (Protected by kiosk_session + device cookie)
+  // Staff credentials cannot access these endpoints! (Item F6)
   // =========================================================================
 
   // GET /api/kiosk/plan (Retrieve today's prescribed exercises & minigame)
-  router.get('/plan', deviceController.getPlan);
+  router.get('/plan', validateQuery(KioskPlanQuerySchema), deviceController.getPlan);
 
   // POST /api/kiosk/mission/steps (Record individual exercise or minigame completion)
   router.post(
@@ -101,7 +133,7 @@ export function createKioskRouter(
     deviceController.recordStep
   );
 
-  // POST /api/kiosk/finish (Finish mission, record pain VAS rating & notes)
+  // POST /api/kiosk/finish (Finish mission)
   router.post(
     '/finish',
     validateBody(KioskFinishMissionSchema),

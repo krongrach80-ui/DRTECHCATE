@@ -11,8 +11,8 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { AppError } from '../../middleware/errorHandler';
 import { UserSession } from '../../middleware/authenticate';
-import { RecordsRepository, defaultRecordsRepository } from './repository';
-import { PatientRepository, defaultPatientRepository } from '../patients/repository';
+import { IRecordsRepository, defaultRecordsRepository } from './repository';
+import { IPatientRepository, defaultPatientRepository } from '../patients/repository';
 import { AuditService, defaultAuditService } from '../audit/service';
 import {
   CreateMedicalNoteInput,
@@ -23,10 +23,18 @@ import {
 
 export class RecordsService {
   constructor(
-    private recordsRepo: RecordsRepository = defaultRecordsRepository,
-    private patientRepo: PatientRepository = defaultPatientRepository,
+    private recordsRepo: IRecordsRepository = defaultRecordsRepository,
+    private patientRepo: IPatientRepository = defaultPatientRepository,
     private auditService: AuditService = defaultAuditService
   ) {}
+
+  public setRepository(repo: IRecordsRepository): void {
+    this.recordsRepo = repo;
+  }
+
+  public setPatientRepository(repo: IPatientRepository): void {
+    this.patientRepo = repo;
+  }
 
   /**
    * Helper: Validates user access to patient.

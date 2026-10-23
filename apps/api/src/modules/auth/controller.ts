@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from './service';
 import { LoginInput } from './schema';
+import { isCookieSecure } from '../../config/env';
 
 export class AuthController {
   constructor(private authService = new AuthService()) {}
@@ -21,12 +22,12 @@ export class AuthController {
         userAgent
       );
 
-      const isProd = process.env.NODE_ENV === 'production';
+      const secure = isCookieSecure();
 
       // Set HttpOnly, Secure, SameSite=Strict cookies
       res.cookie('access_token', result.accessToken, {
         httpOnly: true,
-        secure: isProd,
+        secure,
         sameSite: 'strict',
         maxAge: result.expiresIn * 1000,
         path: '/',
@@ -34,7 +35,7 @@ export class AuthController {
 
       res.cookie('refresh_token', result.refreshToken, {
         httpOnly: true,
-        secure: isProd,
+        secure,
         sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: '/api/auth',
@@ -42,7 +43,7 @@ export class AuthController {
 
       res.cookie('staff_device_id', result.deviceId, {
         httpOnly: true,
-        secure: isProd,
+        secure,
         sameSite: 'strict',
         maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
         path: '/',
@@ -80,11 +81,11 @@ export class AuthController {
       const refreshToken = req.cookies?.refresh_token || req.body?.refreshToken;
       const result = await this.authService.refresh(refreshToken);
 
-      const isProd = process.env.NODE_ENV === 'production';
+      const secure = isCookieSecure();
 
       res.cookie('access_token', result.accessToken, {
         httpOnly: true,
-        secure: isProd,
+        secure,
         sameSite: 'strict',
         maxAge: result.expiresIn * 1000,
         path: '/',
@@ -92,7 +93,7 @@ export class AuthController {
 
       res.cookie('refresh_token', result.refreshToken, {
         httpOnly: true,
-        secure: isProd,
+        secure,
         sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60 * 1000,
         path: '/api/auth',
