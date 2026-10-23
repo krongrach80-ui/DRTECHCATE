@@ -1,29 +1,127 @@
 import { Request, Response, NextFunction } from 'express';
 
-// In-memory cache for banned IPs (in sync with DB table 'bans')
-const bannedIps = new Set<string>();
+// In-memory maps for active bans (value -> expiresAt in ms or null for permanent)
+const bannedIps = new Map<string, number | null>();
+const bannedDevices = new Map<string, number | null>();
 
+/**
+ * Checks whether an entry is active in the map, expiring it if past expiresAt.
+ */
+function isEntryActive(map: Map<string, number | null>, key: string): boolean {
+  if (!map.has(key)) return false;
+  const expiresAt = map.get(key);
+  if (expiresAt !== null && expiresAt !== undefined && Date.now() >= expiresAt) {
+    map.delete(key);
+    return false;
+  }
+  return true;
+}
+
+export function isIpBanned(ip: string): boolean {
+  return isEntryActive(bannedIps, ip);
+}
+
+export function isDeviceBanned(deviceId: string): boolean {
+  return isEntryActive(bannedDevices, deviceId);
+}
+
+export function addActiveBan(
+  type: 'ip' | 'device' | 'account',
+  value: string,
+  expiresAtIso?: string | null
+): void {
+  const expiresAtMs = expiresAtIso ? new Date(expiresAtIso).getTime() : null;
+  if (type === 'ip') {
+    bannedIps.set(value, expiresAtMs);
+  } else if (type === 'device') {
+    bannedDevices.set(value, expiresAtMs);
+  }
+}
+
+export function removeActiveBan(type: 'ip' | 'device' | 'account', value: string): void {
+  if (type === 'ip') {
+    bannedIps.delete(value);
+  } else if (type === 'device') {
+    bannedDevices.delete(value);
+  }
+}
+
+export function syncActiveBans(
+  bans: Array<{ type: string; value: string; expires_at?: string | null }>
+): void {
+  bannedIps.clear();
+  bannedDevices.clear();
+  const now = Date.now();
+
+  for (const b of bans) {
+    const expiresAtMs = b.expires_at ? new Date(b.expires_at).getTime() : null;
+    if (expiresAtMs !== null && expiresAtMs <= now) {
+      continue; // Skip expired
+    }
+    if (b.type === 'ip') {
+      bannedIps.set(b.value, expiresAtMs);
+    } else if (b.type === 'device') {
+      bannedDevices.set(b.value, expiresAtMs);
+    }
+  }
+}
+
+export function clearAllBans(): void {
+  bannedIps.clear();
+  bannedDevices.clear();
+}
+
+// Backward compatibility helpers for existing test suites
 export function setBannedIps(ips: string[]): void {
   bannedIps.clear();
-  ips.forEach((ip) => bannedIps.add(ip));
+  ips.forEach((ip) => bannedIps.set(ip, null));
 }
 
 export function addBannedIp(ip: string): void {
-  bannedIps.add(ip);
+  bannedIps.set(ip, null);
 }
 
 export function removeBannedIp(ip: string): void {
   bannedIps.delete(ip);
 }
 
+/**
+ * BanCheck Middleware:
+ * Master Prompt v3 Section 5 & Section 6:
+ * Enforces active IP and device bans. Expired bans must NOT block requests.
+ */
 export function banCheck(req: Request, res: Response, next: NextFunction): void {
-  const clientIp = req.ip || req.socket.remoteAddress || '';
+  const clientIp = (req.ip || req.socket.remoteAddress || '').replace(/^.*:/, '');
+  const deviceId = req.cookies?.staff_device_id;
 
-  if (bannedIps.has(clientIp)) {
+  // 1. Check IP ban
+  if (clientIp && isIpBanned(clientIp)) {
     res.status(403).json({
       error: {
         code: 'ACCESS_DENIED',
         message: 'Access restricted by administrator',
+      },
+    });
+    return;
+  }
+
+  // Also check raw req.ip if normalized stripped it
+  if (req.ip && isIpBanned(req.ip)) {
+    res.status(403).json({
+      error: {
+        code: 'ACCESS_DENIED',
+        message: 'Access restricted by administrator',
+      },
+    });
+    return;
+  }
+
+  // 2. Check Device ban
+  if (deviceId && isDeviceBanned(deviceId)) {
+    res.status(403).json({
+      error: {
+        code: 'ACCESS_DENIED',
+        message: 'Access restricted by administrator (device banned)',
       },
     });
     return;

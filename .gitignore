@@ -19,6 +19,8 @@
 
 # production
 /build
+/dist
+vitest-results.json
 
 # misc
 .DS_Store
@@ -43,3 +45,6 @@ next-env.d.ts
 # supabase
 supabase/.temp/
 .temp/
+
+# github workflows (requires workflow oauth scope)
+.github/

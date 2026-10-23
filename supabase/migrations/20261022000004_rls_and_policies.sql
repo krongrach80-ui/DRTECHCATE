@@ -30,7 +30,8 @@ REVOKE EXECUTE ON FUNCTION is_patient_accessible_by_pt(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION is_patient_accessible_by_pt(UUID) TO authenticated;
 
 -- Revoke all table permissions on strictly backend-only tables from authenticated (Defense-in-depth)
-REVOKE ALL ON TABLE face_templates, face_challenges, kiosk_devices, staff_devices, bans FROM authenticated;
+-- Spec Section 4: face_*, enrollment_tickets, kiosk_devices, staff_*, bans
+REVOKE ALL ON TABLE face_enrollments, face_templates, face_challenges, enrollment_tickets, kiosk_devices, staff_devices, staff_calls, bans FROM authenticated;
 
 -- ------------------------------------------------------------------------
 -- 2. ENABLE ROW LEVEL SECURITY ON ALL 27 TABLES
@@ -421,14 +422,7 @@ CREATE POLICY "consents_insert" ON consents
   FOR INSERT TO authenticated
   WITH CHECK (current_user_role() = 'admin' OR is_patient_accessible_by_pt(subject_id));
 
-CREATE POLICY "staff_calls_select" ON staff_calls
-  FOR SELECT TO authenticated
-  USING (true);
-
-CREATE POLICY "staff_calls_update" ON staff_calls
-  FOR UPDATE TO authenticated
-  USING (true)
-  WITH CHECK (true);
+-- staff_calls is in staff_* (backend-only, REVOKED from authenticated, zero client policies)
 
 -- ------------------------------------------------------------------------
 -- 11. POLICIES: AUDIT LOGS (ADMIN SELECT ONLY, INSERT VIA SYSTEM/ADMIN)

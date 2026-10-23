@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-touch-callout: none !important;
+  }
+
+  body {
+    font-family: 'Noto Sans Thai', 'Outfit', system-ui, -apple-system, sans-serif;
+    background-color: #030712;
+    color: #f8fafc;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+  }
+}
+
+/* Floating animation for screensaver logo */
+@keyframes float {
+  0% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(1deg);
+  }
+  100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Pulse glow animation */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 25px rgba(59, 130, 246, 0.4), inset 0 0 15px rgba(59, 130, 246, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 45px rgba(59, 130, 246, 0.7), inset 0 0 25px rgba(59, 130, 246, 0.4);
+  }
+}
+
+.glow-blue {
+  animation: pulse-glow 3s infinite;
+}
+
+/* 10-segment circular progress animation */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}
+
+/* Checkmark pop animation */
+@keyframes pop-check {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-pop {
+  animation: pop-check 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Large touchscreen button click active state */
+.touch-btn {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  touch-action: manipulation;
+}
+
+.touch-btn:active {
+  transform: scale(0.96);
+  filter: brightness(0.9);
+}

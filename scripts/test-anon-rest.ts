@@ -68,9 +68,13 @@ async function runAnonRestSecurityTest() {
     });
 
     if (posRes.status === 200) {
-      const settingsBody = (await posRes.json()) as { disable_signup?: boolean; [key: string]: unknown };
+      const settingsBody = (await posRes.json()) as {
+        disable_signup?: boolean;
+        external?: { anonymous_users?: boolean; [key: string]: unknown };
+        [key: string]: unknown;
+      };
       console.log(`  ✓ PASS: Positive control endpoint /auth/v1/settings returned 200 OK (Key is active & valid)`);
-      
+
       // REQUIREMENT 1: Assert disable_signup === true
       if (settingsBody.disable_signup === true) {
         console.log(`  ✓ PASS: Settings assertion passed (disable_signup === true: public signup is strictly disabled)`);
@@ -79,12 +83,23 @@ async function runAnonRestSecurityTest() {
         console.error(`  ✗ FAIL: Settings assertion failed! disable_signup is ${settingsBody.disable_signup}, expected true`);
         totalFailed++;
       }
+
+      // REQUIREMENT 2: Assert external.anonymous_users is false (Zero unauthenticated/anonymous user creation)
+      if (settingsBody.external?.anonymous_users === false) {
+        console.log(`  ✓ PASS: Settings assertion passed (external.anonymous_users === false: anonymous login strictly disabled)`);
+        totalPassed++;
+      } else {
+        console.error(`  ✗ FAIL: Settings assertion failed! external.anonymous_users is ${settingsBody.external?.anonymous_users}, expected false`);
+        totalFailed++;
+      }
     } else {
       console.error(`  ✗ FAIL: Positive control endpoint failed! Status: ${posRes.status}`);
       totalFailed++;
     }
 
-    // REQUIREMENT 1: Attempt POST /auth/v1/signup with anon key - MUST be rejected specifically because signup is disabled (NOT 429 rate limit)
+    // REQUIREMENT 1: Attempt POST /auth/v1/signup with anon key
+    // MUST be rejected SPECIFICALLY because signups are disabled (e.g. error code "signup_disabled")
+    // Errors caused by .invalid email domain (e.g. "Email address ... is invalid") or 429 rate limit MUST FAIL
     const signupUrl = `${supabaseUrl}/auth/v1/signup`;
     const signupRes = await fetch(signupUrl, {
       method: 'POST',
@@ -94,28 +109,39 @@ async function runAnonRestSecurityTest() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        email: `unauthorized_signup_${Date.now()}@attacker.com`,
+        email: `unauthorized_signup_${Date.now()}@example.invalid`,
         password: 'MaliciousPassword123!',
       }),
     });
 
-    const signupBody = (await signupRes.json()) as { code?: string | number; error_code?: string; message?: string; msg?: string; error?: string; error_description?: string };
-    
-    // Explicitly check for signup disabled condition (Gotrue returns 400 or 403 or code signup_disabled / Signups not allowed)
-    const errorText = `${signupBody.code || ''} ${signupBody.error_code || ''} ${signupBody.message || ''} ${signupBody.msg || ''} ${signupBody.error || ''} ${signupBody.error_description || ''}`.toLowerCase();
-    const isSignupDisabled = signupRes.status !== 429 && (
-      signupBody.code === 'signup_disabled' ||
-      signupBody.error_code === 'signup_disabled' ||
-      errorText.includes('signup') ||
-      errorText.includes('signups not allowed') ||
-      errorText.includes('signup disabled')
-    );
+    const signupBody = (await signupRes.json()) as {
+      code?: string | number;
+      error_code?: string;
+      message?: string;
+      msg?: string;
+      error?: string;
+      error_description?: string;
+    };
+
+    const code = String(signupBody.code || signupBody.error_code || '');
+    const msg = String(signupBody.msg || signupBody.message || signupBody.error_description || '');
+
+    // Strictly detect signup_disabled error code or explicit message from Gotrue
+    const isSignupDisabled =
+      signupRes.status !== 429 &&
+      (code === 'signup_disabled' ||
+        msg.toLowerCase().includes('signups not allowed') ||
+        msg.toLowerCase().includes('signup is disabled') ||
+        msg.toLowerCase().includes('signups are disabled'));
 
     if (signupRes.status === 429) {
-      console.error(`  ✗ FAIL: POST /auth/v1/signup returned 429 Rate Limit (Status 429: "${signupBody.message || signupBody.msg || 'Rate limit'}"). Cannot verify signup lockdown from 429! Must disable signups in Supabase dashboard.`);
+      console.error(`  ✗ FAIL: POST /auth/v1/signup returned 429 Rate Limit. Cannot verify signup lockdown from 429.`);
+      totalFailed++;
+    } else if (msg.toLowerCase().includes('is invalid') || code === 'validation_failed') {
+      console.error(`  ✗ FAIL: POST /auth/v1/signup failed due to invalid email address format ("${msg}"), NOT because signup was disabled! Must disable signups in Supabase dashboard.`);
       totalFailed++;
     } else if (isSignupDisabled) {
-      console.log(`  ✓ PASS: POST /auth/v1/signup rejected specifically because signup is disabled (Status ${signupRes.status}: "${signupBody.message || signupBody.msg || signupBody.error_code || 'Signups not allowed'}")`);
+      console.log(`  ✓ PASS: POST /auth/v1/signup rejected specifically because signup is disabled (Status ${signupRes.status}: "${msg || code || 'Signups not allowed'}")`);
       totalPassed++;
     } else {
       console.error(`  ✗ FAIL: POST /auth/v1/signup was NOT rejected with signup_disabled! Status: ${signupRes.status}, Body: ${JSON.stringify(signupBody)}`);

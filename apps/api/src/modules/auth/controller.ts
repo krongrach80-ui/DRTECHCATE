@@ -11,9 +11,12 @@ export class AuthController {
       const existingDeviceId = req.cookies?.staff_device_id;
       const userAgent = req.headers['user-agent'];
 
+      const clientIp = (req.ip || req.socket.remoteAddress || '127.0.0.1').replace(/^.*:/, '');
+
       const result = await this.authService.login(
         username,
         password,
+        clientIp,
         existingDeviceId,
         userAgent
       );
@@ -57,7 +60,9 @@ export class AuthController {
   logout = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (req.user?.id) {
-        await this.authService.logout(req.user.id);
+        const clientIp = (req.ip || req.socket.remoteAddress || '127.0.0.1').replace(/^.*:/, '');
+        const clientDeviceId = req.cookies?.staff_device_id;
+        await this.authService.logout(req.user.id, clientIp, clientDeviceId);
       }
 
       // Clear all auth cookies
@@ -104,6 +109,27 @@ export class AuthController {
       res.status(200).json({
         ok: true,
         user: req.user,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  forceLogout = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const paramId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+      const targetUserId = paramId || req.user?.id;
+      if (!targetUserId) {
+        res.status(400).json({ ok: false, message: 'User ID is required' });
+        return;
+      }
+      const clientIp = (req.ip || req.socket.remoteAddress || '127.0.0.1').replace(/^.*:/, '');
+      const clientDeviceId = req.cookies?.staff_device_id;
+      const reason = req.body?.reason;
+      await this.authService.forceLogout(targetUserId, req.user, clientIp, clientDeviceId, reason);
+      res.status(200).json({
+        ok: true,
+        message: `User ${targetUserId} force logged out successfully`,
       });
     } catch (err) {
       next(err);

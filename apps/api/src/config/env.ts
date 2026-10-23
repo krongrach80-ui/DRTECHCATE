@@ -44,6 +44,8 @@ export const envSchema = z
       .string()
       .min(16, 'KIOSK_PAIRING_SECRET must be at least 16 characters')
       .default('kiosk-pairing-hmac-secret-min-16-chars-for-dev'),
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(1),
+    HOSPITAL_IPS: z.string().default('127.0.0.1,::1,localhost'),
 
     // Biometric Calibration (Master Prompt v3 - Section 11 & match_face_candidates)
     // NOTE: Values operate in COSINE SIMILARITY space (score = 1.0 - cosine_distance).

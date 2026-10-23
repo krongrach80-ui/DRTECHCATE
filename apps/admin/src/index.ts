@@ -1,7 +1,15 @@
 /**
- * DrTech.Care Admin Dashboard Application Entrypoint
- * Communicates strictly with Express API (/api/admin/*)
- * NEVER imports Supabase SDK or credentials
+ * apps/admin/src/index.ts
+ * Master Export for DrTech.Care Admin Portal (System 10)
+ * Architecture Invariant: ZERO Supabase SDK imports or browser credential storage
  */
-export const ADMIN_APP_VERSION = '0.1.0';
-export const ADMIN_API_BASE = '/api';
+
+export * from './App';
+export * from './types';
+export * from './components/Sidebar';
+export * from './views/StaffView';
+export * from './views/PatientsView';
+export * from './views/PtsView';
+export * from './views/LibraryView';
+export * from './views/ScheduleView';
+export * from './views/SecurityView';

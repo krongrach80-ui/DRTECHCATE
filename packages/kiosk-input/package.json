@@ -1,0 +1,14 @@
+{
+  "name": "@hospital-pt-system/kiosk-input",
+  "version": "0.1.0",
+  "description": "DrTech.Care Kiosk Input Processing (Presence Detection, One Euro Filter, Single-Hand Gestures, Head Nod & Fallbacks)",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

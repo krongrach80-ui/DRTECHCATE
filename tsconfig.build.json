@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "jsx": "react-jsx",
+    "outDir": "dist",
+    "rootDir": ".",
+    "declaration": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": false
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "packages/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "legacy-src",
+    "dist",
+    "apps/api/src/__tests__"
+  ]
+}

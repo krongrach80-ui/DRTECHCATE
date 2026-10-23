@@ -34,10 +34,21 @@ interface CachedProfile {
 }
 
 const profileCache = new Map<string, CachedProfile>();
+const forceLoggedOutUsers = new Set<string>();
 const CACHE_TTL_MS = 15 * 1000; // 15 seconds
+
+export function markUserForceLoggedOut(userId: string): void {
+  forceLoggedOutUsers.add(userId);
+  profileCache.delete(userId);
+}
 
 export function clearProfileCache(): void {
   profileCache.clear();
+}
+
+export function resetAuthTestState(): void {
+  profileCache.clear();
+  forceLoggedOutUsers.clear();
 }
 
 function decodeJwtPayload(token: string): { iat?: number; exp?: number; sub?: string } | null {
@@ -90,7 +101,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
           throw new AppError('User account is inactive or suspended', 403, 'ACCOUNT_INACTIVE');
         }
 
-        if (isForceLoggedOut) {
+        if (isForceLoggedOut || forceLoggedOutUsers.has(userId)) {
           throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
         }
 
@@ -123,7 +134,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       if (cached.profile.status !== 'active') {
         throw new AppError('User account is inactive or suspended', 403, 'ACCOUNT_INACTIVE');
       }
-      if (cached.forceLogoutAtMs && cached.forceLogoutAtMs > tokenIatMs) {
+      if (forceLoggedOutUsers.has(userId) || (cached.forceLogoutAtMs && cached.forceLogoutAtMs > tokenIatMs)) {
         throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
       }
       req.user = cached.profile;
@@ -150,7 +161,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       ? new Date(profile.force_logout_at).getTime()
       : null;
 
-    if (forceLogoutAtMs && forceLogoutAtMs > tokenIatMs) {
+    if (forceLoggedOutUsers.has(userId) || (forceLogoutAtMs && forceLogoutAtMs > tokenIatMs)) {
       throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
     }
 

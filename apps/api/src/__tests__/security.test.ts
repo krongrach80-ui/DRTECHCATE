@@ -6,7 +6,7 @@ import { createLogger } from '../middleware/logger';
 import { Writable } from 'stream';
 import { Express } from 'express';
 
-describe('DrTech.Care Express API Core — Security & Error Masking Test Suite', () => {
+describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test Suite', () => {
   let app: Express;
 
   beforeAll(() => {
@@ -333,13 +333,14 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
       addBannedIp('127.0.0.1');
 
       try {
-        // Attacker attempts to forge X-Forwarded-For header to look like a clean IP
+        // Attacker attempts to forge X-Forwarded-For header by injecting clean IP upstream
+        // Behind a 1-hop reverse proxy, the proxy appends client's real IP: "forged-ip, real-ip"
         const res = await request(app)
           .get('/api/health')
-          .set('X-Forwarded-For', '203.0.113.195');
+          .set('X-Forwarded-For', '203.0.113.195, 127.0.0.1');
 
-        // Because trust proxy is disabled, Express relies on real socket address
-        // The attacker remains BANNED (403)
+        // Because trust proxy is 1 hop, Express only trusts the immediate hop (127.0.0.1)
+        // and ignores the forged 203.0.113.195. The attacker remains BANNED (403)
         expect(res.status).toBe(403);
         expect(res.body).toEqual({
           error: {
@@ -357,43 +358,46 @@ describe('DrTech.Care Express API Core — Security & Error Masking Test Suite',
       // Create fresh app to test rate limit spoofing
       const freshApp = createApp();
 
-      // Attacker fires 5 requests, rotating fake X-Forwarded-For on each request
+      // Attacker fires 5 requests, attempting to rotate fake upstream IPs in X-Forwarded-For
       for (let i = 1; i <= 5; i++) {
         const res = await request(freshApp)
           .get('/api/test-tight-rate-limit')
-          .set('X-Forwarded-For', `198.51.100.${i}`);
+          .set('X-Forwarded-For', `198.51.100.${i}, 127.0.0.1`);
         expect(res.status).toBe(200);
       }
 
-      // 6th request with yet another fake IP
+      // 6th request with yet another fake upstream IP
       const overLimitRes = await request(freshApp)
         .get('/api/test-tight-rate-limit')
-        .set('X-Forwarded-For', '198.51.100.99');
+        .set('X-Forwarded-For', '198.51.100.99, 127.0.0.1');
 
-      // Must STILL be rejected with 429 because trust proxy is disabled
+      // Must STILL be rejected with 429 because trust proxy evaluates the real hop (127.0.0.1)
       expect(overLimitRes.status).toBe(429);
       expect(overLimitRes.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
     });
   });
 
-  describe('9. Health Endpoint Contract', () => {
-    it('GET /api/health should return complete system health status', async () => {
+  describe('9. Health & System Endpoint Contracts', () => {
+    it('GET /api/health should respond with status: ok only', async () => {
       const res = await request(app).get('/api/health');
 
       expect(res.status).toBe(200);
-      expect(res.body.status).toBe('ok');
-      expect(res.body.service).toBe('drtechcare-api');
-      expect(res.body.version).toBe('0.1.0');
-      expect(typeof res.body.uptime).toBe('number');
-      expect(new Date(res.body.timestamp).getTime()).not.toBeNaN();
+      expect(res.body).toEqual({ status: 'ok' });
     });
 
-    it('GET /health root endpoint should return complete system health status', async () => {
+    it('GET /health root endpoint should respond with status: ok only', async () => {
       const res = await request(app).get('/health');
 
       expect(res.status).toBe(200);
-      expect(res.body.status).toBe('ok');
-      expect(res.body.service).toBe('drtechcare-api');
+      expect(res.body).toEqual({ status: 'ok' });
+    });
+
+    it('GET /api/events MUST require authentication and reject unauthenticated requests with 401', async () => {
+      const res = await request(app).get('/api/events');
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBeDefined();
+      expect(res.body.error.code).toBe('UNAUTHORIZED');
     });
   });
 

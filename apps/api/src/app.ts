@@ -10,14 +10,32 @@ import { csrfGuard } from './middleware/csrfGuard';
 import { errorHandler, AppError } from './middleware/errorHandler';
 import { healthRoutes } from './modules/health/routes';
 import { eventRoutes } from './modules/events/routes';
-import { authRoutes } from './modules/auth/routes';
+import { authRoutes, createAuthRouter } from './modules/auth/routes';
 import { kioskRoutes } from './modules/kiosk/routes';
+import { createSecurityRouter, securityRoutes } from './modules/security/routes';
+import { AuthController } from './modules/auth/controller';
+import { SecurityController } from './modules/security/controller';
+import { auditRoutes, createAuditRouter } from './modules/audit/routes';
+import { AuditController } from './modules/audit/controller';
+import { staffRoutes } from './modules/staff/routes';
+import { directoryRoutes } from './modules/directory/routes';
+import { createPatientsRouter, createFaceRouter } from './modules/patients/routes';
+import { createCoursesRouter } from './modules/courses/routes';
+import { createRecordsRouter } from './modules/records/routes';
+import { authenticate } from './middleware/authenticate';
 
-export function createApp(customLogger?: Logger): Express {
+export function createApp(
+  customLogger?: Logger,
+  authController?: AuthController,
+  securityController?: SecurityController,
+  auditController?: AuditController
+): Express {
   const app: Express = express();
 
-  // Explicitly set trust proxy to false by default (prevents client X-Forwarded-For spoofing attacks)
-  app.set('trust proxy', false);
+  // Configure trust proxy based on actual reverse proxy hop count (default 1 for Caddy/Nginx)
+  // NEVER trusts arbitrary client-supplied X-Forwarded-For directly
+  const trustHops = process.env.TRUST_PROXY_HOPS !== undefined ? parseInt(process.env.TRUST_PROXY_HOPS, 10) : 1;
+  app.set('trust proxy', trustHops);
 
   // 1. Security Headers (Helmet)
   app.use(
@@ -60,8 +78,24 @@ export function createApp(customLogger?: Logger): Express {
   app.use('/', healthRoutes);
   app.use('/api', healthRoutes);
   app.use('/api', eventRoutes);
-  app.use('/api/auth', authRoutes);
+  app.use('/api/auth', authController ? createAuthRouter(authController) : authRoutes);
   app.use('/api/kiosk', kioskRoutes);
+  app.use(
+    '/api/security',
+    authController || securityController
+      ? createSecurityRouter(authController, securityController)
+      : securityRoutes
+  );
+  app.use('/api/audit', auditController ? createAuditRouter(auditController) : auditRoutes);
+  app.use('/api/staff', staffRoutes);
+  app.use('/api', directoryRoutes);
+  app.use('/api/patients', createPatientsRouter());
+  app.use('/api/face', createFaceRouter());
+  app.use('/api/courses', createCoursesRouter());
+  app.use('/api', createRecordsRouter());
+  app.get(['/me', '/api/me'], authenticate, (req: Request, res: Response) => {
+    res.status(200).json({ ok: true, data: req.user });
+  });
 
   // Testing-only endpoints
   if (process.env.NODE_ENV === 'test') {

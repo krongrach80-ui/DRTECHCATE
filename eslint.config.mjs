@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }
       ],
+      "@next/next/no-html-link-for-pages": "off",
     },
   },
   // Frontend applications must NEVER import @supabase/supabase-js or adminClient (Master Prompt v3 - Section 4)
@@ -57,6 +58,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "dist/**",
     "next-env.d.ts",
     "legacy-src/**",
   ]),

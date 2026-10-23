@@ -217,6 +217,8 @@ CREATE TABLE IF NOT EXISTS mission_runs (
   course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
   run_date DATE NOT NULL,
   status mission_status DEFAULT 'pending' NOT NULL,
+  pain_score INT,
+  feedback TEXT,
   started_at TIMESTAMPTZ,
   finished_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL,

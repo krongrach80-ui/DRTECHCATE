@@ -1,7 +1,12 @@
 import crypto from 'crypto';
 import { AppError } from '../../middleware/errorHandler';
-import { KioskRepository, PairingRecord } from './repository';
+import { KioskRepository, defaultKioskRepository, PairingRecord, MissionRunRecord, MissionStepRecord } from './repository';
 import { getEnv } from '../../config/env';
+import { defaultCourseRepository } from '../courses/repository';
+import { defaultPatientRepository } from '../patients/repository';
+import { defaultDirectoryRepository } from '../directory/repository';
+import { dispatchHospitalEvent } from '../events/routes';
+import { KioskMissionStepInput, KioskFinishMissionInput } from './schema';
 
 export class KioskService {
   private readonly IP_MAX_ATTEMPTS = 5;
@@ -11,7 +16,7 @@ export class KioskService {
   private readonly GLOBAL_MAX_ATTEMPTS = 50; // Max 50 failed attempts globally in 15 min
 
   constructor(
-    private repo = new KioskRepository(),
+    private repo: KioskRepository = defaultKioskRepository,
     private secretOverride?: string
   ) {}
 
@@ -211,4 +216,188 @@ export class KioskService {
       },
     };
   }
+
+  async listDevices(): Promise<Array<{ id: string; name: string; location: string | null; is_active: boolean; paired_at: string | null }>> {
+    const list = await this.repo.listDevices();
+    return list.map((k) => ({
+      id: k.id,
+      name: k.name,
+      location: k.location,
+      is_active: k.is_active,
+      paired_at: k.paired_at,
+    }));
+  }
+
+  async createDevice(name: string, location?: string | null): Promise<{ id: string; name: string; location: string | null; is_active: boolean }> {
+    const k = await this.repo.createDevice(name, location);
+    return {
+      id: k.id,
+      name: k.name,
+      location: k.location,
+      is_active: k.is_active,
+    };
+  }
+
+  async listStaffCalls(): Promise<Array<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }>> {
+    return this.repo.listStaffCalls();
+  }
+
+  async handleStaffCall(id: string, staffId: string): Promise<boolean> {
+    return this.repo.handleStaffCall(id, staffId);
+  }
+
+  // =========================================================================
+  // DAILY MISSION METHODS (Master Prompt v3 Section 9 & 14)
+  // =========================================================================
+  async getPlan(patientId: string, kioskId?: string): Promise<{
+    courseId: string;
+    patientId: string;
+    patientFirstName: string;
+    avatarUrl: string | null;
+    doctorNotes: string | null;
+    exercises: Array<{
+      id: string;
+      title: string;
+      description: string | null;
+      image_path: string | null;
+      target_sets: number;
+      target_reps: number;
+      target_duration_seconds?: number;
+    }>;
+    includeMinigame: boolean;
+    minigameTitle?: string;
+    minigameQuestion?: {
+      id: string;
+      prompt: string;
+      choices: string[];
+      answer: string;
+    } | null;
+  } | null> {
+    const patient = await defaultPatientRepository.getPatientById(patientId);
+    if (!patient) return null;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayCourses = await defaultCourseRepository.getTodayAppointments(todayStr, kioskId || null);
+    const course = todayCourses.find((c) => c.patient_id === patientId);
+
+    if (!course) {
+      return null;
+    }
+
+    const exercises = await Promise.all(
+      (course.items || []).map(async (it, idx) => {
+        let title = it.exercise?.title;
+        let description: string | null = null;
+        let imagePath: string | null = null;
+        if (!title && it.exercise_id) {
+          const ex = await defaultDirectoryRepository.getExerciseById(it.exercise_id);
+          if (ex) {
+            title = ex.title;
+            description = ex.description || null;
+            imagePath = ex.image_path || null;
+          }
+        }
+        return {
+          id: it.exercise_id || `ex-${idx}`,
+          title: title || `ท่ากายภาพที่ ${idx + 1}`,
+          description,
+          image_path: imagePath,
+          target_sets: it.sets || 3,
+          target_reps: it.reps || 10,
+          target_duration_seconds: 30,
+        };
+      })
+    );
+
+    let minigameQuestion = null;
+    let minigameTitle = 'มินิเกมฝึกความจำและประสาทสัมผัส';
+    if (course.include_minigame) {
+      const minigames = await defaultDirectoryRepository.listMinigames();
+      if (minigames.length > 0) {
+        const game = minigames[0];
+        minigameTitle = game.title;
+        const questions = await defaultDirectoryRepository.listQuestionsByMinigame(game.id);
+        if (questions.length > 0) {
+          const q = questions[0];
+          minigameQuestion = {
+            id: q.id,
+            prompt: q.prompt,
+            choices: q.choices,
+            answer: q.answer,
+          };
+        }
+      }
+
+      if (!minigameQuestion) {
+        minigameQuestion = {
+          id: 'default-q-1',
+          prompt: 'ภาพใดต่อไปนี้คือท่าบริหารกล้ามเนื้อที่เพิ่งฝึกไป?',
+          choices: ['ยืดเหยียดต้นขา', 'กระดกข้อเท้า', 'หมุนหัวไหล่', 'ยกแขนเหนือศีรษะ'],
+          answer: 'ยืดเหยียดต้นขา',
+        };
+      }
+    }
+
+    return {
+      courseId: course.id,
+      patientId: patient.id,
+      patientFirstName: patient.first_name,
+      avatarUrl: null,
+      doctorNotes: course.goals || course.progression_criteria || null,
+      exercises,
+      includeMinigame: !!course.include_minigame,
+      minigameTitle,
+      minigameQuestion,
+    };
+  }
+
+  async recordStep(input: KioskMissionStepInput): Promise<{ step: MissionStepRecord; run: MissionRunRecord }> {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const run = await this.repo.getOrCreateMissionRun(input.patient_id, input.course_id, todayStr);
+    const step = await this.repo.recordMissionStep(run.id, input.step_type, input.ref_id, input.score);
+
+    // Notify listeners via SSE (PT & Admin dashboard realtime queue status)
+    dispatchHospitalEvent({
+      event: 'kiosk_mission_step',
+      patientId: input.patient_id,
+      data: {
+        runId: run.id,
+        courseId: input.course_id,
+        patientId: input.patient_id,
+        stepType: input.step_type,
+        refId: input.ref_id,
+        status: 'in_progress',
+        completedAt: step.completed_at,
+      },
+    });
+
+    return { step, run };
+  }
+
+  async finishMission(input: KioskFinishMissionInput): Promise<{ run: MissionRunRecord | null }> {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const run = await this.repo.completeMissionRun(
+      input.patient_id,
+      input.course_id,
+      todayStr,
+      input.pain_score,
+      input.feedback
+    );
+
+    // Notify listeners via SSE (Patient finished treatment)
+    dispatchHospitalEvent({
+      event: 'kiosk_mission_completed',
+      patientId: input.patient_id,
+      data: {
+        courseId: input.course_id,
+        patientId: input.patient_id,
+        status: 'completed',
+        painScore: input.pain_score,
+        finishedAt: run?.finished_at,
+      },
+    });
+
+    return { run };
+  }
 }
+

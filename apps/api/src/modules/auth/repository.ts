@@ -38,6 +38,18 @@ export class AuthRepository {
     }
   }
 
+  async forceLogout(userId: string): Promise<void> {
+    try {
+      const adminClient = getAdminClient();
+      await adminClient
+        .from('profiles')
+        .update({ force_logout_at: new Date().toISOString() })
+        .eq('id', userId);
+    } catch {
+      // Ignore
+    }
+  }
+
   async recordStaffDevice(userId: string, deviceId: string, userAgent?: string): Promise<void> {
     try {
       const adminClient = getAdminClient();
@@ -130,6 +142,35 @@ export class AuthRepository {
 
     return this.loginFailures.filter(
       (f) => f.username.toLowerCase() === username.toLowerCase() && f.timestamp >= cutoff
+    ).length;
+  }
+
+  /**
+   * Gets failed login attempts for specific username + IP pair in window from DB.
+   * Enforces exponential throttling per (username + IP) without globally locking the account.
+   */
+  async getLoginFailuresByUsernameAndIp(username: string, ip: string, windowMs: number): Promise<number> {
+    const cutoff = Date.now() - windowMs;
+    try {
+      const adminClient = getAdminClient();
+      const cutoffIso = new Date(cutoff).toISOString();
+      const { count } = await adminClient
+        .from('audit_logs')
+        .select('id', { count: 'exact', head: true })
+        .eq('action', 'STAFF_LOGIN_FAILED')
+        .eq('ip', ip)
+        .contains('metadata', { username: username.toLowerCase() })
+        .gte('created_at', cutoffIso);
+
+      if (typeof count === 'number' && count > 0) {
+        return count;
+      }
+    } catch {
+      // Fallback
+    }
+
+    return this.loginFailures.filter(
+      (f) => f.username.toLowerCase() === username.toLowerCase() && f.ip === ip && f.timestamp >= cutoff
     ).length;
   }
 

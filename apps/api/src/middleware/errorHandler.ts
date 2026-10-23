@@ -1,18 +1,21 @@
 import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
+import { ZodError } from 'zod';
 import { logger } from './logger';
 
 export class AppError extends Error {
   public readonly statusCode: number;
   public readonly code: string;
   public readonly isOperational: boolean;
+  public readonly retryAfter?: number;
 
-  constructor(message: string, statusCode = 500, code = 'INTERNAL_ERROR', isOperational = true) {
+  constructor(message: string, statusCode = 500, code = 'INTERNAL_ERROR', isOperational = true, retryAfter?: number) {
     super(message);
     this.name = 'AppError';
     this.statusCode = statusCode;
     this.code = code;
     this.isOperational = isOperational;
+    this.retryAfter = retryAfter;
     Error.captureStackTrace(this, this.constructor);
   }
 }
@@ -31,8 +34,24 @@ export function errorHandler(
 ): void {
   const errorRef = randomUUID();
 
+  // 0. Zod Schema Validation Errors
+  if (err instanceof ZodError || err.name === 'ZodError') {
+    const zodErr = err as ZodError;
+    const message = zodErr.issues?.[0]?.message || 'Validation error';
+    res.status(400).json({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message,
+      },
+    });
+    return;
+  }
+
   // 1. Operational application errors
   if (err instanceof AppError) {
+    if (err.retryAfter !== undefined) {
+      res.setHeader('Retry-After', String(err.retryAfter));
+    }
     res.status(err.statusCode).json({
       error: {
         code: err.code,

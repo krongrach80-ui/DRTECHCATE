@@ -1,10 +1,9 @@
-﻿-- =========================================================================
--- DrTech.Care Combined Migrations (System 1 - Complete 27 Tables & Security)
--- =========================================================================
+-- ========================================================================
+-- DrTech.Care Physical Therapy System - Full Idempotent Schema
+-- Generated for Supabase SQL Editor execution
+-- ========================================================================
 
--- =========================================================================
--- FILE: 20261022000001_extensions_and_enums.sql
--- =========================================================================
+-- >>> BEGIN 20261022000001_extensions_and_enums.sql <<<
 -- ========================================================================
 -- DrTech.Care Physical Therapy System
 -- Migration 01: Extensions, Enums, Sequences
@@ -70,9 +69,7 @@ EXCEPTION WHEN duplicate_object THEN null; END $$;
 CREATE SEQUENCE IF NOT EXISTS patient_hn_seq START WITH 100001 INCREMENT BY 1;
 
 
--- =========================================================================
--- FILE: 20261022000002_core_schema.sql
--- =========================================================================
+-- >>> BEGIN 20261022000002_core_schema.sql <<<
 -- ========================================================================
 -- DrTech.Care Physical Therapy System
 -- Migration 02: Core Schema (All 27 Tables and Performance Indexes)
@@ -292,6 +289,8 @@ CREATE TABLE IF NOT EXISTS mission_runs (
   course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
   run_date DATE NOT NULL,
   status mission_status DEFAULT 'pending' NOT NULL,
+  pain_score INT,
+  feedback TEXT,
   started_at TIMESTAMPTZ,
   finished_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
@@ -510,9 +509,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_bans_lookup ON bans(type, value, expires_at);
 
 
--- =========================================================================
--- FILE: 20261022000003_triggers_and_invariants.sql
--- =========================================================================
+-- >>> BEGIN 20261022000003_triggers_and_invariants.sql <<<
 -- ========================================================================
 -- DrTech.Care Physical Therapy System
 -- Migration 03: Database Triggers, Immutability & Business Invariants
@@ -789,9 +786,7 @@ CREATE TRIGGER trg_courses_updated_at BEFORE UPDATE ON courses
 FOR EACH ROW EXECUTE FUNCTION trg_fn_touch_updated_at();
 
 
--- =========================================================================
--- FILE: 20261022000004_rls_and_policies.sql
--- =========================================================================
+-- >>> BEGIN 20261022000004_rls_and_policies.sql <<<
 -- ========================================================================
 -- DrTech.Care Physical Therapy System
 -- Migration 04: Row-Level Security (RLS) & Granular Access Policies
@@ -824,7 +819,8 @@ REVOKE EXECUTE ON FUNCTION is_patient_accessible_by_pt(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION is_patient_accessible_by_pt(UUID) TO authenticated;
 
 -- Revoke all table permissions on strictly backend-only tables from authenticated (Defense-in-depth)
-REVOKE ALL ON TABLE face_templates, face_challenges, kiosk_devices, staff_devices, bans FROM authenticated;
+-- Spec Section 4: face_*, enrollment_tickets, kiosk_devices, staff_*, bans
+REVOKE ALL ON TABLE face_enrollments, face_templates, face_challenges, enrollment_tickets, kiosk_devices, staff_devices, staff_calls, bans FROM authenticated;
 
 -- ------------------------------------------------------------------------
 -- 2. ENABLE ROW LEVEL SECURITY ON ALL 27 TABLES
@@ -860,29 +856,35 @@ ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 -- ------------------------------------------------------------------------
 -- 3. POLICIES: PROFILES & PTS
 -- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "profiles_select_authenticated" ON profiles;
 CREATE POLICY "profiles_select_authenticated" ON profiles
   FOR SELECT TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "profiles_update_admin_or_self" ON profiles;
 CREATE POLICY "profiles_update_admin_or_self" ON profiles
   FOR UPDATE TO authenticated
   USING (current_user_role() = 'admin' OR id = auth.uid())
   WITH CHECK (current_user_role() = 'admin' OR id = auth.uid());
 
+DROP POLICY IF EXISTS "profiles_admin_write" ON profiles;
 CREATE POLICY "profiles_admin_write" ON profiles
   FOR ALL TO authenticated
   USING (current_user_role() = 'admin')
   WITH CHECK (current_user_role() = 'admin');
 
+DROP POLICY IF EXISTS "pts_select_authenticated" ON pts;
 CREATE POLICY "pts_select_authenticated" ON pts
   FOR SELECT TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "pts_update_admin_or_self" ON pts;
 CREATE POLICY "pts_update_admin_or_self" ON pts
   FOR UPDATE TO authenticated
   USING (current_user_role() = 'admin' OR user_id = auth.uid())
   WITH CHECK (current_user_role() = 'admin' OR user_id = auth.uid());
 
+DROP POLICY IF EXISTS "pts_admin_write" ON pts;
 CREATE POLICY "pts_admin_write" ON pts
   FOR ALL TO authenticated
   USING (current_user_role() = 'admin')
@@ -891,10 +893,12 @@ CREATE POLICY "pts_admin_write" ON pts
 -- ------------------------------------------------------------------------
 -- 4. POLICIES: PATIENTS & ASSIGNMENTS
 -- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "patients_select_policy" ON patients;
 CREATE POLICY "patients_select_policy" ON patients
   FOR SELECT TO authenticated
   USING (current_user_role() = 'admin' OR is_patient_accessible_by_pt(id));
 
+DROP POLICY IF EXISTS "patients_insert_policy" ON patients;
 CREATE POLICY "patients_insert_policy" ON patients
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -903,15 +907,18 @@ CREATE POLICY "patients_insert_policy" ON patients
     )
   );
 
+DROP POLICY IF EXISTS "patients_update_policy" ON patients;
 CREATE POLICY "patients_update_policy" ON patients
   FOR UPDATE TO authenticated
   USING (current_user_role() = 'admin' OR is_patient_accessible_by_pt(id))
   WITH CHECK (current_user_role() = 'admin' OR is_patient_accessible_by_pt(id));
 
+DROP POLICY IF EXISTS "patient_pt_assignments_select" ON patient_pt_assignments;
 CREATE POLICY "patient_pt_assignments_select" ON patient_pt_assignments
   FOR SELECT TO authenticated
   USING (current_user_role() = 'admin' OR pt_id = auth.uid());
 
+DROP POLICY IF EXISTS "patient_pt_assignments_manage" ON patient_pt_assignments;
 CREATE POLICY "patient_pt_assignments_manage" ON patient_pt_assignments
   FOR ALL TO authenticated
   USING (
@@ -928,6 +935,7 @@ CREATE POLICY "patient_pt_assignments_manage" ON patient_pt_assignments
 -- ------------------------------------------------------------------------
 -- 5. POLICIES: CASE TRANSFERS
 -- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "case_transfers_select" ON case_transfers;
 CREATE POLICY "case_transfers_select" ON case_transfers
   FOR SELECT TO authenticated
   USING (
@@ -936,6 +944,7 @@ CREATE POLICY "case_transfers_select" ON case_transfers
     to_pt_id = auth.uid()
   );
 
+DROP POLICY IF EXISTS "case_transfers_insert" ON case_transfers;
 CREATE POLICY "case_transfers_insert" ON case_transfers
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -944,6 +953,7 @@ CREATE POLICY "case_transfers_insert" ON case_transfers
     )
   );
 
+DROP POLICY IF EXISTS "case_transfers_update" ON case_transfers;
 CREATE POLICY "case_transfers_update" ON case_transfers
   FOR UPDATE TO authenticated
   USING (
@@ -960,10 +970,12 @@ CREATE POLICY "case_transfers_update" ON case_transfers
 -- ------------------------------------------------------------------------
 -- 6. POLICIES: EXERCISES, MINIGAMES, MODPACKS
 -- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "exercises_select_authenticated" ON exercises;
 CREATE POLICY "exercises_select_authenticated" ON exercises
   FOR SELECT TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "exercises_insert_authenticated" ON exercises;
 CREATE POLICY "exercises_insert_authenticated" ON exercises
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -972,6 +984,7 @@ CREATE POLICY "exercises_insert_authenticated" ON exercises
     )
   );
 
+DROP POLICY IF EXISTS "exercises_update_authenticated" ON exercises;
 CREATE POLICY "exercises_update_authenticated" ON exercises
   FOR UPDATE TO authenticated
   USING (
@@ -985,6 +998,7 @@ CREATE POLICY "exercises_update_authenticated" ON exercises
     )
   );
 
+DROP POLICY IF EXISTS "exercises_delete_authenticated" ON exercises;
 CREATE POLICY "exercises_delete_authenticated" ON exercises
   FOR DELETE TO authenticated
   USING (
@@ -994,10 +1008,12 @@ CREATE POLICY "exercises_delete_authenticated" ON exercises
   );
 
 -- Minigames & Questions
+DROP POLICY IF EXISTS "minigames_select_authenticated" ON minigames;
 CREATE POLICY "minigames_select_authenticated" ON minigames
   FOR SELECT TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "minigames_write_authenticated" ON minigames;
 CREATE POLICY "minigames_write_authenticated" ON minigames
   FOR ALL TO authenticated
   USING (
@@ -1011,10 +1027,12 @@ CREATE POLICY "minigames_write_authenticated" ON minigames
     )
   );
 
+DROP POLICY IF EXISTS "minigame_questions_select" ON minigame_questions;
 CREATE POLICY "minigame_questions_select" ON minigame_questions
   FOR SELECT TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "minigame_questions_write" ON minigame_questions;
 CREATE POLICY "minigame_questions_write" ON minigame_questions
   FOR ALL TO authenticated
   USING (
@@ -1029,10 +1047,12 @@ CREATE POLICY "minigame_questions_write" ON minigame_questions
   );
 
 -- Modpacks & Items
+DROP POLICY IF EXISTS "modpacks_select_authenticated" ON modpacks;
 CREATE POLICY "modpacks_select_authenticated" ON modpacks
   FOR SELECT TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "modpacks_write_authenticated" ON modpacks;
 CREATE POLICY "modpacks_write_authenticated" ON modpacks
   FOR ALL TO authenticated
   USING (
@@ -1046,10 +1066,12 @@ CREATE POLICY "modpacks_write_authenticated" ON modpacks
     )
   );
 
+DROP POLICY IF EXISTS "modpack_items_select" ON modpack_items;
 CREATE POLICY "modpack_items_select" ON modpack_items
   FOR SELECT TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "modpack_items_write" ON modpack_items;
 CREATE POLICY "modpack_items_write" ON modpack_items
   FOR ALL TO authenticated
   USING (
@@ -1070,10 +1092,12 @@ CREATE POLICY "modpack_items_write" ON modpack_items
 -- ------------------------------------------------------------------------
 -- 7. POLICIES: COURSES & COURSE ITEMS
 -- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "courses_select_authenticated" ON courses;
 CREATE POLICY "courses_select_authenticated" ON courses
   FOR SELECT TO authenticated
   USING (current_user_role() = 'admin' OR is_patient_accessible_by_pt(patient_id));
 
+DROP POLICY IF EXISTS "courses_insert_authenticated" ON courses;
 CREATE POLICY "courses_insert_authenticated" ON courses
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -1084,6 +1108,7 @@ CREATE POLICY "courses_insert_authenticated" ON courses
     )
   );
 
+DROP POLICY IF EXISTS "courses_update_authenticated" ON courses;
 CREATE POLICY "courses_update_authenticated" ON courses
   FOR UPDATE TO authenticated
   USING (
@@ -1101,6 +1126,7 @@ CREATE POLICY "courses_update_authenticated" ON courses
     )
   );
 
+DROP POLICY IF EXISTS "courses_delete_authenticated" ON courses;
 CREATE POLICY "courses_delete_authenticated" ON courses
   FOR DELETE TO authenticated
   USING (
@@ -1111,6 +1137,7 @@ CREATE POLICY "courses_delete_authenticated" ON courses
     )
   );
 
+DROP POLICY IF EXISTS "course_items_select_authenticated" ON course_items;
 CREATE POLICY "course_items_select_authenticated" ON course_items
   FOR SELECT TO authenticated
   USING (
@@ -1121,6 +1148,7 @@ CREATE POLICY "course_items_select_authenticated" ON course_items
     )
   );
 
+DROP POLICY IF EXISTS "course_items_write_authenticated" ON course_items;
 CREATE POLICY "course_items_write_authenticated" ON course_items
   FOR ALL TO authenticated
   USING (
@@ -1153,15 +1181,18 @@ CREATE POLICY "course_items_write_authenticated" ON course_items
 -- ------------------------------------------------------------------------
 -- 8. POLICIES: MISSION RUNS & MISSION STEPS
 -- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "mission_runs_select" ON mission_runs;
 CREATE POLICY "mission_runs_select" ON mission_runs
   FOR SELECT TO authenticated
   USING (current_user_role() = 'admin' OR is_patient_accessible_by_pt(patient_id));
 
+DROP POLICY IF EXISTS "mission_runs_admin_write" ON mission_runs;
 CREATE POLICY "mission_runs_admin_write" ON mission_runs
   FOR ALL TO authenticated
   USING (current_user_role() = 'admin')
   WITH CHECK (current_user_role() = 'admin');
 
+DROP POLICY IF EXISTS "mission_steps_select" ON mission_steps;
 CREATE POLICY "mission_steps_select" ON mission_steps
   FOR SELECT TO authenticated
   USING (
@@ -1172,6 +1203,7 @@ CREATE POLICY "mission_steps_select" ON mission_steps
     )
   );
 
+DROP POLICY IF EXISTS "mission_steps_admin_write" ON mission_steps;
 CREATE POLICY "mission_steps_admin_write" ON mission_steps
   FOR ALL TO authenticated
   USING (current_user_role() = 'admin')
@@ -1180,10 +1212,12 @@ CREATE POLICY "mission_steps_admin_write" ON mission_steps
 -- ------------------------------------------------------------------------
 -- 9. POLICIES: CLINICAL RECORDS (APPEND-ONLY)
 -- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "medical_notes_select" ON medical_notes;
 CREATE POLICY "medical_notes_select" ON medical_notes
   FOR SELECT TO authenticated
   USING (current_user_role() = 'admin' OR is_patient_accessible_by_pt(patient_id));
 
+DROP POLICY IF EXISTS "medical_notes_insert" ON medical_notes;
 CREATE POLICY "medical_notes_insert" ON medical_notes
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -1192,10 +1226,12 @@ CREATE POLICY "medical_notes_insert" ON medical_notes
     )
   );
 
+DROP POLICY IF EXISTS "treatment_results_select" ON treatment_results;
 CREATE POLICY "treatment_results_select" ON treatment_results
   FOR SELECT TO authenticated
   USING (current_user_role() = 'admin' OR is_patient_accessible_by_pt(patient_id));
 
+DROP POLICY IF EXISTS "treatment_results_insert" ON treatment_results;
 CREATE POLICY "treatment_results_insert" ON treatment_results
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -1207,30 +1243,27 @@ CREATE POLICY "treatment_results_insert" ON treatment_results
 -- ------------------------------------------------------------------------
 -- 10. POLICIES: CONSENTS & STAFF CALLS
 -- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "consents_select" ON consents;
 CREATE POLICY "consents_select" ON consents
   FOR SELECT TO authenticated
   USING (current_user_role() = 'admin' OR is_patient_accessible_by_pt(subject_id));
 
+DROP POLICY IF EXISTS "consents_insert" ON consents;
 CREATE POLICY "consents_insert" ON consents
   FOR INSERT TO authenticated
   WITH CHECK (current_user_role() = 'admin' OR is_patient_accessible_by_pt(subject_id));
 
-CREATE POLICY "staff_calls_select" ON staff_calls
-  FOR SELECT TO authenticated
-  USING (true);
-
-CREATE POLICY "staff_calls_update" ON staff_calls
-  FOR UPDATE TO authenticated
-  USING (true)
-  WITH CHECK (true);
+-- staff_calls is in staff_* (backend-only, REVOKED from authenticated, zero client policies)
 
 -- ------------------------------------------------------------------------
 -- 11. POLICIES: AUDIT LOGS (ADMIN SELECT ONLY, INSERT VIA SYSTEM/ADMIN)
 -- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "audit_logs_admin_select" ON audit_logs;
 CREATE POLICY "audit_logs_admin_select" ON audit_logs
   FOR SELECT TO authenticated
   USING (current_user_role() = 'admin');
 
+DROP POLICY IF EXISTS "audit_logs_authenticated_insert" ON audit_logs;
 CREATE POLICY "audit_logs_authenticated_insert" ON audit_logs
   FOR INSERT TO authenticated
   WITH CHECK (true);
@@ -1250,9 +1283,7 @@ CREATE POLICY "audit_logs_authenticated_insert" ON audit_logs
 -- bans: NO CLIENT POLICIES
 
 
--- =========================================================================
--- FILE: 20261022000005_storage_and_biometrics.sql
--- =========================================================================
+-- >>> BEGIN 20261022000005_storage_and_biometrics.sql <<<
 -- ========================================================================
 -- DrTech.Care Physical Therapy System
 -- Migration 05: Private Storage Buckets & Server-Side Biometric Matching
@@ -1310,10 +1341,12 @@ ON CONFLICT (id) DO UPDATE SET
 -- ------------------------------------------------------------------------
 
 -- Avatars: Authenticated read; write to own directory or admin
+DROP POLICY IF EXISTS "avatars_authenticated_read" ON storage.objects;
 CREATE POLICY "avatars_authenticated_read" ON storage.objects
   FOR SELECT TO authenticated
   USING (bucket_id = 'avatars');
 
+DROP POLICY IF EXISTS "avatars_user_write" ON storage.objects;
 CREATE POLICY "avatars_user_write" ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -1323,6 +1356,7 @@ CREATE POLICY "avatars_user_write" ON storage.objects
     )
   );
 
+DROP POLICY IF EXISTS "avatars_user_update" ON storage.objects;
 CREATE POLICY "avatars_user_update" ON storage.objects
   FOR UPDATE TO authenticated
   USING (
@@ -1332,6 +1366,7 @@ CREATE POLICY "avatars_user_update" ON storage.objects
     )
   );
 
+DROP POLICY IF EXISTS "avatars_user_delete" ON storage.objects;
 CREATE POLICY "avatars_user_delete" ON storage.objects
   FOR DELETE TO authenticated
   USING (
@@ -1345,10 +1380,12 @@ CREATE POLICY "avatars_user_delete" ON storage.objects
 -- Accessible exclusively through backend Express service_role
 
 -- Exercise-Media: Authenticated read; Admin write
+DROP POLICY IF EXISTS "exercise_media_authenticated_read" ON storage.objects;
 CREATE POLICY "exercise_media_authenticated_read" ON storage.objects
   FOR SELECT TO authenticated
   USING (bucket_id = 'exercise-media');
 
+DROP POLICY IF EXISTS "exercise_media_admin_write" ON storage.objects;
 CREATE POLICY "exercise_media_admin_write" ON storage.objects
   FOR ALL TO authenticated
   USING (
@@ -1426,5 +1463,229 @@ $$;
 -- Strict access restriction: Only service_role can execute biometric search
 REVOKE ALL ON FUNCTION match_face_candidates(vector(512)[], uuid[], int) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION match_face_candidates(vector(512)[], uuid[], int) TO service_role;
+
+
+-- >>> BEGIN 20261022000006_advanced_enterprise_extensions.sql <<<
+-- ========================================================================
+-- DrTech.Care Physical Therapy System
+-- Migration 06: Advanced Enterprise Hospital Extensions
+-- Features:
+-- 1. Cryptographic Tamper-Proof Audit & Notes Hash Chaining (SHA-256)
+-- 2. Automated Self-Healing & Ephemeral Cleanup Routines
+-- 3. Advanced Clinical Recovery & VAS Pain Trajectory Analytics Views
+-- 4. PDPA Dynamic Data Masking (DDM) Functions
+-- 5. Real-Time Kiosk & Clinic Workload Operational Views
+-- ========================================================================
+
+-- ------------------------------------------------------------------------
+-- 0. EXTENSIONS & PREREQUISITES
+-- ------------------------------------------------------------------------
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Ensure mission_runs has pain_score and feedback columns for clinical outcome tracking
+ALTER TABLE mission_runs ADD COLUMN IF NOT EXISTS pain_score INT;
+ALTER TABLE mission_runs ADD COLUMN IF NOT EXISTS feedback TEXT;
+
+-- ------------------------------------------------------------------------
+-- 1. CRYPTOGRAPHIC TAMPER-PROOF HASH CHAINING (Non-Repudiation)
+-- ------------------------------------------------------------------------
+-- Adds SHA-256 hash chaining to medical_notes and audit_logs.
+-- Every row cryptographically signs the previous row's hash.
+-- Any manual tampering of past notes or logs breaks the signature chain.
+
+ALTER TABLE medical_notes ADD COLUMN IF NOT EXISTS prev_hash TEXT DEFAULT '0000000000000000000000000000000000000000000000000000000000000000';
+ALTER TABLE medical_notes ADD COLUMN IF NOT EXISTS curr_hash TEXT;
+
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS prev_hash TEXT DEFAULT '0000000000000000000000000000000000000000000000000000000000000000';
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS curr_hash TEXT;
+
+-- 1.1 Trigger Function: Cryptographic Hash Chaining for Medical Notes
+CREATE OR REPLACE FUNCTION fn_chain_medical_notes_hash()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_last_hash TEXT;
+BEGIN
+  -- Retrieve the latest hash for this patient's chart
+  SELECT curr_hash INTO v_last_hash
+  FROM medical_notes
+  WHERE patient_id = NEW.patient_id
+  ORDER BY created_at DESC, id DESC
+  LIMIT 1;
+
+  IF v_last_hash IS NOT NULL THEN
+    NEW.prev_hash := v_last_hash;
+  ELSE
+    NEW.prev_hash := 'GENESIS_' || NEW.patient_id::TEXT;
+  END IF;
+
+  -- Compute deterministic SHA-256 hash of: prev_hash + patient_id + author_id + body + created_at
+  NEW.curr_hash := encode(
+    digest(
+      NEW.prev_hash || '|' ||
+      NEW.patient_id::TEXT || '|' ||
+      NEW.author_id::TEXT || '|' ||
+      NEW.body || '|' ||
+      COALESCE(NEW.created_at::TEXT, CURRENT_TIMESTAMP::TEXT),
+      'sha256'
+    ),
+    'hex'
+  );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_chain_medical_notes_hash ON medical_notes;
+CREATE TRIGGER trg_chain_medical_notes_hash
+  BEFORE INSERT ON medical_notes
+  FOR EACH ROW
+  EXECUTE FUNCTION fn_chain_medical_notes_hash();
+
+-- 1.2 Trigger Function: Cryptographic Hash Chaining for Audit Logs
+CREATE OR REPLACE FUNCTION fn_chain_audit_logs_hash()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_last_hash TEXT;
+BEGIN
+  SELECT curr_hash INTO v_last_hash
+  FROM audit_logs
+  ORDER BY created_at DESC, id DESC
+  LIMIT 1;
+
+  IF v_last_hash IS NOT NULL THEN
+    NEW.prev_hash := v_last_hash;
+  ELSE
+    NEW.prev_hash := 'AUDIT_GENESIS_CHAIN';
+  END IF;
+
+  NEW.curr_hash := encode(
+    digest(
+      NEW.prev_hash || '|' ||
+      COALESCE(NEW.actor_id::TEXT, 'ANON') || '|' ||
+      NEW.action || '|' ||
+      NEW.entity || '|' ||
+      COALESCE(NEW.entity_id::TEXT, '') || '|' ||
+      COALESCE(NEW.created_at::TEXT, CURRENT_TIMESTAMP::TEXT),
+      'sha256'
+    ),
+    'hex'
+  );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_chain_audit_logs_hash ON audit_logs;
+CREATE TRIGGER trg_chain_audit_logs_hash
+  BEFORE INSERT ON audit_logs
+  FOR EACH ROW
+  EXECUTE FUNCTION fn_chain_audit_logs_hash();
+
+-- ------------------------------------------------------------------------
+-- 2. PDPA DYNAMIC DATA MASKING (DDM) HELPERS
+-- ------------------------------------------------------------------------
+
+-- Mask phone numbers (e.g. 0812345678 -> 081-***-5678)
+CREATE OR REPLACE FUNCTION mask_phone(phone_number TEXT)
+RETURNS TEXT AS $$
+BEGIN
+  IF phone_number IS NULL OR length(phone_number) < 8 THEN
+    RETURN '***-***-****';
+  END IF;
+  RETURN substring(phone_number from 1 for 3) || '-***-' || substring(phone_number from length(phone_number) - 3 for 4);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- ------------------------------------------------------------------------
+-- 3. ADVANCED CLINICAL ANALYTICS VIEWS
+-- ------------------------------------------------------------------------
+
+-- 3.1 Patient Recovery Trajectory View (VAS Pain Score Progression)
+-- Calculates pain changes across treatment versions to evaluate PT course efficacy
+CREATE OR REPLACE VIEW view_patient_recovery_trajectory AS
+SELECT
+  p.id AS patient_id,
+  p.hn,
+  p.first_name || ' ' || p.last_name AS patient_name,
+  p.injury,
+  prof.full_name AS responsible_pt_name,
+  mr.run_date,
+  mr.pain_score AS current_pain_vas,
+  LAG(mr.pain_score) OVER (PARTITION BY mr.patient_id ORDER BY mr.run_date ASC) AS previous_pain_vas,
+  (LAG(mr.pain_score) OVER (PARTITION BY mr.patient_id ORDER BY mr.run_date ASC) - mr.pain_score) AS pain_reduction_delta,
+  mr.status AS mission_status,
+  mr.feedback AS patient_feedback
+FROM mission_runs mr
+JOIN patients p ON p.id = mr.patient_id
+LEFT JOIN profiles prof ON prof.id = p.responsible_pt_id
+WHERE mr.status = 'completed';
+
+-- 3.2 Daily Clinic Operational Throughput View (For Director & Reception Dashboard)
+CREATE OR REPLACE VIEW view_clinic_daily_summary AS
+SELECT
+  CURRENT_DATE AS report_date,
+  (SELECT COUNT(*) FROM checkins WHERE date = CURRENT_DATE) AS total_checked_in,
+  (SELECT COUNT(*) FROM courses WHERE CURRENT_DATE BETWEEN start_date AND end_date AND status = 'active') AS active_courses_today,
+  (SELECT COUNT(*) FROM mission_runs WHERE run_date = CURRENT_DATE AND status = 'completed') AS missions_completed_today,
+  (SELECT COUNT(*) FROM staff_calls WHERE created_at::DATE = CURRENT_DATE AND handled_at IS NULL) AS pending_emergency_calls,
+  (SELECT COALESCE(ROUND(AVG(pain_score), 1), 0) FROM mission_runs WHERE run_date = CURRENT_DATE AND status = 'completed' AND pain_score IS NOT NULL) AS avg_pain_score_today;
+
+-- 3.3 Kiosk Terminal Health & Activity Monitor View
+CREATE OR REPLACE VIEW view_kiosk_live_telemetry AS
+SELECT
+  kd.id AS kiosk_id,
+  kd.name AS kiosk_name,
+  kd.location,
+  kd.is_active,
+  kd.last_seen_at,
+  CASE
+    WHEN kd.last_seen_at IS NULL THEN 'offline'
+    WHEN kd.last_seen_at >= NOW() - INTERVAL '5 minutes' THEN 'online'
+    ELSE 'stale'
+  END AS connection_status,
+  COUNT(sc.id) FILTER (WHERE sc.handled_at IS NULL) AS unhandled_staff_calls_count
+FROM kiosk_devices kd
+LEFT JOIN staff_calls sc ON sc.kiosk_id = kd.id
+GROUP BY kd.id, kd.name, kd.location, kd.is_active, kd.last_seen_at;
+
+-- ------------------------------------------------------------------------
+-- 4. AUTONOMOUS DATABASE MAINTENANCE & SELF-HEALING ROUTINES
+-- ------------------------------------------------------------------------
+-- Safely purges expired nonces, stale single-use tickets, and expired bans.
+
+CREATE OR REPLACE FUNCTION cleanup_expired_ephemerals()
+RETURNS TABLE (
+  purged_challenges INT,
+  purged_tickets INT,
+  purged_bans INT
+) AS $$
+DECLARE
+  v_challenges INT;
+  v_tickets INT;
+  v_bans INT;
+BEGIN
+  -- Purge face challenges older than 10 minutes
+  DELETE FROM face_challenges
+  WHERE expires_at < NOW() - INTERVAL '10 minutes' OR used_at IS NOT NULL;
+  GET DIAGNOSTICS v_challenges = ROW_COUNT;
+
+  -- Expire unredeemed enrollment tickets older than 20 minutes
+  UPDATE enrollment_tickets
+  SET expires_at = NOW()
+  WHERE expires_at < NOW() AND used_at IS NULL;
+  GET DIAGNOSTICS v_tickets = ROW_COUNT;
+
+  -- Deactivate expired bans
+  DELETE FROM bans
+  WHERE expires_at IS NOT NULL AND expires_at < NOW();
+  GET DIAGNOSTICS v_bans = ROW_COUNT;
+
+  RETURN QUERY SELECT v_challenges, v_tickets, v_bans;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execution of maintenance routines strictly to service_role
+REVOKE ALL ON FUNCTION cleanup_expired_ephemerals() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION cleanup_expired_ephemerals() TO service_role;
 
 

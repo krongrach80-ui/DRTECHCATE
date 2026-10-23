@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import path from 'path';
 
-describe('DrTech.Care Live Supabase Dev Project Integration Test Suite', () => {
+describe.runIf(process.env.LIVE_TESTS === '1')('[LIVE] DrTech.Care Live Supabase Dev Project Integration Test Suite', () => {
   let supabaseUrl: string;
   let anonKey: string;
 

@@ -3,6 +3,8 @@ import { AppError } from '../../middleware/errorHandler';
 import { getEnv } from '../../config/env';
 import { AuthRepository, UserProfileRecord } from './repository';
 import { getAuthClient } from '../../lib/supabase/authClient';
+import { clearProfileCache, markUserForceLoggedOut, UserSession } from '../../middleware/authenticate';
+import { audit } from '../audit';
 
 export interface LoginResult {
   accessToken: string;
@@ -26,6 +28,11 @@ export type AuthSignInFn = (credentials: {
   password: string;
 }) => Promise<{ data: AuthUserSession | null; error: Error | { message: string; status?: number } | null }>;
 
+export type AuthRefreshFn = (refreshToken: string) => Promise<{
+  data: { session: { access_token: string; refresh_token: string; expires_in?: number } | null } | null;
+  error: Error | { message: string } | null;
+}>;
+
 export class AuthService {
   private readonly MAX_IP_ATTEMPTS = 5;
   private readonly MAX_USERNAME_ATTEMPTS = 5;
@@ -33,7 +40,8 @@ export class AuthService {
 
   constructor(
     private repo = new AuthRepository(),
-    private customSignIn?: AuthSignInFn
+    private customSignIn?: AuthSignInFn,
+    private customRefresh?: AuthRefreshFn
   ) {}
 
   async login(
@@ -46,23 +54,44 @@ export class AuthService {
     const env = getEnv();
     const cleanUsername = username.trim().toLowerCase();
 
-    // 1. Throttle per IP (DB-persisted)
+    // 1. General brute-force throttle per IP (DB-persisted)
     const ipFailures = await this.repo.getLoginFailuresByIp(clientIp, this.LOCK_WINDOW_MS);
     if (ipFailures >= this.MAX_IP_ATTEMPTS) {
       throw new AppError(
         'Too many failed login attempts from this IP. Please wait 15 minutes.',
         429,
-        'TOO_MANY_FAILED_ATTEMPTS'
+        'TOO_MANY_FAILED_ATTEMPTS',
+        true,
+        900
       );
     }
 
-    // 2. Throttle per username (DB-persisted)
-    const userFailures = await this.repo.getLoginFailuresByUsername(cleanUsername, this.LOCK_WINDOW_MS);
-    if (userFailures >= this.MAX_USERNAME_ATTEMPTS) {
+    // 2. Exponential backoff per (username + IP)
+    // NEVER locks an account purely by username to prevent DoS attacks against legitimate staff
+    const pairFailures = await this.repo.getLoginFailuresByUsernameAndIp(cleanUsername, clientIp, this.LOCK_WINDOW_MS);
+    if (pairFailures >= this.MAX_USERNAME_ATTEMPTS) {
+      const retryAfterSeconds = Math.min(Math.pow(2, pairFailures - this.MAX_USERNAME_ATTEMPTS + 1), 900);
       throw new AppError(
-        'Account is temporarily locked due to repeated failed logins. Please try again later.',
+        'Too many failed login attempts for this user from your IP. Please wait before retrying.',
         429,
-        'ACCOUNT_TEMPORARILY_LOCKED'
+        'TOO_MANY_FAILED_ATTEMPTS',
+        true,
+        retryAfterSeconds
+      );
+    }
+
+    // 3. Multi-IP spray attack protection per username:
+    // When an attacker rotates IPs targeting the same username, delay via 429 + Retry-After.
+    // NEVER permanently lock the account or change its status in the DB.
+    const userFailuresAcrossIps = await this.repo.getLoginFailuresByUsername(cleanUsername, this.LOCK_WINDOW_MS);
+    if (userFailuresAcrossIps >= 15) {
+      const sprayDelaySeconds = Math.min(Math.pow(2, Math.floor((userFailuresAcrossIps - 15) / 3) + 1), 60);
+      throw new AppError(
+        'Account is receiving excessive failed attempts across networks. Please retry shortly.',
+        429,
+        'TOO_MANY_FAILED_ATTEMPTS',
+        true,
+        sprayDelaySeconds
       );
     }
 
@@ -94,6 +123,25 @@ export class AuthService {
     if (authError || !authData?.user || !authData?.session) {
       // Record failed attempt in DB (both for IP and username)
       await this.repo.recordLoginFailure(cleanUsername, clientIp);
+
+      try {
+        await audit.write({
+          actor_type: 'system',
+          actor_id: null,
+          action: 'login_failed',
+          entity: 'auth',
+          entity_id: null,
+          ip: clientIp,
+          device_id: existingDeviceId || null,
+          metadata: {
+            username: cleanUsername,
+            reason: 'Invalid credentials',
+          },
+        });
+      } catch {
+        // Non-blocking
+      }
+
       throw new AppError('Invalid username or password', 401, 'INVALID_CREDENTIALS');
     }
 
@@ -119,6 +167,25 @@ export class AuthService {
       // Non-blocking device recording
     }
 
+    // Audit successful login
+    try {
+      await audit.write({
+        actor_type: 'staff',
+        actor_id: profile.id,
+        action: 'login',
+        entity: 'auth',
+        entity_id: profile.id,
+        ip: clientIp,
+        device_id: deviceId,
+        metadata: {
+          username: cleanUsername,
+          role: profile.role,
+        },
+      });
+    } catch {
+      // Non-blocking
+    }
+
     return {
       accessToken: authData.session.access_token,
       refreshToken: authData.session.refresh_token,
@@ -137,37 +204,74 @@ export class AuthService {
       throw new AppError('Refresh token required', 401, 'UNAUTHORIZED');
     }
 
-    // In testing: handle mock tokens
-    if (process.env.NODE_ENV === 'test' && refreshToken.startsWith('mock-refresh-')) {
-      return {
-        accessToken: 'mock-access-token-refreshed-' + Date.now(),
-        refreshToken: 'mock-refresh-token-refreshed-' + Date.now(),
-        expiresIn: 3600,
-      };
-    }
+    const authResult = this.customRefresh
+      ? await this.customRefresh(refreshToken)
+      : await getAuthClient().auth.refreshSession({
+          refresh_token: refreshToken,
+        });
 
-    const authClient = getAuthClient();
-    const { data, error } = await authClient.auth.refreshSession({
-      refresh_token: refreshToken,
-    });
-
-    if (error || !data.session) {
+    if (authResult.error || !authResult.data?.session) {
       throw new AppError('Invalid or expired refresh token', 401, 'UNAUTHORIZED');
     }
 
     return {
-      accessToken: data.session.access_token,
-      refreshToken: data.session.refresh_token,
-      expiresIn: data.session.expires_in || 3600,
+      accessToken: authResult.data.session.access_token,
+      refreshToken: authResult.data.session.refresh_token,
+      expiresIn: authResult.data.session.expires_in || 3600,
     };
   }
 
-  async logout(_userId: string): Promise<void> {
+  async logout(userId: string, clientIp?: string, deviceId?: string): Promise<void> {
     try {
       const authClient = getAuthClient();
       await authClient.auth.signOut();
     } catch {
       // Graceful logout
+    }
+
+    try {
+      await audit.write({
+        actor_type: 'staff',
+        actor_id: userId,
+        action: 'logout',
+        entity: 'auth',
+        entity_id: userId,
+        ip: clientIp || null,
+        device_id: deviceId || null,
+        metadata: {},
+      });
+    } catch {
+      // Non-blocking
+    }
+  }
+
+  async forceLogout(
+    userId: string,
+    adminUser?: UserSession,
+    clientIp?: string,
+    clientDeviceId?: string,
+    reason?: string
+  ): Promise<void> {
+    await this.repo.forceLogout(userId);
+    markUserForceLoggedOut(userId);
+    clearProfileCache();
+
+    try {
+      await audit.write({
+        actor_type: 'staff',
+        actor_id: adminUser?.id || null,
+        action: 'force_logout',
+        entity: 'staff',
+        entity_id: userId,
+        ip: clientIp || null,
+        device_id: clientDeviceId || null,
+        metadata: {
+          target_user_id: userId,
+          reason: reason || 'Revoked by administrator',
+        },
+      });
+    } catch {
+      // Non-blocking
     }
   }
 }

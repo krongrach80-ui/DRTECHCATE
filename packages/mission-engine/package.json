@@ -1,0 +1,14 @@
+{
+  "name": "@hospital-pt-system/mission-engine",
+  "version": "0.1.0",
+  "description": "DrTech.Care Kiosk Daily Mission Engine & State Machine",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

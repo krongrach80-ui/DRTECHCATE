@@ -5,18 +5,18 @@ import express, { Express, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
 import { KioskService } from '../modules/kiosk/service';
 import { KioskRepository } from '../modules/kiosk/repository';
-import { AuthService, AuthSignInFn } from '../modules/auth/service';
+import { AuthService, AuthSignInFn, AuthRefreshFn } from '../modules/auth/service';
 import { AuthRepository } from '../modules/auth/repository';
 import { AuthController } from '../modules/auth/controller';
 import { createAuthRouter } from '../modules/auth/routes';
 import { KioskController } from '../modules/kiosk/controller';
 import { createKioskRouter } from '../modules/kiosk/routes';
-import { authenticate } from '../middleware/authenticate';
+import { authenticate, resetAuthTestState } from '../middleware/authenticate';
 import { requireRole } from '../middleware/requireRole';
 import { errorHandler } from '../middleware/errorHandler';
 import { validateAdminParams, createSuperAdminCore } from '../../../../scripts/create-admin';
 
-describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suite', () => {
+describe('[UNIT] DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suite', () => {
   const testKioskId = 'c0000000-0000-4000-8000-000000000001';
   const testPairingSecret = 'kiosk-test-hmac-secret-min-16-chars-long';
 
@@ -244,7 +244,7 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suit
           data: {
             user: { id: 'pt-somchai-uuid', email },
             session: {
-              access_token: 'mock-access-token-123',
+              access_token: 'mock-token:pt-somchai-uuid:pt:active',
               refresh_token: 'mock-refresh-token-456',
               expires_in: 3600,
             },
@@ -255,19 +255,38 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suit
       return { data: null, error: { message: 'Invalid login credentials', status: 400 } };
     };
 
+    const mockRefresh: AuthRefreshFn = async (refreshToken: string) => {
+      if (refreshToken.startsWith('mock-refresh-')) {
+        return {
+          data: {
+            session: {
+              access_token: 'mock-access-token-refreshed-' + Date.now(),
+              refresh_token: 'mock-refresh-token-refreshed-' + Date.now(),
+              expires_in: 3600,
+            },
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'Invalid refresh token' } };
+    };
+
     beforeEach(() => {
+      resetAuthTestState();
       authRepo = new AuthRepository();
       authRepo.getProfileById = async (id: string) => (id === 'pt-somchai-uuid' ? mockProfile : null);
 
       // In-memory mock for failure counters to avoid network latency jitter in timing tests
       authRepo.getLoginFailuresByIp = async () => 0;
       authRepo.getLoginFailuresByUsername = async () => 0;
+      authRepo.getLoginFailuresByUsernameAndIp = async () => 0;
       authRepo.recordLoginFailure = async () => {};
 
-      authService = new AuthService(authRepo, mockSignIn);
+      authService = new AuthService(authRepo, mockSignIn, mockRefresh);
       const authController = new AuthController(authService);
 
       authApp = express();
+      authApp.set('trust proxy', true);
       authApp.use(express.json());
       authApp.use(cookieParser());
       authApp.use('/api/auth', createAuthRouter(authController));
@@ -336,14 +355,15 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suit
       expect(deltaMs).toBeLessThan(75);
     });
 
-    it('2.3 [Throttle ต่อ IP & ต่อ Username แบบถาวร]: 5 failed logins triggers temporary lockout', async () => {
+    it('2.3 [Throttle ต่อ username+IP]: 5 failed logins triggers 429 without locking account for other IPs', async () => {
       let failAttempts = 0;
-      authRepo.getLoginFailuresByUsername = async (u: string) => (u === 'targeted_pt' ? failAttempts : 0);
-      authRepo.recordLoginFailure = async (u: string) => {
-        if (u === 'targeted_pt') failAttempts++;
+      authRepo.getLoginFailuresByUsernameAndIp = async (u: string, ip: string) =>
+        u === 'targeted_pt' && ip === '127.0.0.1' ? failAttempts : 0;
+      authRepo.recordLoginFailure = async (u: string, ip: string) => {
+        if (u === 'targeted_pt' && ip === '127.0.0.1') failAttempts++;
       };
 
-      // 5 failed attempts for user "targeted_pt"
+      // 5 failed attempts for user "targeted_pt" from 127.0.0.1
       for (let i = 1; i <= 5; i++) {
         const res = await request(authApp)
           .post('/api/auth/login')
@@ -352,14 +372,50 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suit
         expect(res.status).toBe(401);
       }
 
-      // 6th attempt -> must be throttled with 429
+      // 6th attempt from the same IP -> must be throttled with 429
       const res6 = await request(authApp)
         .post('/api/auth/login')
         .set('X-Requested-With', 'XMLHttpRequest')
         .send({ username: 'targeted_pt', password: 'WrongPwd6' });
 
       expect(res6.status).toBe(429);
-      expect(['TOO_MANY_FAILED_ATTEMPTS', 'ACCOUNT_TEMPORARILY_LOCKED']).toContain(res6.body.error.code);
+      expect(res6.body.error.code).toBe('TOO_MANY_FAILED_ATTEMPTS');
+      expect(res6.headers['retry-after']).toBeDefined();
+      expect(parseInt(res6.headers['retry-after'], 10)).toBeGreaterThan(0);
+
+      // Crucial security invariant: Legitimate login from another IP is NOT locked out!
+      authRepo.getLoginFailuresByUsernameAndIp = async (u: string, ip: string) =>
+        u === 'existing_pt' && ip === '192.168.1.50' ? 0 : failAttempts;
+
+      const legitimateRes = await request(authApp)
+        .post('/api/auth/login')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .set('X-Forwarded-For', '192.168.1.50')
+        .send({ username: 'existing_pt', password: 'CorrectPassword123!' });
+
+      expect(legitimateRes.status).toBe(200);
+      expect(legitimateRes.body.ok).toBe(true);
+    });
+
+    it('2.3b [Multi-IP spray protection]: Excessive failures across different IPs triggers 429 Retry-After delay without permanently locking account', async () => {
+      // 16 failed attempts across different IPs
+      authRepo.getLoginFailuresByUsernameAndIp = async () => 0; // individual IP not exceeded
+      authRepo.getLoginFailuresByIp = async () => 0;
+      authRepo.getLoginFailuresByUsername = async () => 16; // across all IPs
+
+      const sprayRes = await request(authApp)
+        .post('/api/auth/login')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({ username: 'existing_pt', password: 'WrongPassword' });
+
+      expect(sprayRes.status).toBe(429);
+      expect(sprayRes.body.error.code).toBe('TOO_MANY_FAILED_ATTEMPTS');
+      expect(sprayRes.headers['retry-after']).toBeDefined();
+      expect(parseInt(sprayRes.headers['retry-after'], 10)).toBeGreaterThan(0);
+
+      // Verify account status was NEVER permanently altered in DB
+      const profile = await authRepo.getProfileById('pt-somchai-uuid');
+      expect(profile?.status).toBe('active');
     });
 
     it('2.4 [Cookie flags & staff_device_id]: Successful login issues HttpOnly, SameSite=Strict cookies and tracks staff_device_id', async () => {
@@ -438,6 +494,54 @@ describe('DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Test Suit
       } finally {
         (process.env as Record<string, string>).NODE_ENV = prevEnv;
       }
+    });
+
+    it('2.7 [E2E Auth Session Lifecycle]: login -> /me (200) -> force logout -> /me (401 SESSION_TERMINATED)', async () => {
+      // 1. Login with credentials
+      const loginRes = await request(authApp)
+        .post('/api/auth/login')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({ username: 'existing_pt', password: 'CorrectPassword123!' });
+
+      expect(loginRes.status).toBe(200);
+      const cookies = loginRes.headers['set-cookie'];
+      expect(cookies).toBeDefined();
+
+      const cookieHeader = Array.isArray(cookies) ? cookies.map((c) => c.split(';')[0]).join('; ') : cookies;
+
+      // 2. /me with cookie -> 200 OK
+      const meRes1 = await request(authApp)
+        .get('/api/auth/me')
+        .set('Cookie', cookieHeader);
+
+      expect(meRes1.status).toBe(200);
+      expect(meRes1.body.ok).toBe(true);
+      expect(meRes1.body.user.id).toBe('pt-somchai-uuid');
+
+      // 3. Force logout
+      authRepo.forceLogout = async () => {};
+
+      const forceLogoutRes = await request(authApp)
+        .post('/api/auth/force-logout')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', cookieHeader);
+
+      expect(forceLogoutRes.status).toBe(200);
+      expect(forceLogoutRes.body.ok).toBe(true);
+
+      // Simulate profile now having force_logout_at newer than token issuance
+      authRepo.getProfileById = async (_id: string) => ({
+        ...mockProfile,
+        force_logout_at: new Date(Date.now() + 5000).toISOString(),
+      });
+
+      // 4. /me with same cookie -> 401 SESSION_TERMINATED
+      const meRes2 = await request(authApp)
+        .get('/api/auth/me')
+        .set('Cookie', cookieHeader);
+
+      expect(meRes2.status).toBe(401);
+      expect(meRes2.body.error.code).toBe('SESSION_TERMINATED');
     });
   });
 

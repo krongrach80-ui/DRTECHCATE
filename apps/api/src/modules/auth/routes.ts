@@ -19,6 +19,9 @@ export function createAuthRouter(controller = new AuthController()): Router {
   // GET /api/auth/me (Returns active user profile)
   router.get('/me', authenticate, controller.me);
 
+  // POST /api/auth/force-logout (Revoke active session via force_logout_at)
+  router.post(['/force-logout', '/force-logout/:userId'], authenticate, controller.forceLogout);
+
   return router;
 }
 

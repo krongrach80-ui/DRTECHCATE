@@ -6,14 +6,14 @@
 CREATE EXTENSION IF NOT EXISTS pgtap;
 
 BEGIN;
-SELECT plan(81);
+SELECT plan(87);
 
 -- 1. EXTENSIONS (3)
 SELECT has_extension('uuid-ossp', 'Extension uuid-ossp must be installed');
 SELECT has_extension('vector', 'Extension vector (pgvector) must be installed');
 SELECT has_extension('pg_trgm', 'Extension pg_trgm must be installed');
 
--- 2. ALL 27 TABLES EXISTENCE (27)
+-- 2. ALL 27 TABLES EXISTENCE
 SELECT has_table('profiles', 'Table profiles must exist');
 SELECT has_table('pts', 'Table pts must exist');
 SELECT has_table('patients', 'Table patients must exist');
@@ -107,13 +107,24 @@ SELECT ok(NOT has_table_privilege('anon', 'staff_calls', 'SELECT'), 'anon cannot
 SELECT ok(NOT has_table_privilege('anon', 'bans', 'SELECT'), 'anon cannot SELECT bans');
 SELECT ok(NOT has_table_privilege('anon', 'audit_logs', 'SELECT'), 'anon cannot SELECT audit_logs');
 
--- 7. STRICTLY PRIVATE TABLES FOR AUTHENTICATED (5)
--- Tables that MUST have zero client policies (service_role only)
+-- 7. STRICTLY PRIVATE TABLES FOR AUTHENTICATED (11)
+-- Spec Section 4: face_*, enrollment_tickets, kiosk_devices, staff_*, bans
+-- These 8 tables MUST have zero client policies and permissions revoked from authenticated
+SELECT ok(NOT has_table_privilege('authenticated', 'face_enrollments', 'SELECT'), 'authenticated cannot SELECT face_enrollments');
 SELECT ok(NOT has_table_privilege('authenticated', 'face_templates', 'SELECT'), 'authenticated cannot SELECT face_templates');
 SELECT ok(NOT has_table_privilege('authenticated', 'face_challenges', 'SELECT'), 'authenticated cannot SELECT face_challenges');
+SELECT ok(NOT has_table_privilege('authenticated', 'enrollment_tickets', 'SELECT'), 'authenticated cannot SELECT enrollment_tickets');
 SELECT ok(NOT has_table_privilege('authenticated', 'kiosk_devices', 'SELECT'), 'authenticated cannot SELECT kiosk_devices');
 SELECT ok(NOT has_table_privilege('authenticated', 'staff_devices', 'SELECT'), 'authenticated cannot SELECT staff_devices');
+SELECT ok(NOT has_table_privilege('authenticated', 'staff_calls', 'SELECT'), 'authenticated cannot SELECT staff_calls');
 SELECT ok(NOT has_table_privilege('authenticated', 'bans', 'SELECT'), 'authenticated cannot SELECT bans');
+
+-- Verify that active authenticated session encounters Code 42501 (insufficient_privilege)
+SET LOCAL ROLE authenticated;
+SELECT throws_ok('SELECT * FROM face_enrollments LIMIT 1', '42501', 'authenticated role cannot SELECT from face_enrollments');
+SELECT throws_ok('SELECT * FROM enrollment_tickets LIMIT 1', '42501', 'authenticated role cannot SELECT from enrollment_tickets');
+SELECT throws_ok('SELECT * FROM staff_calls LIMIT 1', '42501', 'authenticated role cannot SELECT from staff_calls');
+RESET ROLE;
 
 -- 8. IMMUTABILITY & INVARIANT TRIGGERS (6)
 SELECT has_trigger('medical_notes', 'trg_prevent_medical_notes_modification', 'Trigger on medical_notes must exist');
