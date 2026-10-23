@@ -210,8 +210,8 @@ BEGIN
   ON CONFLICT (id) DO NOTHING;
 
   -- Samples for append-only immutability tests
-  INSERT INTO public.audit_logs (id, action, actor_id) VALUES
-    ('11111111-aaaa-1111-aaaa-111111111111', 'LOGIN', v_admin_id)
+  INSERT INTO public.audit_logs (id, actor_type, actor_id, action, entity) VALUES
+    ('11111111-aaaa-1111-aaaa-111111111111', 'staff', v_admin_id, 'LOGIN', 'auth')
   ON CONFLICT (id) DO NOTHING;
 
   INSERT INTO public.medical_notes (id, patient_id, author_id, body) VALUES
@@ -475,7 +475,7 @@ SELECT lives_ok(
   'PT can INSERT real row into minigames'
 );
 SELECT lives_ok(
-  'INSERT INTO public.modpacks (id, title, created_by) VALUES (gen_random_uuid(), ''Real Modpack'', ''22222222-2222-2222-2222-222222222222'')',
+  'INSERT INTO public.modpacks (id, name, created_by) VALUES (gen_random_uuid(), ''Real Modpack'', ''22222222-2222-2222-2222-222222222222'')',
   'PT can INSERT real row into modpacks'
 );
 SELECT lives_ok(
@@ -483,11 +483,11 @@ SELECT lives_ok(
   'PT can INSERT real row into courses for accessible patient'
 );
 SELECT lives_ok(
-  'INSERT INTO public.medical_notes (id, patient_id, author_id, note_type, content) VALUES (gen_random_uuid(), ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', ''22222222-2222-2222-2222-222222222222'', ''soap_s'', ''Patient reports improved mobility'')',
+  'INSERT INTO public.medical_notes (id, patient_id, author_id, body) VALUES (gen_random_uuid(), ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', ''22222222-2222-2222-2222-222222222222'', ''Patient reports improved mobility'')',
   'PT can INSERT real row into medical_notes for accessible patient'
 );
 SELECT lives_ok(
-  'INSERT INTO public.treatment_results (id, patient_id, author_id, pain_score_before, pain_score_after) VALUES (gen_random_uuid(), ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', ''22222222-2222-2222-2222-222222222222'', 7, 3)',
+  'INSERT INTO public.treatment_results (id, patient_id, author_id, body) VALUES (gen_random_uuid(), ''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', ''22222222-2222-2222-2222-222222222222'', ''Treatment note body'')',
   'PT can INSERT real row into treatment_results for accessible patient'
 );
 SELECT lives_ok(
