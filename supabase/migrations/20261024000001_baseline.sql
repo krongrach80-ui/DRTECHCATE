@@ -433,6 +433,7 @@ AS $$
 DECLARE
   v_uid UUID;
   v_role public.user_role;
+BEGIN
   v_uid := (SELECT auth.uid());
   v_role := public.current_user_role();
 
