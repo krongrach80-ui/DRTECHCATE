@@ -1,41 +1,71 @@
-# ข้อตัดสินใจทางสถาปัตยกรรมและข้อกำหนดที่ล็อกไว้ (Architecture Decisions)
-ระบบกายภาพบำบัดโรงพยาบาล (DrTech.Care) — Master Prompt v3
+# Architecture Decision Records (ADR) - DrTech.Care System
 
-> **คำเตือน:** เอกสารนี้รวบรวมข้อตัดสินใจหลักตามข้อ 0 ของ Master Prompt v3 ห้ามแก้ไขหรือเปลี่ยนแปลงการตัดสินใจเหล่านี้โดยไม่ได้รับความเห็นชอบจากผู้ใช้/ผู้บริหารระบบ
+## ADR-001: Single-Instance Deployment Topology & Ephemeral State Management
+
+### Status
+Accepted
+
+### Context
+The hospital physical therapy system manages physical kiosk terminals, patient identity verification via facial biometrics, physical therapy exercise regimens, and clinical audit records. The system requires high security, zero secret leakage, fail-closed database connectivity, and minimal infrastructure complexity for on-premise hospital or single VPS deployment.
+
+### Decision
+We adopt a **Single-Instance Deployment Topology** (Docker container / VPS instance) for the DrTech.Care Express API backend (Port 3001) behind a reverse proxy (Caddy / Nginx or Next.js gateway on Port 3000), connected to Supabase PostgreSQL.
+
+### Ephemeral In-Memory State & Impact on Restart
+To ensure sub-millisecond response times and avoid excessive database round-trips for high-frequency operations, certain short-lived states are maintained in-memory:
+
+1. **`kioskSessions` (`Map<string, KioskSessionRecord>`)**:
+   - **Purpose**: Holds authenticated patient kiosk sessions (TTL: 15 minutes) after face verification and identity confirmation.
+   - **Impact on Server Restart**: Any active in-progress session at a kiosk is invalidated. The patient simply taps the screen and re-authenticates via face scan (approx. 2 seconds). No clinical records or patient data are lost.
+
+2. **`failedFaceAttempts` (`Map<string, number>`)**:
+   - **Purpose**: Tracks consecutive face verification failures per kiosk terminal to trigger staff assistance upon reaching 3 failures.
+   - **Impact on Server Restart**: Lockout counter resets to 0. Does not cause security vulnerability since rate limits and IP failure limits are separately logged to database `audit_logs`.
+
+3. **`bannedIps` & `bannedDevices` Cache (`Map<string, number | null>`)**:
+   - **Purpose**: Fast-path in-memory lookup for IP/device blacklist to reject malicious requests before routing.
+   - **Impact on Server Restart**: Zero data loss. During server boot, `syncBansFromDatabase()` automatically queries the Postgres `bans` table and hydrates the in-memory cache.
+
+4. **`profileCache` (`Map<string, CachedProfile>`)**:
+   - **Purpose**: Caches user profile data for up to 15 seconds to prevent hammering the database on every authenticated HTTP request.
+   - **Impact on Server Restart**: Cache clears cleanly. Fresh profiles are retrieved directly from Supabase upon next request.
+
+### Invariants Maintained
+- All persistent clinical data (Patients, Courses, Exercises, Minigames, Treatment Results, Medical Notes, Audit Logs, Staff Profiles) are stored directly in Supabase PostgreSQL with Fail-Closed behavior (503 SERVICE_UNAVAILABLE if DB is unreachable).
+- Zero in-memory persistence fallback for clinical data.
+- Append-only immutability enforced at database trigger level.
 
 ---
 
-## สรุปการตัดสินใจ 10 ข้อหลัก (Locked Decisions)
+## ADR-002: Strict Content Security Policy (CSP), WebAssembly ('wasm-unsafe-eval'), and Worker Blob Directives
 
-| # | หัวข้อ | ข้อสรุปและรายละเอียดการบังคับใช้ |
-|---|---|---|
-| **1** | **PT เห็น/แก้คนไข้** | เฉพาะคนไข้ที่ตนเองรับผิดชอบ (`patient_pt_assignments` ที่ `pt_id = auth.uid()`) และเคสที่ได้รับฝากชั่วคราว (`case_transfers` ที่ `to_pt_id = auth.uid()` ในช่วงวันที่ active: `start_date <= CURRENT_DATE <= end_date`) เท่านั้น บังคับทั้งที่ Express Service layer และ Postgres RLS (`is_patient_accessible_by_pt`) |
-| **2** | **"แก้ผลการรักษา" vs append-only** | การ "แก้ไข" = เพิ่มแถวเวอร์ชันใหม่เสมอ (`version = old_version + 1`, อ้างอิง `supersedes_id` ของเวอร์ชันก่อนหน้า) ข้อมูลเวอร์ชันเก่าคงอยู่อ่านได้ตลอดไป **ไม่มีคำสั่ง UPDATE หรือ DELETE** และมี Database Trigger ป้องกันอย่างเด็ดขาด |
-| **3** | **คนไข้ที่ตู้พิมพ์ไม่ได้** | ตู้ Kiosk ไม่มีแป้นพิมพ์หน้าจอ (No Virtual/Physical Keypad) สำหรับพิมพ์ HN หรือเบอร์โทรศัพท์ เพื่อสุขอนามัยและความปลอดภัย หากสแกนหน้าไม่ผ่านครบ 3 ครั้ง กลไก Fallback คือปุ่ม **"เรียกเจ้าหน้าที่" (Call Staff)** ให้สร้างงานใน `staff_calls` เท่านั้น |
-| **4** | **ท่ากายภาพบนตู้ (รอบแรก)** | แสดงรายการท่าที่แพทย์/PT จัดไว้ (ชื่อท่า, รูปภาพประกอบ, เซ็ต × จำนวนครั้ง) คนไข้ฝึกทำต่อหน้า PT แล้วกดปุ่ม "ทำเสร็จ" เพื่อบันทึกความคืบหน้า ยังไม่มีการตรวจจับมุมกระดูกหรือวัดท่าด้วย AI ในรอบนี้ (เก็บไว้เป็นเฟสส่วนขยายถัดไป) |
-| **5** | **HN (Hospital Number)** | ออกเลข HN จาก Database Sequence ใน PostgreSQL เท่านั้น ห้ามสุ่ม (random) หรือใช้ timestamp โดยเด็ดขาด เพื่อป้องกันเลขซ้ำและเป็นไปตามมาตรฐานเวชระเบียนโรงพยาบาล |
-| **6** | **คนไข้ล็อกอินเว็บ** | **ไม่มี** คนไข้มีสถานะเป็นข้อมูลในตาราง `patients` เท่านั้น ไม่มีแถวใน `auth.users` ของ Supabase, ไม่มีรหัสผ่าน, ไม่สามารถเข้าสู่ระบบผ่านเว็บเบราว์เซอร์ได้ เข้าใช้งานตู้ Kiosk ด้วยใบหน้าเท่านั้น จึง **ไม่มีฟีเจอร์รีเซ็ตรหัสผ่านคนไข้** |
-| **7** | **ลำดับการลงทะเบียน (Enrollment Flow)** | **ทางหลัก:** เจ้าหน้าที่/PT ที่หน้าต้อนรับ (Reception) สร้างและกรอกข้อมูลประวัติคนไข้ลงในระบบก่อน แล้วกด "ส่งไปลงทะเบียนหน้าที่ตู้ N" (ออก `enrollment_ticket`) จากนั้นคนไข้เดินไปสแกนหน้าที่ตู้ตาม Ticket<br>**ทางเลือก:** การสแกนหน้าก่อนที่ตู้ (self-enroll) จะปิดไว้ตามค่าเริ่มต้น (`ALLOW_KIOSK_SELF_ENROLL=false`) |
-| **8** | **ระดับความปลอดภัยการสแกนใบหน้า** | ระบบเริ่มต้นเป็น **ระดับ A (ซอฟต์แวร์ล้วน - Software-only RGB)** ป้องกันภาพนิ่ง/วิดีโอด้วย Liveness (Active challenge + Passive texture PAD) แต่ไม่เทียบเท่าระบบฮาร์ดแวร์วัดความลึก (IR/Depth 3D Structured Light เช่น Face ID) จึง **ห้ามอ้างว่าเทียบเท่า Face ID** โดยออกแบบสถาปัตยกรรมให้รองรับการต่อขยายเป็นระดับ B ในอนาคตผ่านอินเทอร์เฟซ `PadProvider` |
-| **9** | **บัตรคิว** | ไม่อยู่ในขอบเขตของระบบนี้ (โฟลว์ของระบบตู้สิ้นสุดที่ Daily Mission และส่งผลกลับมายัง PT Portal) หากโรงพยาบาลต้องการระบบบัตรคิว ให้แยกพัฒนาเป็นโมดูลเสริมต่างหากในภายหลัง |
-| **10** | **การลบข้อมูลและการจัดการสิทธิ์ PDPA** | แยกกระบวนการ **"ลบข้อมูลชีวมาตร (Biometric Erasure)"** (ลบไฟล์ภาพถ่าย 10 เฟรมจาก Private Storage และลบ embedding vector ออกจาก `face_templates` จริง) ออกจากกระบวนการ **"ปิดบัญชี/ยุติการดูแล (Archive Patient)"** (ซึ่งต้องเก็บรักษาประวัติเวชระเบียนทางการแพทย์ตามกฎหมาย) **ห้ามลบแฟ้มประวัติคนไข้ทั้งแฟ้ม** |
+### Status
+Accepted
 
----
+### Context
+Client-side web applications (`admin`, `pt`, `kiosk`) operate in hospital clinics and must adhere to strict Content Security Policy (CSP) guidelines:
+- Zero `'unsafe-inline'` in `script-src` and `style-src`.
+- No arbitrary external CDNs or scripts allowed.
+- However, client-side camera landmark detection and active PAD liveness verification use Google MediaPipe (`@mediapipe/tasks-vision`) and ONNX Runtime Web (`onnxruntime-web`), which execute WebAssembly (Wasm) modules and Web Workers for real-time video processing.
 
-## กฎและข้อบังคับทางสถาปัตยกรรม (Architectural Invariants)
+### Decision & Rationale
+We enforce the following CSP directives via Helmet in `apps/api/src/app.ts` as well as reverse proxies (`nginx.conf`, `Caddyfile`):
 
-1. **โครงสร้างแยกส่วนจริง (Decoupled Monorepo / Services):**
-   - `apps/api`: Backend API เดียวด้วย Express 5.x + TypeScript ที่เชื่อมต่อกับ Supabase
-   - `apps/admin`: SPA Client (React + Vite + Tailwind + TanStack Query) ไม่คุยกับ Supabase โดยตรง
-   - `apps/pt`: SPA Client (React + Vite + Tailwind + TanStack Query) ไม่คุยกับ Supabase โดยตรง
-   - `apps/kiosk`: SPA Client สำหรับตู้ Kiosk (React + Vite) ไม่คุยกับ Supabase โดยตรง
-   - `packages/shared`, `api-client`, `face-client`, `kiosk-input`, `mission-engine`
-2. **ห้ามติดตั้ง Supabase SDK ใน Frontend:**
-   - ห้ามติดตั้งหรือ import `@supabase/supabase-js` ใน `apps/admin`, `apps/pt`, `apps/kiosk` และ `packages/*`
-   - ควบคุมด้วย ESLint `no-restricted-imports` และ CI inspection script
-3. **Frontend ห้ามเก็บข้อมูลผู้ป่วยลงใน Web Storage:**
-   - ห้ามเก็บข้อมูลคนไข้, vector, token, รูปภาพลงใน `localStorage`, `sessionStorage`, หรือ `IndexedDB`
-   - การสื่อสารและคงสถานะเซสชันทำผ่าน `HttpOnly; Secure; SameSite=Strict` Cookie
-4. **การคำนวณเวกเตอร์ใบหน้า (512-dim Cosine):**
-   - โมเดลสกัดเวกเตอร์ใบหน้าขนาด 512 มิติ (ArcFace/AdaFace standard)
-   - การจับคู่เวกเตอร์ทำที่เซิร์ฟเวอร์ด้วย `pgvector` (HNSW cosine similarity) เท่านั้น ห้ามส่ง vector กลับไปยัง client
+```text
+default-src 'self';
+script-src 'self' 'wasm-unsafe-eval';
+worker-src 'self' blob:;
+style-src 'self';
+font-src 'self';
+img-src 'self' data: blob: <STORAGE_HOST>;
+connect-src 'self' <STORAGE_HOST>;
+frame-ancestors 'none';
+```
+
+1. **`'wasm-unsafe-eval'` in `script-src`**:
+   - **Rationale**: MediaPipe and ONNX compile WebAssembly modules just-in-time from local byte arrays. Under standard W3C CSP Level 3, compiling Wasm requires either `'unsafe-eval'` or `'wasm-unsafe-eval'`. By using `'wasm-unsafe-eval'`, we permit Wasm instantiation *without* permitting general JavaScript `eval()` strings or dynamic script injection, closing the cross-site scripting attack vector.
+2. **`worker-src 'self' blob:`**:
+   - **Rationale**: MediaPipe and ONNX offload landmark extraction to a Web Worker thread to prevent freezing the UI thread at 30-60 FPS. These libraries construct Workers inline via `URL.createObjectURL(new Blob([...]))`. The `blob:` scheme in `worker-src` is strictly required for this mechanism to function.
+3. **No `'unsafe-inline'` in `style-src`**:
+   - **Rationale**: All frontend apps have been refactored to use static CSS classes (Tailwind CSS v4) and SVG XML attributes (e.g. `MirrorCanvas` 10-tick ring). System Thai font stacks are declared locally without Google Fonts CDNs. No React `style={{}}` inline attributes are used.
+

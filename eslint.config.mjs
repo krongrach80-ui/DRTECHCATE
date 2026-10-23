@@ -1,19 +1,39 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+import tsParser from "@typescript-eslint/parser";
+import tsPlugin from "@typescript-eslint/eslint-plugin";
+import reactHooksPlugin from "eslint-plugin-react-hooks";
 
 const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
   {
+    files: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs"],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: "latest",
+        sourceType: "module",
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    plugins: {
+      "@typescript-eslint": tsPlugin,
+      "react-hooks": reactHooksPlugin,
+    },
     rules: {
-      "react/no-unescaped-entities": "off",
+      ...reactHooksPlugin.configs.recommended.rules,
       "react-hooks/set-state-in-effect": "off",
+      "react-hooks/exhaustive-deps": "warn",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }
       ],
-      "@next/next/no-html-link-for-pages": "off",
+    },
+  },
+  {
+    files: ["**/__tests__/**", "**/test/**", "tests/**", "**/*.test.ts", "**/*.spec.ts", "scripts/**", "vitest.setup.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
   // Frontend applications must NEVER import @supabase/supabase-js or adminClient (Master Prompt v3 - Section 4)
@@ -54,6 +74,24 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Production src/ code must NEVER import from test/ directories (1b.9)
+  {
+    files: ["apps/*/src/**", "packages/*/src/**", "src/**"],
+    ignores: ["**/__tests__/**", "**/test/**", "**/tests/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/test/**", "**/tests/**", "**/__tests__/**", "**/fixtures/**"],
+              message: "Production source code must NEVER import from test/ or fixture directories.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",
@@ -61,6 +99,10 @@ const eslintConfig = defineConfig([
     "dist/**",
     "next-env.d.ts",
     "legacy-src/**",
+    "public/*/assets/**",
+    "public/admin/assets/**",
+    "public/pt/assets/**",
+    "public/kiosk/assets/**",
   ]),
 ]);
 

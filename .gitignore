@@ -21,6 +21,10 @@
 /build
 /dist
 vitest-results.json
+public/admin/assets/
+public/pt/assets/
+public/kiosk/assets/
+public/*/index.html
 
 # misc
 .DS_Store
@@ -46,5 +50,9 @@ next-env.d.ts
 supabase/.temp/
 .temp/
 
-# github workflows (requires workflow oauth scope)
-.github/
+# built frontend apps in public
+public/admin/
+public/pt/
+public/kiosk/
+public/*/index.html
+

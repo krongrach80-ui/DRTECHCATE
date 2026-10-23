@@ -1,10 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "commonjs",
+    "moduleResolution": "node",
     "lib": ["dom", "dom.iterable", "esnext"],
     "jsx": "react-jsx",
+    "esModuleInterop": true,
     "outDir": "dist",
     "rootDir": ".",
     "declaration": true,
@@ -13,15 +14,19 @@
     "noEmit": false
   },
   "include": [
-    "apps/**/*.ts",
-    "apps/**/*.tsx",
-    "packages/**/*.ts",
-    "packages/**/*.tsx"
+    "apps/api/**/*.ts",
+    "packages/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "legacy-src",
     "dist",
-    "apps/api/src/__tests__"
+    "apps/api/src/__tests__",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
   ]
 }

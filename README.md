@@ -41,8 +41,15 @@ Following **Master Prompt v3**, the monorepo enforces zero cross-talk, zero Supa
 2. **Strict Frontend Isolation**: Frontend applications (`apps/admin`, `apps/pt`, `apps/kiosk`) do NOT import `@supabase/supabase-js` and contain NO Supabase URLs or secret tokens. Enforced by ESLint and CI bundle scanner `scripts/check-bundle.ts`.
 3. **No Biometric Vector Exposure**: 512-dimensional face templates are never returned to clients. Matching is performed exclusively server-side via PostgreSQL `pgvector` HNSW cosine similarity.
 4. **Append-Only Clinical History**: `medical_notes`, `treatment_results`, and `audit_logs` are protected by database triggers that reject `UPDATE` and `DELETE` operations. Revisions point to previous versions via `supersedes_id`.
-5. **Level-A Biometric Limitation Notice**:
-   > **IMPORTANT**: The standard webcam configuration is **Level A (Software-Only)** biometric authentication. It mitigates casual spoofing via dynamic liveness gestures (head nod, look left/right) and quality checks, but cannot defend against advanced physical masks or high-resolution depth spoofs. It MUST NOT be marketed as equivalent to Apple Face ID (which relies on hardware IR structured-light projectors). For Level B security, an ISO/IEC 30107-3 compliant IR/depth `PadProvider` must be attached.
+5. **Level-A Biometric Limitation & Critical PAD Mode Warning (Spec 7.5.1 / Item H5 / Item 8)**:
+   > ⚠️ **CRITICAL SECURITY WARNING: PAD_MODE=active_only IN PRODUCTION**:
+   > The system operates strictly under **`PAD_MODE=active_only`** with `PAD_PROVIDER=active_challenge_tracker`. 
+   > 
+   > - **Fail-Closed Architecture**: Setting `PAD_MODE=passive_only` or `PAD_MODE=active_plus_passive` will cause the backend Express API to abort startup immediately (Fail-Closed) because no ISO/IEC 30107-3 Level-B certified passive liveness detection library is bundled in this repository.
+   > - **Active Verification Boundaries**: `active_only` relies purely on user-interactive challenge gestures (`turn_left`, `turn_right`, `nod_head`) driven by client-side vision heuristics and server single-use nonces (60-second expiry).
+   > - **Spoofing Vulnerability Notice**: Standard RGB webcams running `active_only` cannot guarantee immunity against high-end video replay or generative deepfakes without dedicated 3D structured light or active infrared (IR) depth sensors.
+   > - **Operational Safeguards**: Kiosk physical deployment must enforce hardware isolation (`docs/KIOSK_HARDENING.md`), pairing secrets (`KIOSK_PAIRING_SECRET`), counter-reception check-in workflows, and candidate set pruning (appointments active today) to prevent biometric spoofing.
+   > - **Strict Ban on Claims**: This software MUST NOT be represented to hospital compliance or PDPA auditors as providing hardware-grade biometric anti-spoofing without certified external sensors.
 
 ---
 

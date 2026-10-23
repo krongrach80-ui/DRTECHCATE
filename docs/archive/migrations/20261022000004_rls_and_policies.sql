@@ -4,23 +4,51 @@
 -- ========================================================================
 
 -- ------------------------------------------------------------------------
--- 1. REVOKE PRIVILEGES FROM ANON & PUBLIC (Zero-Trust Rule #6)
 -- ------------------------------------------------------------------------
--- Revoke all existing permissions from anon
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon;
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon;
-REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM anon;
+-- 1. REVOKE PRIVILEGES FROM ANON & AUTHENTICATED (Zero-Trust Rule #6 & Item H3)
+-- ------------------------------------------------------------------------
+-- Revoke all existing permissions from anon and authenticated on all objects in public schema
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM anon, authenticated;
 
--- Revoke default privileges on future objects across the database (without IN SCHEMA)
+-- Revoke default privileges on future objects across the database
 ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON ROUTINES FROM PUBLIC;
 
--- Revoke default privileges on future objects in schema public
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON ROUTINES FROM PUBLIC, anon;
+-- Revoke default privileges on future objects in schema public from anon and authenticated
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON ROUTINES FROM PUBLIC, anon, authenticated;
+
+-- Allow schema usage for name resolution
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+
+-- Grant explicit named access ONLY to allowlist tables with client RLS policies
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+  profiles,
+  pts,
+  patients,
+  patient_pt_assignments,
+  case_transfers,
+  exercises,
+  minigames,
+  minigame_questions,
+  modpacks,
+  modpack_items,
+  courses,
+  course_items,
+  mission_runs,
+  mission_steps,
+  medical_notes,
+  treatment_results,
+  consents
+TO authenticated;
+
+-- Grant sequence usage for patient HN generation
+GRANT USAGE, SELECT ON SEQUENCE patient_hn_seq TO authenticated;
 
 -- Revoke execute on helper functions from public/anon, grant only to authenticated
 REVOKE EXECUTE ON FUNCTION current_user_role() FROM PUBLIC, anon;
@@ -28,10 +56,6 @@ GRANT EXECUTE ON FUNCTION current_user_role() TO authenticated;
 
 REVOKE EXECUTE ON FUNCTION is_patient_accessible_by_pt(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION is_patient_accessible_by_pt(UUID) TO authenticated;
-
--- Revoke all table permissions on strictly backend-only tables from authenticated (Defense-in-depth)
--- Spec Section 4: face_*, enrollment_tickets, kiosk_devices, staff_*, bans
-REVOKE ALL ON TABLE face_enrollments, face_templates, face_challenges, enrollment_tickets, kiosk_devices, staff_devices, staff_calls, bans FROM authenticated;
 
 -- ------------------------------------------------------------------------
 -- 2. ENABLE ROW LEVEL SECURITY ON ALL 27 TABLES
