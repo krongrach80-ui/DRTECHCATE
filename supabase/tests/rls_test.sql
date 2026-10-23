@@ -380,14 +380,14 @@ BEGIN
 END $$;
 
 SELECT results_eq(
-  'SELECT registration_status FROM public.patients WHERE first_name = ''Prasert'' LIMIT 1',
-  ARRAY['active'::public.registration_status],
+  'SELECT registration_status::text FROM public.patients WHERE first_name = ''Prasert'' LIMIT 1',
+  ARRAY['active'::text],
   'enroll_face_atomic sets registration_status = active when demographics are complete (Spec 7.3.7)'
 );
 
 SELECT results_eq(
-  'SELECT registration_status FROM public.patients WHERE first_name = ''Nong'' LIMIT 1',
-  ARRAY['face_enrolled'::public.registration_status],
+  'SELECT registration_status::text FROM public.patients WHERE first_name = ''Nong'' LIMIT 1',
+  ARRAY['face_enrolled'::text],
   'enroll_face_atomic sets registration_status = face_enrolled when demographics are incomplete'
 );
 
