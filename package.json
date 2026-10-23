@@ -12,7 +12,12 @@
     "test:rls": "tsx scripts/test-rls.ts",
     "admin:create": "tsx scripts/create-admin.ts",
     "db:migrate": "tsx scripts/run-migration.ts",
-    "ci:bundle": "tsx scripts/check-bundle.ts"
+    "ci:bundle": "tsx scripts/check-bundle.ts",
+    "dev:api": "tsx apps/api/src/server.ts",
+    "dev:admin": "vite --config apps/admin/vite.config.ts --port 5173",
+    "dev:pt": "vite --config apps/pt/vite.config.ts --port 5174",
+    "dev:kiosk": "vite --config apps/kiosk/vite.config.ts --port 5175",
+    "build:apps": "vite build apps/admin && vite build apps/pt && vite build apps/kiosk"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
