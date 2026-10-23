@@ -208,80 +208,93 @@ BEGIN
     (v_ex1_id, 'PT1 Knee Flexion', 'Knee', v_pt1_id),
     (v_ex2_id, 'PT2 Shoulder Press', 'Shoulder', v_pt2_id)
   ON CONFLICT (id) DO NOTHING;
+
+  -- Samples for append-only immutability tests
+  INSERT INTO public.audit_logs (id, action, actor_id) VALUES
+    ('11111111-aaaa-1111-aaaa-111111111111', 'LOGIN', v_admin_id)
+  ON CONFLICT (id) DO NOTHING;
+
+  INSERT INTO public.medical_notes (id, patient_id, author_id, body) VALUES
+    ('22222222-bbbb-2222-bbbb-222222222222', v_pat1_id, v_pt1_id, 'Initial assessment note')
+  ON CONFLICT (id) DO NOTHING;
+
+  INSERT INTO public.treatment_results (id, patient_id, author_id, body) VALUES
+    ('33333333-cccc-3333-cccc-333333333333', v_pat1_id, v_pt1_id, 'Treatment note body')
+  ON CONFLICT (id) DO NOTHING;
 END $$;
 
 -- E1: PT modifies/deletes another PT's exercises -> throws exception
 SELECT throws_ok(
-  format('UPDATE public.exercises SET title = ''Hacked'' WHERE id = ''ffffffff-ffff-ffff-ffff-ffffffffffff'''),
+  'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); UPDATE public.exercises SET title = ''Hacked'' WHERE id = ''ffffffff-ffff-ffff-ffff-ffffffffffff''; RESET ROLE;',
   'Permission denied: PT can only modify or delete items they created.',
   'PT modifying exercise created by another PT must throw permission denied'
 );
 
 SELECT throws_ok(
-  format('DELETE FROM public.exercises WHERE id = ''ffffffff-ffff-ffff-ffff-ffffffffffff'''),
+  'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); DELETE FROM public.exercises WHERE id = ''ffffffff-ffff-ffff-ffff-ffffffffffff''; RESET ROLE;',
   'Permission denied: PT can only modify or delete items they created.',
   'PT deleting exercise created by another PT must throw permission denied'
 );
 
 -- E2: PT updates own profile changing role, status, or force_logout_at -> throws exception
 SELECT throws_ok(
-  format('UPDATE public.profiles SET role = ''admin'' WHERE id = ''22222222-2222-2222-2222-222222222222'''),
+  'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); UPDATE public.profiles SET role = ''admin'' WHERE id = ''22222222-2222-2222-2222-222222222222''; RESET ROLE;',
   'Permission denied: non-admin users cannot modify role.',
   'PT escalating own role to admin must throw permission denied'
 );
 
 SELECT throws_ok(
-  format('UPDATE public.profiles SET status = ''archived'' WHERE id = ''22222222-2222-2222-2222-222222222222'''),
+  'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); UPDATE public.profiles SET status = ''archived'' WHERE id = ''22222222-2222-2222-2222-222222222222''; RESET ROLE;',
   'Permission denied: non-admin users cannot modify status.',
   'PT modifying profile status must throw permission denied'
 );
 
 SELECT throws_ok(
-  format('UPDATE public.profiles SET force_logout_at = now() WHERE id = ''22222222-2222-2222-2222-222222222222'''),
+  'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); UPDATE public.profiles SET force_logout_at = now() WHERE id = ''22222222-2222-2222-2222-222222222222''; RESET ROLE;',
   'Permission denied: non-admin users cannot modify force_logout_at.',
   'PT modifying force_logout_at must throw permission denied'
 );
 
 -- E3: PT assigns or modifies course for patient not accessible by PT -> throws exception (Item B4)
 SELECT throws_ok(
-  'INSERT INTO public.courses (patient_id, pt_id, start_date, end_date) VALUES (''bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'', ''22222222-2222-2222-2222-222222222222'', ''2026-10-25'', ''2026-11-25'')',
+  'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); INSERT INTO public.courses (patient_id, pt_id, start_date, end_date) VALUES (''bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'', ''22222222-2222-2222-2222-222222222222'', ''2026-10-25'', ''2026-11-25''); RESET ROLE;',
   'Permission denied: PT cannot assign or modify courses for patients not under their active care.',
   'PT creating course for another PT patient must throw permission denied'
 );
 
 -- E4: Append-Only Immutability: UPDATE/DELETE on medical_notes, treatment_results, audit_logs throws for all roles
 SELECT throws_ok(
-  'UPDATE public.audit_logs SET action = ''TAMPERED'' WHERE id = (SELECT id FROM public.audit_logs LIMIT 1)',
+  'UPDATE public.audit_logs SET action = ''TAMPERED'' WHERE id = ''11111111-aaaa-1111-aaaa-111111111111''',
   'Audit logs are insert-only. Modification is strictly forbidden.',
   'UPDATE on audit_logs must throw exception'
 );
 
 SELECT throws_ok(
-  'DELETE FROM public.audit_logs WHERE id = (SELECT id FROM public.audit_logs LIMIT 1)',
+  'DELETE FROM public.audit_logs WHERE id = ''11111111-aaaa-1111-aaaa-111111111111''',
   'Audit logs are insert-only. Modification is strictly forbidden.',
   'DELETE on audit_logs must throw exception'
 );
 
 SELECT throws_ok(
-  'UPDATE public.medical_notes SET note_type = ''general'' WHERE id = (SELECT id FROM public.medical_notes LIMIT 1)',
+  'UPDATE public.medical_notes SET body = ''Tampered'' WHERE id = ''22222222-bbbb-2222-bbbb-222222222222''',
   'Medical notes are append-only. Modification is strictly forbidden.',
   'UPDATE on medical_notes must throw exception'
 );
 
 SELECT throws_ok(
-  'DELETE FROM public.medical_notes WHERE id = (SELECT id FROM public.medical_notes LIMIT 1)',
+  'DELETE FROM public.medical_notes WHERE id = ''22222222-bbbb-2222-bbbb-222222222222''',
   'Medical notes are append-only. Modification is strictly forbidden.',
   'DELETE on medical_notes must throw exception'
 );
 
 SELECT throws_ok(
-  'UPDATE public.treatment_results SET pain_score_after = 0 WHERE id = (SELECT id FROM public.treatment_results LIMIT 1)',
+  'UPDATE public.treatment_results SET body = ''Tampered'' WHERE id = ''33333333-cccc-3333-cccc-333333333333''',
   'Treatment results are append-only. Modification is strictly forbidden.',
   'UPDATE on treatment_results must throw exception'
 );
 
 SELECT throws_ok(
-  'DELETE FROM public.treatment_results WHERE id = (SELECT id FROM public.treatment_results LIMIT 1)',
+  'DELETE FROM public.treatment_results WHERE id = ''33333333-cccc-3333-cccc-333333333333''',
   'Treatment results are append-only. Modification is strictly forbidden.',
   'DELETE on treatment_results must throw exception'
 );
@@ -307,25 +320,22 @@ SELECT ok(
 );
 
 -- E7: Authenticated cannot SELECT on private tables (42501 insufficient_privilege)
-SET LOCAL ROLE authenticated;
-SELECT throws_ok('SELECT * FROM face_enrollments LIMIT 1', '42501', 'authenticated role cannot SELECT from face_enrollments');
-SELECT throws_ok('SELECT * FROM face_templates LIMIT 1', '42501', 'authenticated role cannot SELECT from face_templates');
-SELECT throws_ok('SELECT * FROM face_challenges LIMIT 1', '42501', 'authenticated role cannot SELECT from face_challenges');
-SELECT throws_ok('SELECT * FROM enrollment_tickets LIMIT 1', '42501', 'authenticated role cannot SELECT from enrollment_tickets');
-SELECT throws_ok('SELECT * FROM kiosk_devices LIMIT 1', '42501', 'authenticated role cannot SELECT from kiosk_devices');
-SELECT throws_ok('SELECT * FROM staff_devices LIMIT 1', '42501', 'authenticated role cannot SELECT from staff_devices');
-SELECT throws_ok('SELECT * FROM staff_calls LIMIT 1', '42501', 'authenticated role cannot SELECT from staff_calls');
-SELECT throws_ok('SELECT * FROM bans LIMIT 1', '42501', 'authenticated role cannot SELECT from bans');
-SELECT throws_ok('SELECT * FROM audit_logs LIMIT 1', '42501', 'authenticated role cannot SELECT from audit_logs');
-RESET ROLE;
+-- E7: Authenticated cannot SELECT on private tables (42501 insufficient_privilege)
+SELECT throws_ok('SET LOCAL ROLE authenticated; SELECT * FROM public.face_enrollments LIMIT 1; RESET ROLE;', '42501', NULL, 'authenticated role cannot SELECT from face_enrollments');
+SELECT throws_ok('SET LOCAL ROLE authenticated; SELECT * FROM public.face_templates LIMIT 1; RESET ROLE;', '42501', NULL, 'authenticated role cannot SELECT from face_templates');
+SELECT throws_ok('SET LOCAL ROLE authenticated; SELECT * FROM public.face_challenges LIMIT 1; RESET ROLE;', '42501', NULL, 'authenticated role cannot SELECT from face_challenges');
+SELECT throws_ok('SET LOCAL ROLE authenticated; SELECT * FROM public.enrollment_tickets LIMIT 1; RESET ROLE;', '42501', NULL, 'authenticated role cannot SELECT from enrollment_tickets');
+SELECT throws_ok('SET LOCAL ROLE authenticated; SELECT * FROM public.kiosk_devices LIMIT 1; RESET ROLE;', '42501', NULL, 'authenticated role cannot SELECT from kiosk_devices');
+SELECT throws_ok('SET LOCAL ROLE authenticated; SELECT * FROM public.staff_devices LIMIT 1; RESET ROLE;', '42501', NULL, 'authenticated role cannot SELECT from staff_devices');
+SELECT throws_ok('SET LOCAL ROLE authenticated; SELECT * FROM public.staff_calls LIMIT 1; RESET ROLE;', '42501', NULL, 'authenticated role cannot SELECT from staff_calls');
+SELECT throws_ok('SET LOCAL ROLE authenticated; SELECT * FROM public.bans LIMIT 1; RESET ROLE;', '42501', NULL, 'authenticated role cannot SELECT from bans');
+SELECT throws_ok('SET LOCAL ROLE authenticated; SELECT * FROM public.audit_logs LIMIT 1; RESET ROLE;', '42501', NULL, 'authenticated role cannot SELECT from audit_logs');
 
 -- E8: Anon cannot SELECT, INSERT, UPDATE, DELETE on any table (42501)
-SET LOCAL ROLE anon;
-SELECT throws_ok('SELECT * FROM profiles LIMIT 1', '42501', 'anon cannot SELECT from profiles');
-SELECT throws_ok('SELECT * FROM patients LIMIT 1', '42501', 'anon cannot SELECT from patients');
-SELECT throws_ok('SELECT * FROM exercises LIMIT 1', '42501', 'anon cannot SELECT from exercises');
-SELECT throws_ok('SELECT * FROM courses LIMIT 1', '42501', 'anon cannot SELECT from courses');
-RESET ROLE;
+SELECT throws_ok('SET LOCAL ROLE anon; SELECT * FROM public.profiles LIMIT 1; RESET ROLE;', '42501', NULL, 'anon cannot SELECT from profiles');
+SELECT throws_ok('SET LOCAL ROLE anon; SELECT * FROM public.patients LIMIT 1; RESET ROLE;', '42501', NULL, 'anon cannot SELECT from patients');
+SELECT throws_ok('SET LOCAL ROLE anon; SELECT * FROM public.exercises LIMIT 1; RESET ROLE;', '42501', NULL, 'anon cannot SELECT from exercises');
+SELECT throws_ok('SET LOCAL ROLE anon; SELECT * FROM public.courses LIMIT 1; RESET ROLE;', '42501', NULL, 'anon cannot SELECT from courses');
 
 -- E9: Atomic Face Enrollment Branch Testing (Item B2: 'active' when complete, 'face_enrolled' when incomplete)
 DO $$
@@ -408,44 +418,48 @@ SELECT throws_ok(
 );
 
 -- A3: mission_runs and mission_steps are SELECT only for authenticated
-SET LOCAL ROLE authenticated;
 SELECT throws_ok(
-  'INSERT INTO public.mission_runs (patient_id, course_id, status) VALUES (''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', gen_random_uuid(), ''in_progress'')',
+  'SET LOCAL ROLE authenticated; INSERT INTO public.mission_runs (patient_id, course_id, status) VALUES (''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'', gen_random_uuid(), ''in_progress''); RESET ROLE;',
   '42501',
+  NULL,
   'authenticated role cannot INSERT into mission_runs (SELECT only)'
 );
 SELECT throws_ok(
-  'UPDATE public.mission_runs SET status = ''completed'' WHERE id = gen_random_uuid()',
+  'SET LOCAL ROLE authenticated; UPDATE public.mission_runs SET status = ''completed'' WHERE id = gen_random_uuid(); RESET ROLE;',
   '42501',
+  NULL,
   'authenticated role cannot UPDATE mission_runs (SELECT only)'
 );
 SELECT throws_ok(
-  'INSERT INTO public.mission_steps (mission_run_id, step_index, status) VALUES (gen_random_uuid(), 1, ''completed'')',
+  'SET LOCAL ROLE authenticated; INSERT INTO public.mission_steps (mission_run_id, step_index, status) VALUES (gen_random_uuid(), 1, ''completed''); RESET ROLE;',
   '42501',
+  NULL,
   'authenticated role cannot INSERT into mission_steps (SELECT only)'
 );
 SELECT throws_ok(
-  'UPDATE public.mission_steps SET status = ''completed'' WHERE id = gen_random_uuid()',
+  'SET LOCAL ROLE authenticated; UPDATE public.mission_steps SET status = ''completed'' WHERE id = gen_random_uuid(); RESET ROLE;',
   '42501',
+  NULL,
   'authenticated role cannot UPDATE mission_steps (SELECT only)'
 );
 
 -- A3: Profiles Column-Level Privileges
 SELECT throws_ok(
-  'UPDATE public.profiles SET username = ''pt1_hacked'' WHERE id = ''22222222-2222-2222-2222-222222222222''',
+  'SET LOCAL ROLE authenticated; UPDATE public.profiles SET username = ''pt1_hacked'' WHERE id = ''22222222-2222-2222-2222-222222222222''; RESET ROLE;',
   '42501',
+  NULL,
   'authenticated role cannot UPDATE username on profiles'
 );
 SELECT throws_ok(
-  'UPDATE public.profiles SET status = ''suspended'' WHERE id = ''22222222-2222-2222-2222-222222222222''',
+  'SET LOCAL ROLE authenticated; UPDATE public.profiles SET status = ''suspended'' WHERE id = ''22222222-2222-2222-2222-222222222222''; RESET ROLE;',
   '42501',
+  NULL,
   'authenticated role cannot UPDATE status on profiles'
 );
 SELECT lives_ok(
-  'UPDATE public.profiles SET full_name = ''PT One Updated'', phone = ''0819998888'', bio = ''Sports rehab'' WHERE id = ''22222222-2222-2222-2222-222222222222''',
+  'SET LOCAL ROLE authenticated; UPDATE public.profiles SET full_name = ''PT One Updated'', phone = ''0819998888'', bio = ''Sports rehab'' WHERE id = ''22222222-2222-2222-2222-222222222222''; RESET ROLE;',
   'authenticated role can UPDATE allowed columns (full_name, phone, bio) on profiles'
 );
-RESET ROLE;
 
 -- A4: PT INSERT real row into all tables allowed for PT to catch hidden permission denied
 SELECT lives_ok(
@@ -502,10 +516,8 @@ SELECT throws_ok(
 );
 
 -- Anon cannot SELECT consents or checkins
-SET LOCAL ROLE anon;
-SELECT throws_ok('SELECT * FROM consents LIMIT 1', '42501', 'anon cannot SELECT from consents');
-SELECT throws_ok('SELECT * FROM checkins LIMIT 1', '42501', 'anon cannot SELECT from checkins');
-RESET ROLE;
+SELECT throws_ok('SET LOCAL ROLE anon; SELECT * FROM public.consents LIMIT 1; RESET ROLE;', '42501', NULL, 'anon cannot SELECT from consents');
+SELECT throws_ok('SET LOCAL ROLE anon; SELECT * FROM public.checkins LIMIT 1; RESET ROLE;', '42501', NULL, 'anon cannot SELECT from checkins');
 
 -- ========================================================================
 -- 12. ROUND 3 FIX VERIFICATION: match_face_candidates excludes superseded,
