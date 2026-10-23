@@ -21,7 +21,7 @@ import {
 
 async function main() {
   (process.env as Record<string, string>).NODE_ENV = 'test';
-  process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
+  process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
   process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
   process.env.INTERNAL_EMAIL_DOMAIN = 'drtech.care';
   process.env.FACE_T_ACCEPT = '0.60';
@@ -38,8 +38,8 @@ async function main() {
   const app = createApp();
 
   defaultKioskRepository.clearPairings();
-  defaultCourseRepository.clearInMemory();
-  defaultPatientRepository.clearInMemory();
+  (defaultCourseRepository as any).clearInMemory?.();
+  (defaultPatientRepository as any).clearInMemory?.();
 
   // -------------------------------------------------------------------------
   // DoD Item 1: คนที่ไม่ได้นัดวันนี้สแกนไม่ผ่าน
@@ -184,19 +184,19 @@ async function main() {
   // Attempt 1
   const cA = await request(app).post('/api/kiosk/challenge').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-lockout-99' });
   await request(app).post('/api/kiosk/verify').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-lockout-99', nonce: cA.body.nonce, probe: failedProbe });
-  console.log(`[SCAN 1] Failed attempts: ${defaultKioskRepository.getFailedFaceAttempts('kiosk-lockout-99')}, Staff calls: ${defaultKioskRepository.getStaffCalls('kiosk-lockout-99').length}`);
+  console.log(`[SCAN 1] Failed attempts: ${defaultKioskRepository.getFailedFaceAttempts('kiosk-lockout-99')}, Staff calls: ${(await defaultKioskRepository.listStaffCalls('kiosk-lockout-99')).length}`);
 
   // Attempt 2
   const cB = await request(app).post('/api/kiosk/challenge').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-lockout-99' });
   await request(app).post('/api/kiosk/verify').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-lockout-99', nonce: cB.body.nonce, probe: failedProbe });
-  console.log(`[SCAN 2] Failed attempts: ${defaultKioskRepository.getFailedFaceAttempts('kiosk-lockout-99')}, Staff calls: ${defaultKioskRepository.getStaffCalls('kiosk-lockout-99').length}`);
+  console.log(`[SCAN 2] Failed attempts: ${defaultKioskRepository.getFailedFaceAttempts('kiosk-lockout-99')}, Staff calls: ${(await defaultKioskRepository.listStaffCalls('kiosk-lockout-99')).length}`);
 
   // Attempt 3: Triggers staff_calls
   const cC = await request(app).post('/api/kiosk/challenge').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-lockout-99' });
   await request(app).post('/api/kiosk/verify').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-lockout-99', nonce: cC.body.nonce, probe: failedProbe });
 
   const finalFailedAttempts = defaultKioskRepository.getFailedFaceAttempts('kiosk-lockout-99');
-  const staffCalls = defaultKioskRepository.getStaffCalls('kiosk-lockout-99');
+  const staffCalls = await defaultKioskRepository.listStaffCalls('kiosk-lockout-99');
   const capturedSse = sseEventCaptured as unknown as HospitalEvent | null;
   console.log(`[SCAN 3] Failed attempts: ${finalFailedAttempts}, Staff calls: ${staffCalls.length}`);
   console.log(`[STAFF CALL RECORD] ID: ${staffCalls[0]?.id}, Reason: ${staffCalls[0]?.reason}`);

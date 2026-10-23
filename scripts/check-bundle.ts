@@ -4,14 +4,17 @@ import { execSync } from 'child_process';
 
 /**
  * CI Bundle & Zero-Leakage Verification Script
- * Requirements (User Prompt Section F):
- * 1. Honest reporting: admin, pt, kiosk are React + Vite SPAs scheduled for Systems 10-12 (not yet started).
- * 2. Scan compiled bundle artifacts per app and report file counts. If an app has no bundle yet, report "ยังไม่มีอะไรให้สแกน".
- * 3. Script MUST fail if dist/ does not exist or dist/ is empty.
- * 4. Scan all compiled outputs and packages for forbidden Supabase tokens or client imports.
+ * Requirements (Master Prompt v3 & User Audit Group 1b Item 1b.9 & Group 2 Item 2.4):
+ * 1. Scan actual built Vite bundles per app (admin, pt, kiosk) and report exact file counts.
+ * 2. Script MUST fail if dist/ does not exist or dist/ is empty.
+ * 3. Scan frontend apps and packages for forbidden Supabase tokens or client imports.
+ * 4. Scan the ENTIRE dist/ and public/ trees for forbidden mocks and test strings:
+ *    "mock-face-detector", "จำลอง", "simulate", "mock-token",
+ *    "MockFaceDetector", "MockEmbeddingModel", "MockPadProvider"
+ *    If any are found, FAIL the build.
  */
 
-const FORBIDDEN_PATTERNS = [
+const FORBIDDEN_CLIENT_LEAKS = [
   /@supabase\/supabase-js/,
   /sb_secret_[a-zA-Z0-9_-]+/,
   /sb_publishable_[a-zA-Z0-9_-]+/,
@@ -19,12 +22,22 @@ const FORBIDDEN_PATTERNS = [
   /https:\/\/[a-z0-9]+\.supabase\.co/,
 ];
 
+const FORBIDDEN_MOCK_PATTERNS = [
+  /mock-face-detector/,
+  /MockFaceDetector/,
+  /MockEmbeddingModel/,
+  /MockPadProvider/,
+  /mock-token/,
+  /จำลอง/,
+  /simulate/i,
+];
+
 const DIST_DIR = path.resolve(process.cwd(), 'dist');
 
 const APPS = [
-  { name: 'apps/admin', system: 'ระบบ 10 (เว็บ ผอ.รพ.)' },
-  { name: 'apps/pt', system: 'ระบบ 11 (เว็บนักกายภาพ)' },
-  { name: 'apps/kiosk', system: 'ระบบ 12 (ตู้ Kiosk)' },
+  { name: 'apps/admin', dirName: 'admin', system: 'ระบบ 10 (เว็บ ผอ.รพ.)' },
+  { name: 'apps/pt', dirName: 'pt', system: 'ระบบ 11 (เว็บนักกายภาพ)' },
+  { name: 'apps/kiosk', dirName: 'kiosk', system: 'ระบบ 12 (ตู้ Kiosk)' },
 ];
 
 function buildIfRequested(): void {
@@ -34,20 +47,40 @@ function buildIfRequested(): void {
     return;
   }
 
-  console.log('>>> Building application via tsconfig.build.json...');
+  console.log('>>> Cleaning previous dist/ folder...');
+  if (fs.existsSync(DIST_DIR)) {
+    fs.rmSync(DIST_DIR, { recursive: true, force: true });
+  }
+
+  console.log('>>> 1. Building backend and packages via tsconfig.build.json...');
   try {
     execSync('npx tsc -p tsconfig.build.json', {
       cwd: process.cwd(),
       stdio: 'inherit',
     });
-    console.log('✓ Build completed successfully.\n');
+    console.log('✓ TypeScript build completed successfully.\n');
   } catch {
     console.error('❌ Build failed during compilation!');
     process.exit(1);
   }
+
+  console.log('>>> 2. Building Vite frontend apps (admin, pt, kiosk)...');
+  try {
+    execSync('npm run build:apps', {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+    });
+    console.log('✓ Vite build completed successfully.\n');
+  } catch {
+    console.error('❌ Vite build failed during compilation!');
+    process.exit(1);
+  }
 }
 
-function scanDirectoryForLeaks(dir: string): { violations: string[]; fileCount: number } {
+function scanDirectoryForPatterns(
+  dir: string,
+  patterns: RegExp[]
+): { violations: string[]; fileCount: number } {
   let violations: string[] = [];
   let fileCount = 0;
 
@@ -62,17 +95,19 @@ function scanDirectoryForLeaks(dir: string): { violations: string[]; fileCount: 
 
     if (entry.isDirectory()) {
       if (['node_modules', '.git'].includes(entry.name)) continue;
-      const sub = scanDirectoryForLeaks(fullPath);
+      const sub = scanDirectoryForPatterns(fullPath, patterns);
       violations = violations.concat(sub.violations);
       fileCount += sub.fileCount;
-    } else if (entry.isFile() && /\.(js|mjs|cjs|ts|tsx|html|json|map)$/.test(entry.name)) {
+    } else if (entry.isFile() && /\.(js|mjs|cjs|ts|tsx|html|css|json|map|d\.ts)$/.test(entry.name)) {
       if (entry.name === 'package-lock.json') continue;
       fileCount++;
       const content = fs.readFileSync(fullPath, 'utf8');
 
-      for (const pattern of FORBIDDEN_PATTERNS) {
+      for (const pattern of patterns) {
         if (pattern.test(content)) {
-          violations.push(`File ${path.relative(process.cwd(), fullPath)} matches forbidden pattern: ${pattern.toString()}`);
+          violations.push(
+            `File ${path.relative(process.cwd(), fullPath)} matches forbidden pattern: ${pattern.toString()}`
+          );
         }
       }
     }
@@ -86,7 +121,7 @@ function runCiBundleVerification(): void {
   console.log('DrTech.Care - Application Bundle & Zero-Leakage Audit');
   console.log('========================================================================\n');
 
-  // Step 1: Build (unless skipped to demonstrate failure)
+  // Step 1: Build (unless skipped)
   buildIfRequested();
 
   // Step 2: Strict verification of dist/ existence and non-emptiness
@@ -102,43 +137,58 @@ function runCiBundleVerification(): void {
   }
   console.log(`✓ dist/ directory verified (contains: ${distEntries.join(', ')})\n`);
 
-  // Step 3: Frontend Apps Status & Scan
-  console.log('>>> 1. Frontend Applications Status (Master Prompt v3 Section 10):');
+  let allViolations: string[] = [];
+
+  // Step 3: Frontend Apps Status & Client Leaks Scan in built Vite bundles
+  console.log('>>> 1. Frontend Applications Vite Bundle Audit (Item 1b.9):');
   for (const app of APPS) {
-    const _appSrcDir = path.resolve(process.cwd(), app.name, 'src');
-    const appDistDir = path.resolve(DIST_DIR, app.name);
+    const appDistDir = path.resolve(DIST_DIR, 'apps', app.dirName);
 
-    const hasViteConfig = fs.existsSync(path.resolve(process.cwd(), app.name, 'vite.config.ts'));
-    const isFullViteApp = hasViteConfig;
-
-    if (!isFullViteApp) {
-      console.log(`  - ${app.name}: ยังไม่มีอะไรให้สแกน (แอป React + Vite อยู่ใน${app.system} ซึ่งยังไม่เริ่ม)`);
+    if (!fs.existsSync(appDistDir)) {
+      console.log(`  - ${app.name} (${app.dirName}): ไม่พบโฟลเดอร์ผลลัพธ์ที่ ${appDistDir}`);
     } else {
-      const scan = scanDirectoryForLeaks(appDistDir);
-      console.log(`  - ${app.name}: สแกนแล้ว ${scan.fileCount} ไฟล์ (พบสิ่งผิดปกติ: ${scan.violations.length})`);
+      const scan = scanDirectoryForPatterns(appDistDir, [
+        ...FORBIDDEN_CLIENT_LEAKS,
+        ...FORBIDDEN_MOCK_PATTERNS,
+      ]);
+      console.log(`  - ${app.name} (${app.system}): สแกนแล้ว ${scan.fileCount} ไฟล์ (พบข้อผิดพลาด: ${scan.violations.length})`);
+      allViolations = allViolations.concat(scan.violations);
     }
   }
 
-  // Step 4: Scan compiled packages and API in dist/ for forbidden leaks
-  console.log('\n>>> 2. Scanning compiled artifacts in dist/ for zero-leakage compliance:');
+  // Step 4: Scan shared packages in dist/
   const packagesDist = path.resolve(DIST_DIR, 'packages');
-  const apiDist = path.resolve(DIST_DIR, 'apps/api');
-
-  let totalFiles = 0;
-  let allViolations: string[] = [];
-
   if (fs.existsSync(packagesDist)) {
-    const pkgScan = scanDirectoryForLeaks(packagesDist);
-    totalFiles += pkgScan.fileCount;
+    const pkgScan = scanDirectoryForPatterns(packagesDist, [
+      ...FORBIDDEN_CLIENT_LEAKS,
+      ...FORBIDDEN_MOCK_PATTERNS,
+    ]);
+    console.log(`  - dist/packages: สแกนแล้ว ${pkgScan.fileCount} ไฟล์ (พบข้อผิดพลาด: ${pkgScan.violations.length})`);
     allViolations = allViolations.concat(pkgScan.violations);
-    console.log(`  - dist/packages: สแกนแล้ว ${pkgScan.fileCount} ไฟล์`);
   }
 
-  if (fs.existsSync(apiDist)) {
-    const apiScan = scanDirectoryForLeaks(apiDist);
-    totalFiles += apiScan.fileCount;
-    console.log(`  - dist/apps/api: สแกนแล้ว ${apiScan.fileCount} ไฟล์`);
+  // Step 5: Scan copied public assets if present
+  console.log('\n>>> 2. Public Directory Static Assets Audit:');
+  const publicDir = path.resolve(process.cwd(), 'public');
+  if (fs.existsSync(publicDir)) {
+    for (const app of APPS) {
+      const appPublicDir = path.resolve(publicDir, app.dirName);
+      if (fs.existsSync(appPublicDir)) {
+        const pubScan = scanDirectoryForPatterns(appPublicDir, [
+          ...FORBIDDEN_CLIENT_LEAKS,
+          ...FORBIDDEN_MOCK_PATTERNS,
+        ]);
+        console.log(`  - public/${app.dirName}: สแกนแล้ว ${pubScan.fileCount} ไฟล์ (พบข้อผิดพลาด: ${pubScan.violations.length})`);
+        allViolations = allViolations.concat(pubScan.violations);
+      }
+    }
   }
+
+  // Step 6: Master Item 2.4 & 1b.9 - Scan ENTIRE dist/ tree
+  console.log('\n>>> 3. Scanning ENTIRE dist/ tree for forbidden strings (mock-face-detector, จำลอง, simulate, mock-token):');
+  const mockScan = scanDirectoryForPatterns(DIST_DIR, FORBIDDEN_MOCK_PATTERNS);
+  console.log(`  - dist/ (full recursive tree): สแกนแล้ว ${mockScan.fileCount} ไฟล์`);
+  allViolations = allViolations.concat(mockScan.violations);
 
   if (allViolations.length > 0) {
     console.error('\n❌ CRITICAL SECURITY VIOLATIONS DETECTED:');
@@ -147,8 +197,8 @@ function runCiBundleVerification(): void {
   }
 
   console.log('\n========================================================================');
-  console.log(`Summary: สแกน compiled files รวม ${totalFiles} ไฟล์`);
-  console.log('✓ PASS: Zero Supabase SDKs, tokens, or private credentials leaked in shared bundles.');
+  console.log(`Summary: สแกน compiled files ใน dist/ รวม ${mockScan.fileCount} ไฟล์`);
+  console.log('✓ PASS: Zero Supabase SDKs/secrets in client bundles AND Zero forbidden mock/test strings in dist/ & public/.');
   console.log('========================================================================\n');
 }
 

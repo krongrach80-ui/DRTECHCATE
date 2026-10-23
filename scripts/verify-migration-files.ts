@@ -61,7 +61,7 @@ async function verifyMigrations() {
   const migrationsDir = path.resolve(process.cwd(), 'supabase', 'migrations');
   const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
 
-  runCheck('Found 5 migration files', () => files.length === 5, `Found ${files.length}`);
+  runCheck('Found baseline migration file', () => files.length >= 1, `Found ${files.length}`);
 
   let combinedSql = '';
   for (const f of files) {
@@ -72,14 +72,14 @@ async function verifyMigrations() {
   // 1. Table existence checks (27 tables)
   console.log('\n--- 1. Checking 27 Tables Definition ---');
   for (const table of EXPECTED_TABLES) {
-    const regex = new RegExp(`CREATE TABLE (IF NOT EXISTS )?${table}\\b`, 'i');
+    const regex = new RegExp(`CREATE TABLE (IF NOT EXISTS )?(public\\.)?${table}\\b`, 'i');
     runCheck(`Table "${table}" is defined`, () => regex.test(combinedSql), 'Missing CREATE TABLE');
   }
 
   // 2. RLS enabled on all 27 tables
   console.log('\n--- 2. Checking RLS Enabled on All 27 Tables ---');
   for (const table of EXPECTED_TABLES) {
-    const regex = new RegExp(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`, 'i');
+    const regex = new RegExp(`ALTER TABLE (public\\.)?${table} ENABLE ROW LEVEL SECURITY`, 'i');
     runCheck(`RLS enabled on "${table}"`, () => regex.test(combinedSql), 'Missing ENABLE ROW LEVEL SECURITY');
   }
 

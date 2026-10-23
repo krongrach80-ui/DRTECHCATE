@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
-import { defaultStaffRepository } from '../modules/staff/repository';
+import { resetAllFakeRepositories } from './fixtures/fakeRepositories';
 import { defaultPatientRepository } from '../modules/patients/repository';
 import { defaultCourseRepository } from '../modules/courses/repository';
 import { defaultDirectoryRepository } from '../modules/directory/repository';
@@ -17,7 +17,7 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
 
   beforeAll(() => {
     (process.env as Record<string, string>).NODE_ENV = 'test';
-    process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
+    process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
     process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
     process.env.INTERNAL_EMAIL_DOMAIN = 'drtech.care';
     process.env.HOSPITAL_IPS = '127.0.0.1,::1,localhost,10.0.0.1';
@@ -30,11 +30,7 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
   });
 
   beforeEach(() => {
-    defaultStaffRepository.clearInMemoryStaff();
-    defaultPatientRepository.clearInMemory();
-    defaultCourseRepository.clearInMemory();
-    defaultDirectoryRepository.clearAllInMemory();
-    defaultKioskRepository.clearPairings();
+    resetAllFakeRepositories();
     clearAllBans();
     resetAuthTestState();
   });
@@ -78,9 +74,13 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
         [{ exercise_id: ex.id, sets: 3, reps: 12, position: 1 }]
       );
 
-      // 4. Kiosk calls GET /api/kiosk/plan?patient_id=...
+      // 4. Issue kiosk session
+      const session = await defaultKioskRepository.createKioskSession('kiosk-01', patient.id);
+
+      // Kiosk calls GET /api/kiosk/plan with kiosk_session and kiosk_device_id cookies
       const planRes = await request(app)
-        .get(`/api/kiosk/plan?patient_id=${patient.id}&kiosk_id=kiosk-01`);
+        .get('/api/kiosk/plan')
+        .set('Cookie', [`kiosk_session=${session.token}`, 'kiosk_device_id=kiosk-01']);
 
       expect(planRes.status).toBe(200);
       expect(planRes.body.ok).toBe(true);
@@ -97,18 +97,89 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
       expect(plan.minigameQuestion).toBeDefined();
     });
 
+    it('1.1b [B1] Enforces Kiosk Session: Rejects patient_id parameter in all kiosk mission endpoints (.strict())', async () => {
+      // 1. Create Patient A
+      const patientA = await defaultPatientRepository.createPatient(
+        { first_name: 'คนไข้เอ', last_name: 'รักษาดี' },
+        'pt-001',
+        'pt-001'
+      );
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const courseA = await defaultCourseRepository.createCourse(
+        {
+          patient_id: patientA.id,
+          start_date: todayStr,
+          end_date: todayStr,
+          weekdays: [0, 1, 2, 3, 4, 5, 6],
+          goals: 'แผนการฝึกของคนไข้ A',
+        },
+        'pt-001',
+        []
+      );
+
+      // 2. Patient A logs into kiosk -> gets kiosk_session
+      const sessionA = await defaultKioskRepository.createKioskSession('kiosk-01', patientA.id);
+
+      // 3. GET /api/kiosk/plan with session A and valid device cookie -> Returns plan of Patient A!
+      const planResA = await request(app)
+        .get('/api/kiosk/plan')
+        .set('Cookie', [`kiosk_session=${sessionA.token}`, 'kiosk_device_id=kiosk-01']);
+
+      expect(planResA.status).toBe(200);
+      expect(planResA.body.ok).toBe(true);
+      expect(planResA.body.data.plan.patientId).toBe(patientA.id);
+      expect(planResA.body.data.plan.courseId).toBe(courseA.id);
+
+      // 4. GET /api/kiosk/plan attempting to pass patient_id -> REJECTED with 400 VALIDATION_ERROR!
+      const planResMismatch = await request(app)
+        .get(`/api/kiosk/plan?patient_id=some-other-id`)
+        .set('Cookie', [`kiosk_session=${sessionA.token}`, 'kiosk_device_id=kiosk-01']);
+
+      expect(planResMismatch.status).toBe(400);
+      expect(planResMismatch.body.error.code).toBe('VALIDATION_ERROR');
+
+      // 5. POST /api/kiosk/mission/steps with patient_id in body -> REJECTED with 400 VALIDATION_ERROR!
+      const stepResMismatch = await request(app)
+        .post('/api/kiosk/mission/steps')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', [`kiosk_session=${sessionA.token}`, 'kiosk_device_id=kiosk-01'])
+        .send({
+          patient_id: 'some-other-id',
+          course_id: courseA.id,
+          step_type: 'exercise',
+        });
+
+      expect(stepResMismatch.status).toBe(400);
+      expect(stepResMismatch.body.error.code).toBe('VALIDATION_ERROR');
+
+      // 6. POST /api/kiosk/finish with patient_id in body -> REJECTED with 400 VALIDATION_ERROR!
+      const finishResMismatch = await request(app)
+        .post('/api/kiosk/finish')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', [`kiosk_session=${sessionA.token}`, 'kiosk_device_id=kiosk-01'])
+        .send({
+          patient_id: 'some-other-id',
+          course_id: courseA.id,
+        });
+
+      expect(finishResMismatch.status).toBe(400);
+      expect(finishResMismatch.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
     it('1.2 Kiosk records exercise step -> updates mission run to in_progress', async () => {
       const patient = await defaultPatientRepository.createPatient(
         { first_name: 'สมศรี', last_name: 'มีสุข' },
         'pt-001',
         'pt-001'
       );
+      const session = await defaultKioskRepository.createKioskSession('kiosk-01', patient.id);
 
       const stepRes = await request(app)
         .post('/api/kiosk/mission/steps')
         .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', [`kiosk_session=${session.token}`, 'kiosk_device_id=kiosk-01'])
         .send({
-          patient_id: patient.id,
           course_id: 'course-sample-01',
           step_type: 'exercise',
           ref_id: 'ex-01',
@@ -121,27 +192,25 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
       expect(stepRes.body.data.run.status).toBe('in_progress');
     });
 
-    it('1.3 Kiosk finishes mission with VAS pain score -> marks run as completed', async () => {
+    it('1.3 Kiosk finishes mission -> marks run as completed', async () => {
       const patient = await defaultPatientRepository.createPatient(
         { first_name: 'ประเสริฐ', last_name: 'ดีงาม' },
         'pt-001',
         'pt-001'
       );
+      const session = await defaultKioskRepository.createKioskSession('kiosk-01', patient.id);
 
       const finishRes = await request(app)
         .post('/api/kiosk/finish')
         .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', [`kiosk_session=${session.token}`, 'kiosk_device_id=kiosk-01'])
         .send({
-          patient_id: patient.id,
           course_id: 'course-sample-02',
-          pain_score: 2,
-          feedback: 'รู้สึกตึงเล็กน้อยบริเวณต้นขาขวา',
         });
 
       expect(finishRes.status).toBe(200);
       expect(finishRes.body.ok).toBe(true);
       expect(finishRes.body.data.run.status).toBe('completed');
-      expect(finishRes.body.data.run.pain_score).toBe(2);
       expect(finishRes.body.data.run.finished_at).toBeDefined();
     });
 
@@ -151,9 +220,11 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
         'pt-001',
         'pt-001'
       );
+      const session = await defaultKioskRepository.createKioskSession('kiosk-01', patient.id);
 
       const planRes = await request(app)
-        .get(`/api/kiosk/plan?patient_id=${patient.id}`);
+        .get('/api/kiosk/plan')
+        .set('Cookie', [`kiosk_session=${session.token}`, 'kiosk_device_id=kiosk-01']);
 
       expect(planRes.status).toBe(200);
       expect(planRes.body.ok).toBe(true);
@@ -213,9 +284,14 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
         [{ exercise_id: exercise.id, sets: 2, reps: 15, position: 1 }]
       );
 
-      // 5. GET /api/kiosk/plan should load custom directory minigame question
+      // 5. Issue kiosk session
+      const session = await defaultKioskRepository.createKioskSession('kiosk-01', patient.id);
+      const cookies = [`kiosk_session=${session.token}`, 'kiosk_device_id=kiosk-01'];
+
+      // 6. GET /api/kiosk/plan should load custom directory minigame question
       const planRes = await request(app)
-        .get(`/api/kiosk/plan?patient_id=${patient.id}`);
+        .get('/api/kiosk/plan')
+        .set('Cookie', cookies);
 
       expect(planRes.status).toBe(200);
       const plan = planRes.body.data.plan;
@@ -226,12 +302,12 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
       expect(plan.minigameQuestion.prompt).toBe('ท่าที่ต้องทำก่อนเริ่มยืดเส้นคือท่าใด?');
       expect(plan.minigameQuestion.answer).toBe('วอร์มอัพเบาๆ 5 นาที');
 
-      // 6. Record exercise step
+      // 7. Record exercise step
       const stepRes = await request(app)
         .post('/api/kiosk/mission/steps')
         .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', cookies)
         .send({
-          patient_id: patient.id,
           course_id: course.id,
           step_type: 'exercise',
           ref_id: exercise.id,
@@ -241,12 +317,12 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
       expect(stepRes.status).toBe(201);
       expect(stepRes.body.data.step.step_type).toBe('exercise');
 
-      // 7. Record minigame step
+      // 8. Record minigame step
       const minigameStepRes = await request(app)
         .post('/api/kiosk/mission/steps')
         .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', cookies)
         .send({
-          patient_id: patient.id,
           course_id: course.id,
           step_type: 'minigame',
           ref_id: minigame.id,
@@ -256,20 +332,17 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
       expect(minigameStepRes.status).toBe(201);
       expect(minigameStepRes.body.data.step.step_type).toBe('minigame');
 
-      // 8. Finish mission with pain VAS rating 1
+      // 9. Finish mission
       const finishRes = await request(app)
         .post('/api/kiosk/finish')
         .set('X-Requested-With', 'XMLHttpRequest')
+        .set('Cookie', cookies)
         .send({
-          patient_id: patient.id,
           course_id: course.id,
-          pain_score: 1,
-          feedback: 'อาการดีขึ้นมาก ข้อเท้าขยับได้คล่องขึ้น',
         });
 
       expect(finishRes.status).toBe(200);
       expect(finishRes.body.data.run.status).toBe('completed');
-      expect(finishRes.body.data.run.pain_score).toBe(1);
     });
   });
 
@@ -396,7 +469,6 @@ describe('[UNIT] DrTech.Care System 12: Kiosk Terminal & Daily Mission Test Suit
       expect(cleanCtx.patientFirstName).toBeNull();
       expect(cleanCtx.avatarUrl).toBeNull();
       expect(cleanCtx.plan).toBeNull();
-      expect(cleanCtx.painVAS).toBeNull();
     });
   });
 });

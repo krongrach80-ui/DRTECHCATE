@@ -1,9 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
-import { defaultStaffRepository } from '../modules/staff/repository';
-import { defaultPatientRepository } from '../modules/patients/repository';
-import { defaultDirectoryRepository } from '../modules/directory/repository';
+import { resetAllFakeRepositories } from './fixtures/fakeRepositories';
 import { defaultKioskRepository } from '../modules/kiosk/repository';
 import { resetAuthTestState } from '../middleware/authenticate';
 import { clearAllBans } from '../middleware/banCheck';
@@ -15,7 +13,7 @@ describe('[UNIT] DrTech.Care System 11: Physical Therapist Portal (apps/pt) Test
 
   beforeAll(() => {
     (process.env as Record<string, string>).NODE_ENV = 'test';
-    process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
+    process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
     process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
     process.env.INTERNAL_EMAIL_DOMAIN = 'drtech.care';
     process.env.HOSPITAL_IPS = '127.0.0.1,::1,localhost,10.0.0.1';
@@ -28,10 +26,7 @@ describe('[UNIT] DrTech.Care System 11: Physical Therapist Portal (apps/pt) Test
   });
 
   beforeEach(() => {
-    defaultStaffRepository.clearInMemoryStaff();
-    defaultPatientRepository.clearInMemory();
-    defaultDirectoryRepository.clearAllInMemory();
-    defaultKioskRepository.clearPairings();
+    resetAllFakeRepositories();
     clearAllBans();
     resetAuthTestState();
   });

@@ -75,13 +75,18 @@ async function runAnonRestSecurityTest() {
       };
       console.log(`  ✓ PASS: Positive control endpoint /auth/v1/settings returned 200 OK (Key is active & valid)`);
 
-      // REQUIREMENT 1: Assert disable_signup === true
+      // REQUIREMENT 1: Assert disable_signup === true (Item H12)
       if (settingsBody.disable_signup === true) {
         console.log(`  ✓ PASS: Settings assertion passed (disable_signup === true: public signup is strictly disabled)`);
         totalPassed++;
       } else {
         console.error(`  ✗ FAIL: Settings assertion failed! disable_signup is ${settingsBody.disable_signup}, expected true`);
+        console.error(`  🚨 ABORTING IMMEDIATELY: Public signup is NOT disabled. Refusing to send POST /auth/v1/signup to prevent phantom account creation.`);
         totalFailed++;
+        console.log('\n========================================================================');
+        console.log(`Summary: ${totalPassed} passed, ${totalFailed} failed (HALTED ON SAFETY GUARD)`);
+        console.log('========================================================================');
+        process.exit(1);
       }
 
       // REQUIREMENT 2: Assert external.anonymous_users is false (Zero unauthenticated/anonymous user creation)
@@ -95,6 +100,7 @@ async function runAnonRestSecurityTest() {
     } else {
       console.error(`  ✗ FAIL: Positive control endpoint failed! Status: ${posRes.status}`);
       totalFailed++;
+      process.exit(1);
     }
 
     // REQUIREMENT 1: Attempt POST /auth/v1/signup with anon key

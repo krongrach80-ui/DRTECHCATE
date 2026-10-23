@@ -22,10 +22,10 @@ async function main() {
 
   const app = createApp();
 
-  defaultCourseRepository.clearInMemory();
-  defaultPatientRepository.clearInMemory();
-  defaultDirectoryRepository.clearAllInMemory();
-  defaultStaffRepository.clearInMemoryStaff();
+  (defaultCourseRepository as any).clearInMemory?.();
+  (defaultPatientRepository as any).clearInMemory?.();
+  (defaultDirectoryRepository as any).clearAllInMemory?.();
+  (defaultStaffRepository as any).clearInMemoryStaff?.();
 
   // -------------------------------------------------------------------------
   // DoD Item 1: PT cannot create appointment/course for another PT's patient
@@ -82,7 +82,7 @@ async function main() {
   // DoD Item 2: Today appointments matches days_of_week and active date window
   // -------------------------------------------------------------------------
   console.log('--- TEST 2: Today Appointments (days_of_week & date window integrity) ---');
-  defaultCourseRepository.clearInMemory();
+  (defaultCourseRepository as any).clearInMemory?.();
 
   // Let reference date be Friday 2026-11-20 (Day of week = 5)
   const targetDate = '2026-11-20';

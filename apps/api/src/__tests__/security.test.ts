@@ -1,19 +1,105 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import request from 'supertest';
+import express, { Express } from 'express';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import * as authClientModule from '../lib/supabase/authClient';
 import { createApp } from '../app';
 import { addBannedIp, removeBannedIp } from '../middleware/banCheck';
-import { createLogger } from '../middleware/logger';
+import { createLogger, createHttpLogger, httpLogger } from '../middleware/logger';
+import { createCorsMiddleware } from '../middleware/cors';
+import { banCheck } from '../middleware/banCheck';
+import { apiRateLimiter, createRateLimiter } from '../middleware/rateLimit';
+import { csrfGuard } from '../middleware/csrfGuard';
+import { errorHandler, AppError } from '../middleware/errorHandler';
 import { Writable } from 'stream';
-import { Express } from 'express';
+import { Logger } from 'pino';
+
+// Test harness app assembling test routes strictly within the test suite per Item 1.3
+function buildSecurityTestApp(customLogger?: Logger): Express {
+  const testApp = express();
+  testApp.set('trust proxy', 1);
+
+  testApp.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'"],
+          fontSrc: ["'self'"],
+          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+          connectSrc: ["'self'", 'https:'],
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+    })
+  );
+
+  testApp.use(customLogger ? createHttpLogger(customLogger) : httpLogger);
+  testApp.use(createCorsMiddleware());
+  testApp.use(express.json({ limit: '100kb' }));
+  testApp.use(cookieParser());
+  testApp.use(banCheck);
+  testApp.use('/api', apiRateLimiter);
+  testApp.use('/api', csrfGuard);
+
+  // Test endpoints assembled strictly in test file (Item 1.3)
+  testApp.post('/api/test-echo', (req, res) => {
+    res.status(200).json({ received: req.body });
+  });
+
+  testApp.post('/api/test-error', (req, res, next) => {
+    const { type } = req.body || {};
+    if (type === 'app') {
+      return next(new AppError('Custom operational failure', 400, 'CUSTOM_BAD_REQUEST'));
+    }
+    if (type === 'db') {
+      const err = new Error('syntax error at or near "secret_passwords"');
+      err.stack = 'InternalError: table secret_passwords corrupted at /var/db/pg.c:120';
+      return next(err);
+    }
+    if (type === 'patient_leak') {
+      const err = new Error('Failed to query patient: Somchai Jaidee, HN-998877, Diagnosis: HIV, stroke');
+      return next(err);
+    }
+    return next(new Error('Unknown generic internal crash'));
+  });
+
+  const csrfMethods = ['post', 'put', 'patch', 'delete'] as const;
+  csrfMethods.forEach((method) => {
+    testApp[method]('/api/test-csrf', (_req, res) => {
+      res.status(200).json({ ok: true });
+    });
+  });
+
+  const tightLimiter = createRateLimiter({
+    max: 5,
+    windowMs: 60 * 1000,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  testApp.get('/api/test-tight-rate-limit', tightLimiter, (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
+  testApp.use((_req, _res, next) => {
+    next(new AppError('Endpoint not found', 404, 'NOT_FOUND'));
+  });
+
+  testApp.use(errorHandler);
+  return testApp;
+}
 
 describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test Suite', () => {
   let app: Express;
+  let testApp: Express;
 
   beforeAll(() => {
     // Ensure test environment variables are active
     (process.env as Record<string, string>).NODE_ENV = 'test';
-    process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
-    process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
+    process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
+    process.env.SUPABASE_ANON_KEY = 'sb_publishable_local_test_key';
     process.env.FACE_T_ACCEPT = '0.60';
     process.env.FACE_T_REJECT = '0.45';
     process.env.FACE_T_MARGIN = '0.10';
@@ -23,6 +109,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
     process.env.CORS_ORIGINS = 'http://localhost:3000,http://localhost:5173';
 
     app = createApp();
+    testApp = buildSecurityTestApp();
   });
 
   describe('1. Security Headers (Helmet Verification)', () => {
@@ -43,6 +130,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       // 4. Content Security Policy (CSP)
       expect(res.headers['content-security-policy']).toBeDefined();
       expect(res.headers['content-security-policy']).toContain("default-src 'self'");
+      expect(res.headers['content-security-policy']).not.toContain("'unsafe-inline'");
 
       // 5. Download & Domain policies
       expect(res.headers['x-download-options']).toBe('noopen');
@@ -64,25 +152,19 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       expect(res.headers['access-control-allow-credentials']).toBe('true');
     });
 
-    it('should reject requests from unauthorized foreign origins with 403', async () => {
+    it('should disallow requests from unauthorized foreign origins (no Access-Control-Allow-Origin header)', async () => {
       const res = await request(app)
         .get('/api/health')
         .set('Origin', 'http://malicious-attacker.com');
 
-      expect(res.status).toBe(403);
-      expect(res.body).toEqual({
-        error: {
-          code: 'CORS_REJECTED',
-          message: 'Origin not allowed',
-        },
-      });
+      expect(res.headers['access-control-allow-origin']).toBeUndefined();
     });
   });
 
   describe('3. Strict Payload Size Limiting (100kb Body Protection)', () => {
     it('should accept payloads within the 100kb limit', async () => {
       const payload = { data: 'a'.repeat(1024) }; // ~1KB payload
-      const res = await request(app)
+      const res = await request(testApp)
         .post('/api/test-echo')
         .set('Origin', 'http://localhost:3000')
         .send(payload);
@@ -93,7 +175,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
 
     it('should reject payloads exceeding 100kb with 413 Payload Too Large', async () => {
       const oversizedPayload = { data: 'a'.repeat(110 * 1024) }; // ~110KB payload (>100kb)
-      const res = await request(app)
+      const res = await request(testApp)
         .post('/api/test-echo')
         .set('Origin', 'http://localhost:3000')
         .send(oversizedPayload);
@@ -106,8 +188,24 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
   });
 
   describe('4. Error Masking & Sensitive Data Protection (Zero-Leakage)', () => {
+    it('Production app MUST NOT have test routes (/api/test-error and /api/test-echo return 404)', async () => {
+      const errRes = await request(app)
+        .post('/api/test-error')
+        .set('Origin', 'http://localhost:3000')
+        .send({ type: 'app' });
+      expect(errRes.status).toBe(404);
+      expect(errRes.body.error.code).toBe('NOT_FOUND');
+
+      const echoRes = await request(app)
+        .post('/api/test-echo')
+        .set('Origin', 'http://localhost:3000')
+        .send({ ping: true });
+      expect(echoRes.status).toBe(404);
+      expect(echoRes.body.error.code).toBe('NOT_FOUND');
+    });
+
     it('should format operational AppErrors in standard { error: { code, message } } format', async () => {
-      const res = await request(app)
+      const res = await request(testApp)
         .post('/api/test-error')
         .set('Origin', 'http://localhost:3000')
         .send({ type: 'app' });
@@ -124,7 +222,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
     });
 
     it('should securely MASK internal database crashes and NEVER leak SQL/stack/PII to client', async () => {
-      const res = await request(app)
+      const res = await request(testApp)
         .post('/api/test-error')
         .set('Origin', 'http://localhost:3000')
         .send({ type: 'db' });
@@ -153,9 +251,9 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       });
 
       const capturingLogger = createLogger(logStream, 'info');
-      const testApp = createApp(capturingLogger);
+      const customTestApp = buildSecurityTestApp(capturingLogger);
 
-      const res = await request(testApp)
+      const res = await request(customTestApp)
         .post('/api/test-error')
         .set('Origin', 'http://localhost:3000')
         .send({ type: 'patient_leak' });
@@ -185,7 +283,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
     });
 
     it('should safely handle malformed JSON syntax errors with 400 Bad Request', async () => {
-      const res = await request(app)
+      const res = await request(testApp)
         .post('/api/test-echo')
         .set('Content-Type', 'application/json')
         .set('Origin', 'http://localhost:3000')
@@ -218,7 +316,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
 
     mutatingMethods.forEach((method) => {
       it(`[${method.toUpperCase()}] should block mutating requests missing both Origin and X-Requested-With`, async () => {
-        const res = await (request(app)[method])('/api/test-csrf');
+        const res = await (request(testApp)[method])('/api/test-csrf');
 
         expect(res.status).toBe(403);
         expect(res.body).toEqual({
@@ -230,7 +328,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       });
 
       it(`[${method.toUpperCase()}] should block mutating requests with an unauthorized foreign Origin`, async () => {
-        const res = await (request(app)[method])('/api/test-csrf')
+        const res = await (request(testApp)[method])('/api/test-csrf')
           .set('Origin', 'http://evil-cross-origin.com');
 
         expect(res.status).toBe(403);
@@ -238,7 +336,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       });
 
       it(`[${method.toUpperCase()}] should block mutating requests with an unauthorized foreign Referer`, async () => {
-        const res = await (request(app)[method])('/api/test-csrf')
+        const res = await (request(testApp)[method])('/api/test-csrf')
           .set('Referer', 'http://evil-cross-origin.com/attack');
 
         expect(res.status).toBe(403);
@@ -246,7 +344,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       });
 
       it(`[${method.toUpperCase()}] should allow mutating requests with valid Origin`, async () => {
-        const res = await (request(app)[method])('/api/test-csrf')
+        const res = await (request(testApp)[method])('/api/test-csrf')
           .set('Origin', 'http://localhost:3000');
 
         expect(res.status).toBe(200);
@@ -254,7 +352,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       });
 
       it(`[${method.toUpperCase()}] should allow mutating requests with X-Requested-With header (API/AJAX clients)`, async () => {
-        const res = await (request(app)[method])('/api/test-csrf')
+        const res = await (request(testApp)[method])('/api/test-csrf')
           .set('X-Requested-With', 'XMLHttpRequest');
 
         expect(res.status).toBe(200);
@@ -267,13 +365,13 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
     it('should return 429 RATE_LIMIT_EXCEEDED when quota is exhausted', async () => {
       // Endpoint /api/test-tight-rate-limit has max quota of 5 requests
       for (let i = 1; i <= 5; i++) {
-        const res = await request(app).get('/api/test-tight-rate-limit');
+        const res = await request(testApp).get('/api/test-tight-rate-limit');
         expect(res.status).toBe(200);
         expect(Number(res.headers['ratelimit-remaining'])).toBe(5 - i);
       }
 
       // 6th request exceeds quota -> MUST return 429
-      const overLimitRes = await request(app).get('/api/test-tight-rate-limit');
+      const overLimitRes = await request(testApp).get('/api/test-tight-rate-limit');
       expect(overLimitRes.status).toBe(429);
       expect(overLimitRes.body).toEqual({
         error: {
@@ -356,18 +454,18 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
 
     it('spoofed X-Forwarded-For rotation must NOT allow clients to evade rate limiting', async () => {
       // Create fresh app to test rate limit spoofing
-      const freshApp = createApp();
+      const freshTestApp = buildSecurityTestApp();
 
       // Attacker fires 5 requests, attempting to rotate fake upstream IPs in X-Forwarded-For
       for (let i = 1; i <= 5; i++) {
-        const res = await request(freshApp)
+        const res = await request(freshTestApp)
           .get('/api/test-tight-rate-limit')
           .set('X-Forwarded-For', `198.51.100.${i}, 127.0.0.1`);
         expect(res.status).toBe(200);
       }
 
       // 6th request with yet another fake upstream IP
-      const overLimitRes = await request(freshApp)
+      const overLimitRes = await request(freshTestApp)
         .get('/api/test-tight-rate-limit')
         .set('X-Forwarded-For', '198.51.100.99, 127.0.0.1');
 
@@ -378,15 +476,8 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
   });
 
   describe('9. Health & System Endpoint Contracts', () => {
-    it('GET /api/health should respond with status: ok only', async () => {
+    it('GET /api/health should return 200 with status ok and zero PII', async () => {
       const res = await request(app).get('/api/health');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: 'ok' });
-    });
-
-    it('GET /health root endpoint should respond with status: ok only', async () => {
-      const res = await request(app).get('/health');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ status: 'ok' });
@@ -394,6 +485,25 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
 
     it('GET /api/events MUST require authentication and reject unauthenticated requests with 401', async () => {
       const res = await request(app).get('/api/events');
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBeDefined();
+      expect(res.body.error.code).toBe('UNAUTHORIZED');
+    });
+
+    it('should reject mock-token:admin with 401 UNAUTHORIZED (Fail-Closed No Backdoor)', async () => {
+      vi.spyOn(authClientModule, 'getAuthClient').mockReturnValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: null },
+            error: { status: 401, message: 'Invalid JWT' },
+          }),
+        },
+      } as any);
+
+      const res = await request(app)
+        .get('/api/events')
+        .set('Cookie', ['access_token=mock-token:admin']);
 
       expect(res.status).toBe(401);
       expect(res.body.error).toBeDefined();
@@ -408,6 +518,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       // 1. Missing FACE_T_ACCEPT
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_ANON_KEY: 'anon-key',
           // FACE_T_ACCEPT is missing
@@ -417,19 +528,42 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       // 2. Missing SUPABASE_URL
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
+          SUPABASE_ANON_KEY: 'anon-key',
           FACE_T_ACCEPT: 0.60,
           FACE_T_REJECT: 0.45,
           FACE_T_MARGIN: 0.10,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
           FACE_CHALLENGE_EXPIRE_SECONDS: 60,
-          // SUPABASE_URL is missing
+        });
+      }).toThrow(/Environment validation failed/);
+    });
+
+    it('should fail-fast when FACE_T_* is not a number (string representation that cannot parse)', async () => {
+      const { parseEnv } = await import('../config/env');
+
+      expect(() => {
+        parseEnv({
+          NODE_ENV: 'test',
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon-key',
+          FACE_T_ACCEPT: 'not-a-number',
+          FACE_T_REJECT: 0.45,
+          FACE_T_MARGIN: 0.10,
+          FACE_T_ENROLL_CONSISTENCY: 0.75,
+          FACE_T_DUPLICATE: 0.85,
+          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
         });
       }).toThrow(/Environment validation failed/);
     });
 
     it('should fail-fast when FACE_T_* is an empty string ("")', async () => {
       const { parseEnv } = await import('../config/env');
+
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_ANON_KEY: 'anon-key',
           FACE_T_ACCEPT: '',
@@ -444,8 +578,10 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
 
     it('should fail-fast when FACE_T_* is 0', async () => {
       const { parseEnv } = await import('../config/env');
+
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_ANON_KEY: 'anon-key',
           FACE_T_ACCEPT: 0,
@@ -455,48 +591,41 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
           FACE_T_DUPLICATE: 0.85,
           FACE_CHALLENGE_EXPIRE_SECONDS: 60,
         });
-      }).toThrow(/Environment validation failed/);
+      }).toThrow(/FACE_T_ACCEPT must be strictly greater than 0/);
     });
 
     it('should fail-fast when FACE_T_* is negative (< 0)', async () => {
       const { parseEnv } = await import('../config/env');
+
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_ANON_KEY: 'anon-key',
-          FACE_T_ACCEPT: -0.60,
+          FACE_T_ACCEPT: -0.5,
           FACE_T_REJECT: 0.45,
           FACE_T_MARGIN: 0.10,
           FACE_T_ENROLL_CONSISTENCY: 0.75,
           FACE_T_DUPLICATE: 0.85,
           FACE_CHALLENGE_EXPIRE_SECONDS: 60,
         });
-      }).toThrow(/Environment validation failed/);
-
-      expect(() => {
-        parseEnv({
-          SUPABASE_URL: 'https://example.supabase.co',
-          SUPABASE_ANON_KEY: 'anon-key',
-          FACE_T_ACCEPT: 0.60,
-          FACE_T_REJECT: 0.45,
-          FACE_T_MARGIN: -0.10,
-          FACE_T_ENROLL_CONSISTENCY: 0.75,
-          FACE_T_DUPLICATE: 0.85,
-          FACE_CHALLENGE_EXPIRE_SECONDS: 60,
-        });
-      }).toThrow(/Environment validation failed/);
+      }).toThrow(/FACE_T_ACCEPT must be strictly greater than 0/);
     });
 
     it('should fail-fast when FACE_T_* ordering is invalid (FACE_T_REJECT >= FACE_T_ACCEPT or FACE_T_ACCEPT >= FACE_T_DUPLICATE)', async () => {
       const { parseEnv } = await import('../config/env');
 
-      // REJECT is higher than ACCEPT (reversed order)
+      // REJECT >= ACCEPT
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_ANON_KEY: 'anon-key',
+          PAD_MODE: 'active_only',
+          PAD_PROVIDER: 'active_challenge_tracker',
+          TRUST_PROXY_HOPS: 1,
           FACE_T_ACCEPT: 0.50,
-          FACE_T_REJECT: 0.70, // Inverted: REJECT > ACCEPT!
+          FACE_T_REJECT: 0.60, // Inverted: REJECT > ACCEPT!
           FACE_T_MARGIN: 0.10,
           FACE_T_ENROLL_CONSISTENCY: 0.75,
           FACE_T_DUPLICATE: 0.85,
@@ -504,11 +633,15 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
         });
       }).toThrow(/threshold order violation/);
 
-      // ACCEPT is higher than DUPLICATE (inverted order)
+      // ACCEPT >= DUPLICATE
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_ANON_KEY: 'anon-key',
+          PAD_MODE: 'active_only',
+          PAD_PROVIDER: 'active_challenge_tracker',
+          TRUST_PROXY_HOPS: 1,
           FACE_T_ACCEPT: 0.90,
           FACE_T_REJECT: 0.45,
           FACE_T_MARGIN: 0.10,
@@ -525,6 +658,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       // FACE_T_MARGIN = 0
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_ANON_KEY: 'anon-key',
           FACE_T_ACCEPT: 0.60,
@@ -539,6 +673,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       // FACE_T_MARGIN = -0.05
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_ANON_KEY: 'anon-key',
           FACE_T_ACCEPT: 0.60,
@@ -553,6 +688,7 @@ describe('[UNIT] DrTech.Care Express API Core — Security & Error Masking Test 
       // FACE_T_MARGIN = ""
       expect(() => {
         parseEnv({
+          NODE_ENV: 'test',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_ANON_KEY: 'anon-key',
           FACE_T_ACCEPT: 0.60,

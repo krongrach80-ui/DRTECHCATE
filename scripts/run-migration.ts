@@ -14,6 +14,13 @@ if (fs.existsSync(envLocalPath)) {
 }
 
 async function runMigrations() {
+  const isConfirmed = process.argv.includes('--confirm-migrate');
+  if (!isConfirmed) {
+    console.error('SAFETY GUARD: Executing database migrations requires explicit confirmation flag: --confirm-migrate');
+    console.error('Usage: tsx scripts/run-migration.ts --confirm-migrate\n');
+    process.exit(1);
+  }
+
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {

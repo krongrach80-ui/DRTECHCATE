@@ -19,7 +19,7 @@ import { resetAuthTestState } from '../apps/api/src/middleware/authenticate';
 
 async function main() {
   (process.env as Record<string, string>).NODE_ENV = 'test';
-  process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
+  process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
   process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
   process.env.INTERNAL_EMAIL_DOMAIN = 'drtech.care';
 
@@ -29,10 +29,10 @@ async function main() {
 
   const app = createApp();
 
-  defaultRecordsRepository.clearInMemory();
-  defaultPatientRepository.clearInMemory();
-  defaultDirectoryRepository.clearAllInMemory();
-  defaultAuditRepository.clearInMemoryLogs();
+  (defaultRecordsRepository as any).clearInMemory?.();
+  (defaultPatientRepository as any).clearInMemory?.();
+  (defaultDirectoryRepository as any).clearAllInMemory?.();
+  (defaultAuditRepository as any).clearInMemoryLogs?.();
   resetAuthTestState();
 
   // -------------------------------------------------------------------------

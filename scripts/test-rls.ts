@@ -63,7 +63,7 @@ async function runRlsTests() {
       'face_templates',
       'kiosk_devices',
       'audit_logs',
-      'banned_ips',
+      'bans',
     ];
 
     const tablesRes = await client.query(`
@@ -77,7 +77,7 @@ async function runRlsTests() {
       assert(foundTables.includes(t), `Table '${t}' exists in database`, `Table ${t} not found`);
     }
 
-    // 2. Verify pgvector extension and 128-dim embedding column
+    // 2. Verify pgvector extension and 512-dim embedding column
     const vectorRes = await client.query(`
       SELECT udt_name, character_maximum_length 
       FROM information_schema.columns 

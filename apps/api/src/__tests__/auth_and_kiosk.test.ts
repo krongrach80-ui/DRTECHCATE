@@ -4,7 +4,8 @@ import crypto from 'crypto';
 import express, { Express, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
 import { KioskService } from '../modules/kiosk/service';
-import { KioskRepository } from '../modules/kiosk/repository';
+import { IKioskRepository } from '../modules/kiosk/repository';
+import { currentFakeKioskRepo } from './fixtures/fakeRepositories';
 import { AuthService, AuthSignInFn, AuthRefreshFn } from '../modules/auth/service';
 import { AuthRepository } from '../modules/auth/repository';
 import { AuthController } from '../modules/auth/controller';
@@ -22,19 +23,18 @@ describe('[UNIT] DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Te
 
   beforeAll(() => {
     (process.env as Record<string, string>).NODE_ENV = 'test';
-    process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
-    process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
     process.env.INTERNAL_EMAIL_DOMAIN = 'clinic.internal';
     process.env.KIOSK_PAIRING_SECRET = testPairingSecret;
   });
 
   describe('1. Kiosk Pairing Security & DB-Backed Constraints', () => {
-    let kioskRepo: KioskRepository;
+    let kioskRepo: IKioskRepository;
     let kioskService: KioskService;
     let kioskApp: Express;
 
     beforeEach(() => {
-      kioskRepo = new KioskRepository();
+      kioskRepo = currentFakeKioskRepo;
+      kioskRepo.clearPairings();
       kioskService = new KioskService(kioskRepo, testPairingSecret);
 
       kioskApp = express();
@@ -492,7 +492,7 @@ describe('[UNIT] DrTech.Care System 3: Auth, Session & Kiosk Pairing Complete Te
         expect(cookieHeader).toContain('Secure');
         expect(cookieHeader).toContain('Path=/api/auth');
       } finally {
-        (process.env as Record<string, string>).NODE_ENV = prevEnv;
+        (process.env as Record<string, string | undefined>).NODE_ENV = prevEnv;
       }
     });
 

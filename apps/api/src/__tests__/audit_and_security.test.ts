@@ -11,7 +11,7 @@ describe('[UNIT] DrTech.Care System 4: Audit & Security Complete Test Suite', ()
 
   beforeAll(() => {
     (process.env as Record<string, string>).NODE_ENV = 'test';
-    process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
+    process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
     process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
     process.env.FACE_T_ACCEPT = '0.60';
     process.env.FACE_T_REJECT = '0.45';

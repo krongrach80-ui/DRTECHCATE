@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
-import { defaultRecordsRepository } from '../modules/records/repository';
+import { resetAllFakeRepositories } from './fixtures/fakeRepositories';
 import { defaultPatientRepository } from '../modules/patients/repository';
 import { defaultDirectoryRepository } from '../modules/directory/repository';
 import { defaultAuditRepository } from '../modules/audit/repository';
+import { defaultRecordsRepository } from '../modules/records/repository';
 import { resetAuthTestState } from '../middleware/authenticate';
 
 describe('[UNIT] DrTech.Care System 9: Clinical Records (Notes & Versioned Treatment Results)', () => {
@@ -12,16 +13,13 @@ describe('[UNIT] DrTech.Care System 9: Clinical Records (Notes & Versioned Treat
 
   beforeAll(() => {
     (process.env as Record<string, string>).NODE_ENV = 'test';
-    process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
+    process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
     process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
     process.env.INTERNAL_EMAIL_DOMAIN = 'drtech.care';
   });
 
   beforeEach(() => {
-    defaultRecordsRepository.clearInMemory();
-    defaultPatientRepository.clearInMemory();
-    defaultDirectoryRepository.clearAllInMemory();
-    defaultAuditRepository.clearInMemoryLogs();
+    resetAllFakeRepositories();
     resetAuthTestState();
   });
 
@@ -141,12 +139,12 @@ describe('[UNIT] DrTech.Care System 9: Clinical Records (Notes & Versioned Treat
 
       // Check audit logs
       const { logs } = await defaultAuditRepository.query({ entity: 'patients', page: 1, limit: 50 });
-      const readAudit = logs.find((l) => l.action === 'READ_MEDICAL_NOTES');
+      const readAudit = logs.find((l: any) => l.action === 'READ_MEDICAL_NOTES');
       expect(readAudit).toBeDefined();
       expect(readAudit?.actor_id).toBe('pt-001');
 
       const { logs: noteLogs } = await defaultAuditRepository.query({ entity: 'medical_notes', page: 1, limit: 50 });
-      const createAudit = noteLogs.find((l) => l.action === 'CREATE_MEDICAL_NOTE');
+      const createAudit = noteLogs.find((l: any) => l.action === 'CREATE_MEDICAL_NOTE');
       expect(createAudit).toBeDefined();
     });
   });

@@ -3,8 +3,15 @@ import { audit } from '../apps/api/src/modules/audit';
 import http from 'http';
 
 async function main() {
+  const isConfirmed = process.argv.includes('--confirm-live-write');
+  if (!isConfirmed) {
+    console.error('SAFETY GUARD: test-system4-live writes audit logs to database. Requires explicit confirmation flag: --confirm-live-write');
+    console.error('Usage: tsx tests/scripts/test-system4-live.ts --confirm-live-write\n');
+    process.exit(1);
+  }
+
   (process.env as Record<string, string>).NODE_ENV = 'test';
-  process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
+  process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
   process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
   process.env.FACE_T_ACCEPT = '0.60';
   process.env.FACE_T_REJECT = '0.45';

@@ -1,10 +1,13 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
-import { defaultKioskRepository } from '../modules/kiosk/repository';
-import { defaultCourseRepository } from '../modules/courses/repository';
+import * as adminClientModule from '../lib/supabase/adminClient';
+import { resetAllFakeRepositories } from './fixtures/fakeRepositories';
 import { defaultPatientRepository } from '../modules/patients/repository';
+import { defaultCourseRepository } from '../modules/courses/repository';
+import { defaultKioskRepository } from '../modules/kiosk/repository';
 import { hospitalEventBus, HospitalEvent } from '../modules/events/routes';
+import { resetCachedEnv } from '../config/env';
 import {
   l2Normalize,
   averageAndNormalize,
@@ -13,19 +16,182 @@ import {
   FaceQualityChecker,
   FaceAligner,
   CameraManager,
-  MockPadProvider,
   FaceFlowManager,
+} from '../../../../packages/face-client/src/index';
+import {
+  MockPadProvider,
   MockFaceDetector,
   MockEmbeddingModel,
-} from '../../../../packages/face-client/src/index';
+} from '../../../../packages/face-client/test/mocks';
 
 describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suite', () => {
   const app = createApp();
 
+  const mockChallenges = new Map<string, any>();
+  const mockTemplates: { id: string; patient_id: string; vector: number[]; active: boolean; created_at: string }[] = [];
+  const mockStaffCalls: any[] = [];
+
+  function createMockSupabaseClient() {
+    return {
+      from: (table: string) => {
+        if (table === 'face_challenges') {
+          return {
+            insert: (record: any) => {
+              mockChallenges.set(record.nonce, {
+                ...record,
+                used_at: null,
+                created_at: new Date().toISOString(),
+              });
+              return Promise.resolve({ data: record, error: null });
+            },
+            select: () => ({
+              eq: (_col: string, val: string) => ({
+                maybeSingle: () => {
+                  const item = mockChallenges.get(val);
+                  return Promise.resolve({ data: item || null, error: null });
+                },
+              }),
+            }),
+            update: (updates: any) => ({
+              eq: (_col: string, val: string) => {
+                const item = mockChallenges.get(val);
+                if (item) {
+                  Object.assign(item, updates);
+                }
+                return Promise.resolve({ data: item, error: null });
+              },
+            }),
+          };
+        }
+
+        if (table === 'face_templates') {
+          return {
+            insert: (record: any) => {
+              let parsedVector: number[] = [];
+              if (record.embedding) {
+                if (typeof record.embedding === 'string') {
+                  try {
+                    parsedVector = JSON.parse(record.embedding);
+                  } catch {
+                    parsedVector = [];
+                  }
+                } else if (Array.isArray(record.embedding)) {
+                  parsedVector = record.embedding;
+                }
+              } else if (record.vector) {
+                parsedVector = record.vector;
+              }
+              const row = {
+                id: 'tmpl-' + Math.random().toString(36).substring(2, 9),
+                patient_id: record.patient_id,
+                vector: parsedVector,
+                active: record.active ?? true,
+                created_at: new Date().toISOString(),
+              };
+              mockTemplates.push(row);
+              return Promise.resolve({ data: row, error: null });
+            },
+            select: () => ({
+              eq: () => ({
+                in: (_col: string, ids: string[]) => {
+                  const filtered = mockTemplates
+                    .filter((t) => t.active && ids.includes(t.patient_id))
+                    .map((t) => ({ patient_id: t.patient_id, vector: t.vector }));
+                  return Promise.resolve({ data: filtered, error: null });
+                },
+              }),
+            }),
+          };
+        }
+
+        if (table === 'staff_calls') {
+          return {
+            insert: (record: any) => {
+              const row = {
+                id: 'sc-' + Math.random().toString(36).substring(2, 9),
+                ...record,
+                created_at: new Date().toISOString(),
+                handled_by: null,
+                handled_at: null,
+              };
+              mockStaffCalls.push(row);
+              return {
+                select: () => ({
+                  single: () => Promise.resolve({ data: row, error: null }),
+                }),
+                then: (resolve: any) => resolve({ data: row, error: null }),
+              };
+            },
+            select: () => {
+              let filtered = [...mockStaffCalls];
+              const chain: any = {
+                eq: (col: string, val: any) => {
+                  filtered = filtered.filter((s) => s[col] === val);
+                  return chain;
+                },
+                order: () => chain,
+                limit: (n: number) => {
+                  filtered = filtered.slice(0, n);
+                  return chain;
+                },
+                then: (resolve: any) => resolve({ data: filtered, error: null }),
+              };
+              return chain;
+            },
+            update: (updates: any) => ({
+              eq: (_col: string, val: string) => {
+                const item = mockStaffCalls.find((sc) => sc.id === val);
+                if (item) Object.assign(item, updates);
+                return Promise.resolve({ data: item, error: null });
+              },
+            }),
+          };
+        }
+
+        // Generic fallback for any other table queries in test
+        return {
+          insert: (rec: any) => Promise.resolve({ data: rec, error: null }),
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () => Promise.resolve({ data: null, error: null }),
+              single: () => Promise.resolve({ data: null, error: null }),
+            }),
+          }),
+          update: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
+        };
+      },
+      rpc: (fn: string, params: any) => {
+        if (fn === 'match_face_candidates') {
+          const candidateIds: string[] = params.candidate_ids || params.candidate_patient_ids || [];
+          let probeVec: number[] = [];
+          if (Array.isArray(params.probe)) {
+            probeVec = params.probe;
+          } else if (typeof params.probe === 'string') {
+            try {
+              probeVec = JSON.parse(params.probe);
+            } catch {
+              probeVec = [];
+            }
+          }
+          const candidates = mockTemplates
+            .filter((t) => t.active && candidateIds.includes(t.patient_id))
+            .map((t) => ({
+              patient_id: t.patient_id,
+              score: cosineSimilarity(t.vector, probeVec),
+            }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, params.k || 10);
+          return Promise.resolve({ data: candidates, error: null });
+        }
+        return Promise.resolve({ data: [], error: null });
+      },
+    } as any;
+  }
+
   beforeAll(() => {
     (process.env as Record<string, string>).NODE_ENV = 'test';
-    process.env.SUPABASE_URL = 'https://mctegvnrvmglbibuuczi.supabase.co';
-    process.env.SUPABASE_ANON_KEY = 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I';
+    process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
+    process.env.SUPABASE_ANON_KEY = 'sb_publishable_local_test_key';
     process.env.INTERNAL_EMAIL_DOMAIN = 'drtech.care';
     process.env.FACE_T_ACCEPT = '0.60';
     process.env.FACE_T_REJECT = '0.45';
@@ -33,12 +199,15 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
     process.env.FACE_T_ENROLL_CONSISTENCY = '0.75';
     process.env.FACE_T_DUPLICATE = '0.85';
     process.env.FACE_CHALLENGE_EXPIRE_SECONDS = '60';
+    process.env.PAD_PROVIDER = 'active_plus_passive';
   });
 
   beforeEach(() => {
-    defaultKioskRepository.clearPairings();
-    defaultCourseRepository.clearInMemory();
-    defaultPatientRepository.clearInMemory();
+    mockChallenges.clear();
+    mockTemplates.length = 0;
+    mockStaffCalls.length = 0;
+    vi.spyOn(adminClientModule, 'getAdminClient').mockReturnValue(createMockSupabaseClient());
+    resetAllFakeRepositories();
   });
 
   // =========================================================================
@@ -363,13 +532,13 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
         const c1 = await request(app).post('/api/kiosk/challenge').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-002' });
         await request(app).post('/api/kiosk/verify').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-002', nonce: c1.body.nonce, probe: dummyProbe });
         expect(defaultKioskRepository.getFailedFaceAttempts('kiosk-002')).toBe(1);
-        expect(defaultKioskRepository.getStaffCalls('kiosk-002').length).toBe(0);
+        expect((await defaultKioskRepository.listStaffCalls('kiosk-002')).length).toBe(0);
 
         // Attempt 2: Fail
         const c2 = await request(app).post('/api/kiosk/challenge').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-002' });
         await request(app).post('/api/kiosk/verify').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-002', nonce: c2.body.nonce, probe: dummyProbe });
         expect(defaultKioskRepository.getFailedFaceAttempts('kiosk-002')).toBe(2);
-        expect(defaultKioskRepository.getStaffCalls('kiosk-002').length).toBe(0);
+        expect((await defaultKioskRepository.listStaffCalls('kiosk-002')).length).toBe(0);
 
         // Attempt 3: Fail -> Triggers staff call automatically (DoD 3)
         const c3 = await request(app).post('/api/kiosk/challenge').set('X-Requested-With', 'XMLHttpRequest').send({ kiosk_id: 'kiosk-002' });
@@ -377,7 +546,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
         expect(defaultKioskRepository.getFailedFaceAttempts('kiosk-002')).toBe(3);
 
         // Assert a real record exists in staff_calls
-        const staffCalls = defaultKioskRepository.getStaffCalls('kiosk-002');
+        const staffCalls = await defaultKioskRepository.listStaffCalls('kiosk-002');
         expect(staffCalls.length).toBeGreaterThanOrEqual(1);
         expect(staffCalls[0].kiosk_id).toBe('kiosk-002');
         expect(staffCalls[0].reason).toContain('Excessive failed face verification');
@@ -615,6 +784,100 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
       expect(result.probe.length).toBe(512);
       expect(result.liveness_score).toBe(0.98);
       expect(result.nonce).toBe('test-nonce-123');
+    });
+  });
+
+  // =========================================================================
+  // 7. FAIL-CLOSED CALIBRATION & PAD PROVIDER ENFORCEMENT (Item 2.3)
+  // "ไม่มี FACE_T_* หรือไม่มี PAD provider แล้วเซิร์ฟเวอร์ปฏิเสธการล็อกอินด้วยใบหน้า"
+  // =========================================================================
+  describe('7. Fail-Closed Calibration & PAD Provider Enforcement (Item 2.3)', () => {
+    it('7.1 Rejects face verification when PAD provider is omitted (Fail-Closed 400)', async () => {
+      const origPad = process.env.PAD_PROVIDER;
+      delete process.env.PAD_PROVIDER;
+      resetCachedEnv();
+
+      try {
+        const chal = await request(app)
+          .post('/api/kiosk/challenge')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ kiosk_id: 'kiosk-001' });
+
+        const dummyProbe = generateSyntheticVector('dummy-probe-pad-check', 512);
+
+        const res = await request(app)
+          .post('/api/kiosk/verify')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({
+            kiosk_id: 'kiosk-001',
+            nonce: chal.body.nonce,
+            probe: dummyProbe,
+          });
+
+        expect(res.status).toBe(500);
+        expect(res.body.error.code).toBe('PAD_PROVIDER_REQUIRED');
+        expect(res.body.error.message).toContain('Presentation Attack Detection (PAD) provider is not configured on server');
+      } finally {
+        process.env.PAD_PROVIDER = origPad;
+        resetCachedEnv();
+      }
+    });
+
+    it('7.2 Accepts face verification payload with server-side PAD_PROVIDER configured (client cannot override)', async () => {
+      const origPad = process.env.PAD_PROVIDER;
+      process.env.PAD_PROVIDER = 'active_challenge_tracker';
+
+      try {
+        const chal = await request(app)
+          .post('/api/kiosk/challenge')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ kiosk_id: 'kiosk-001' });
+
+        const dummyProbe = generateSyntheticVector('dummy-probe-pad-check-2', 512);
+
+        const res = await request(app)
+          .post('/api/kiosk/verify')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({
+            kiosk_id: 'kiosk-001',
+            nonce: chal.body.nonce,
+            probe: dummyProbe,
+          });
+
+        // Did not fail with PAD_PROVIDER_REQUIRED
+        expect(res.body.error?.code).not.toBe('PAD_PROVIDER_REQUIRED');
+      } finally {
+        process.env.PAD_PROVIDER = origPad;
+      }
+    });
+
+    it('7.3 Rejects face verification when FACE_T_* thresholds are missing from env (Fail-Closed)', async () => {
+      const origAccept = process.env.FACE_T_ACCEPT;
+      delete process.env.FACE_T_ACCEPT;
+
+      try {
+        const chal = await request(app)
+          .post('/api/kiosk/challenge')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ kiosk_id: 'kiosk-001' });
+
+        const dummyProbe = generateSyntheticVector('dummy-probe-threshold-check', 512);
+
+        const res = await request(app)
+          .post('/api/kiosk/verify')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({
+            kiosk_id: 'kiosk-001',
+            nonce: chal.body.nonce,
+            probe: dummyProbe,
+          });
+
+        // Must reject: status >= 400 with masked error or failure
+        expect(res.status).toBeGreaterThanOrEqual(400);
+        expect(res.body.error).toBeDefined();
+      } finally {
+        process.env.FACE_T_ACCEPT = origAccept;
+      }
     });
   });
 });

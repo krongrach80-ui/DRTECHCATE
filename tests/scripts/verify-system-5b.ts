@@ -22,9 +22,9 @@ async function main() {
 
   const app = createApp();
 
-  defaultPatientRepository.clearInMemory();
-  defaultDirectoryRepository.clearAllInMemory();
-  defaultStaffRepository.clearInMemoryStaff();
+  (defaultPatientRepository as any).clearInMemory?.();
+  (defaultDirectoryRepository as any).clearAllInMemory?.();
+  (defaultStaffRepository as any).clearInMemoryStaff?.();
 
   // -------------------------------------------------------------------------
   // DoD Item 1: Two users editing same patient concurrently -> 409 Conflict

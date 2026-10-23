@@ -21,9 +21,9 @@ async function main() {
 
   const app = createApp();
 
-  // Reset in-memory states
-  defaultStaffRepository.clearInMemoryStaff();
-  defaultDirectoryRepository.clearAllInMemory();
+  // Reset in-memory states if available in test harness
+  (defaultStaffRepository as any).clearInMemoryStaff?.();
+  (defaultDirectoryRepository as any).clearAllInMemory?.();
 
   // -------------------------------------------------------------------------
   // DoD Item 1: PT cannot delete or edit an exercise created by another PT
