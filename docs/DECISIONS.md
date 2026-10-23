@@ -69,3 +69,84 @@ frame-ancestors 'none';
 3. **No `'unsafe-inline'` in `style-src`**:
    - **Rationale**: All frontend apps have been refactored to use static CSS classes (Tailwind CSS v4) and SVG XML attributes (e.g. `MirrorCanvas` 10-tick ring). System Thai font stacks are declared locally without Google Fonts CDNs. No React `style={{}}` inline attributes are used.
 
+---
+
+## ADR-003: Definition of Complete Demographic Data for Patient State Machine (Assumption & Clarification Needed)
+
+### Status
+Proposed / Awaiting Confirmation
+
+### Context
+Section 7.3.7 of Master Prompt v3 defines patient registration state transitions:
+1. Reception or Kiosk creates patient record -> Status starts at `awaiting_face`.
+2. Biometric face enrollment occurs (`enroll_face_atomic`):
+   - If demographic data is complete -> Status transitions to `active`.
+   - If demographic data is incomplete -> Status transitions to `face_enrolled`.
+3. If demographic data is completed later (via `PATCH /api/patients/:id`) -> Status transitions from `face_enrolled` to `active`.
+
+### Current Assumption
+The codebase currently implements the completeness check as:
+- `first_name` IS NOT NULL AND length > 0
+- `last_name` IS NOT NULL AND length > 0
+- `age` IS NOT NULL AND age > 0
+- `sex` IS NOT NULL AND length > 0
+- `injury` IS NOT NULL AND length > 0
+
+### Open Decision for Client
+Clarification is requested from the project owner regarding whether `injury` is strictly mandatory for demographic completeness in cases of preventative therapy or wellness check-ins, or if the mandatory set should be strictly `[first_name, last_name, age, sex]`.
+
+---
+
+## ADR-004: Safe Exception Handling for `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin`
+
+### Status
+Accepted
+
+### Context
+In Supabase PostgreSQL, `supabase_admin` is a system administrative role. Attempting to execute `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin ...` without active membership in `supabase_admin` can throw `ERROR: permission denied for role "supabase_admin"` (42501) depending on how the local Postgres cluster or CI environment was initialized.
+
+### Decision
+We wrap the `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` block inside an exception handler:
+```sql
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
+    BEGIN
+      ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated;
+      ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON SEQUENCES FROM PUBLIC, anon, authenticated;
+      ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated;
+      ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON ROUTINES FROM PUBLIC, anon, authenticated;
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE NOTICE 'Skipping ALTER DEFAULT PRIVILEGES for supabase_admin: insufficient privilege';
+    END;
+  END IF;
+END $$;
+```
+This ensures baseline migrations succeed deterministically across all environments (local Docker, Supabase CLI, and GitHub Actions CI).
+
+---
+
+## ADR-005: Course Modification Policy When Patient Has Left Active PT Care
+
+### Status
+Pending Decision by Client (Rules strictly maintained as-is until decided)
+
+### Context
+When a patient moves out of a PT's active care (e.g. temporary case delegation window has expired or the patient has been transferred/reassigned to another PT), the PT may still have created past courses for that patient.
+
+Under current RLS policy `courses_update` and trigger `check_course_ownership`:
+```sql
+IF NOT public.is_patient_accessible_by_pt(NEW.patient_id) THEN
+  RAISE EXCEPTION 'Permission denied: PT cannot assign or modify courses for patients not under their active care.';
+END IF;
+```
+Both `UPDATE` and `DELETE` on the course are completely blocked for the original creator PT.
+
+### Two Alternatives for Client Decision
+1. **Alternative 1 (Strict Lock - Current Implementation)**:
+   - Keep course modification completely blocked once patient is no longer accessible. Only the currently assigned PT or an Admin may modify or cancel the course.
+   - *Advantage*: Prevents former PTs from tampering with care plans of patients they no longer treat.
+2. **Alternative 2 (Status Cancellation Only)**:
+   - Permit the creator PT to update `status` to `'cancelled'` (so they can close out unfinished regimens they prescribed), while disallowing modification of dates, exercises, or items.
+   - *Advantage*: Gives prescribing PTs a clean mechanism to close out their historical courses.
+
+
