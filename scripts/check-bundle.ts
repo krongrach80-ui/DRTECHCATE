@@ -68,6 +68,7 @@ function buildIfRequested(): void {
   try {
     execSync('npm run build:apps', {
       cwd: process.cwd(),
+      env: { ...process.env, NODE_ENV: 'production' },
       stdio: 'inherit',
     });
     console.log('✓ Vite build completed successfully.\n');

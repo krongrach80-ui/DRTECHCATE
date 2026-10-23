@@ -36,6 +36,8 @@ jobs:
           npm run lint
 
       - name: Build Frontend Apps & Verify Zero Leaks
+        env:
+          NODE_ENV: production
         run: |
           npm run build:apps
           npm run ci:bundle

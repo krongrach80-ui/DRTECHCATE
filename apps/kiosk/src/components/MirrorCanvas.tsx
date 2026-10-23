@@ -42,7 +42,7 @@ export const MirrorCanvas: React.FC<MirrorCanvasProps> = ({
           setCameraError(true);
         }
       } catch {
-        // Fallback gracefully to simulated mirror environment
+        // Fallback gracefully to virtual mirror environment
         setCameraError(true);
       }
     }
