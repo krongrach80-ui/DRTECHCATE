@@ -171,6 +171,19 @@ CREATE TABLE IF NOT EXISTS public.modpack_items (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- kiosk_devices (defined before courses to satisfy FK references)
+CREATE TABLE IF NOT EXISTS public.kiosk_devices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  location TEXT,
+  token_hash TEXT NOT NULL,
+  pairing_code_hash TEXT,
+  paired_at TIMESTAMPTZ,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  last_seen_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- 11. courses
 CREATE TABLE IF NOT EXISTS public.courses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -312,18 +325,7 @@ CREATE TABLE IF NOT EXISTS public.checkins (
   UNIQUE(patient_id, date)
 );
 
--- 23. kiosk_devices
-CREATE TABLE IF NOT EXISTS public.kiosk_devices (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  location TEXT,
-  token_hash TEXT NOT NULL,
-  pairing_code_hash TEXT,
-  paired_at TIMESTAMPTZ,
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  last_seen_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+
 
 -- 24. staff_devices
 CREATE TABLE IF NOT EXISTS public.staff_devices (
