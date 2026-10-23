@@ -23,6 +23,32 @@ process.env.FACE_MIN_IOD = '60';
 process.env.TRUST_PROXY_HOPS = '1';
 process.env.PAD_MODE = 'active_only';
 process.env.PAD_PROVIDER = 'active_challenge_tracker';
+process.env.HOSPITAL_IPS = '127.0.0.1,::1,localhost,10.0.0.1';
+
+// Provide WebSocket fallback for Node test environments when @supabase/realtime-js initializes
+if (typeof (globalThis as any).WebSocket === 'undefined') {
+  class MockWebSocket {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSING = 2;
+    static readonly CLOSED = 3;
+    readonly CONNECTING = 0;
+    readonly OPEN = 1;
+    readonly CLOSING = 2;
+    readonly CLOSED = 3;
+    readyState = 3;
+    onopen: any = null;
+    onclose: any = null;
+    onmessage: any = null;
+    onerror: any = null;
+    constructor(_url?: string) {}
+    close() {}
+    send() {}
+    addEventListener() {}
+    removeEventListener() {}
+  }
+  (globalThis as any).WebSocket = MockWebSocket;
+}
 
 import { setupTestAuthFixture } from './apps/api/src/__tests__/fixtures/authFixture';
 import { setupTestFakeRepositories } from './apps/api/src/__tests__/fixtures/fakeRepositories';

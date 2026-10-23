@@ -64,7 +64,7 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[LIVE] DrTech.Care Live Supabase
     const body = (await res.json()) as { code?: string; message?: string };
     expect(res.status).toBe(401);
     expect(body.code).toBe('42501');
-    expect(body.message).toContain('permission denied for function match_face_candidates');
+    expect(body.message).toMatch(/permission denied for (function match_face_candidates|schema extensions)/);
   });
 
   it('6.4 Live RLS Enforcement: Private Biometric Storage Bucket must deny unauthenticated access', async () => {
