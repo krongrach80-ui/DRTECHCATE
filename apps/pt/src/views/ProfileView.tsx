@@ -116,7 +116,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="relative group">
             <div className="w-24 h-24 rounded-2xl bg-gradient-to-tr from-cyan-600 to-teal-500 flex items-center justify-center text-3xl font-bold text-white shadow-xl shadow-teal-500/20 overflow-hidden border border-teal-400/30">
               {currentUser.avatar_url ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={currentUser.avatar_url}
                   alt={currentUser.full_name}

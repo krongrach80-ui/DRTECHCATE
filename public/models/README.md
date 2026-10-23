@@ -1,19 +1,17 @@
-# Client-side Face Biometric Models
+# Client-side Machine Learning Models & System 7 Status
 
-This directory contains client-side machine learning model weights for browser execution:
+> **ประกาศสำคัญ (Spec 7.1.3 & Item C3)**:  
+> **ระบบ 7 (Face Embedding) ถูกบล็อก (Blocked) รอการตัดสินใจเรื่องโมเดล**  
+> ยังไม่มีโมเดล Face Biometric Embedding 512 มิติที่ License ของ Weights และ Dataset ฝึกอนุญาตให้ใช้เชิงพาณิชย์และได้รับการยืนยันทางกฎหมาย  
+> **ห้ามเพิ่ม Weights ใดๆ ของโมเดล Embedding เข้า Git Repository จนกว่าจะได้รับอนุมัติ**
 
-1. **Face Embedding (128-dim)**:
-   - `@vladmandic/face-api` (MobileNetv1 / ResNet-34 face recognition model)
-   - Files:
-     - `face_recognition_model-weights_manifest.json`
-     - `face_recognition_model-shard1`
-     - `face_landmark_68_model-weights_manifest.json`
-     - `face_landmark_68_model-shard1`
+---
 
-2. **Liveness & Landmark Tracking**:
-   - `@mediapipe/tasks-vision` FaceLandmarker bundle
-   - Files:
-     - `face_landmarker.task`
+### โมเดลที่ใช้งานได้ในปัจจุบัน (Non-Embedding):
+1. **Liveness & Landmark Tracking (Active PAD)**:
+   - `@mediapipe/tasks-vision` FaceLandmarker bundle (Apache-2.0 License)
+   - ไฟล์: `face_landmarker.task`
+   - ใช้สำหรับตรวจจับตำแหน่งใบหน้า หันศีรษะ 3 มิติ และกะพริบตาในโหมด Challenge-Response
 
-### Offline & Production Compliance
-In accordance with hospital security requirements, models are hosted self-contained under `/public/models` so that no client biometrics or images are sent to external third-party CDNs.
+### รายละเอียดการประเมินสิทธิ์และตัวเลือกโมเดล Embedding:
+- ดูตารางวิเคราะห์ฉบับสมบูรณ์ใน [docs/MODEL_LICENSE_DECISION.md](../../docs/MODEL_LICENSE_DECISION.md)

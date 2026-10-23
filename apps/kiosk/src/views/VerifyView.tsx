@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MirrorCanvas } from '../components/MirrorCanvas';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
-import { AlertCircle, Bell, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, Bell } from 'lucide-react';
 
 interface VerifyViewProps {
   kioskId?: string;
@@ -16,15 +16,16 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
   kioskId = 'kiosk-01',
   failedCount = 0,
   errorMessage,
-  onSuccess,
+  onSuccess: _onSuccess,
   onFailure,
   onCallStaff,
 }) => {
   const [progress, setProgress] = useState<number>(0);
   const [nonce, setNonce] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string>('กรุณามองตรงที่กล้อง อยู่นิ่งๆ สักครู่');
+  const [challengeError, setChallengeError] = useState<string | null>(null);
 
-  // Request challenge from API
+  // Request challenge from API (Fail closed: No test fallback nonce)
   useEffect(() => {
     let isMounted = true;
     async function getChallenge() {
@@ -32,20 +33,29 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
         const res = await defaultApiClient.kiosk.requestChallenge(kioskId);
         if (res && res.nonce && isMounted) {
           setNonce(res.nonce);
+        } else if (isMounted) {
+          setChallengeError('ไม่สามารถขอ Challenge จากเซิร์ฟเวอร์ได้');
+          setStatusText('เกิดข้อผิดพลาดในการเชื่อมต่อ');
         }
-      } catch {
-        // Fallback simulated challenge for offline/test mode
-        if (isMounted) setNonce('test-nonce-123');
+      } catch (err: unknown) {
+        if (isMounted) {
+          const msg = err instanceof Error ? err.message : 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อยืนยันตัวตนได้';
+          setChallengeError(msg);
+          setStatusText('เซิร์ฟเวอร์ไม่พร้อมใช้งาน (503)');
+          onFailure?.('ระบบยืนยันตัวตนไม่พร้อมใช้งาน');
+        }
       }
     }
     getChallenge();
     return () => {
       isMounted = false;
     };
-  }, [kioskId]);
+  }, [kioskId, onFailure]);
 
-  // Simulate scanning ring progression
+  // Biometric scanning ring progression when active
   useEffect(() => {
+    if (!nonce || challengeError) return;
+
     const timer = setInterval(() => {
       setProgress((prev) => {
         if (prev < 10) return prev + 1;
@@ -54,18 +64,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
     }, 250);
 
     return () => clearInterval(timer);
-  }, []);
-
-  const handleSimulateSuccess = () => {
-    setStatusText('ยืนยันตัวตนสำเร็จ!');
-    setTimeout(() => {
-      onSuccess('patient-001', 'วิชัย', null);
-    }, 400);
-  };
-
-  const handleSimulateFailure = () => {
-    onFailure('ใบหน้าไม่ตรงกับข้อมูลในระบบ หรือยังไม่ได้เช็คอินวันนี้');
-  };
+  }, [nonce, challengeError]);
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950">
@@ -86,8 +85,10 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
           </div>
         )}
 
-        {errorMessage && (
-          <div className="mt-2 text-rose-400 text-xs font-medium">{errorMessage}</div>
+        {(errorMessage || challengeError) && (
+          <div className="mt-2 text-rose-400 text-xs font-medium">
+            {challengeError || errorMessage}
+          </div>
         )}
       </div>
 
@@ -101,35 +102,16 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
         />
       </div>
 
-      {/* Action / Test Controls & Help */}
+      {/* Help & SOS Call Button Only (All Mock Buttons Removed) */}
       <div className="w-full max-w-xl flex flex-col items-center gap-4">
-        {/* Fast Action Buttons */}
-        <div className="w-full flex items-center gap-3">
+        <div className="flex items-center justify-between w-full pt-4 border-t border-slate-800/80 text-xs text-slate-500">
+          <span>ความท้าทาย (Nonce): {nonce ? nonce.slice(0, 12) + '...' : 'กำลังเชื่อมต่อ...'}</span>
           <button
-            onClick={handleSimulateSuccess}
-            className="touch-btn flex-1 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-base shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            <span>ตรวจจับผ่าน (Match Success)</span>
-          </button>
-
-          <button
-            onClick={handleSimulateFailure}
-            className="touch-btn flex-1 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-base border border-slate-700 flex items-center justify-center gap-2"
-          >
-            <RefreshCw className="w-5 h-5 text-slate-400" />
-            <span>ลองใหม่ / สแกนไม่ผ่าน</span>
-          </button>
-        </div>
-
-        {/* Emergency SOS Call Button */}
-        <div className="flex items-center justify-between w-full pt-2 border-t border-slate-800/80 text-xs text-slate-500">
-          <span>ความท้าทาย (Nonce): {nonce ? nonce.slice(0, 12) : 'กำลังเชื่อมต่อ...'}</span>
-          <button
+            type="button"
             onClick={onCallStaff}
-            className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 font-medium"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:text-rose-300 font-medium transition"
           >
-            <Bell className="w-3.5 h-3.5" />
+            <Bell className="w-4 h-4 text-rose-400" />
             <span>สแกนไม่ได้? กดเรียกเจ้าหน้าที่</span>
           </button>
         </div>

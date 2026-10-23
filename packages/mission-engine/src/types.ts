@@ -17,7 +17,7 @@ export type KioskState =
   | 'STEP_PHYSIO'   // Active exercise rep/set guidance with mirror canvas
   | 'STEP_MINIGAME' // Cognitive / coordination minigame step
   | 'TICK'          // 3-second completion tick animation
-  | 'COMPLETE'      // "ยินดีด้วย คุณฝึกเสร็จเรียบร้อยแล้ว" + PT notes + VAS pain rating
+  | 'COMPLETE'      // "ยินดีด้วย คุณฝึกเสร็จเรียบร้อยแล้ว" + PT notes
   | 'RESET'         // Complete memory wipe of all patient data, tokens, and stream
   | 'CALL_STAFF';   // Staff call triggered (manual or 3 failed verifies)
 
@@ -86,10 +86,6 @@ export interface MissionContext {
   minigameSelectedChoice: string | null;
   minigameScore: number;
 
-  // Pain VAS & Feedback
-  painVAS: number | null;
-  feedback: string | null;
-
   // Status & Failure Counters
   failedVerifyCount: number;
   staffCallTicketId: string | null;
@@ -112,7 +108,6 @@ export type KioskEvent =
   | { type: 'EXERCISE_STEP_DONE' }
   | { type: 'MINIGAME_ANSWER'; choice: string }
   | { type: 'TICK_FINISHED' }
-  | { type: 'SET_PAIN_SCORE'; score: number }
   | { type: 'FINISH_MISSION' }
   | { type: 'TRIGGER_CALL_STAFF'; reason?: string; ticketId?: string }
   | { type: 'STAFF_CALL_HANDLED' }

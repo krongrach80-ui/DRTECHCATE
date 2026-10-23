@@ -68,21 +68,3 @@ export function generateSyntheticVector(seed: number | string, dim: number = 512
   return l2Normalize(raw);
 }
 
-/**
- * Mock Embedding Model for testing & development
- */
-export class MockEmbeddingModel implements EmbeddingModel {
-  name = 'mock-adaface-ir50';
-  version = 'adaface-ir50-v1';
-  dim = 512;
-
-  constructor(private seed: number | string = 1) {}
-
-  public setSeed(seed: number | string): void {
-    this.seed = seed;
-  }
-
-  public async embed(_alignedFace: unknown): Promise<number[]> {
-    return generateSyntheticVector(this.seed, this.dim);
-  }
-}

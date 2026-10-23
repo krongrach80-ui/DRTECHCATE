@@ -15,27 +15,6 @@ export interface PadProvider {
   checkLiveness(frame: HTMLCanvasElement | ImageData | unknown): Promise<PadResult>;
 }
 
-export class MockPadProvider implements PadProvider {
-  name = 'mock-pad-provider';
-  mode = 'active_plus_passive' as const;
-
-  constructor(
-    private defaultResult: boolean = true,
-    private defaultScore: number = 0.95
-  ) {}
-
-  public setResult(isLive: boolean, score: number = 0.95): void {
-    this.defaultResult = isLive;
-    this.defaultScore = score;
-  }
-
-  public async checkLiveness(_frame: unknown): Promise<PadResult> {
-    return {
-      isLive: this.defaultResult,
-      score: this.defaultScore,
-    };
-  }
-}
 
 export type ChallengeStep = 'left' | 'right' | 'nod' | 'front';
 

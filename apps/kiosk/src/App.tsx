@@ -33,6 +33,7 @@ export const App: React.FC = () => {
   const [kioskId, setKioskId] = useState<string>('kiosk-01');
   const [isPairingOpen, setIsPairingOpen] = useState<boolean>(false);
   const [isPaired, setIsPaired] = useState<boolean>(true);
+  const [isDetectorReady, _setIsDetectorReady] = useState<boolean>(false);
 
   // Subscribe to pure State Machine updates
   useEffect(() => {
@@ -141,24 +142,18 @@ export const App: React.FC = () => {
   );
 
   // Handle finish mission
-  const handleFinishMission = useCallback(
-    async (painScore: number, feedback?: string) => {
-      if (context.plan && context.patientId) {
-        try {
-          await defaultApiClient.kiosk.finishMission({
-            patient_id: context.patientId,
-            course_id: context.plan.courseId,
-            pain_score: painScore,
-            feedback,
-          });
-        } catch {
-          // Finish safely
-        }
+  const handleFinishMission = useCallback(async () => {
+    if (context.plan && context.patientId) {
+      try {
+        await defaultApiClient.kiosk.finishMission({
+          course_id: context.plan.courseId,
+        });
+      } catch {
+        // Finish safely
       }
-      machine.handleEvent({ type: 'FINISH_MISSION' });
-    },
-    [context.plan, context.patientId, machine]
-  );
+    }
+    machine.handleEvent({ type: 'FINISH_MISSION' });
+  }, [context.plan, context.patientId, machine]);
 
   return (
     <div className="w-screen h-screen flex flex-col bg-slate-950 text-slate-100 select-none overflow-hidden">
@@ -174,8 +169,9 @@ export const App: React.FC = () => {
       <main className="flex-1 w-full h-[calc(100vh-5rem)] overflow-hidden relative">
         {state === 'IDLE' && (
           <IdleView
+            isDetectorReady={isDetectorReady}
             onStart={() => machine.handleEvent({ type: 'TAP_SCREEN' })}
-            onSimulateFaceDetect={() => machine.handleEvent({ type: 'FACE_PRESENT' })}
+            onCallStaff={() => handleTriggerStaffCall('ระบบสแกนใบหน้ายังไม่พร้อมใช้งาน ต้องการเจ้าหน้าที่')}
           />
         )}
 

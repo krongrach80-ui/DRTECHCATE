@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans Thai", "Thonburi", sans-serif;
+    background-color: #020617;
+    color: #f1f5f9;
+  }
+}

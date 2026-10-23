@@ -70,17 +70,17 @@ export const MirrorCanvas: React.FC<MirrorCanvasProps> = ({
         }`}
       />
 
-      {/* Simulated Mirror Feed Fallback (when camera permission not granted or in virtual environment) */}
+      {/* Camera Feed Fallback (when camera permission not granted or device disconnected) */}
       {!cameraActive && (
         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-slate-900 to-slate-950">
           <div className="w-20 h-20 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-4">
             <Camera className="w-10 h-10 text-blue-400 animate-pulse" />
           </div>
           <p className="text-base font-medium text-slate-300">
-            {cameraError ? 'กำลังจำลองสัญญาณภาพหน้ากระจก (Mirror Simulation)' : 'กำลังเชื่อมต่อกล้องหน้าตู้...'}
+            {cameraError ? 'ไม่สามารถเชื่อมต่อสัญญาณกล้องได้' : 'กำลังเชื่อมต่อกล้องหน้าตู้...'}
           </p>
           <p className="text-xs text-slate-500 mt-1 max-w-sm">
-            ระบบรองรับทั้งกล้องเว็บแคมความละเอียดสูงและอุปกรณ์ตรวจจับใบหน้าอัตโนมัติ
+            {cameraError ? 'กรุณาตรวจสอบการเชื่อมต่ออุปกรณ์กล้องหรือติดต่อเจ้าหน้าที่' : 'กรุณารอสักครู่'}
           </p>
         </div>
       )}

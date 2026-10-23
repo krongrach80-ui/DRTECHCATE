@@ -1,0 +1,84 @@
+# Production Caddyfile for DrTech.Care Hospital Physical Therapy System
+# Reverse proxy, static file serving, and SSE support with buffering disabled
+
+{
+    admin off
+}
+
+hospital.drtech.care {
+    # TLS automatically managed by Caddy (Let's Encrypt / ZeroSSL)
+    encode gzip zstd
+
+    # Root directory for static assets
+    root * /var/www/drtechcare/public
+
+    # Request body size limit for 10-frame face enrollment upload
+    request_body {
+        max_size 15MB
+    }
+
+    # Security Headers for SPA & API (Item H10)
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none';"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(self)"
+    }
+
+    # 1. SSE Realtime Event Stream Endpoints (Must precede @api block)
+    # Buffering strictly disabled, compression disabled for SSE
+    @sse {
+        path /api/events /api/events/*
+    }
+    handle @sse {
+        reverse_proxy 127.0.0.1:3000 {
+            flush_interval -1
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
+            header_down Cache-Control "no-cache, no-transform"
+            header_down X-Accel-Buffering "no"
+        }
+    }
+
+    # 2. Express 5 API Proxy
+    @api {
+        path /api/*
+    }
+    handle @api {
+        reverse_proxy 127.0.0.1:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
+        }
+    }
+
+    # 3. Static Web Apps (Admin, PT, Kiosk)
+    handle /admin/* {
+        root * /var/www/drtechcare/public
+        try_files {path} /admin/index.html
+        file_server
+    }
+
+    handle /pt/* {
+        root * /var/www/drtechcare/public
+        try_files {path} /pt/index.html
+        file_server
+    }
+
+    handle /kiosk/* {
+        root * /var/www/drtechcare/public
+        try_files {path} /kiosk/index.html
+        file_server
+    }
+
+    # 4. Fallback to static landing page
+    handle {
+        try_files {path} {path}/ /index.html
+        file_server
+    }
+}

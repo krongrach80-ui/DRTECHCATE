@@ -884,10 +884,7 @@ export class ApiClient {
     },
 
     finishMission: async (payload: {
-      patient_id: string;
-      course_id: string;
-      pain_score?: number;
-      feedback?: string;
+      course_id?: string;
     }) => {
       return this.request<unknown>('/kiosk/finish', {
         method: 'POST',

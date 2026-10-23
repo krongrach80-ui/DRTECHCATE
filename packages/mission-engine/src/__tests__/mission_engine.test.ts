@@ -199,10 +199,7 @@ describe('[UNIT] DrTech.Care Kiosk State Machine (Section 9 Specification)', () 
     vi.advanceTimersByTime(3000);
     expect(machine.getState()).toBe('COMPLETE');
 
-    // 7. Rate VAS pain and finish mission -> RESET -> IDLE
-    machine.handleEvent({ type: 'SET_PAIN_SCORE', score: 2 });
-    expect(machine.getContext().painVAS).toBe(2);
-
+    // 7. Finish mission -> RESET -> IDLE
     machine.handleEvent({ type: 'FINISH_MISSION' });
     expect(machine.getState()).toBe('IDLE');
 
@@ -212,7 +209,6 @@ describe('[UNIT] DrTech.Care Kiosk State Machine (Section 9 Specification)', () 
     expect(ctx.patientFirstName).toBeNull();
     expect(ctx.avatarUrl).toBeNull();
     expect(ctx.plan).toBeNull();
-    expect(ctx.painVAS).toBeNull();
   });
 
   it('9. When patient has no plan today -> NO_PLAN -> 5s auto-reset to IDLE', () => {

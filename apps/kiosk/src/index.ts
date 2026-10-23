@@ -8,7 +8,6 @@ export * from './App.js';
 export * from './components/Header.js';
 export * from './components/MirrorCanvas.js';
 export * from './components/FloatingLogo.js';
-export * from './components/VasPainScale.js';
 export * from './components/PairingModal.js';
 export * from './views/IdleView.js';
 export * from './views/PresentView.js';

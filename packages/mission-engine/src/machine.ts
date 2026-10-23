@@ -26,8 +26,6 @@ export function createInitialContext(): MissionContext {
     minigameQuestion: null,
     minigameSelectedChoice: null,
     minigameScore: 0,
-    painVAS: null,
-    feedback: null,
     failedVerifyCount: 0,
     staffCallTicketId: null,
     staffCallStatus: null,
@@ -241,10 +239,7 @@ export class KioskStateMachine {
         break;
 
       case 'COMPLETE':
-        if (event.type === 'SET_PAIN_SCORE') {
-          this.context.painVAS = event.score;
-          this.notify();
-        } else if (event.type === 'FINISH_MISSION' || event.type === 'TIMEOUT') {
+        if (event.type === 'FINISH_MISSION' || event.type === 'TIMEOUT') {
           this.reset();
         }
         break;

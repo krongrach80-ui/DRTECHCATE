@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
-import { VasPainScale } from '../components/VasPainScale';
+import React from 'react';
 import { Award, CheckCircle, HeartPulse, LogOut } from 'lucide-react';
 
 interface CompleteViewProps {
   doctorNotes?: string | null;
   patientFirstName?: string | null;
-  onFinish: (painScore: number, feedback?: string) => void;
+  onFinish: () => void;
 }
 
 export const CompleteView: React.FC<CompleteViewProps> = ({
@@ -13,8 +12,6 @@ export const CompleteView: React.FC<CompleteViewProps> = ({
   patientFirstName,
   onFinish,
 }) => {
-  const [painVAS, setPainVAS] = useState<number>(0);
-
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950 overflow-y-auto">
       {/* Celebration Header */}
@@ -30,7 +27,7 @@ export const CompleteView: React.FC<CompleteViewProps> = ({
         </p>
       </div>
 
-      {/* Main Content Card: Doctor advice & VAS Pain Scale */}
+      {/* Main Content Card: Doctor advice */}
       <div className="my-auto w-full max-w-3xl flex flex-col gap-6 py-4">
         {doctorNotes && (
           <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl flex items-start gap-4">
@@ -45,26 +42,12 @@ export const CompleteView: React.FC<CompleteViewProps> = ({
             </div>
           </div>
         )}
-
-        {/* VAS Pain Scale Card */}
-        <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl">
-          <div className="mb-4">
-            <h4 className="text-lg font-bold text-white">
-              ประเมินระดับความปวดหลังฝึก (Pain VAS Score)
-            </h4>
-            <p className="text-xs text-slate-400 mt-0.5">
-              แตะเลือกระดับความรู้สึกปวดของท่านในขณะนี้ (0 = ไม่ปวดเลย, 10 = ปวดมากที่สุด)
-            </p>
-          </div>
-
-          <VasPainScale value={painVAS} onChange={setPainVAS} />
-        </div>
       </div>
 
       {/* Finish Action */}
       <div className="w-full max-w-xl pb-2">
         <button
-          onClick={() => onFinish(painVAS)}
+          onClick={onFinish}
           className="touch-btn w-full py-5 rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xl shadow-2xl shadow-blue-600/30 flex items-center justify-center gap-3"
         >
           <CheckCircle className="w-7 h-7" />

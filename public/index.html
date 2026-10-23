@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ระบบจัดการกายภาพบำบัดอัจฉริยะ DrTech.Care - เชื่อมต่อคลินิก กายภาพบำบัด และตู้ Kiosk ออกกำลังกายฟื้นฟูสมรรถภาพ">
+  <title>DrTech.Care - ระบบบริหารจัดการกายภาพบำบัดและตู้ Kiosk อัจฉริยะ</title>
+
+  <style>
+    :root {
+      --bg-primary: #0a0f1d;
+      --bg-card: rgba(18, 26, 47, 0.75);
+      --border-color: rgba(56, 189, 248, 0.2);
+      --border-hover: rgba(56, 189, 248, 0.6);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-cyan: #38bdf8;
+      --accent-blue: #2563eb;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --font-family: 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      background-image: 
+        radial-gradient(circle at 15% 20%, rgba(37, 99, 235, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 85% 75%, rgba(16, 185, 129, 0.1) 0%, transparent 40%);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.6;
+    }
+
+    header {
+      padding: 2rem 1.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 0 1.5rem;
+    }
+
+    .nav-wrapper {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: #fff;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
+    }
+
+    .brand-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-title span {
+      color: var(--accent-cyan);
+    }
+
+    .badge-secure {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--accent-emerald);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+
+    main {
+      flex: 1;
+      padding: 4rem 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .hero-section {
+      text-align: center;
+      margin-bottom: 3.5rem;
+    }
+
+    .hero-title {
+      font-size: clamp(2rem, 5vw, 3.25rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+      line-height: 1.2;
+    }
+
+    .hero-title .gradient-text {
+      background: linear-gradient(135deg, #ffffff 30%, var(--accent-cyan) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-desc {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 0 auto;
+      font-weight: 300;
+    }
+
+    .grid-portals {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.75rem;
+      margin-top: 1rem;
+    }
+
+    .portal-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2rem;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(16px);
+    }
+
+    .portal-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(90deg, transparent, var(--card-color, var(--accent-cyan)), transparent);
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+
+    .portal-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--border-hover);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(56, 189, 248, 0.1);
+    }
+
+    .portal-card:hover::before {
+      opacity: 1;
+    }
+
+    .card-kiosk { --card-color: var(--accent-cyan); }
+    .card-pt { --card-color: var(--accent-emerald); }
+    .card-admin { --card-color: var(--accent-amber); }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .card-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+
+    .card-title-group h2 {
+      font-size: 1.35rem;
+      font-weight: 600;
+    }
+
+    .card-title-group .card-tag {
+      font-size: 0.8rem;
+      color: var(--card-color);
+      font-weight: 500;
+    }
+
+    .card-desc {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 1.5rem;
+      flex: 1;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 1rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--card-color);
+    }
+
+    .arrow-icon {
+      transition: transform 0.2s;
+    }
+
+    .portal-card:hover .arrow-icon {
+      transform: translateX(4px);
+    }
+
+    footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 1.75rem 0;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container nav-wrapper">
+      <a href="/" class="brand">
+        <div class="brand-icon">D</div>
+        <div class="brand-title">DrTech<span>.Care</span></div>
+      </a>
+      <div class="badge-secure">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Enterprise Hospital Guard
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <section class="hero-section">
+        <h1 class="hero-title">
+          <span class="gradient-text">ระบบบริหารจัดการกายภาพบำบัด</span><br>และตู้ฟื้นฟูสมรรถภาพอัจฉริยะ
+        </h1>
+        <p class="hero-desc">
+          บูรณาการข้อมูลทางกายภาพบำบัด การตรวจสอบใบหน้าอัตโนมัติ และการแนะนำท่าออกกำลังกายแบบ Real-Time สำหรับโรงพยาบาลและคลินิกเวชศาสตร์ฟื้นฟู
+        </p>
+      </section>
+
+      <div class="grid-portals">
+        <!-- 1. Kiosk Portal -->
+        <a href="/kiosk" class="portal-card card-kiosk" id="portal-card-kiosk">
+          <div class="card-header">
+            <div class="card-icon">🖥️</div>
+            <div class="card-title-group">
+              <h2>Kiosk Terminal</h2>
+              <div class="card-tag">ตู้ฝึกกายภาพบำบัด</div>
+            </div>
+          </div>
+          <p class="card-desc">
+            หน้าจอสำหรับผู้ป่วย สแกนยืนยันตัวตนด้วยใบหน้า (Active PAD) ตรวจสอบแผนการรักษาประจำวัน และฝึกกายภาพพร้อมกล้องตรวจจับท่าทาง (MediaPipe Pose)
+          </p>
+          <div class="card-footer">
+            <span>เข้าสู่ระบบ Kiosk</span>
+            <span class="arrow-icon">→</span>
+          </div>
+        </a>
+
+        <!-- 2. PT Portal -->
+        <a href="/pt" class="portal-card card-pt" id="portal-card-pt">
+          <div class="card-header">
+            <div class="card-icon">🩺</div>
+            <div class="card-title-group">
+              <h2>PT Portal</h2>
+              <div class="card-tag">นักกายภาพบำบัด</div>
+            </div>
+          </div>
+          <p class="card-desc">
+            บันทึกเวชระเบียนแบบ Append-Only มอบหมายหลักสูตรกายภาพบำบัดรายบุคคล ติดตามความก้าวหน้า และรับการแจ้งเตือนฉุกเฉิน (Staff Call) ผ่าน SSE
+          </p>
+          <div class="card-footer">
+            <span>เข้าสู่ระบบนักกายภาพ</span>
+            <span class="arrow-icon">→</span>
+          </div>
+        </a>
+
+        <!-- 3. Admin Portal -->
+        <a href="/admin" class="portal-card card-admin" id="portal-card-admin">
+          <div class="card-header">
+            <div class="card-icon">🛡️</div>
+            <div class="card-title-group">
+              <h2>Admin Security</h2>
+              <div class="card-tag">ผู้ดูแลระบบ</div>
+            </div>
+          </div>
+          <p class="card-desc">
+            ตรวจสอบความปลอดภัย Audit Logs จัดการตู้ Kiosk และรหัส Pairing จัดการบัญชีผู้ใช้ และบล็อกการเข้าถึงที่ไม่พึงประสงค์ (IP / Device Bans)
+          </p>
+          <div class="card-footer">
+            <span>เข้าสู่ระบบผู้ดูแล</span>
+            <span class="arrow-icon">→</span>
+          </div>
+        </a>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      &copy; 2026 DrTech.Care Hospital Physical Therapy System. All rights reserved. Zero-Trust Architecture.
+    </div>
+  </footer>
+</body>
+</html>
