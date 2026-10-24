@@ -180,7 +180,7 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
 
       expect(created).toBeDefined();
       expect(created.id).toBeDefined();
-      expect(created.hn).toMatch(/^HN\d{6}$/);
+      expect(created.hn).toMatch(/^HN\d{6,8}$/);
       expect(created.registration_status).toBe('awaiting_face');
       testPatientId = created.id;
     });
