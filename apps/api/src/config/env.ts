@@ -68,6 +68,7 @@ export const envSchema = z
     // Security & Cookie Flags
     ALLOW_INSECURE_COOKIES: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
     ALLOW_BEARER_IN_PROD: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
+    LOG_FACE_SCORES: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
 
     // Biometric Calibration (Master Prompt v3 - Section 11 & match_face_candidates)
     // NOTE: Values operate in COSINE SIMILARITY space (score = 1.0 - cosine_distance).

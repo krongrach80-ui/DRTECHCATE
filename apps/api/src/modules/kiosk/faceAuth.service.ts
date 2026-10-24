@@ -6,6 +6,7 @@
 
 import crypto from 'crypto';
 import { AppError } from '../../middleware/errorHandler';
+import { logger } from '../../middleware/logger';
 import { getEnv } from '../../config/env';
 import { IKioskRepository, defaultKioskRepository } from './repository';
 import { ICourseRepository, defaultCourseRepository } from '../courses/repository';
@@ -114,6 +115,10 @@ export class KioskFaceAuthService {
       throw new AppError('Invalid or nonexistent challenge nonce', 400, 'INVALID_NONCE');
     }
 
+    if (challenge.device_id && challenge.device_id !== input.kiosk_id) {
+      throw new AppError('Challenge nonce does not belong to this kiosk device', 400, 'INVALID_NONCE');
+    }
+
     if (challenge.used_at !== null) {
       throw new AppError('Challenge nonce has already been used (single-use violated)', 400, 'NONCE_ALREADY_USED');
     }
@@ -125,9 +130,11 @@ export class KioskFaceAuthService {
     // Immediately mark nonce as used to prevent replay attacks
     await this.kioskRepo.markChallengeUsed(input.nonce);
 
-    // 2. Candidate set pruning (Master prompt Section 7.4 Line 200)
+    // 2. Candidate set pruning (Master prompt Section 7.4 Line 200, Section 3 & 9 timezone Asia/Bangkok)
     // Only patients with active courses today matching this kiosk or null + today's check-ins
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Bangkok',
+    }).format(new Date());
     const todayCourses = await this.courseRepo.getTodayAppointments(todayStr, input.kiosk_id);
     const checkinPatientIds = await this.patientRepo.getTodayCheckinPatientIds(todayStr);
 
@@ -164,13 +171,34 @@ export class KioskFaceAuthService {
 
     const topCandidate = matches[0];
 
+    // Log candidate scores strictly in server debug log when LOG_FACE_SCORES is enabled (Rule 2.10 & 11)
+    if (env.LOG_FACE_SCORES) {
+      const runnerUp = matches.length >= 2 ? matches[1] : null;
+      logger.debug(
+        {
+          kiosk_id: input.kiosk_id,
+          top_candidate_id: topCandidate.patient_id,
+          top_score: topCandidate.score,
+          candidate_count: matches.length,
+          ...(runnerUp
+            ? {
+                runner_up_candidate_id: runnerUp.patient_id,
+                runner_up_score: runnerUp.score,
+                delta: topCandidate.score - runnerUp.score,
+              }
+            : {}),
+        },
+        'Face verification candidate scores'
+      );
+    }
+
     // 4. Dual Criteria Evaluation (Master Prompt Section 7.4 Line 204)
     // Criterion A: Top candidate score >= FACE_T_ACCEPT
     if (topCandidate.score < T_ACCEPT) {
       const reason =
         topCandidate.score < T_REJECT
           ? 'Score below reject threshold'
-          : `Score ${topCandidate.score.toFixed(3)} below acceptance threshold ${T_ACCEPT}`;
+          : 'Score below acceptance threshold (retry zone)';
       await this.handleVerificationFailure(input.kiosk_id, reason);
       throw new AppError('Face verification failed: score below acceptance threshold', 401, 'FACE_VERIFY_FAILED');
     }
@@ -183,10 +211,10 @@ export class KioskFaceAuthService {
       if (delta < T_MARGIN) {
         await this.handleVerificationFailure(
           input.kiosk_id,
-          `Ambiguous match: margin between top 2 candidates (${delta.toFixed(3)}) is less than required ${T_MARGIN}`
+          'Ambiguous match: top 2 candidates too close'
         );
         throw new AppError(
-          `Face verification ambiguous: top 2 candidates too close (margin ${delta.toFixed(3)} < ${T_MARGIN})`,
+          'Face verification ambiguous: top 2 candidates too close',
           401,
           'FACE_VERIFY_AMBIGUOUS'
         );
@@ -200,6 +228,9 @@ export class KioskFaceAuthService {
     // Issue active 15-minute kiosk session
     const session = await this.kioskRepo.createKioskSession(input.kiosk_id, topCandidate.patient_id);
 
+    // Hash session token before recording in audit log to prevent plaintext token leakage (Rule 7.4.8 & Audit Security)
+    const sessionTokenHash = crypto.createHash('sha256').update(session.token).digest('hex').slice(0, 16);
+
     // Record Audit Log (Item H5 & Spec 7.4 Line 207)
     const { audit } = await import('../audit');
     await audit.write({
@@ -207,7 +238,7 @@ export class KioskFaceAuthService {
       actor_id: topCandidate.patient_id,
       action: 'FACE_VERIFY_SUCCESS',
       entity: 'kiosk_session',
-      entity_id: session.token,
+      entity_id: sessionTokenHash,
       device_id: input.kiosk_id,
       metadata: {
         kiosk_id: input.kiosk_id,

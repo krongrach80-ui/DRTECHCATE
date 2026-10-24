@@ -717,6 +717,11 @@ CREATE TRIGGER trg_check_minigame_ownership
 BEFORE UPDATE OR DELETE ON public.minigames
 FOR EACH ROW EXECUTE FUNCTION public.enforce_content_ownership();
 
+DROP TRIGGER IF EXISTS trg_check_minigame_question_ownership ON public.minigame_questions;
+CREATE TRIGGER trg_check_minigame_question_ownership
+BEFORE UPDATE OR DELETE ON public.minigame_questions
+FOR EACH ROW EXECUTE FUNCTION public.enforce_content_ownership();
+
 DROP TRIGGER IF EXISTS trg_check_modpack_ownership ON public.modpacks;
 CREATE TRIGGER trg_check_modpack_ownership
 BEFORE UPDATE OR DELETE ON public.modpacks

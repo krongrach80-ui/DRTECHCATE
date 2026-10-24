@@ -85,7 +85,7 @@ describe('DrTech.Care Group F Verification Suite (F2, F3, F4, F5, F6, F7)', () =
 
       // Seed candidate with today's appointment and matching template
       const patientId = 'p-liveness-test-01';
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
       await fakePatientRepo.createPatient(
         {
           first_name: 'Somchai',
