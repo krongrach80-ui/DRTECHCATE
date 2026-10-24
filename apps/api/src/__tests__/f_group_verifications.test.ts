@@ -85,7 +85,7 @@ describe('DrTech.Care Group F Verification Suite (F2, F3, F4, F5, F6, F7)', () =
 
       // Seed candidate with today's appointment and matching template
       const patientId = 'p-liveness-test-01';
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
       await fakePatientRepo.createPatient(
         {
           first_name: 'Somchai',
@@ -636,9 +636,11 @@ describe('DrTech.Care Group F Verification Suite (F2, F3, F4, F5, F6, F7)', () =
       const origEnv = process.env.NODE_ENV;
       const origBearer = process.env.ALLOW_BEARER_IN_PROD;
       const origCors = process.env.CORS_ORIGINS;
+      const origHospitalIps = process.env.HOSPITAL_IPS;
       try {
         (process.env as any).NODE_ENV = 'production';
         process.env.CORS_ORIGINS = 'https://hospital.drtech.care';
+        process.env.HOSPITAL_IPS = '198.51.100.1,198.51.100.2';
         delete process.env.ALLOW_BEARER_IN_PROD;
         resetCachedEnv();
 
@@ -655,6 +657,8 @@ describe('DrTech.Care Group F Verification Suite (F2, F3, F4, F5, F6, F7)', () =
         else delete process.env.ALLOW_BEARER_IN_PROD;
         if (origCors) process.env.CORS_ORIGINS = origCors;
         else delete process.env.CORS_ORIGINS;
+        if (origHospitalIps) process.env.HOSPITAL_IPS = origHospitalIps;
+        else delete process.env.HOSPITAL_IPS;
         resetCachedEnv();
       }
     });
@@ -663,9 +667,11 @@ describe('DrTech.Care Group F Verification Suite (F2, F3, F4, F5, F6, F7)', () =
       const origEnv = process.env.NODE_ENV;
       const origBearer = process.env.ALLOW_BEARER_IN_PROD;
       const origCors = process.env.CORS_ORIGINS;
+      const origHospitalIps = process.env.HOSPITAL_IPS;
       try {
         (process.env as any).NODE_ENV = 'production';
         process.env.CORS_ORIGINS = 'https://hospital.drtech.care';
+        process.env.HOSPITAL_IPS = '198.51.100.1,198.51.100.2';
         process.env.ALLOW_BEARER_IN_PROD = 'true';
         resetCachedEnv();
 
@@ -682,6 +688,8 @@ describe('DrTech.Care Group F Verification Suite (F2, F3, F4, F5, F6, F7)', () =
         else delete process.env.ALLOW_BEARER_IN_PROD;
         if (origCors) process.env.CORS_ORIGINS = origCors;
         else delete process.env.CORS_ORIGINS;
+        if (origHospitalIps) process.env.HOSPITAL_IPS = origHospitalIps;
+        else delete process.env.HOSPITAL_IPS;
         resetCachedEnv();
       }
     });

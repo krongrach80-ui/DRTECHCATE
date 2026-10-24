@@ -5,10 +5,10 @@ import { beforeEach, afterEach, afterAll } from 'vitest';
 
 // 1. Force environment variables strictly to 127.0.0.1 loopback for tests (Item H7)
 (process.env as Record<string, string | undefined>).NODE_ENV = 'test';
-process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
-process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:54321';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key-strictly-isolated-127-0-0-1';
-process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key-strictly-isolated-127-0-0-1';
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'http://127.0.0.1:54321';
+process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:54321';
+process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'test-anon-key-strictly-isolated-127-0-0-1';
+process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-service-role-key-strictly-isolated-127-0-0-1';
 process.env.INTERNAL_EMAIL_DOMAIN = 'clinic.internal';
 process.env.APP_URL = 'http://127.0.0.1:3000';
 process.env.CORS_ORIGINS = 'http://localhost:3000,http://localhost:5173';
@@ -23,6 +23,32 @@ process.env.FACE_MIN_IOD = '60';
 process.env.TRUST_PROXY_HOPS = '1';
 process.env.PAD_MODE = 'active_only';
 process.env.PAD_PROVIDER = 'active_challenge_tracker';
+process.env.HOSPITAL_IPS = '127.0.0.1,::1,localhost,10.0.0.1';
+
+// Provide WebSocket fallback for Node test environments when @supabase/realtime-js initializes
+if (typeof (globalThis as any).WebSocket === 'undefined') {
+  class MockWebSocket {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSING = 2;
+    static readonly CLOSED = 3;
+    readonly CONNECTING = 0;
+    readonly OPEN = 1;
+    readonly CLOSING = 2;
+    readonly CLOSED = 3;
+    readyState = 3;
+    onopen: any = null;
+    onclose: any = null;
+    onmessage: any = null;
+    onerror: any = null;
+    constructor(_url?: string) {}
+    close() {}
+    send() {}
+    addEventListener() {}
+    removeEventListener() {}
+  }
+  (globalThis as any).WebSocket = MockWebSocket;
+}
 
 import { setupTestAuthFixture } from './apps/api/src/__tests__/fixtures/authFixture';
 import { setupTestFakeRepositories } from './apps/api/src/__tests__/fixtures/fakeRepositories';

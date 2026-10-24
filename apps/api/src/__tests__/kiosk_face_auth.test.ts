@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
@@ -26,6 +27,10 @@ import {
 
 describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suite', () => {
   const app = createApp();
+
+
+  const getBangkokTodayStr = () =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
 
   const mockChallenges = new Map<string, any>();
   const mockTemplates: { id: string; patient_id: string; vector: number[]; active: boolean; created_at: string }[] = [];
@@ -280,6 +285,27 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('NONCE_EXPIRED');
     });
+
+    it('1.4 Rejects challenge nonce when presented at a mismatched kiosk device (Device Binding)', async () => {
+      // Challenge generated for kiosk-001
+      const challengeRes = await request(app)
+        .post('/api/kiosk/challenge')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({ kiosk_id: 'kiosk-001' });
+      const nonce = challengeRes.body.nonce;
+
+      const dummyProbe = generateSyntheticVector(103, 512);
+
+      // Verify attempted at kiosk-002 -> 400 INVALID_NONCE
+      const res = await request(app)
+        .post('/api/kiosk/verify')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({ kiosk_id: 'kiosk-002', nonce, probe: dummyProbe });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('INVALID_NONCE');
+      expect(res.body.error.message).toContain('Challenge nonce does not belong to this kiosk device');
+    });
   });
 
   // =========================================================================
@@ -321,7 +347,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
     });
 
     it('2.2 Patient with an active appointment today on this kiosk is admitted to candidate set', async () => {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getBangkokTodayStr();
       const todayDate = new Date();
       const currentDayOfWeek = todayDate.getUTCDay();
 
@@ -377,7 +403,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
   // =========================================================================
   describe('3. Dual Criteria & Margin Requirement (DoD 2: Margin Delta below FACE_T_MARGIN -> Rejected)', () => {
     it('3.1 DoD 2: When candidate 2 meets accept threshold but score delta from candidate 1 is below FACE_T_MARGIN -> REJECTED', async () => {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getBangkokTodayStr();
       const currentDayOfWeek = new Date().getUTCDay();
 
       // Create two patients both scheduled for today
@@ -446,10 +472,13 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
       // Must be rejected with ambiguous match! (DoD 2)
       expect(res.status).toBe(401);
       expect(res.body.error.code).toBe('FACE_VERIFY_AMBIGUOUS');
+      // Assert no raw scores or delta numbers are exposed in error response (Rules 2.10, 7.4.8, 11)
+      expect(res.body.error.message).toBe('Face verification ambiguous: top 2 candidates too close');
+      expect(res.body.error.message).not.toMatch(/\d+\.\d+/);
     });
 
     it('3.2 Succeeds when candidate 1 meets accept threshold and margin delta >= FACE_T_MARGIN', async () => {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getBangkokTodayStr();
       const currentDayOfWeek = new Date().getUTCDay();
 
       const p1 = await defaultPatientRepository.createPatient(
@@ -509,6 +538,122 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
       expect(res.body.candidate.id).toBe(p1.id);
       expect(res.body.candidate.first_name).toBe('สมศรี');
     });
+
+    it('3.3 Masks biometric score numbers from error message when score is below accept threshold', async () => {
+      const todayStr = getBangkokTodayStr();
+      const currentDayOfWeek = new Date().getUTCDay();
+
+      const p = await defaultPatientRepository.createPatient(
+        { first_name: 'นเรศ', last_name: 'คะแนนเฉียด' },
+        'pt-001',
+        'pt-001'
+      );
+
+      await defaultCourseRepository.createCourse(
+        {
+          patient_id: p.id,
+          start_date: todayStr,
+          end_date: todayStr,
+          weekdays: [currentDayOfWeek],
+          kiosk_id: 'kiosk-001',
+        },
+        'pt-001'
+      );
+
+      // Create template and a slightly perturbed probe that yields score in retry zone (0.45 <= score < 0.60)
+      const tVec = generateSyntheticVector('retry-zone-test', 512);
+      await defaultKioskRepository.saveFaceTemplate(p.id, tVec);
+
+      const chal = await request(app)
+        .post('/api/kiosk/challenge')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({ kiosk_id: 'kiosk-001' });
+
+      // Generate strictly orthogonal component to guarantee exact cosine similarity of 0.50 (in retry zone 0.45 <= score < 0.60)
+      const ortho = generateSyntheticVector('retry-ortho', 512);
+      const dot = tVec.reduce((sum, v, i) => sum + v * ortho[i], 0);
+      const strictlyOrtho = l2Normalize(ortho.map((v, i) => v - dot * tVec[i]));
+      const blendedProbe = tVec.map((v, i) => 0.50 * v + Math.sqrt(0.75) * strictlyOrtho[i]);
+
+      const res = await request(app)
+        .post('/api/kiosk/verify')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({
+          kiosk_id: 'kiosk-001',
+          nonce: chal.body.nonce,
+          probe: blendedProbe,
+        });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('FACE_VERIFY_FAILED');
+      expect(res.body.error.message).toBe('Face verification failed: score below acceptance threshold');
+      expect(res.body.error.message).not.toMatch(/\d+\.\d+/);
+    });
+
+    it('3.4 Logs candidate scores to server debug log when LOG_FACE_SCORES is enabled and never logs vectors', async () => {
+      const todayStr = getBangkokTodayStr();
+      const currentDayOfWeek = new Date().getUTCDay();
+
+      const p1 = await defaultPatientRepository.createPatient(
+        { first_name: 'วีระ', last_name: 'ดีบักคะแนน' },
+        'pt-001',
+        'pt-001'
+      );
+      await defaultCourseRepository.createCourse(
+        {
+          patient_id: p1.id,
+          start_date: todayStr,
+          end_date: todayStr,
+          weekdays: [currentDayOfWeek],
+          kiosk_id: 'kiosk-001',
+        },
+        'pt-001'
+      );
+
+      const v1 = generateSyntheticVector('debug-log-person-1', 512);
+      await defaultKioskRepository.saveFaceTemplate(p1.id, v1);
+
+      const { logger } = await import('../middleware/logger');
+      let capturedLogData: any = null;
+      const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(((data: any) => {
+        if (data && typeof data === 'object' && 'top_score' in data) {
+          capturedLogData = data;
+        }
+      }) as any);
+
+      // Temporarily enable LOG_FACE_SCORES on cached env without resetting entire env
+      const { getEnv } = await import('../config/env');
+      const envInstance = getEnv();
+      const prevLogFaceScores = envInstance.LOG_FACE_SCORES;
+      (envInstance as any).LOG_FACE_SCORES = true;
+
+      try {
+        const chal = await request(app)
+          .post('/api/kiosk/challenge')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ kiosk_id: 'kiosk-001' });
+
+        await request(app)
+          .post('/api/kiosk/verify')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({
+            kiosk_id: 'kiosk-001',
+            nonce: chal.body.nonce,
+            probe: v1,
+          });
+
+        expect(capturedLogData).not.toBeNull();
+        expect(capturedLogData.top_candidate_id).toBe(p1.id);
+        expect(typeof capturedLogData.top_score).toBe('number');
+        // Rule 11 & Section 7.4.8 Invariant: Vector must NEVER be logged!
+        expect(capturedLogData.probe).toBeUndefined();
+        expect(capturedLogData.vector).toBeUndefined();
+        expect(capturedLogData.embedding).toBeUndefined();
+      } finally {
+        debugSpy.mockRestore();
+        (envInstance as any).LOG_FACE_SCORES = prevLogFaceScores;
+      }
+    });
   });
 
   // =========================================================================
@@ -567,7 +712,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
   // =========================================================================
   describe('5. Privacy Minimization & Identity Confirmation', () => {
     it('5.1 Successful verification returns ONLY first_name and signed avatar URL (NO HN, NO last_name)', async () => {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getBangkokTodayStr();
       const currentDayOfWeek = new Date().getUTCDay();
 
       const patient = await defaultPatientRepository.createPatient(
@@ -630,7 +775,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
     });
 
     it('5.2 When patient denies identity (confirmed: false), session is invalidated immediately', async () => {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getBangkokTodayStr();
       const currentDayOfWeek = new Date().getUTCDay();
 
       const patient = await defaultPatientRepository.createPatient(
@@ -691,6 +836,67 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
         });
       expect(retryRes.status).toBe(401);
       expect(retryRes.body.error.code).toBe('INVALID_SESSION');
+    });
+
+    it('5.3 Successful verification records SHA-256 hash of kiosk session token in audit log (NEVER plaintext token)', async () => {
+      const todayStr = getBangkokTodayStr();
+      const currentDayOfWeek = new Date().getUTCDay();
+
+      const patient = await defaultPatientRepository.createPatient(
+        { first_name: 'ปรีชา', last_name: 'ตรวจสอบออดิท' },
+        'pt-001',
+        'pt-001'
+      );
+
+      await defaultCourseRepository.createCourse(
+        {
+          patient_id: patient.id,
+          start_date: todayStr,
+          end_date: todayStr,
+          weekdays: [currentDayOfWeek],
+          kiosk_id: 'kiosk-005',
+        },
+        'pt-001'
+      );
+
+      const vec = generateSyntheticVector('audit-hash-test-vec', 512);
+      await defaultKioskRepository.saveFaceTemplate(patient.id, vec);
+
+      const { audit } = await import('../modules/audit');
+      let capturedAuditRecord: any = null;
+      const writeSpy = vi.spyOn(audit, 'write').mockImplementation((rec: any) => {
+        if (rec.action === 'FACE_VERIFY_SUCCESS') {
+          capturedAuditRecord = rec;
+        }
+        return Promise.resolve(undefined as any);
+      });
+
+      try {
+        const chal = await request(app)
+          .post('/api/kiosk/challenge')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({ kiosk_id: 'kiosk-005' });
+
+        const verifyRes = await request(app)
+          .post('/api/kiosk/verify')
+          .set('X-Requested-With', 'XMLHttpRequest')
+          .send({
+            kiosk_id: 'kiosk-005',
+            nonce: chal.body.nonce,
+            probe: vec,
+          });
+
+        expect(verifyRes.status).toBe(200);
+        expect(capturedAuditRecord).not.toBeNull();
+        expect(capturedAuditRecord.action).toBe('FACE_VERIFY_SUCCESS');
+        // Crucial security invariant: entity_id must NOT be the raw session_token
+        expect(capturedAuditRecord.entity_id).not.toBe(verifyRes.body.session_token);
+        // It must be the 16-hex sha256 prefix of session_token
+        const expectedHash = crypto.createHash('sha256').update(verifyRes.body.session_token).digest('hex').slice(0, 16);
+        expect(capturedAuditRecord.entity_id).toBe(expectedHash);
+      } finally {
+        writeSpy.mockRestore();
+      }
     });
   });
 

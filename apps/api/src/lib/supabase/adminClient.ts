@@ -20,3 +20,7 @@ export function getAdminClient(): SupabaseClient {
   }
   return adminClientInstance;
 }
+
+export function resetAdminClient(): void {
+  adminClientInstance = null;
+}

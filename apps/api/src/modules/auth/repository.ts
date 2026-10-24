@@ -5,8 +5,10 @@ import { AppError } from '../../middleware/errorHandler';
 export interface UserProfileRecord {
   id: string;
   role: string;
-  first_name: string;
-  last_name: string;
+  username?: string;
+  full_name?: string;
+  first_name?: string;
+  last_name?: string;
   status: string;
   force_logout_at: string | null;
 }
@@ -27,7 +29,7 @@ export class AuthRepository implements IAuthRepository {
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('profiles')
-        .select('id, role, first_name, last_name, status, force_logout_at')
+        .select('id, role, username, full_name, status, force_logout_at')
         .eq('id', userId)
         .maybeSingle();
 

@@ -171,6 +171,19 @@ CREATE TABLE IF NOT EXISTS public.modpack_items (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- kiosk_devices (defined before courses to satisfy FK references)
+CREATE TABLE IF NOT EXISTS public.kiosk_devices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  location TEXT,
+  token_hash TEXT NOT NULL,
+  pairing_code_hash TEXT,
+  paired_at TIMESTAMPTZ,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  last_seen_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- 11. courses
 CREATE TABLE IF NOT EXISTS public.courses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -312,18 +325,7 @@ CREATE TABLE IF NOT EXISTS public.checkins (
   UNIQUE(patient_id, date)
 );
 
--- 23. kiosk_devices
-CREATE TABLE IF NOT EXISTS public.kiosk_devices (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  location TEXT,
-  token_hash TEXT NOT NULL,
-  pairing_code_hash TEXT,
-  paired_at TIMESTAMPTZ,
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  last_seen_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+
 
 -- 24. staff_devices
 CREATE TABLE IF NOT EXISTS public.staff_devices (
@@ -431,6 +433,7 @@ AS $$
 DECLARE
   v_uid UUID;
   v_role public.user_role;
+BEGIN
   v_uid := (SELECT auth.uid());
   v_role := public.current_user_role();
 
@@ -486,7 +489,9 @@ BEGIN
         ORDER BY (ft.embedding OPERATOR(extensions.<=>) probe) ASC
       ) AS rank
     FROM public.face_templates ft
+    INNER JOIN public.face_enrollments fe ON fe.id = ft.enrollment_id
     WHERE ft.patient_id = ANY(candidate_ids)
+      AND fe.status = 'active'
   ),
   top3_scores AS (
     SELECT
@@ -589,20 +594,21 @@ BEGIN
   FROM public.patients
   WHERE id = p_patient_id;
 
-  -- Atomic compare-and-set on registration_status: Patient MUST be in awaiting_face status
-  -- Archived/active/other states must be rejected and roll back the transaction
+  -- Atomic compare-and-set on registration_status:
+  -- Allowed source states: 'awaiting_face', 'face_enrolled', 'active' (supports re-enrollment).
+  -- Rejected state: 'archived' (or patient not found) -> RAISE EXCEPTION and rollback.
   IF v_is_complete THEN
     UPDATE public.patients
     SET registration_status = 'active', started_at = COALESCE(started_at, now())
-    WHERE id = p_patient_id AND registration_status = 'awaiting_face';
+    WHERE id = p_patient_id AND registration_status IN ('awaiting_face', 'face_enrolled', 'active');
   ELSE
     UPDATE public.patients
     SET registration_status = 'face_enrolled'
-    WHERE id = p_patient_id AND registration_status = 'awaiting_face';
+    WHERE id = p_patient_id AND registration_status IN ('awaiting_face', 'face_enrolled', 'active');
   END IF;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Patient % is not in awaiting_face status or does not exist.', p_patient_id;
+    RAISE EXCEPTION 'Patient % is archived or does not exist. Re-enrollment denied.', p_patient_id;
   END IF;
 
   -- 5. Mark enrollment ticket used if provided
@@ -711,10 +717,89 @@ CREATE TRIGGER trg_check_minigame_ownership
 BEFORE UPDATE OR DELETE ON public.minigames
 FOR EACH ROW EXECUTE FUNCTION public.enforce_content_ownership();
 
+DROP TRIGGER IF EXISTS trg_check_minigame_question_ownership ON public.minigame_questions;
+CREATE TRIGGER trg_check_minigame_question_ownership
+BEFORE UPDATE OR DELETE ON public.minigame_questions
+FOR EACH ROW EXECUTE FUNCTION public.enforce_content_ownership();
+
 DROP TRIGGER IF EXISTS trg_check_modpack_ownership ON public.modpacks;
 CREATE TRIGGER trg_check_modpack_ownership
 BEFORE UPDATE OR DELETE ON public.modpacks
 FOR EACH ROW EXECUTE FUNCTION public.enforce_content_ownership();
+
+-- Modpack items ownership enforcement (Checks parent modpack created_by)
+CREATE OR REPLACE FUNCTION public.enforce_modpack_item_ownership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_role public.user_role;
+  v_uid UUID;
+  v_modpack_owner UUID;
+BEGIN
+  -- Allow service_role and postgres superuser directly (SECURITY INVOKER)
+  IF CURRENT_USER IN ('service_role', 'postgres', 'supabase_admin') THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  v_role := public.current_user_role();
+  v_uid := (SELECT auth.uid());
+
+  IF v_role = 'admin' THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF v_role = 'pt' THEN
+    IF TG_OP = 'DELETE' THEN
+      SELECT created_by INTO v_modpack_owner
+      FROM public.modpacks
+      WHERE id = OLD.modpack_id;
+      -- If parent modpack is already deleted (e.g. cascade delete when modpack is deleted), allow
+      IF v_modpack_owner IS NULL THEN
+        RETURN OLD;
+      END IF;
+    ELSE
+      SELECT created_by INTO v_modpack_owner
+      FROM public.modpacks
+      WHERE id = NEW.modpack_id;
+    END IF;
+
+    IF v_modpack_owner IS DISTINCT FROM v_uid THEN
+      RAISE EXCEPTION 'Permission denied: PT can only modify or delete modpack items in modpacks they created.';
+    END IF;
+
+    IF TG_OP = 'UPDATE' AND OLD.modpack_id IS DISTINCT FROM NEW.modpack_id THEN
+      SELECT created_by INTO v_modpack_owner
+      FROM public.modpacks
+      WHERE id = OLD.modpack_id;
+
+      IF v_modpack_owner IS DISTINCT FROM v_uid THEN
+        RAISE EXCEPTION 'Permission denied: PT can only modify or delete modpack items in modpacks they created.';
+      END IF;
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'Permission denied: unauthenticated or invalid staff role.';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_modpack_item_ownership ON public.modpack_items;
+CREATE TRIGGER trg_check_modpack_item_ownership
+BEFORE INSERT OR UPDATE OR DELETE ON public.modpack_items
+FOR EACH ROW EXECUTE FUNCTION public.enforce_modpack_item_ownership();
+
 
 -- Course modification enforcement (Item B4: Checks is_patient_accessible_by_pt on INSERT/UPDATE)
 CREATE OR REPLACE FUNCTION public.check_course_ownership()
@@ -912,18 +997,18 @@ CREATE POLICY "exercises_insert" ON public.exercises
   WITH CHECK ((SELECT public.current_user_role()) IN ('admin', 'pt'));
 CREATE POLICY "exercises_update" ON public.exercises
   FOR UPDATE TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()))
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
   WITH CHECK ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
 CREATE POLICY "exercises_delete" ON public.exercises
   FOR DELETE TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'));
 
 -- 7. minigames
 CREATE POLICY "minigames_select" ON public.minigames
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "minigames_all" ON public.minigames
   FOR ALL TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()))
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
   WITH CHECK ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
 
 -- 8. minigame_questions
@@ -931,7 +1016,7 @@ CREATE POLICY "minigame_questions_select" ON public.minigame_questions
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "minigame_questions_all" ON public.minigame_questions
   FOR ALL TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()))
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
   WITH CHECK ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
 
 -- 9. modpacks
@@ -939,7 +1024,7 @@ CREATE POLICY "modpacks_select" ON public.modpacks
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "modpacks_all" ON public.modpacks
   FOR ALL TO authenticated
-  USING ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()))
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
   WITH CHECK ((SELECT public.current_user_role()) = 'admin' OR created_by = (SELECT auth.uid()));
 
 -- 10. modpack_items
@@ -947,8 +1032,18 @@ CREATE POLICY "modpack_items_select" ON public.modpack_items
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "modpack_items_all" ON public.modpack_items
   FOR ALL TO authenticated
-  USING (true)
-  WITH CHECK (true);
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
+  WITH CHECK (
+    (SELECT public.current_user_role()) = 'admin'
+    OR (
+      (SELECT public.current_user_role()) = 'pt'
+      AND EXISTS (
+        SELECT 1 FROM public.modpacks m
+        WHERE m.id = modpack_items.modpack_id
+          AND m.created_by = (SELECT auth.uid())
+      )
+    )
+  );
 
 -- 11. courses (Item B4: Checks is_patient_accessible_by_pt on INSERT and UPDATE)
 CREATE POLICY "courses_select" ON public.courses
@@ -1204,8 +1299,8 @@ GRANT SELECT ON public.mission_runs TO authenticated;
 GRANT SELECT ON public.mission_steps TO authenticated;
 GRANT SELECT, INSERT ON public.medical_notes TO authenticated;
 GRANT SELECT, INSERT ON public.treatment_results TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.consents TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.checkins TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.consents TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.checkins TO authenticated;
 
 -- F. SEQUENCE USAGE FOR AUTHENTICATED
 GRANT USAGE, SELECT ON SEQUENCE patient_hn_seq TO authenticated;

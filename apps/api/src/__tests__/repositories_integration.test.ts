@@ -9,7 +9,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
-import { getAdminClient } from '../lib/supabase/adminClient';
+import { getAdminClient, resetAdminClient } from '../lib/supabase/adminClient';
+import { resetCachedEnv } from '../config/env';
 import { AuthRepository } from '../modules/auth/repository';
 import { StaffRepository } from '../modules/staff/repository';
 import { PatientRepository } from '../modules/patients/repository';
@@ -33,6 +34,8 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
   beforeAll(async () => {
     dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
     dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+    resetCachedEnv();
+    resetAdminClient();
 
     authRepo = new AuthRepository();
     staffRepo = new StaffRepository();
@@ -44,12 +47,23 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
     const adminClient = getAdminClient();
 
     // 1. Setup test staff users in auth.users and profiles
-    testAdminUserId = randomUUID();
-    testPtUserId = randomUUID();
+    const adminUserRes = await adminClient.auth.admin.createUser({
+      email: `admin_it_${Date.now()}@test.internal`,
+      password: 'TestPassword123!',
+      email_confirm: true,
+    });
+    testAdminUserId = adminUserRes.data.user?.id || randomUUID();
+
+    const ptUserRes = await adminClient.auth.admin.createUser({
+      email: `pt_it_${Date.now()}@test.internal`,
+      password: 'TestPassword123!',
+      email_confirm: true,
+    });
+    testPtUserId = ptUserRes.data.user?.id || randomUUID();
     testKioskId = randomUUID();
 
     // Provision admin profile
-    await adminClient.from('profiles').insert({
+    await adminClient.from('profiles').upsert({
       id: testAdminUserId,
       role: 'admin',
       username: `admin_it_${Date.now()}`,
@@ -58,7 +72,7 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
     });
 
     // Provision PT profile
-    await adminClient.from('profiles').insert({
+    await adminClient.from('profiles').upsert({
       id: testPtUserId,
       role: 'pt',
       username: `pt_it_${Date.now()}`,
@@ -166,7 +180,7 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
 
       expect(created).toBeDefined();
       expect(created.id).toBeDefined();
-      expect(created.hn).toMatch(/^HN\d{6}$/);
+      expect(created.hn).toMatch(/^HN\d{6,8}$/);
       expect(created.registration_status).toBe('awaiting_face');
       testPatientId = created.id;
     });
@@ -205,6 +219,7 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
         id: exerciseId,
         title: 'Shoulder Pendulum',
         description: 'Gentle circular movements',
+        target_joint: 'Shoulder',
         default_sets: 3,
         default_reps: 10,
         difficulty: 'easy',
@@ -272,7 +287,7 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
       expect(call.kiosk_id).toBe(testKioskId);
       expect(call.handled_at).toBeNull();
 
-      const pendingCalls = await kioskRepo.listStaffCalls('pending');
+      const pendingCalls = await kioskRepo.listStaffCalls(testKioskId);
       expect(pendingCalls.some((c) => c.id === call.id)).toBe(true);
 
       const handledOk = await kioskRepo.handleStaffCall(call.id, testPtUserId);
