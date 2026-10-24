@@ -7,7 +7,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap;
 
 BEGIN;
-SELECT plan(117);
+SELECT plan(118);
 
 -- 1. EXTENSIONS (4)
 SELECT has_extension('uuid-ossp', 'Extension uuid-ossp must be installed');
@@ -209,6 +209,15 @@ BEGIN
     (v_ex2_id, 'PT2 Shoulder Press', 'Shoulder', v_pt2_id)
   ON CONFLICT (id) DO NOTHING;
 
+  -- Modpacks: Modpack 1 created by PT1, with Modpack Item 1
+  INSERT INTO public.modpacks (id, name, created_by) VALUES
+    ('dddddddd-0000-dddd-0000-dddddddddddd', 'PT1 Rehab Pack', v_pt1_id)
+  ON CONFLICT (id) DO NOTHING;
+
+  INSERT INTO public.modpack_items (id, modpack_id, exercise_id, sets, reps) VALUES
+    ('dddddddd-1111-dddd-1111-dddddddddddd', 'dddddddd-0000-dddd-0000-dddddddddddd', v_ex1_id, 3, 10)
+  ON CONFLICT (id) DO NOTHING;
+
   -- Samples for append-only immutability tests
   INSERT INTO public.audit_logs (id, actor_type, actor_id, action, entity) VALUES
     ('11111111-aaaa-1111-aaaa-111111111111', 'staff', v_admin_id, 'LOGIN', 'auth')
@@ -234,6 +243,13 @@ SELECT throws_ok(
   'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "22222222-2222-2222-2222-222222222222", "role": "authenticated"}'', true); DELETE FROM public.exercises WHERE id = ''ffffffff-ffff-ffff-ffff-ffffffffffff''; RESET ROLE;',
   'Permission denied: PT can only modify or delete items they created.',
   'PT deleting exercise created by another PT must throw permission denied'
+);
+
+-- E1b: PT modifies another PT''s modpack items -> throws exception
+SELECT throws_ok(
+  'SET LOCAL ROLE authenticated; SELECT set_config(''request.jwt.claims'', ''{"sub": "33333333-3333-3333-3333-333333333333", "role": "authenticated"}'', true); UPDATE public.modpack_items SET reps = 99 WHERE id = ''dddddddd-1111-dddd-1111-dddddddddddd''; RESET ROLE;',
+  'Permission denied: PT can only modify or delete modpack items in modpacks they created.',
+  'PT modifying modpack item in modpack created by another PT must throw permission denied'
 );
 
 -- E2: PT updates own profile changing role, status, or force_logout_at -> throws exception

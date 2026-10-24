@@ -727,6 +727,80 @@ CREATE TRIGGER trg_check_modpack_ownership
 BEFORE UPDATE OR DELETE ON public.modpacks
 FOR EACH ROW EXECUTE FUNCTION public.enforce_content_ownership();
 
+-- Modpack items ownership enforcement (Checks parent modpack created_by)
+CREATE OR REPLACE FUNCTION public.enforce_modpack_item_ownership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_role public.user_role;
+  v_uid UUID;
+  v_modpack_owner UUID;
+BEGIN
+  -- Allow service_role and postgres superuser directly (SECURITY INVOKER)
+  IF CURRENT_USER IN ('service_role', 'postgres', 'supabase_admin') THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  v_role := public.current_user_role();
+  v_uid := (SELECT auth.uid());
+
+  IF v_role = 'admin' THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF v_role = 'pt' THEN
+    IF TG_OP = 'DELETE' THEN
+      SELECT created_by INTO v_modpack_owner
+      FROM public.modpacks
+      WHERE id = OLD.modpack_id;
+      -- If parent modpack is already deleted (e.g. cascade delete when modpack is deleted), allow
+      IF v_modpack_owner IS NULL THEN
+        RETURN OLD;
+      END IF;
+    ELSE
+      SELECT created_by INTO v_modpack_owner
+      FROM public.modpacks
+      WHERE id = NEW.modpack_id;
+    END IF;
+
+    IF v_modpack_owner IS DISTINCT FROM v_uid THEN
+      RAISE EXCEPTION 'Permission denied: PT can only modify or delete modpack items in modpacks they created.';
+    END IF;
+
+    IF TG_OP = 'UPDATE' AND OLD.modpack_id IS DISTINCT FROM NEW.modpack_id THEN
+      SELECT created_by INTO v_modpack_owner
+      FROM public.modpacks
+      WHERE id = OLD.modpack_id;
+
+      IF v_modpack_owner IS DISTINCT FROM v_uid THEN
+        RAISE EXCEPTION 'Permission denied: PT can only modify or delete modpack items in modpacks they created.';
+      END IF;
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'Permission denied: unauthenticated or invalid staff role.';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_modpack_item_ownership ON public.modpack_items;
+CREATE TRIGGER trg_check_modpack_item_ownership
+BEFORE INSERT OR UPDATE OR DELETE ON public.modpack_items
+FOR EACH ROW EXECUTE FUNCTION public.enforce_modpack_item_ownership();
+
+
 -- Course modification enforcement (Item B4: Checks is_patient_accessible_by_pt on INSERT/UPDATE)
 CREATE OR REPLACE FUNCTION public.check_course_ownership()
 RETURNS TRIGGER
@@ -958,8 +1032,18 @@ CREATE POLICY "modpack_items_select" ON public.modpack_items
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "modpack_items_all" ON public.modpack_items
   FOR ALL TO authenticated
-  USING (true)
-  WITH CHECK (true);
+  USING ((SELECT public.current_user_role()) IN ('admin', 'pt'))
+  WITH CHECK (
+    (SELECT public.current_user_role()) = 'admin'
+    OR (
+      (SELECT public.current_user_role()) = 'pt'
+      AND EXISTS (
+        SELECT 1 FROM public.modpacks m
+        WHERE m.id = modpack_items.modpack_id
+          AND m.created_by = (SELECT auth.uid())
+      )
+    )
+  );
 
 -- 11. courses (Item B4: Checks is_patient_accessible_by_pt on INSERT and UPDATE)
 CREATE POLICY "courses_select" ON public.courses
