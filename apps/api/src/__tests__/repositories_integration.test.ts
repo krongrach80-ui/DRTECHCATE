@@ -47,12 +47,23 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
     const adminClient = getAdminClient();
 
     // 1. Setup test staff users in auth.users and profiles
-    testAdminUserId = randomUUID();
-    testPtUserId = randomUUID();
+    const adminUserRes = await adminClient.auth.admin.createUser({
+      email: `admin_it_${Date.now()}@test.internal`,
+      password: 'TestPassword123!',
+      email_confirm: true,
+    });
+    testAdminUserId = adminUserRes.data.user?.id || randomUUID();
+
+    const ptUserRes = await adminClient.auth.admin.createUser({
+      email: `pt_it_${Date.now()}@test.internal`,
+      password: 'TestPassword123!',
+      email_confirm: true,
+    });
+    testPtUserId = ptUserRes.data.user?.id || randomUUID();
     testKioskId = randomUUID();
 
     // Provision admin profile
-    await adminClient.from('profiles').insert({
+    await adminClient.from('profiles').upsert({
       id: testAdminUserId,
       role: 'admin',
       username: `admin_it_${Date.now()}`,
@@ -61,7 +72,7 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
     });
 
     // Provision PT profile
-    await adminClient.from('profiles').insert({
+    await adminClient.from('profiles').upsert({
       id: testPtUserId,
       role: 'pt',
       username: `pt_it_${Date.now()}`,
@@ -208,6 +219,7 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
         id: exerciseId,
         title: 'Shoulder Pendulum',
         description: 'Gentle circular movements',
+        target_joint: 'Shoulder',
         default_sets: 3,
         default_reps: 10,
         difficulty: 'easy',
@@ -275,7 +287,7 @@ describe.runIf(process.env.LIVE_TESTS === '1')('[INTEGRATION] Real Postgres Repo
       expect(call.kiosk_id).toBe(testKioskId);
       expect(call.handled_at).toBeNull();
 
-      const pendingCalls = await kioskRepo.listStaffCalls('pending');
+      const pendingCalls = await kioskRepo.listStaffCalls(testKioskId);
       expect(pendingCalls.some((c) => c.id === call.id)).toBe(true);
 
       const handledOk = await kioskRepo.handleStaffCall(call.id, testPtUserId);
