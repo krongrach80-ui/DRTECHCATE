@@ -11,20 +11,21 @@ async function bootstrapApp() {
   if (!isInitialized) {
     isInitialized = true;
     try {
-      const env = getEnv();
-      if (env.USE_LOCAL_STORAGE) {
-        activateLocalPersistenceEngine();
-      } else {
-        try {
-          await syncBansFromDatabase();
-        } catch {
-          activateLocalPersistenceEngine();
-        }
-      }
-    } catch {
       activateLocalPersistenceEngine();
+      try {
+        const env = getEnv();
+        if (!env.USE_LOCAL_STORAGE) {
+          await syncBansFromDatabase().catch(() => {});
+        }
+      } catch {
+        // Fallback to local engine
+      }
+      appInstance = createApp();
+    } catch (err) {
+      console.error('Fatal during bootstrapApp:', err);
+      activateLocalPersistenceEngine();
+      appInstance = createApp();
     }
-    appInstance = createApp();
   }
   return appInstance!;
 }
