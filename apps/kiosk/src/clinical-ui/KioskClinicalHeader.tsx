@@ -17,12 +17,16 @@ interface KioskClinicalHeaderProps {
   kioskId?: string;
   onCallStaff?: () => void;
   onStaffLoginSuccess?: () => void;
+  onOpenNewPatientModal?: () => void;
+  onOpenStaffLoginModal?: () => void;
 }
 
 export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
   kioskId = 'kiosk-01',
   onCallStaff,
   onStaffLoginSuccess,
+  onOpenNewPatientModal,
+  onOpenStaffLoginModal,
 }) => {
   const [isStaffLoginOpen, setIsStaffLoginOpen] = useState(false);
 
@@ -38,9 +42,17 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
     }
   };
 
+  const handleTriggerStaffModal = () => {
+    if (onOpenStaffLoginModal) {
+      onOpenStaffLoginModal();
+    } else {
+      setIsStaffLoginOpen(true);
+    }
+  };
+
   return (
     <>
-      <header className="h-16 px-6 bg-[#042924]/90 backdrop-blur-md border-b border-emerald-900/60 flex items-center justify-between text-white shadow-lg shrink-0 z-40 select-none font-sans">
+      <header className="h-16 px-6 bg-[#042924] border-b border-emerald-900/40 flex items-center justify-between text-white shadow-md shrink-0 z-40 select-none font-sans">
         {/* Left Branding */}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-sky-400 flex items-center justify-center text-white shadow-md">
@@ -60,19 +72,30 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
         </div>
 
         {/* Right Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* Cloud Online Status */}
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-[11px] font-bold text-emerald-300">
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-[11px] font-bold text-emerald-300">
             <Wifi className="w-3.5 h-3.5 text-emerald-400" />
             <span>Cloud Online ●</span>
           </div>
+
+          {/* New Patient Registration Button */}
+          {onOpenNewPatientModal && (
+            <button
+              type="button"
+              onClick={onOpenNewPatientModal}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold shadow-md shadow-emerald-950/30 transition active:scale-95 cursor-pointer"
+            >
+              <span>+ ลงทะเบียนคนไข้ใหม่</span>
+            </button>
+          )}
 
           {/* Call Staff Emergency Button */}
           {onCallStaff && (
             <button
               type="button"
               onClick={onCallStaff}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition active:scale-95"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition active:scale-95 cursor-pointer"
             >
               <PhoneCall className="w-3.5 h-3.5" />
               <span>เรียกเจ้าหน้าที่</span>
@@ -82,11 +105,11 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
           {/* Hospital Staff Portal Trigger */}
           <button
             type="button"
-            onClick={() => setIsStaffLoginOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-950/40 transition active:scale-95"
+            onClick={handleTriggerStaffModal}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#063932] hover:bg-[#084c43] border border-emerald-500/40 text-emerald-100 text-xs font-bold shadow-md transition active:scale-95 cursor-pointer"
           >
-            <Shield className="w-3.5 h-3.5" />
-            <span>สำหรับเจ้าหน้าที่ (Staff Portal)</span>
+            <Shield className="w-3.5 h-3.5 text-emerald-400" />
+            <span>สำหรับเจ้าหน้าที่</span>
           </button>
         </div>
       </header>

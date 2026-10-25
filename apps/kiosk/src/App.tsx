@@ -27,9 +27,13 @@ import { CallStaffView } from './views/CallStaffView';
 import { EnrollView } from './views/EnrollView';
 import { SmartFlowController } from './smart-flow/index.js';
 import { KioskClinicalHeader } from './clinical-ui/index.js';
+import { StaffLoginModal } from '../../admin/src/clinical-ui/StaffLoginModal';
+import { NewPatientRegistrationModal } from '../../admin/src/clinical-ui/NewPatientRegistrationModal';
 
 export const App: React.FC = () => {
   const [flowMode, setFlowMode] = useState<'smart' | 'classic'>('smart');
+  const [isStaffLoginModalOpen, setIsStaffLoginModalOpen] = useState(false);
+  const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const machine = useMemo(() => new KioskStateMachine(), []);
   const [state, setState] = useState<KioskState>('IDLE');
   const [context, setContext] = useState<MissionContext>(machine.getContext());
@@ -179,26 +183,38 @@ export const App: React.FC = () => {
 
   if (flowMode === 'smart') {
     return (
-      <div className="w-screen h-screen flex flex-col bg-slate-950 text-slate-100 select-none overflow-hidden relative">
+      <div className="w-screen h-screen flex flex-col bg-gradient-to-br from-[#F0FDF9] via-[#FFFFFF] to-[#EFF6FF] text-[#063932] select-none overflow-hidden relative font-sans">
         <KioskClinicalHeader
           kioskId={kioskId}
           onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากตู้ Kiosk')}
+          onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
+          onOpenStaffLoginModal={() => setIsStaffLoginModalOpen(true)}
         />
-
-        {/* Floating Mode Switcher Button */}
-        <div className="absolute top-20 right-4 z-40 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setFlowMode('classic')}
-            className="px-3 py-1 rounded-full bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-300 hover:text-white transition shadow-lg backdrop-blur-md flex items-center gap-1.5"
-          >
-            <span>⚙️ สลับเป็นโหมดคลาสสิก</span>
-          </button>
-        </div>
 
         <div className="flex-1 overflow-hidden relative">
           <SmartFlowController />
         </div>
+
+        {/* Staff Login Modal */}
+        <StaffLoginModal
+          isOpen={isStaffLoginModalOpen}
+          onClose={() => setIsStaffLoginModalOpen(false)}
+          onLogin={async (credentials) => {
+            const res = await defaultApiClient.auth.login(credentials);
+            if (res.user) {
+              window.location.href = res.role === 'admin' ? '/admin' : '/pt';
+            }
+          }}
+        />
+
+        {/* 3-Step New Patient Registration Modal */}
+        <NewPatientRegistrationModal
+          isOpen={isNewPatientModalOpen}
+          onClose={() => setIsNewPatientModalOpen(false)}
+          onSuccess={(_newPatientId) => {
+            setIsNewPatientModalOpen(false);
+          }}
+        />
       </div>
     );
   }

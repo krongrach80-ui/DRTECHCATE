@@ -53,7 +53,7 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({ custom
   };
 
   return (
-    <div className="w-full h-screen bg-slate-950 overflow-hidden">
+    <div className="w-full h-full bg-[#F0FDF9] overflow-hidden">
       {currentStep === 'login' && (
         <SmartLoginView
           onLoginSuccess={handleLoginSuccess}

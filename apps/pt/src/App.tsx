@@ -132,173 +132,29 @@ export const PtApp: React.FC = () => {
     }
   };
 
-  // Loading Splash Screen
+  // Loading Splash Screen (Hospital Mint-White Theme)
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-600 to-teal-400 animate-spin flex items-center justify-center mb-4">
-          <Sparkles className="w-6 h-6 text-white" />
-        </div>
-        <p className="text-sm font-medium tracking-wide">กำลังเข้าสู่ระบบ DrTech.Care (PT Portal)...</p>
+      <div className="min-h-screen bg-gradient-to-br from-[#F0FDF9] via-[#FFFFFF] to-[#EFF6FF] flex flex-col items-center justify-center text-[#063932]">
+        <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-600 rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm font-semibold text-emerald-900 tracking-wide">กำลังเข้าสู่ระบบนักกายภาพบำบัด DrTech.Care...</p>
       </div>
     );
   }
 
-  // PT Login Screen
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-8 space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-600 to-teal-400 mx-auto flex items-center justify-center shadow-lg shadow-teal-500/20">
-              <Sparkles className="w-7 h-7 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">DrTech.Care</h1>
-            <p className="text-xs text-teal-400 font-semibold uppercase tracking-wider">
-              เว็บนักกายภาพบำบัด (Physical Therapist Portal)
-            </p>
-            <p className="text-xs text-slate-400">
-              เข้าสู่ระบบเพื่อจัดการคนไข้, เวชระเบียน, คลังท่า และคิวประจำวัน
-            </p>
-          </div>
-
-          {loginError && (
-            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{loginError}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                ชื่อผู้ใช้ (Username)
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  required
-                  value={loginForm.username}
-                  onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
-                  placeholder="pt_username"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500 transition"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                รหัสผ่าน (Password)
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  required
-                  value={loginForm.password}
-                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                  placeholder="••••••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500 transition"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loginLoading}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-400 hover:to-cyan-500 text-white font-semibold text-sm shadow-lg shadow-teal-500/25 transition disabled:opacity-50"
-            >
-              {loginLoading ? 'กำลังตรวจสอบสิทธิ์...' : 'เข้าสู่ระบบนักกายภาพบำบัด'}
-            </button>
-          </form>
-
-          <div className="pt-2 text-center text-[11px] text-slate-500">
-            ระบบความปลอดภัยโรงพยาบาล • รองรับ HttpOnly Session Cookie • Zero-PII Log
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (shellMode === 'clinical') {
-    return (
-      <div className="relative w-screen h-screen">
-        <div className="absolute top-4 right-52 z-50">
-          <button
-            type="button"
-            onClick={() => setShellMode('classic')}
-            className="px-3 py-1 rounded-full bg-white/90 hover:bg-white border border-slate-200 text-xs font-semibold text-slate-600 shadow-sm backdrop-blur transition"
-          >
-            ⚙️ โหมดคลาสสิก
-          </button>
-        </div>
-
-        <ClinicalPtShell
-          currentUser={currentUser}
-          onLogout={handleLogout}
-          onReturnToKiosk={() => {
-            window.location.href = '/';
-          }}
-        />
-      </div>
-    );
-  }
-
-  const unhandledCallsCount = staffCalls.filter((c) => !c.handled_at).length;
-
+  // Master Prompt v5: Clinical Emerald Shell 100% Default Presentation
   return (
-    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans relative">
-      <div className="absolute top-4 right-4 z-50">
-        <button
-          type="button"
-          onClick={() => setShellMode('clinical')}
-          className="px-3.5 py-1.5 rounded-full bg-emerald-950 border border-emerald-500/50 text-xs font-bold text-emerald-300 shadow-lg transition flex items-center gap-1.5"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>🏥 สลับเป็น Clinical Emerald Shell v5</span>
-        </button>
-      </div>
-
-      {/* PT Sidebar Navigation */}
-      <PtSidebar
-        currentTab={currentTab}
-        onTabChange={setCurrentTab}
+    <div className="relative w-screen h-screen">
+      <ClinicalPtShell
         currentUser={currentUser}
-        staffCallCount={unhandledCallsCount}
-        sseConnected={sseConnected}
+        onLogout={handleLogout}
+        onReturnToKiosk={() => {
+          window.location.href = '/';
+        }}
       />
-
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto bg-slate-950 text-slate-200">
-        {currentTab === 'reception' && (
-          <ReceptionView
-            staffCalls={staffCalls}
-            onStaffCallHandled={fetchStaffCalls}
-            currentUserId={currentUser.id}
-          />
-        )}
-        {currentTab === 'patients' && (
-          <MyPatientsView
-            currentUserId={currentUser.id}
-            onOpenRecords={handleOpenRecordsForPatient}
-          />
-        )}
-        {currentTab === 'records' && (
-          <ClinicalRecordsView initialPatientId={activeRecordsPatientId} />
-        )}
-        {currentTab === 'exercises' && (
-          <ExerciseCatalogView currentUserId={currentUser.id} />
-        )}
-        {currentTab === 'schedule' && (
-          <PtScheduleView currentUserId={currentUser.id} />
-        )}
-        {currentTab === 'profile' && (
-          <ProfileView currentUser={currentUser} onProfileUpdated={checkSession} />
-        )}
-      </main>
     </div>
   );
+
 };
 
 export const App = PtApp;

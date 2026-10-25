@@ -230,26 +230,26 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   };
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950 text-slate-100">
+    <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-gradient-to-br from-[#F0FDF9] via-[#FFFFFF] to-[#EFF6FF] text-[#063932]">
       <video ref={videoRef} playsInline muted className="hidden" aria-hidden="true" />
 
       {/* Top Banner */}
       <div className="text-center max-w-xl">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs font-semibold uppercase tracking-wider">
-          <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 border border-emerald-500/30 text-xs font-semibold uppercase tracking-wider">
+          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
           <span>ระบบตรวจจับใบหน้าอัตโนมัติ • US HIPAA / China Tier-3A Standard</span>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-white mt-3">
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-[#063932] mt-3">
           สแกนใบหน้าเข้าสู่ระบบกายภาพ
         </h1>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-sm text-slate-500 mt-1">
           ระบบเปรียบเทียบใบหน้ากับเวชระเบียนส่วนบุคคลความเร็วสูงระดับมิลลิวินาที
         </p>
       </div>
 
       {/* Camera Viewport with 5s Cooldown Overlay */}
       <div className="my-auto w-full max-w-xl h-96 relative flex items-center justify-center">
-        <div className="w-full h-full rounded-3xl overflow-hidden border border-slate-700/60 bg-slate-900/90 shadow-2xl relative flex items-center justify-center">
+        <div className="w-full h-full rounded-3xl overflow-hidden border-2 border-emerald-500/30 bg-white shadow-2xl relative flex items-center justify-center">
           <canvas
             ref={previewCanvasRef}
             className={`w-full h-full object-cover transition-opacity duration-300 ${
@@ -258,9 +258,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           />
 
           {!cameraReady && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-950">
-              <RefreshCw className="w-10 h-10 text-blue-400 animate-spin mb-4" />
-              <p className="text-base font-medium text-slate-300">กำลังเปิดกล้องหน้าตู้...</p>
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-[#F0FDF9]">
+              <RefreshCw className="w-10 h-10 text-emerald-600 animate-spin mb-4" />
+              <p className="text-base font-semibold text-[#063932]">กำลังเปิดกล้องหน้าตู้...</p>
             </div>
           )}
 
@@ -288,8 +288,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
           {/* Scanner Reticle Overlay */}
           <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-            <div className="w-64 h-80 rounded-full border-2 border-dashed border-blue-400/40 shadow-[0_0_50px_rgba(59,130,246,0.15)]" />
-            <div className="mt-4 px-6 py-2 rounded-full bg-slate-950/85 backdrop-blur-md border border-slate-700/80 text-blue-200 text-xs font-semibold shadow-xl">
+            <div className="w-64 h-80 rounded-full border-2 border-dashed border-emerald-500/50 shadow-[0_0_50px_rgba(16,185,129,0.2)]" />
+            <div className="mt-4 px-6 py-2 rounded-full bg-white/95 backdrop-blur-md border border-emerald-200 text-[#063932] text-xs font-bold shadow-lg">
               {statusText}
             </div>
           </div>
@@ -376,15 +376,15 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       )}
 
       {/* Bottom Option Bar */}
-      <div className="w-full max-w-xl flex items-center justify-between pt-4 border-t border-slate-800/80 text-xs text-slate-500">
+      <div className="w-full max-w-xl flex items-center justify-between pt-4 border-t border-slate-200 text-xs text-slate-500">
         <div className="flex items-center gap-1.5">
-          <ShieldCheck className="w-4 h-4 text-emerald-500" />
+          <ShieldCheck className="w-4 h-4 text-emerald-600" />
           <span>คุ้มครองข้อมูลส่วนบุคคล PDPA & NIST SP 800-63B</span>
         </div>
         <button
           type="button"
           onClick={onNavigateToEnroll}
-          className="flex items-center gap-1 text-blue-400 hover:text-blue-300 font-semibold underline"
+          className="flex items-center gap-1 text-emerald-700 hover:text-emerald-800 font-semibold underline cursor-pointer"
         >
           <UserPlus className="w-3.5 h-3.5" />
           <span>ผู้ป่วยใหม่? สมัครด้วยใบหน้า</span>
