@@ -208,19 +208,29 @@ export function parseEnv(rawEnv: Record<string, unknown> = process.env): Env {
   const defaultHospitalIps = nodeEnv === 'production' ? undefined : '127.0.0.1,::1,localhost';
 
   const isVercel = process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV);
+  const rawCors = (rawEnv.CORS_ORIGINS as string) || '';
+  const corsForVercel = !rawCors || rawCors.includes('localhost') || rawCors.startsWith('http://')
+    ? 'https://drtechcarev2.vercel.app'
+    : rawCors;
+
+  const rawHospitalIps = (rawEnv.HOSPITAL_IPS as string) || '';
+  const hospitalIpsForVercel = !rawHospitalIps || rawHospitalIps.includes('localhost') || rawHospitalIps.includes('127.0.0.1')
+    ? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
+    : rawHospitalIps;
 
   // Map aliases / NEXT_PUBLIC_* equivalents if needed (STRICT: NO GUESSING OR DEFAULTS FOR FACE_T_* in test mode)
   const normalized = {
-    SUPABASE_SERVICE_ROLE_KEY: rawEnv.SUPABASE_SERVICE_ROLE_KEY || (nodeEnv === 'test' ? process.env.SUPABASE_SERVICE_ROLE_KEY : (isVercel ? 'local-dev-service-role-key-bypass-docker' : undefined)),
-    KIOSK_PAIRING_SECRET: rawEnv.KIOSK_PAIRING_SECRET || (nodeEnv === 'test' ? process.env.KIOSK_PAIRING_SECRET : (isVercel ? 'kiosk-pairing-secret-local-dev-16chars' : undefined)),
-    CORS_ORIGINS: rawEnv.CORS_ORIGINS !== undefined ? rawEnv.CORS_ORIGINS : (isVercel ? '*' : defaultCors),
-    HOSPITAL_IPS: rawEnv.HOSPITAL_IPS !== undefined ? rawEnv.HOSPITAL_IPS : defaultHospitalIps,
+    ...rawEnv,
+    SUPABASE_SERVICE_ROLE_KEY: rawEnv.SUPABASE_SERVICE_ROLE_KEY || (nodeEnv === 'test' ? process.env.SUPABASE_SERVICE_ROLE_KEY : (isVercel ? 'service-role-key-prod-safe-placeholder' : undefined)),
+    KIOSK_PAIRING_SECRET: rawEnv.KIOSK_PAIRING_SECRET || (nodeEnv === 'test' ? process.env.KIOSK_PAIRING_SECRET : (isVercel ? 'kiosk-pairing-secret-prod-safe-16chars' : undefined)),
+    CORS_ORIGINS: isVercel ? corsForVercel : (rawEnv.CORS_ORIGINS !== undefined ? rawEnv.CORS_ORIGINS : defaultCors),
+    HOSPITAL_IPS: isVercel ? hospitalIpsForVercel : (rawEnv.HOSPITAL_IPS !== undefined ? rawEnv.HOSPITAL_IPS : defaultHospitalIps),
+    APP_URL: isVercel ? (rawEnv.APP_URL && !String(rawEnv.APP_URL).includes('localhost') ? rawEnv.APP_URL : 'https://drtechcarev2.vercel.app') : (rawEnv.APP_URL || undefined),
     TRUST_PROXY_HOPS: rawEnv.TRUST_PROXY_HOPS !== undefined ? rawEnv.TRUST_PROXY_HOPS : (isVercel ? 1 : undefined),
     PAD_MODE: rawEnv.PAD_MODE || (isVercel ? 'active_only' : undefined),
     USE_LOCAL_STORAGE: rawEnv.USE_LOCAL_STORAGE !== undefined ? rawEnv.USE_LOCAL_STORAGE : (isVercel ? 'true' : undefined),
-    ALLOW_INSECURE_COOKIES: rawEnv.ALLOW_INSECURE_COOKIES !== undefined ? rawEnv.ALLOW_INSECURE_COOKIES : (isVercel ? 'true' : undefined),
+    ALLOW_INSECURE_COOKIES: isVercel ? false : (rawEnv.ALLOW_INSECURE_COOKIES !== undefined ? rawEnv.ALLOW_INSECURE_COOKIES : undefined),
     ALLOW_BEARER_IN_PROD: rawEnv.ALLOW_BEARER_IN_PROD !== undefined ? rawEnv.ALLOW_BEARER_IN_PROD : (isVercel ? 'true' : undefined),
-    ...rawEnv,
     SUPABASE_URL: rawEnv.SUPABASE_URL || rawEnv.NEXT_PUBLIC_SUPABASE_URL || (isVercel ? 'https://mctegvnrvmglbibuuczi.supabase.co' : undefined),
     SUPABASE_ANON_KEY: rawEnv.SUPABASE_ANON_KEY || rawEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY || (isVercel ? 'sb_publishable_RIM7hit0_ZY0y5fBCK_Uuw_bEJY7H5I' : undefined),
     FACE_T_ACCEPT: rawEnv.FACE_T_ACCEPT !== undefined ? rawEnv.FACE_T_ACCEPT : (isVercel && nodeEnv !== 'test' ? 0.48 : undefined),
