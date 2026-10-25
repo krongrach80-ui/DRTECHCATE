@@ -1,33 +1,27 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { createApp } from '../apps/api/src/app';
-import { getEnv } from '../apps/api/src/config/env';
-import { activateLocalPersistenceEngine } from '../apps/api/src/lib/localStorage/localPersistenceEngine';
-import { syncBansFromDatabase } from '../apps/api/src/middleware/banCheck';
 
-let appInstance: ReturnType<typeof createApp> | null = null;
-let isInitialized = false;
+let appInstance: any = null;
 
-async function bootstrapApp() {
-  if (!isInitialized) {
-    isInitialized = true;
+async function getOrInitApp() {
+  if (!appInstance) {
+    const { activateLocalPersistenceEngine } = await import('../apps/api/src/lib/localStorage/localPersistenceEngine');
+    activateLocalPersistenceEngine();
+
     try {
-      activateLocalPersistenceEngine();
-      try {
-        const env = getEnv();
-        if (!env.USE_LOCAL_STORAGE) {
-          await syncBansFromDatabase().catch(() => {});
-        }
-      } catch {
-        // Fallback to local engine
+      const { getEnv } = await import('../apps/api/src/config/env');
+      const env = getEnv();
+      if (!env.USE_LOCAL_STORAGE) {
+        const { syncBansFromDatabase } = await import('../apps/api/src/middleware/banCheck');
+        await syncBansFromDatabase().catch(() => {});
       }
-      appInstance = createApp();
-    } catch (err) {
-      console.error('Fatal during bootstrapApp:', err);
-      activateLocalPersistenceEngine();
-      appInstance = createApp();
+    } catch {
+      // Local engine fallback
     }
+
+    const { createApp } = await import('../apps/api/src/app');
+    appInstance = createApp();
   }
-  return appInstance!;
+  return appInstance;
 }
 
 export const config = {
@@ -39,9 +33,8 @@ export const config = {
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
-    const app = await bootstrapApp();
+    const app = await getOrInitApp();
 
-    // If Vercel rewrote the request to /api, recover original path from x-matched-path
     let requestPath = req.url || '';
     const matchedPath = req.headers['x-matched-path'] as string | undefined;
     if (matchedPath && matchedPath.startsWith('/api') && (!requestPath || requestPath === '/' || requestPath === '/api')) {
@@ -52,7 +45,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
     req.url = requestPath;
 
-    return (app as any)(req, res);
+    return app(req, res);
   } catch (err: any) {
     console.error('Serverless Handler Error:', err);
     res.statusCode = 500;
