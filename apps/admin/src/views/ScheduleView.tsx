@@ -185,11 +185,11 @@ export const ScheduleView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <CalendarIcon className="w-6 h-6 text-teal-400" />
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <CalendarIcon className="w-6 h-6 text-teal-600" />
             <span>จัดการตารางนัดหมายกายภาพ (Schedule Planner)</span>
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 mt-1">
             วางแผนคอร์สการรักษาด้วย Wizard 3 ขั้นตอน Snapshot รายการท่า และติดตามสถานะประจำวัน
           </p>
         </div>
@@ -197,7 +197,7 @@ export const ScheduleView: React.FC = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={fetchInitialData}
-            className="p-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
             title="รีเฟรชข้อมูล"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />

@@ -132,7 +132,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
             <ClinicalSidebar
               activeTab={activeTab}
               onSelectTab={handleSelectTab}
-              queueBadgeCount={12}
+              queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
               onLogout={onLogout}
               onReturnToKiosk={onReturnToKiosk}
             />
@@ -145,7 +145,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
         <ClinicalSidebar
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
-          queueBadgeCount={12}
+          queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
           onLogout={onLogout}
           onReturnToKiosk={onReturnToKiosk}
         />
@@ -157,7 +157,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
         <ClinicalTopHeader
           title={pageMeta.title}
           subtitleEn={pageMeta.subtitle}
-          userName={currentUser?.full_name || 'นพ. วรชัย อมรเวช'}
+          userName={currentUser?.full_name || (currentUser?.role === 'admin' ? 'ผู้อำนวยการคลินิก' : 'ผู้ดูแลระบบ')}
           userRoleTitle={currentUser?.role === 'admin' ? 'ผู้อำนวยการโรงพยาบาล (Hospital Director)' : 'นักกายภาพบำบัด (PT)'}
           onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
           onFastCheckIn={() => {

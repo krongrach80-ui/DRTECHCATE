@@ -249,11 +249,11 @@ export const PatientsView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Activity className="w-6 h-6 text-teal-400" />
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <Activity className="w-6 h-6 text-teal-600" />
             <span>ทะเบียนคนไข้ (Patients Directory)</span>
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 mt-1">
             ค้นหาคนไข้ กำหนด PT ผู้รับผิดชอบ ส่งตั๋วสแกนหน้า และดูเวชระเบียนแบบไม่สามารถแก้ไขย้อนหลังได้
           </p>
         </div>
@@ -261,7 +261,7 @@ export const PatientsView: React.FC = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={() => fetchPatients(search)}
-            className="p-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
             title="รีเฟรชข้อมูล"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -693,7 +693,7 @@ export const PatientsView: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder="เช่น สมชาย"
+                    placeholder="เช่น ธนกฤต"
                     value={createFormData.first_name}
                     onChange={(e) => setCreateFormData({ ...createFormData, first_name: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"

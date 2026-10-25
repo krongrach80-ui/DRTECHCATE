@@ -153,7 +153,7 @@ export class SmartOnboardingService {
     const vectors = payload.frames.map((f) => f.embedding);
     const avgVector = computeAverageVector(vectors);
 
-    // Generate unique patient_id e.g. P-6022
+    // Generate unique patient_id e.g. P-1001
     const randomCode = Math.floor(1000 + Math.random() * 9000);
     const patient_id = `P-${randomCode}`;
     const hn = patient_id;

@@ -46,7 +46,7 @@ interface ClinicalSidebarProps {
 export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
   activeTab,
   onSelectTab,
-  queueBadgeCount = 12,
+  queueBadgeCount = 0,
   onLogout,
   onReturnToKiosk,
   isPtMode = false,

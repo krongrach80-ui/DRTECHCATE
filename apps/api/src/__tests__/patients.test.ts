@@ -38,12 +38,12 @@ describe('[UNIT] DrTech.Care System 5B: Patients & Registration Complete Test Su
         .set('Cookie', ['access_token=mock-token:pt-001:pt:active'])
         .set('X-Requested-With', 'XMLHttpRequest')
         .send({
-          first_name: 'สมชาย',
+          first_name: 'พิชัย',
           last_name: 'ใจดี',
           age: 45,
           sex: 'male',
           phone: '081-234-5678',
-          injury: 'Frozen shoulder left side',
+          injury: 'Rotator cuff left side',
         });
 
       expect(res1.status).toBe(201);
@@ -266,7 +266,7 @@ describe('[UNIT] DrTech.Care System 5B: Patients & Registration Complete Test Su
         .set('Cookie', ['access_token=mock-token:admin-001:admin:active'])
         .set('X-Requested-With', 'XMLHttpRequest')
         .send({
-          first_name: 'สมชาย',
+          first_name: 'พิชัย',
           last_name: 'ใจเย็น',
           age: 50,
         });

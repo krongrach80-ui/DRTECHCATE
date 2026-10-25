@@ -42,7 +42,9 @@ interface LocalDbData {
   notes?: any[];
 }
 
-const DB_FILE_PATH = path.resolve(process.cwd(), 'data', 'local_db.json');
+const DB_FILE_PATH = process.env.VERCEL === '1'
+  ? path.resolve('/tmp', 'local_db.json')
+  : path.resolve(process.cwd(), 'data', 'local_db.json');
 
 // In-memory passwords for local authentication
 const localPasswords = new Map<string, string>([
@@ -52,6 +54,8 @@ const localPasswords = new Map<string, string>([
   ['admin@drtech.care', 'Admin12345678!'],
   ['pt_somchai', 'CorrectPassword123!'],
   ['pt_somchai@drtech.care', 'CorrectPassword123!'],
+  ['pt_clinic', 'CorrectPassword123!'],
+  ['pt_clinic@drtech.care', 'CorrectPassword123!'],
 ]);
 
 let isEngineActive = false;
@@ -191,7 +195,7 @@ export function seedDefaultLocalData(): void {
   const pt: StaffProfileRecord = {
     id: ptId,
     username: 'pt_somchai',
-    full_name: 'กภ. สมชาย ใจดี',
+    full_name: 'กภ. ภัทรพล เจริญสุข',
     role: 'pt',
     status: 'active',
     phone: '085-555-4444',
@@ -236,7 +240,7 @@ export function seedDefaultLocalData(): void {
     age: 52,
     sex: 'male',
     phone: '081-111-2222',
-    injury: 'ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)',
+    injury: 'ข้อไหล่ติดระยะฟื้นฟู',
     history: {},
     registered_via: 'reception',
     responsible_pt_id: ptId,
@@ -329,7 +333,7 @@ export function seedDefaultLocalData(): void {
   // 5. Seed Modpack
   const modpack: ModpackRecord = {
     id: 'mod-001',
-    name: 'โปรแกรมฟื้นฟูข้อไหล่ติดระยะต้น (Frozen Shoulder Protocol)',
+    name: 'โปรแกรมฟื้นฟูข้อไหล่ติดระยะต้น (Adhesive Capsulitis Protocol)',
     description: 'ชุดท่าฝึกเพิ่มองศาการเคลื่อนไหวและลดอาการปวดข้อไหล่',
     created_by: ptId,
     created_at: now,

@@ -126,13 +126,13 @@ describe('[UNIT] DrTech.Care Kiosk State Machine (Section 9 Specification)', () 
     machine.handleEvent({
       type: 'VERIFY_SUCCESS',
       patientId: 'patient-999',
-      patientFirstName: 'สมชาย',
+      patientFirstName: 'กิตติ',
       avatarUrl: 'https://avatar.cdn/p1.png',
     });
 
     expect(machine.getState()).toBe('CONFIRM');
     const ctx = machine.getContext();
-    expect(ctx.patientFirstName).toBe('สมชาย');
+    expect(ctx.patientFirstName).toBe('กิตติ');
     expect(ctx.avatarUrl).toBe('https://avatar.cdn/p1.png');
     // Ensure last name / HN are NOT present in context
     expect((ctx as Record<string, unknown>).hn).toBeUndefined();
@@ -146,7 +146,7 @@ describe('[UNIT] DrTech.Care Kiosk State Machine (Section 9 Specification)', () 
     machine.handleEvent({
       type: 'VERIFY_SUCCESS',
       patientId: 'patient-999',
-      patientFirstName: 'สมชาย',
+      patientFirstName: 'กิตติ',
     });
 
     expect(machine.getState()).toBe('CONFIRM');

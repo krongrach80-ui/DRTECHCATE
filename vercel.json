@@ -7,7 +7,19 @@
   "cleanUrls": true,
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/api",
+      "destination": "/api/index.ts"
+    },
+    {
       "source": "/admin/:path*",
+      "destination": "/admin/index.html"
+    },
+    {
+      "source": "/admin",
       "destination": "/admin/index.html"
     },
     {
@@ -15,7 +27,19 @@
       "destination": "/pt/index.html"
     },
     {
+      "source": "/pt",
+      "destination": "/pt/index.html"
+    },
+    {
       "source": "/kiosk/:path*",
+      "destination": "/kiosk/index.html"
+    },
+    {
+      "source": "/kiosk",
+      "destination": "/kiosk/index.html"
+    },
+    {
+      "source": "/",
       "destination": "/kiosk/index.html"
     }
   ]

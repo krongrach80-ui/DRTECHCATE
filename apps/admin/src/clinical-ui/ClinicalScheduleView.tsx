@@ -51,9 +51,10 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardPatientId, setWizardPatientId] = useState<string | undefined>(undefined);
 
-  // Current month state (October 2569 / 2026)
-  const [currentYear] = useState(2026);
-  const [currentMonthIndex] = useState(9); // 0-indexed: 9 = October
+  // Dynamic current month state
+  const now = useMemo(() => new Date(), []);
+  const [currentYear] = useState(now.getFullYear());
+  const [currentMonthIndex] = useState(now.getMonth());
 
   const thaiMonths = [
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -88,10 +89,10 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     onOpenCreateScheduleModal?.(targetId);
   };
 
-  // Calendar dates generation (October has 31 days)
+  // Dynamic calendar dates generation
   const daysOfWeek = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
-  const daysInMonth = 31;
-  const firstDayOffset = 4; // 1 October 2026 was Thursday (index 4)
+  const daysInMonth = new Date(currentYear, currentMonthIndex + 1, 0).getDate();
+  const firstDayOffset = new Date(currentYear, currentMonthIndex, 1).getDay();
 
   const dayAliases: Record<string, string[]> = useMemo(
     () => ({
@@ -143,23 +144,30 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       }
     >();
 
-    const defaultDemoSessions = [2, 5, 7, 9, 12, 14, 16, 19, 21, 23, 26, 28, 30];
+    const todayDate = new Date();
+    const todayYear = todayDate.getFullYear();
+    const todayMonth = todayDate.getMonth();
+    const todayDay = todayDate.getDate();
 
     for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
-      const isToday = dayNum === 24; // 24 October 2026
-      const dateStr = `2026-10-${String(dayNum).padStart(2, '0')}`;
-      const dateObj = new Date(2026, 9, dayNum);
+      const isToday =
+        todayYear === currentYear &&
+        todayMonth === currentMonthIndex &&
+        todayDay === dayNum;
+
+      const dateStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+      const dateObj = new Date(currentYear, currentMonthIndex, dayNum);
       const dayKey = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
       const aliases = dayAliases[dayKey] || [dayKey];
 
       if (calendarMode === 'individual') {
         const s = activeDossier?.schedule;
         let hasSession = false;
-        let timeSlot = '09:00 - 10:00';
-        let kioskId = 'kiosk-01';
-        let exerciseCount = 3;
-        let includeMinigame = true;
-        let dateRangeStr = '2026-10-01 ถึง 2026-10-31';
+        let timeSlot = '';
+        let kioskId = '';
+        let exerciseCount = 0;
+        let includeMinigame = false;
+        let dateRangeStr = '';
 
         if (s) {
           const startDate = s.startDate || s.start_date || '1970-01-01';
@@ -169,18 +177,17 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
             dateStr >= startDate &&
             dateStr <= endDate &&
             days.some((d: string) => aliases.includes(d));
-          timeSlot = s.timeSlot || s.time_slot || '09:30 - 10:30';
+          timeSlot = s.timeSlot || s.time_slot || '09:00 - 10:00';
           kioskId = s.kioskId || s.assigned_kiosk_id || 'kiosk-01';
           exerciseCount =
-            (s.assigned_exercises || s.prescribed_exercises || []).length || 3;
+            (s.assigned_exercises || s.prescribed_exercises || []).length;
           includeMinigame = Boolean(s.include_minigame);
           dateRangeStr = `${startDate} ถึง ${endDate}`;
-        } else {
-          hasSession = defaultDemoSessions.includes(dayNum);
         }
 
-        const isPaused = dayNum === 9 && !s;
-        const isCompleted = dayNum < 24 && hasSession && !isPaused;
+        const isPaused = false;
+        const isPast = dateObj < new Date(todayYear, todayMonth, todayDay);
+        const isCompleted = isPast && hasSession;
 
         map.set(dayNum, {
           hasSession,
@@ -225,28 +232,28 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           }
         });
 
-        const hasSession =
-          matchingSessions.length > 0 || defaultDemoSessions.includes(dayNum);
-        const isPaused = dayNum === 9 && matchingSessions.length === 0;
-        const isCompleted = dayNum < 24 && hasSession && !isPaused;
+        const hasSession = matchingSessions.length > 0;
+        const isPaused = false;
+        const isPast = dateObj < new Date(todayYear, todayMonth, todayDay);
+        const isCompleted = isPast && hasSession;
 
         map.set(dayNum, {
           hasSession,
           isToday,
           isPaused,
           isCompleted,
-          timeSlot: matchingSessions[0]?.timeSlot || '09:00 - 10:00',
-          kioskId: matchingSessions[0]?.kioskId || 'kiosk-01',
-          exerciseCount: 3,
+          timeSlot: matchingSessions[0]?.timeSlot || '',
+          kioskId: matchingSessions[0]?.kioskId || '',
+          exerciseCount: 0,
           includeMinigame: matchingSessions.some((m) => m.includeMinigame),
-          dateRangeStr: '2026-10-01 ถึง 2026-10-31',
+          dateRangeStr: '',
           matchingSessions,
         });
       }
     }
 
     return map;
-  }, [calendarMode, activeDossier, dossiers, dayAliases]);
+  }, [calendarMode, activeDossier, dossiers, dayAliases, daysInMonth, currentYear, currentMonthIndex]);
 
   // Compute 4 KPI values dynamically
   const kpiStats = useMemo(() => {
@@ -255,90 +262,114 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     let pausedSessions = 0;
     let completedSessions = 0;
 
-    monthlyScheduleMap.forEach((entry, dayNum) => {
+    monthlyScheduleMap.forEach((entry) => {
       if (entry.hasSession) {
         totalSessions++;
         if (entry.isPaused) {
           pausedSessions++;
         } else if (entry.isCompleted) {
           completedSessions++;
-        } else if (dayNum >= 24) {
+        } else {
           activeSessions++;
         }
       }
     });
 
     return {
-      total: totalSessions || 24,
-      active: activeSessions || 16,
-      paused: pausedSessions || 2,
-      completed: completedSessions || 6,
+      total: totalSessions,
+      active: activeSessions,
+      paused: pausedSessions,
+      completed: completedSessions,
     };
   }, [monthlyScheduleMap]);
 
   return (
     <div className="p-4 sm:p-6 md:p-8 space-y-6 font-sans">
-      {/* 1. Header with Active Patient Card */}
-      <MedicalCard className="p-6 bg-white border border-slate-200">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center font-bold text-xl shadow-md">
+      {/* 1. Header with Active Patient Card or Empty State */}
+      {!selectedPatient ? (
+        <MedicalCard className="p-8 bg-white border border-slate-200 text-center">
+          <div className="max-w-md mx-auto space-y-3">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
               <User className="w-7 h-7" />
             </div>
-
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-mono font-bold text-slate-400">
-                  HN: {selectedPatient?.hn || selectedPatient?.id || 'P-6022'}
-                </span>
-                <StatusBadge variant="active" text="กำลังเข้ารับการฟื้นฟู (Active)" />
-                {activeDossier?.schedule?.include_minigame && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                    <Brain className="w-3 h-3" />
-                    รวมมินิเกม
-                  </span>
-                )}
-              </div>
-              <h2 className="text-xl font-black text-slate-800 tracking-tight">
-                {selectedPatient
-                  ? `${selectedPatient.first_name} ${selectedPatient.last_name}`
-                  : 'นายสมชาย ใจดี'}
-              </h2>
-              <p className="text-xs text-slate-500">
-                การวินิจฉัย: {selectedPatient?.injury || 'ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)'} • PT ผู้รับผิดชอบ: กภ. ปิยะมาศ
-              </p>
+            <h3 className="text-lg font-bold text-slate-800">
+              ยังไม่มีข้อมูลคนไข้หรือตารางนัดหมายในระบบ กรุณาเพิ่มคนไข้ก่อนสร้างตารางฝึก
+            </h3>
+            <p className="text-xs text-slate-500">
+              เลือกรอบนัดหมายจากรายการผู้ป่วย หรือกดปุ่มสร้างคนไข้ใหม่เพื่อเริ่มจัดตารางกายภาพ
+            </p>
+            <div className="pt-2">
+              <SmoothButton
+                variant="primary"
+                size="md"
+                onClick={() => handleOpenWizard()}
+                icon={<Plus className="w-4 h-4" />}
+              >
+                <span>+ ลงทะเบียนคนไข้ใหม่</span>
+              </SmoothButton>
             </div>
           </div>
+        </MedicalCard>
+      ) : (
+        <MedicalCard className="p-6 bg-white border border-slate-200">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center font-bold text-xl shadow-md">
+                <User className="w-7 h-7" />
+              </div>
 
-          <div className="flex items-center gap-3">
-            {/* Change Patient Dropdown / Trigger */}
-            <select
-              id="clinical-schedule-patient-select"
-              value={selectedPatient?.id || ''}
-              onChange={(e) => {
-                const found = patients.find((p) => p.id === e.target.value);
-                if (found) setSelectedPatient(found);
-              }}
-              className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-semibold cursor-pointer transition focus:outline-none"
-            >
-              {patients.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.first_name} {p.last_name} ({p.hn || p.id})
-                </option>
-              ))}
-            </select>
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-mono font-bold text-slate-400">
+                    HN: {selectedPatient.hn || selectedPatient.id}
+                  </span>
+                  <StatusBadge variant="active" text="กำลังเข้ารับการฟื้นฟู (Active)" />
+                  {activeDossier?.schedule?.include_minigame && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                      <Brain className="w-3 h-3" />
+                      รวมมินิเกม
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-xl font-black text-slate-800 tracking-tight">
+                  {`${selectedPatient.first_name} ${selectedPatient.last_name}`.trim()}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  การวินิจฉัย: {selectedPatient.injury || 'อยู่ระหว่างประเมินอาการ'} • PT ผู้รับผิดชอบ: {activeDossier?.clinical?.responsible_pt_name || 'กภ. ประจำคลินิก'}
+                </p>
+              </div>
+            </div>
 
-            <SmoothButton
-              variant="primary"
-              size="md"
-              onClick={() => handleOpenWizard(selectedPatient?.id)}
-              icon={<Plus className="w-4 h-4" />}
-            >
-              <span>+ สร้างตารางฝึกใหม่</span>
-            </SmoothButton>
+            <div className="flex items-center gap-3">
+              {/* Change Patient Dropdown / Trigger */}
+              <select
+                id="clinical-schedule-patient-select"
+                value={selectedPatient.id}
+                onChange={(e) => {
+                  const found = patients.find((p) => p.id === e.target.value);
+                  if (found) setSelectedPatient(found);
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-semibold cursor-pointer transition focus:outline-none"
+              >
+                {patients.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.first_name} {p.last_name} ({p.hn || p.id})
+                  </option>
+                ))}
+              </select>
+
+              <SmoothButton
+                variant="primary"
+                size="md"
+                onClick={() => handleOpenWizard(selectedPatient.id)}
+                icon={<Plus className="w-4 h-4" />}
+              >
+                <span>+ สร้างตารางฝึกใหม่</span>
+              </SmoothButton>
+            </div>
           </div>
-        </div>
-      </MedicalCard>
+        </MedicalCard>
+      )}
 
       {/* 2. Mode Switcher & 4 KPI Cards */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -433,7 +464,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
             <h3 className="text-lg font-black text-slate-800">
               {thaiMonths[currentMonthIndex]} {currentYear + 543}
             </h3>
-            <span className="text-xs text-slate-400 font-medium">(ตุลาคม 2569)</span>
+            <span className="text-xs text-slate-400 font-medium">({thaiMonths[currentMonthIndex]} {currentYear + 543})</span>
           </div>
 
           {/* Status Dots Legend */}

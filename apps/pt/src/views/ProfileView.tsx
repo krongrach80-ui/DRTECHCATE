@@ -76,11 +76,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     <div className="p-8 max-w-4xl space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <UserCheck className="w-6 h-6 text-teal-400" />
+        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+          <UserCheck className="w-6 h-6 text-teal-600" />
           <span>ข้อมูลส่วนตัว & ใบประกอบวิชาชีพ (My Profile)</span>
         </h2>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-sm text-slate-500 mt-1">
           จัดการข้อมูลการติดต่อ ความเชี่ยวชาญ และตรวจสอบสถานะใบอนุญาตประกอบวิชาชีพกายภาพบำบัด
         </p>
       </div>

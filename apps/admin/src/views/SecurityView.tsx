@@ -208,11 +208,11 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <ShieldAlert className="w-6 h-6 text-rose-400" />
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <ShieldAlert className="w-6 h-6 text-rose-600" />
             <span>ประวัติและความปลอดภัย (Audit, Bans & Security)</span>
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 mt-1">
             คำเรียกเจ้าหน้าที่ฉุกเฉิน (SSE), บันทึก Audit Log, บังคับตัดเซสชัน, ระบบแบน และจัดการตู้ Kiosk
           </p>
         </div>

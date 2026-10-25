@@ -38,12 +38,12 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   const [name, setName] = useState('');
   const [age, setAge] = useState(45);
   const [sex, setSex] = useState<'male' | 'female'>('male');
-  const [phone, setPhone] = useState('081-234-5678');
+  const [phone, setPhone] = useState('');
   const [responsiblePtId, setResponsiblePtId] = useState('');
   const [ptsList, setPtsList] = useState<PtDirectoryRecord[]>([]);
-  const [diagnosis, setDiagnosis] = useState('ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)');
-  const [pin, setPin] = useState('1234');
-  const [consentPdpa, setConsentPdpa] = useState(true);
+  const [diagnosis, setDiagnosis] = useState('');
+  const [pin, setPin] = useState('');
+  const [consentPdpa, setConsentPdpa] = useState(false);
 
   // Step 2: Biometric scan state
   const [createdPatientId, setCreatedPatientId] = useState<string | null>(null);
@@ -288,7 +288,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                   <input
                     type="text"
                     required
-                    placeholder="เช่น นายสมชาย ใจดี"
+                    placeholder="เช่น นายธนกร รุ่งเรือง"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
@@ -367,7 +367,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                 type="text"
                 value={diagnosis}
                 onChange={(e) => setDiagnosis(e.target.value)}
-                placeholder="เช่น ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)"
+                placeholder="เช่น ข้อไหล่ติดระยะฟื้นฟู"
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500"
               />
             </div>

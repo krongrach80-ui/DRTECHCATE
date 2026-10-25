@@ -133,7 +133,7 @@ describe('[UNIT & INTEGRATION] Face Enrollment & Compensation Complete Test Suit
     it('1.1 should reject enrollment with 400 CONSENT_REQUIRED if no consent exists', async () => {
       const patientId = 'pt-patient-001';
       currentFakePatientRepo.inMemoryPatients.set(patientId, createTestPatient(patientId, 'HN100001', {
-        first_name: 'สมชาย',
+        first_name: 'พิชัย',
         last_name: 'ใจดี',
       }));
       currentFakePatientRepo.inMemoryAssignments.set('a1', { patient_id: patientId, pt_id: 'pt-001' });

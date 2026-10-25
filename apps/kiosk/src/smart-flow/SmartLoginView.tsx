@@ -247,8 +247,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     const mockPatient: PatientRecordFile = {
       patient_id: 'P-DEMO-001',
       hn: 'HN-68-0042',
-      first_name: 'สมชาย',
-      last_name: 'สายสมร',
+      first_name: 'วิชัย',
+      last_name: 'จิตเกษม',
       age: 62,
       gender: 'male',
       registration_status: 'active',

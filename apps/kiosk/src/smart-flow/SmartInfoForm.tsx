@@ -198,7 +198,7 @@ export const SmartInfoForm: React.FC<SmartInfoFormProps> = ({
               type="text"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              placeholder="เช่น สมชาย"
+              placeholder="เช่น ธนกฤต"
               required
               className="bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-4 py-3 text-white text-base focus:outline-none"
             />

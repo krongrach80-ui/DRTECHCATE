@@ -161,7 +161,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
         <ClinicalTopHeader
           title={pageMeta.title}
           subtitleEn={pageMeta.subtitle}
-          userName={currentUser?.full_name || 'กภ. ปิยะมาศ ภักดีชน'}
+          userName={currentUser?.full_name || 'นักกายภาพบำบัด'}
           userRoleTitle="นักกายภาพบำบัดวิชาชีพ (Senior Physical Therapist)"
           onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
           onFastCheckIn={() => {

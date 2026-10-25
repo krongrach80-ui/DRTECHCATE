@@ -290,9 +290,22 @@ export class ApiClient {
     const data = isJson ? await res.json() : null;
 
     if (!res.ok) {
-      const errorMessage = data?.error?.message || data?.message || `HTTP ${res.status}: ${res.statusText}`;
+      let errorMessage = data?.error?.message || data?.message;
+      if (!errorMessage) {
+        if (res.status === 401) {
+          errorMessage = 'เซสชันหมดอายุหรือไม่ได้รับอนุญาต (401 Unauthorized - กรุณาเข้าสู่ระบบใหม่)';
+        } else if (res.status === 403) {
+          errorMessage = 'ไม่มีสิทธิ์ในการเข้าถึงข้อมูลหรือดำเนินการส่วนนี้ (403 Forbidden)';
+        } else if (res.status === 404) {
+          errorMessage = 'ไม่พบปลายทาง API ที่เรียก (404 Not Found - ระบบหลังบ้านอาจยังไม่ได้เชื่อมต่อ)';
+        } else if (res.status >= 500) {
+          errorMessage = `เซิร์ฟเวอร์เกิดข้อผิดพลาดภายใน (HTTP ${res.status} Internal Server Error)`;
+        } else {
+          errorMessage = `เกิดข้อผิดพลาดในการเชื่อมต่อ (HTTP ${res.status}: ${res.statusText || 'Error'})`;
+        }
+      }
       const err = new Error(errorMessage) as Error & { code?: string; status?: number };
-      err.code = data?.error?.code || 'API_ERROR';
+      err.code = data?.error?.code || `HTTP_${res.status}`;
       err.status = res.status;
       throw err;
     }

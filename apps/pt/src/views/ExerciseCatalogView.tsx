@@ -209,11 +209,11 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Dumbbell className="w-6 h-6 text-teal-400" />
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <Dumbbell className="w-6 h-6 text-teal-600" />
             <span>คลังท่ากายภาพบำบัด (Exercise Catalog)</span>
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 mt-1">
             ดูท่าทั้งหมดในคลัง เพิ่มท่าใหม่ และจัดการเฉพาะท่าที่ท่านสร้างขึ้นเอง (Database Trigger Enforced)
           </p>
         </div>
@@ -221,7 +221,7 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={fetchExercises}
-            className="p-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
             title="รีเฟรช"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />

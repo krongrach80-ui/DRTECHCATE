@@ -166,30 +166,30 @@ describe('[MASTER PROMPT v4] Isolated Kiosk Smart Flow Test Suite', () => {
   describe('3. SmartInfoForm: Dual-Channel Parallel Input (Option A / Option B)', () => {
     it('3.1 Option A: Kiosk submits info and receives active status', async () => {
       const element = React.createElement(SmartInfoForm, {
-        patientId: 'P-6022',
+        patientId: 'P-9001',
         onCompleted: () => {},
       });
       expect(element).toBeDefined();
 
       vi.spyOn(defaultApiClient.smartOnboarding, 'completeInfo').mockResolvedValueOnce({
-        patient_id: 'P-6022',
-        first_name: 'สมชาย',
+        patient_id: 'P-9001',
+        first_name: 'ศิริพร',
         last_name: 'สายสมร',
         age: 60,
-        gender: 'male',
+        gender: 'female',
         registration_status: 'active',
       } as any);
 
       const res = await defaultApiClient.smartOnboarding.completeInfo({
-        patient_id: 'P-6022',
-        first_name: 'สมชาย',
+        patient_id: 'P-9001',
+        first_name: 'ศิริพร',
         last_name: 'สายสมร',
         age: 60,
-        gender: 'male',
+        gender: 'female',
       });
 
       expect(res.registration_status).toBe('active');
-      expect(res.first_name).toBe('สมชาย');
+      expect(res.first_name).toBe('ศิริพร');
     });
 
     it('3.2 Option B: SSE event broadcasts patient_info_completed to kiosk for First-Finisher Wins', () => {
@@ -207,10 +207,10 @@ describe('[MASTER PROMPT v4] Isolated Kiosk Smart Flow Test Suite', () => {
       let receivedId: string | null = null;
       registeredListener!({
         event: 'patient_info_completed',
-        data: { patient_id: 'P-6022', first_name: 'สมชาย', status: 'active' },
+        data: { patient_id: 'P-9001', first_name: 'ศิริพร', status: 'active' },
       });
-      receivedId = 'P-6022';
-      expect(receivedId).toBe('P-6022');
+      receivedId = 'P-9001';
+      expect(receivedId).toBe('P-9001');
       expect(registeredListener).toBeDefined();
     });
   });

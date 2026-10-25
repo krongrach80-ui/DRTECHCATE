@@ -194,11 +194,11 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
       {/* View Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Monitor className="w-6 h-6 text-teal-400" />
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <Monitor className="w-6 h-6 text-teal-600" />
             <span>หน้าต้อนรับ & คิวฝึกสด (Reception Desk)</span>
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 mt-1">
             ค้นหาคนไข้, เช็คอินเข้ากลุ่มเทียบใบหน้า, ออกตั๋วส่งไปลงทะเบียนตู้ 10 นาที และติดตามสถานะฝึกสด
           </p>
         </div>
@@ -206,7 +206,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={fetchData}
-            className="p-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
             title="รีเฟรชข้อมูล"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -479,7 +479,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                     required
                     value={patientForm.first_name}
                     onChange={(e) => setPatientForm({ ...patientForm, first_name: e.target.value })}
-                    placeholder="สมชาย"
+                    placeholder="กิตติ"
                     className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
                   />
                 </div>

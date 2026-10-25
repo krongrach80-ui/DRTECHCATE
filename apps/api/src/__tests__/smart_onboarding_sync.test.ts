@@ -44,7 +44,7 @@ describe('[MASTER PROMPT v4] Smart Onboarding, Dual-Sync & Dynamic Rehab Engine'
     return {
       patient_id: id,
       hn: `HN-${id}`,
-      first_name: 'สมชาย',
+      first_name: 'พิชัย',
       last_name: 'ทดสอบระบบ',
       age: 65,
       gender: 'male',

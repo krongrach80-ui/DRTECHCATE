@@ -322,7 +322,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
     it('2.1 DoD 1: Patient without an active appointment today fails face verification', async () => {
       // 1. Create Patient without any appointment
       const patientWithoutAppt = await defaultPatientRepository.createPatient(
-        { first_name: 'สมชาย', last_name: 'ไม่มีนัดวันนี้' },
+        { first_name: 'วิรัช', last_name: 'ไม่มีนัดวันนี้' },
         'pt-001',
         'pt-001'
       );

@@ -146,11 +146,11 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <FileText className="w-6 h-6 text-teal-400" />
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <FileText className="w-6 h-6 text-teal-600" />
             <span>เวชระเบียนคลินิกกายภาพบำบัด (Clinical Records)</span>
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 mt-1">
             บันทึกโน้ตต่อท้าย (Append-Only) และผลการรักษาแบบเวอร์ชัน (Versioned) ปราศจากปุ่มลบหรือแก้ไข
           </p>
         </div>
@@ -159,7 +159,7 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
           <button
             onClick={fetchRecords}
             disabled={!selectedPatientId || loading}
-            className="p-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
             title="รีเฟรชเวชระเบียน"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
