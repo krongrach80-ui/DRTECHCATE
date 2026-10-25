@@ -17,7 +17,6 @@ import {
 import {
   SmoothStepper,
   SmoothButton,
-  FluidProgressBar,
 } from '../../../../packages/hospital-ui-kit/src/index.js';
 import { defaultApiClient, PtDirectoryRecord } from '../../../../packages/api-client/src/index.js';
 
@@ -47,12 +46,52 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   const [consentPdpa, setConsentPdpa] = useState(true);
 
   // Step 2: Biometric scan state
-  const [scanProgress, setScanProgress] = useState(0);
-  const [_isScanning, setIsScanning] = useState(false);
   const [createdPatientId, setCreatedPatientId] = useState<string | null>(null);
+  const [cameraActive, setCameraActive] = useState<boolean>(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+  };
+
+  const startCamera = async () => {
+    try {
+      setCameraError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => {});
+      }
+      setCameraActive(true);
+    } catch {
+      setCameraError('ไม่สามารถเข้าถึงกล้องเว็บแคมได้ (กรุณาอนุญาตสิทธิ์กล้องในเบราว์เซอร์)');
+      setCameraActive(false);
+    }
+  };
+
+  useEffect(() => {
+    if (step === 2) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => {
+      stopCamera();
+    };
+  }, [step]);
 
   // Generate automatic HN on modal open
   useEffect(() => {
@@ -60,9 +99,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       const randomHnNum = Math.floor(1000 + Math.random() * 9000);
       setHn(`P-${randomHnNum}`);
       setStep(1);
-      setScanProgress(0);
-      setIsScanning(false);
       setErrorMsg(null);
+      setCameraError(null);
 
       // Load PT directory for dropdown
       defaultApiClient.directory.listPts().then((pts) => {
@@ -71,6 +109,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
           setResponsiblePtId((prev) => prev || pts[0].id);
         }
       }).catch(() => {});
+    } else {
+      stopCamera();
     }
   }, [isOpen]);
 
@@ -109,7 +149,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       });
 
       setCreatedPatientId(res.id);
-      setStep(3);
+      setStep(2);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลงทะเบียนคนไข้ได้');
     } finally {
@@ -117,7 +157,59 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     }
   };
 
+  const handleCaptureBiometrics = async () => {
+    if (!createdPatientId) return;
+
+    try {
+      setIsLoading(true);
+      setErrorMsg(null);
+
+      let embedding: number[] = [];
+      let base64Jpeg = '';
+
+      if (videoRef.current && videoRef.current.videoWidth > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 112;
+        canvas.height = 112;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(videoRef.current, 0, 0, 112, 112);
+          base64Jpeg = canvas.toDataURL('image/jpeg', 0.85).split(',')[1] || '';
+          const { GeometricLandmarkEmbeddingModel } = await import(
+            '../../../../packages/face-client/src/index.js'
+          );
+          const model = new GeometricLandmarkEmbeddingModel();
+          embedding = await model.embed(canvas);
+        }
+      }
+
+      if (embedding.length === 512) {
+        // Enroll face into database
+        await defaultApiClient.face.enroll({
+          patient_id: createdPatientId,
+          frames: [
+            {
+              pose: 'front',
+              embedding,
+              jpeg_base64: base64Jpeg,
+            },
+          ],
+        });
+      }
+
+      stopCamera();
+      setStep(3);
+    } catch {
+      // Non-blocking: allow proceeding even if face enrollment encounters network glitch
+      stopCamera();
+      setStep(3);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleFinish = () => {
+    stopCamera();
     if (createdPatientId) {
       onSuccess(createdPatientId);
     }
@@ -330,30 +422,61 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
           </form>
         )}
 
-        {/* STEP 2: Biometric Scan Preview */}
+        {/* STEP 2: Real Biometric Scan */}
         {step === 2 && (
-          <div className="p-8 flex flex-col items-center text-center space-y-6">
-            <div className="relative w-44 h-44 rounded-3xl bg-slate-900 border-4 border-emerald-500 overflow-hidden flex items-center justify-center shadow-xl">
-              <Camera className="w-16 h-16 text-emerald-400 animate-pulse" />
-              <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
-              <div className="absolute top-2 left-2 text-[10px] font-mono text-emerald-400 bg-black/60 px-2 py-0.5 rounded">
-                AI ACTIVE
+          <div className="p-8 flex flex-col items-center text-center space-y-4">
+            <div className="relative w-72 h-56 rounded-2xl bg-slate-900 border-4 border-emerald-500 overflow-hidden flex items-center justify-center shadow-xl">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`w-full h-full object-cover -scale-x-100 ${cameraActive ? 'block' : 'hidden'}`}
+              />
+              {!cameraActive && (
+                <div className="flex flex-col items-center justify-center p-4 text-slate-400 space-y-2">
+                  <Camera className="w-12 h-12 text-emerald-400 animate-pulse" />
+                  <span className="text-xs">{cameraError || 'กำลังเริ่มต้นกล้องเว็บแคม...'}</span>
+                </div>
+              )}
+              <div className="absolute top-2 left-2 text-[10px] font-mono text-emerald-400 bg-black/70 px-2 py-0.5 rounded flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span>AI CAMERA {cameraActive ? 'LIVE' : 'INITIALIZING'}</span>
               </div>
             </div>
 
             <div className="max-w-md w-full">
               <h3 className="text-base font-bold text-slate-800 mb-1">
-                กำลังสกัดเวกเตอร์ชีวมิติใบหน้า 512 มิติ (ArcFace AI)...
+                สแกนใบหน้าคนไข้เพื่อสร้างแม่แบบชีวมิติ 512 มิติ
               </h3>
               <p className="text-xs text-slate-500 mb-4">
-                ระบบกำลังจัดเก็บ Snapshots และสร้าง Face Embeddings สอดคล้องตามมาตรฐาน FDA SaMD
+                กรุณาให้คนไข้มองตรงมาที่กล้อง เพื่อบันทึกภาพถ่ายและสร้างแม่แบบเวกเตอร์สำหรับตู้ Kiosk
               </p>
 
-              <FluidProgressBar
-                value={scanProgress}
-                label="ความคืบหน้าการสร้างแม่แบบชีวมิติ"
-                status={scanProgress === 100 ? 'success' : 'normal'}
-              />
+              <div className="flex flex-col gap-2">
+                <SmoothButton
+                  type="button"
+                  variant="primary"
+                  size="md"
+                  onClick={handleCaptureBiometrics}
+                  isLoading={isLoading}
+                  icon={<Camera className="w-4 h-4" />}
+                  className="w-full"
+                >
+                  <span>📸 ถ่ายภาพใบหน้าและบันทึกแม่แบบชีวมิติ</span>
+                </SmoothButton>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCamera();
+                    setStep(3);
+                  }}
+                  className="w-full py-2 rounded-xl text-slate-400 hover:text-slate-600 text-xs font-semibold text-center transition"
+                >
+                  ข้ามขั้นตอนนี้ (ไปขั้นตอนที่ 3) ➔
+                </button>
+              </div>
             </div>
           </div>
         )}

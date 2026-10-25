@@ -71,6 +71,7 @@ export const envSchema = z
     LOG_FACE_SCORES: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
     ALLOW_KIOSK_SELF_ENROLL: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
     LOGIN_SNAPSHOT_RETENTION: z.coerce.number().int().min(0).default(0),
+    USE_LOCAL_STORAGE: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
 
     // Biometric Calibration (Master Prompt v3 - Section 11 & match_face_candidates)
     // NOTE: Values operate in COSINE SIMILARITY space (score = 1.0 - cosine_distance).

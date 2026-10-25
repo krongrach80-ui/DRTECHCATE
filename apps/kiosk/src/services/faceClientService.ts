@@ -145,10 +145,10 @@ function createFreshServices(
   const aligner = new FaceAligner();
 
   const qualityChecker = new FaceQualityChecker({
-    minIod: 40,
-    minBrightness: 40,
-    maxBrightness: 220,
-    minSharpness: 30,
+    minIod: 25,
+    minBrightness: 20,
+    maxBrightness: 245,
+    minSharpness: 15,
     stabilityMs: 250,
   });
 

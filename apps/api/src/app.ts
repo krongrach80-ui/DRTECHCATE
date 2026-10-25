@@ -137,7 +137,41 @@ export function createApp(
     res.status(200).json({ ok: true, data: req.user });
   });
 
-  // 10. 404 Route Not Found
+  // 10. Static Assets & SPA Client Fallbacks
+  const publicDir = path.resolve(process.cwd(), 'public');
+  app.use('/models', express.static(path.join(publicDir, 'models')));
+  app.use('/admin', express.static(path.join(publicDir, 'admin')));
+  app.use('/pt', express.static(path.join(publicDir, 'pt')));
+  app.use('/kiosk', express.static(path.join(publicDir, 'kiosk')));
+  app.use(express.static(publicDir));
+
+  // SPA Routes
+  app.get(/^\/admin(\/.*)?$/, (_req: Request, res: Response) => {
+    const adminIndex = path.join(publicDir, 'admin', 'index.html');
+    if (fs.existsSync(adminIndex)) {
+      return res.sendFile(adminIndex);
+    }
+    res.status(200).send('<!DOCTYPE html><html><body>Admin Portal</body></html>');
+  });
+  app.get(/^\/pt(\/.*)?$/, (_req: Request, res: Response) => {
+    const ptIndex = path.join(publicDir, 'pt', 'index.html');
+    if (fs.existsSync(ptIndex)) {
+      return res.sendFile(ptIndex);
+    }
+    res.status(200).send('<!DOCTYPE html><html><body>PT Portal</body></html>');
+  });
+  app.get(/^\/kiosk(\/.*)?$/, (_req: Request, res: Response) => {
+    const kioskIndex = path.join(publicDir, 'kiosk', 'index.html');
+    if (fs.existsSync(kioskIndex)) {
+      return res.sendFile(kioskIndex);
+    }
+    res.status(200).send('<!DOCTYPE html><html><body>Kiosk Portal</body></html>');
+  });
+  app.get('/', (_req: Request, res: Response) => {
+    res.redirect('/kiosk');
+  });
+
+  // 11. 404 Route Not Found
   app.use((_req: Request, _res: Response, next) => {
     next(new AppError('Endpoint not found', 404, 'NOT_FOUND'));
   });

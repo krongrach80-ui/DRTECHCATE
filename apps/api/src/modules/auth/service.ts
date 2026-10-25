@@ -33,6 +33,17 @@ export type AuthRefreshFn = (refreshToken: string) => Promise<{
   error: Error | { message: string } | null;
 }>;
 
+let globalCustomSignIn: AuthSignInFn | null = null;
+let globalCustomRefresh: AuthRefreshFn | null = null;
+
+export function setGlobalCustomAuth(
+  signIn: AuthSignInFn | null,
+  refresh: AuthRefreshFn | null = null
+): void {
+  globalCustomSignIn = signIn;
+  globalCustomRefresh = refresh;
+}
+
 export class AuthService {
   private readonly MAX_IP_ATTEMPTS = 5;
   private readonly MAX_USERNAME_ATTEMPTS = 5;
@@ -126,9 +137,11 @@ export class AuthService {
     let authData: AuthUserSession | null = null;
     let authError: Error | { message: string; status?: number } | null = null;
 
+    const signInFn = this.customSignIn || globalCustomSignIn;
+
     try {
-      if (this.customSignIn) {
-        const res = await this.customSignIn({ email: internalEmail, password });
+      if (signInFn) {
+        const res = await signInFn({ email: internalEmail, password });
         authData = res.data;
         authError = res.error;
       } else {
@@ -229,8 +242,9 @@ export class AuthService {
       throw new AppError('Refresh token required', 401, 'UNAUTHORIZED');
     }
 
-    const authResult = this.customRefresh
-      ? await this.customRefresh(refreshToken)
+    const refreshFn = this.customRefresh || globalCustomRefresh;
+    const authResult = refreshFn
+      ? await refreshFn(refreshToken)
       : await getAuthClient().auth.refreshSession({
           refresh_token: refreshToken,
         });

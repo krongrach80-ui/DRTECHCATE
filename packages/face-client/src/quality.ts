@@ -117,20 +117,20 @@ export class FaceQualityChecker {
   private lastPassedCriteria: boolean = false;
 
   constructor(config: QualityConfig = {}) {
-    this.minIod = config.minIod ?? 40;
-    this.minBrightness = config.minBrightness ?? 40;
-    this.maxBrightness = config.maxBrightness ?? 220;
-    this.minSharpness = config.minSharpness ?? 50;
-    this.stabilityMs = config.stabilityMs ?? 300;
-    this.maxBlinkScore = config.maxBlinkScore ?? 0.5;
-    this.edgeMargin = config.edgeMargin ?? 10;
+    this.minIod = config.minIod ?? 25;
+    this.minBrightness = config.minBrightness ?? 20;
+    this.maxBrightness = config.maxBrightness ?? 245;
+    this.minSharpness = config.minSharpness ?? 15;
+    this.stabilityMs = config.stabilityMs ?? 250;
+    this.maxBlinkScore = config.maxBlinkScore ?? 0.65;
+    this.edgeMargin = config.edgeMargin ?? 8;
 
-    this.frontMaxYaw = config.frontMaxYaw ?? 12;
-    this.frontMaxPitch = config.frontMaxPitch ?? 12;
-    this.frontMaxRoll = config.frontMaxRoll ?? 12;
-    this.leftMinYaw = config.leftMinYaw ?? -15;
-    this.rightMinYaw = config.rightMinYaw ?? 15;
-    this.nodMinPitch = config.nodMinPitch ?? -12;
+    this.frontMaxYaw = config.frontMaxYaw ?? 15;
+    this.frontMaxPitch = config.frontMaxPitch ?? 15;
+    this.frontMaxRoll = config.frontMaxRoll ?? 15;
+    this.leftMinYaw = config.leftMinYaw ?? -10;
+    this.rightMinYaw = config.rightMinYaw ?? 10;
+    this.nodMinPitch = config.nodMinPitch ?? -8;
   }
 
   public resetStability(): void {

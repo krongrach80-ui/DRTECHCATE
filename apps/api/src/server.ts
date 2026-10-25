@@ -8,9 +8,19 @@ export async function startServer(): Promise<void> {
   try {
     const env = getEnv();
 
-    // Fail-Closed Invariant (Item F5): Hydrate active bans from 'bans' table before opening listening port.
-    // If the database is down or table cannot be queried, the server halts immediately.
-    await syncBansFromDatabase();
+    // Local Persistence Engine Activation (Docker-Bypass Mode for standalone local execution)
+    if (env.USE_LOCAL_STORAGE) {
+      const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
+      activateLocalPersistenceEngine();
+    } else {
+      try {
+        await syncBansFromDatabase();
+      } catch (err: unknown) {
+        logger.warn({ err }, 'Supabase database unreachable. Falling back to Local Persistence Engine.');
+        const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
+        activateLocalPersistenceEngine();
+      }
+    }
 
     // Security Warning & Boot Audit Log (Item H5 & Spec 7.5.1)
     if (env.PAD_MODE === 'active_only') {

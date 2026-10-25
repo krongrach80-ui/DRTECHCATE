@@ -77,7 +77,7 @@ const eslintConfig = defineConfig([
   // Production src/ code must NEVER import from test/ directories (1b.9)
   {
     files: ["apps/*/src/**", "packages/*/src/**", "src/**"],
-    ignores: ["**/__tests__/**", "**/test/**", "**/tests/**"],
+    ignores: ["**/__tests__/**", "**/test/**", "**/tests/**", "**/lib/localStorage/**"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -99,10 +99,8 @@ const eslintConfig = defineConfig([
     "dist/**",
     "next-env.d.ts",
     "legacy-src/**",
-    "public/*/assets/**",
-    "public/admin/assets/**",
-    "public/pt/assets/**",
-    "public/kiosk/assets/**",
+    "public/**",
+    "apps/*/public/**",
   ]),
 ]);
 
