@@ -155,6 +155,39 @@ export class SmartOnboardingController {
     }
   };
 
+  getDossier = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const rawParam = req.params.patientId;
+      const patientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+      const dossier = this.service.getPatientDossier(patientId);
+      if (!dossier) {
+        res.status(404).json({
+          ok: false,
+          error: { code: 'NOT_FOUND', message: `Patient dossier for ${patientId} not found` },
+        });
+        return;
+      }
+      res.status(200).json({
+        ok: true,
+        data: dossier,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  listDossiers = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = this.service.listAllDossiers();
+      res.status(200).json({
+        ok: true,
+        data,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   getExercises = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const data = this.service.getExercises();

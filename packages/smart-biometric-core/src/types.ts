@@ -21,19 +21,30 @@ export interface PrescribedExercise {
 }
 
 export interface TherapySchedule {
-  start_date: string; // ISO date 'YYYY-MM-DD'
-  end_date: string; // ISO date 'YYYY-MM-DD'
-  days_of_week: string[]; // e.g. ['Mon', 'Wed', 'Fri']
-  time_slot: string; // e.g. '09:00 - 10:00'
-  assigned_kiosk_id: string; // e.g. 'kiosk-01'
+  start_date?: string; // ISO date 'YYYY-MM-DD'
+  startDate?: string;
+  end_date?: string; // ISO date 'YYYY-MM-DD'
+  endDate?: string;
+  days_of_week?: string[]; // e.g. ['Mon', 'Wed', 'Fri']
+  daysOfWeek?: string[];
+  time_slot?: string; // e.g. '09:00 - 10:00'
+  timeSlot?: string;
+  assigned_kiosk_id?: string; // e.g. 'kiosk-01'
+  kioskId?: string;
   include_minigame: boolean;
   modpack_name?: string;
-  prescribed_exercises: PrescribedExercise[];
+  prescribed_exercises?: PrescribedExercise[];
+  assigned_exercises?: PrescribedExercise[];
 }
 
 export interface RehabScoreEntry {
-  session_id: string;
-  date: string;
+  session_id?: string;
+  date?: string;
+  timestamp?: string;
+  completion_rate?: number;
+  exercises_completed?: number;
+  minigame_score?: number;
+  total_score?: number;
   exercise_score?: {
     completed_reps: number;
     completed_sets: number;
@@ -44,7 +55,7 @@ export interface RehabScoreEntry {
     total: number;
     time_taken_seconds?: number;
   };
-  completed_at: string;
+  completed_at?: string;
 }
 
 export interface PatientRecordFile {

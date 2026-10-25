@@ -36,8 +36,11 @@ export function createSmartOnboardingRouter(
   // 7. Save Rehab Scores & Checklists
   router.post('/rehab-score', controller.saveRehabScore);
 
-  // 8. Permanent Deletion (DB + Disk Vault)
+  // 8. Permanent Deletion (DB + Disk Vault) & Dossier Fetching
   router.delete('/patient/:patientId', controller.deletePatient);
+  router.get('/patient/:patientId/dossier', controller.getDossier);
+  router.get('/patient/:patientId', controller.getDossier);
+  router.get('/dossiers', controller.listDossiers);
 
   // 9. Central Exercise Library
   router.get('/exercises', controller.getExercises);

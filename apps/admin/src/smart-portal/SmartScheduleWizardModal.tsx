@@ -229,7 +229,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
               {selectedPatient ? (
                 <span>
                   ตารางกายภาพ: {selectedPatient.first_name} {selectedPatient.last_name} (
-                  {selectedPatient.hn || selectedPatient.id})
+                  {(selectedPatient as any).patient_id || selectedPatient.hn || selectedPatient.id})
                 </span>
               ) : (
                 <span>สร้างตารางฝึกกายภาพบำบัดใหม่ (3-Step Wizard)</span>
@@ -283,6 +283,29 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
           {/* STEP 1: SELECT PATIENT */}
           {step === 1 && (
             <div className="flex flex-col gap-4">
+              {/* Functional Patient Selector Dropdown */}
+              <div className="flex flex-col gap-1.5 bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
+                <label htmlFor="modal-patient-select" className="text-xs font-bold text-emerald-400">
+                  เลือกคนไข้ (Select Patient):
+                </label>
+                <select
+                  id="modal-patient-select"
+                  value={selectedPatient?.id || ''}
+                  onChange={(e) => {
+                    const match = patients.find((p) => p.id === e.target.value || p.hn === e.target.value);
+                    if (match) setSelectedPatient(match);
+                  }}
+                  className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  <option value="" disabled>-- เลือกคนไข้จากฐานข้อมูลจริง --</option>
+                  {patients.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.first_name} {p.last_name || ''} ({p.hn || p.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 <input
@@ -455,9 +478,12 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
                     <Brain className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-white">
-                      มินิเกมฝึกสมองและการตอบสนอง (Interactive Quiz)
-                    </div>
+                    <label
+                      htmlFor="include-minigame-checkbox"
+                      className="text-sm font-bold text-white cursor-pointer select-none"
+                    >
+                      [☑] รวมมินิเกมฝึกสมองและการตอบสนอง (Interactive Quiz) ในคอร์สประจำวัน
+                    </label>
                     <div className="text-xs text-purple-300">
                       เปิดระบบคำถามฝึกการรับรู้และเสริมสร้างการฟื้นตัวของสมองหลังทำกายภาพเสร็จ
                     </div>
@@ -466,6 +492,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
 
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
+                    id="include-minigame-checkbox"
                     type="checkbox"
                     checked={includeMinigame}
                     onChange={(e) => setIncludeMinigame(e.target.checked)}

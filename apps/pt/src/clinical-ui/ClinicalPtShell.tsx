@@ -126,11 +126,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
             />
           )}
           {activeTab === 'schedule' && (
-            <ClinicalScheduleView
-              onOpenCreateScheduleModal={(_patientId) => {
-                setIsNewPatientModalOpen(true);
-              }}
-            />
+            <ClinicalScheduleView />
           )}
           {activeTab === 'pts' && <PhysiotherapistDirectoryView />}
           {activeTab === 'minigames' && <MiniGameQuestionsView />}

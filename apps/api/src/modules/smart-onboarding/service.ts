@@ -10,7 +10,6 @@ import { logger } from '../../middleware/logger';
 import { dispatchHospitalEvent } from '../events/routes';
 import {
   PatientRecordFile,
-  TherapySchedule,
   RehabScoreEntry,
   computeAverageVector,
   evaluateBiometricMatch,
@@ -442,7 +441,7 @@ export class SmartOnboardingService {
   /**
    * 5. Schedule Management (3-Step Wizard Save)
    */
-  public saveSchedule(patientId: string, schedule: TherapySchedule): PatientRecordFile {
+  public saveSchedule(patientId: string, schedule: any): PatientRecordFile {
     const existing = this.vaultService.getPatientRecord(patientId);
     if (!existing) {
       throw new Error(`Patient vault for ${patientId} not found`);
@@ -455,6 +454,17 @@ export class SmartOnboardingService {
     };
 
     this.vaultService.savePatientRecord(patientId, updated);
+
+    // Realtime event dispatch
+    dispatchHospitalEvent({
+      event: 'schedule_updated',
+      patientId,
+      data: {
+        patient_id: patientId,
+        schedule,
+      },
+    });
+
     return updated;
   }
 
@@ -467,7 +477,7 @@ export class SmartOnboardingService {
   ): {
     is_scheduled_today: boolean;
     reason?: string;
-    schedule?: TherapySchedule | null;
+    schedule?: any;
     exercises: PrescribedExercise[];
     include_minigame: boolean;
   } {
@@ -482,24 +492,58 @@ export class SmartOnboardingService {
       };
     }
 
-    const schedule = patient.schedule;
-    const now = currentDateStr ? new Date(currentDateStr) : new Date();
+    const schedule: any = patient.schedule;
+    let now: Date;
+    if (currentDateStr) {
+      // Decode potential unescaped '+' from query params (Express turns '+' into ' ')
+      const sanitized = currentDateStr.includes(' ') ? currentDateStr.replace(' ', '+') : currentDateStr;
+      const parsed = new Date(sanitized);
+      now = isNaN(parsed.getTime()) ? new Date() : parsed;
+    } else {
+      now = new Date();
+    }
 
-    // Days mapping: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-    const daysMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const currentDayName = daysMap[now.getDay()];
+    // Asia/Bangkok timezone calculation
+    let bkkIsoDate: string;
+    let bkkDayShort: string;
+    try {
+      bkkIsoDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(now);
+      bkkDayShort = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Asia/Bangkok' }).format(now);
+    } catch {
+      const validDate = isNaN(now.getTime()) ? new Date() : now;
+      bkkIsoDate = validDate.toISOString().split('T')[0];
+      const daysMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      bkkDayShort = daysMap[validDate.getDay()];
+    }
 
-    const isoDate = now.toISOString().split('T')[0];
-    const isWithinDateRange =
-      isoDate >= schedule.start_date && isoDate <= schedule.end_date;
-    const isDayScheduled = schedule.days_of_week.includes(currentDayName);
+    const startDate = schedule.startDate || schedule.start_date || '1970-01-01';
+    const endDate = schedule.endDate || schedule.end_date || '2099-12-31';
+    const days: string[] = schedule.daysOfWeek || schedule.days_of_week || [];
+
+    const isWithinDateRange = bkkIsoDate >= startDate && bkkIsoDate <= endDate;
+
+    // Support Thai & English day names
+    const dayAliases: Record<string, string[]> = {
+      Sun: ['Sun', 'อาทิตย์', 'อา.'],
+      Mon: ['Mon', 'จันทร์', 'จ.'],
+      Tue: ['Tue', 'อังคาร', 'อ.'],
+      Wed: ['Wed', 'พุธ', 'พ.'],
+      Thu: ['Thu', 'พฤหัสบดี', 'พฤ.'],
+      Fri: ['Fri', 'ศุกร์', 'ศ.'],
+      Sat: ['Sat', 'เสาร์', 'ส.'],
+    };
+    const validAliases = dayAliases[bkkDayShort] || [bkkDayShort];
+    const isDayScheduled = days.some((d) => validAliases.includes(d));
+
+    const exercises = schedule.assigned_exercises || schedule.prescribed_exercises || [];
+    const includeMinigame = Boolean(schedule.include_minigame);
 
     if (isWithinDateRange && isDayScheduled) {
       return {
         is_scheduled_today: true,
         schedule,
-        exercises: schedule.prescribed_exercises,
-        include_minigame: schedule.include_minigame,
+        exercises,
+        include_minigame: includeMinigame,
       };
     }
 
@@ -510,6 +554,17 @@ export class SmartOnboardingService {
       exercises: [],
       include_minigame: false,
     };
+  }
+
+  /**
+   * Comprehensive Dossier Fetching (Master Prompt v6 Section 3)
+   */
+  public getPatientDossier(patientId: string) {
+    return this.vaultService.getPatientDossier(patientId);
+  }
+
+  public listAllDossiers() {
+    return this.vaultService.listAllDossiers();
   }
 
   /**

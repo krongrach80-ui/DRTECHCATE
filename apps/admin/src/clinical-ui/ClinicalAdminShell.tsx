@@ -138,11 +138,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           {activeTab === 'users' && <StaffView />}
           {activeTab === 'patients' && <PatientsView />}
           {activeTab === 'schedule' && (
-            <ClinicalScheduleView
-              onOpenCreateScheduleModal={(_patientId) => {
-                setIsNewPatientModalOpen(true);
-              }}
-            />
+            <ClinicalScheduleView />
           )}
           {activeTab === 'pts' && <PhysiotherapistDirectoryView />}
           {activeTab === 'minigames' && <MiniGameQuestionsView />}

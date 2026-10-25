@@ -1057,6 +1057,33 @@ export class ApiClient {
       });
     },
 
+    getDossier: async (patientId: string) => {
+      return this.request<{
+        record: any;
+        profile_face_url: string;
+        login_snapshots: string[];
+        schedule: any;
+        rehab_scores: any[];
+      }>(`/smart-onboarding/patient/${patientId}/dossier`, {
+        method: 'GET',
+      });
+    },
+
+    listDossiers: async () => {
+      return this.request<Array<{
+        patient_id: string;
+        first_name: string;
+        last_name: string;
+        hn: string;
+        profile_face_url: string;
+        schedule: any;
+        rehab_scores: any[];
+        clinical?: any;
+      }>>('/smart-onboarding/dossiers', {
+        method: 'GET',
+      });
+    },
+
     getExercises: async () => {
       return this.request<any[]>('/smart-onboarding/exercises', { method: 'GET' });
     },
