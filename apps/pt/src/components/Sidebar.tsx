@@ -47,40 +47,40 @@ export const PtSidebar: React.FC<PtSidebarProps> = ({
   }> = [
     {
       id: 'reception',
-      label: 'หน้าต้อนรับ & คิวสด',
+      label: '1. หน้าต้อนรับ',
       description: 'ส่งตู้ เช็คอิน เรียกเจ้าหน้าที่',
       icon: ClipboardList,
       badge: staffCallCount > 0 ? staffCallCount : undefined,
     },
     {
       id: 'patients',
-      label: 'คนไข้ในความรับผิดชอบ',
-      description: 'คนไข้ตนเอง & เคสฝาก',
+      label: '2. จัดการคนไข้ของตน',
+      description: 'คนไข้ตนเอง & วางแผนฟื้นฟู',
       icon: Users,
     },
     {
       id: 'records',
-      label: 'เวชระเบียนคลินิก',
-      description: 'โน้ตต่อท้าย & ผลการรักษา',
+      label: '3. ข้อมูลคนไข้/เวชระเบียน/ฝากเคส',
+      description: 'โน้ตต่อท้าย & ส่งต่อเคสชั่วคราว',
       icon: FileText,
     },
     {
+      id: 'profile',
+      label: '4. ข้อมูลตัวเอง',
+      description: 'ข้อมูลส่วนตัว & ใบอนุญาตวิชาชีพ',
+      icon: UserCheck,
+    },
+    {
       id: 'exercises',
-      label: 'คลังท่ากายภาพ',
-      description: 'ท่าที่สร้าง & คลังส่วนกลาง',
+      label: '5. ท่ากายภาพ',
+      description: 'คลังท่าที่สร้าง & คลังส่วนกลาง',
       icon: Dumbbell,
     },
     {
       id: 'schedule',
-      label: 'ตารางนัดหมาย & แผน',
-      description: 'คิวประจำวัน & ปฏิทินนัด',
+      label: '6. ตารางนัด',
+      description: 'คิวประจำวัน & ปฏิทินนัดหมาย',
       icon: Calendar,
-    },
-    {
-      id: 'profile',
-      label: 'ข้อมูลส่วนตัว & ใบอนุญาต',
-      description: 'ความเชี่ยวชาญ & ติดต่อ',
-      icon: UserCheck,
     },
   ];
 

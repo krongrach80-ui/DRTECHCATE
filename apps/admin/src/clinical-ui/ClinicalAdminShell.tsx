@@ -1,9 +1,4 @@
-/**
- * apps/admin/src/clinical-ui/ClinicalAdminShell.tsx
- * Master Prompt v5 Section 4: Master Presentation Shell for Hospital Clinical Admin
- */
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ClinicalSidebar,
   ClinicalMenuId,
@@ -12,26 +7,31 @@ import { ClinicalTopHeader } from './ClinicalTopHeader';
 import { StaffLoginModal } from './StaffLoginModal';
 import { NewPatientRegistrationModal } from './NewPatientRegistrationModal';
 import { ClinicalScheduleView } from './ClinicalScheduleView';
-import { PhysiotherapistDirectoryView } from './PhysiotherapistDirectoryView';
-import { MiniGameQuestionsView } from './MiniGameQuestionsView';
-import { SystemAuditLogView } from './SystemAuditLogView';
-import { SystemAiSettingsView } from './SystemAiSettingsView';
 
-// Existing feature views
+// Master Prompt v3 Spec 8.1: 6 Main Admin Windows
 import { StaffView } from '../views/StaffView';
 import { PatientsView } from '../views/PatientsView';
+import { PtsView } from '../views/PtsView';
+import { LibraryView } from '../views/LibraryView';
+import { SecurityView } from '../views/SecurityView';
 
 import {
-  TopProgressBar,
   hospitalTheme,
 } from '../../../../packages/hospital-ui-kit/src/index.js';
-import { UserProfile } from '../../../../packages/api-client/src/index.js';
+import {
+  UserProfile,
+  StaffCallRecord,
+  defaultApiClient,
+} from '../../../../packages/api-client/src/index.js';
 
 interface ClinicalAdminShellProps {
   currentUser: UserProfile | null;
   onLogout: () => void;
   onReturnToKiosk?: () => void;
   onLogin: (credentials: { username: string; password: string }) => Promise<void>;
+  staffCalls?: StaffCallRecord[];
+  onStaffCallHandled?: () => void;
+  sseConnected?: boolean;
 }
 
 export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
@@ -39,62 +39,78 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   onLogout,
   onReturnToKiosk,
   onLogin,
+  staffCalls: initialStaffCalls,
+  onStaffCallHandled,
+  sseConnected = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<ClinicalMenuId>('schedule');
-  const [isPageLoading, setIsPageLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<ClinicalMenuId>('users');
+  const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>(initialStaffCalls || []);
 
   // Modals state
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Tab change with 60FPS top progress bar transition
+  const fetchCalls = async () => {
+    try {
+      const calls = await defaultApiClient.kiosk.listStaffCalls();
+      setStaffCalls(calls);
+    } catch {
+      // non-blocking
+    }
+  };
+
+  useEffect(() => {
+    if (initialStaffCalls) {
+      setStaffCalls(initialStaffCalls);
+    } else {
+      fetchCalls();
+    }
+  }, [initialStaffCalls]);
+
+  // Tab change (Instant, zero fake setTimeout per Rule 2.2)
   const handleSelectTab = (tab: ClinicalMenuId) => {
     setIsMobileMenuOpen(false);
     if (tab === activeTab) return;
-    setIsPageLoading(true);
     setActiveTab(tab);
-    setTimeout(() => {
-      setIsPageLoading(false);
-    }, 240);
   };
 
   const getPageMeta = (tab: ClinicalMenuId): { title: string; subtitle: string } => {
     switch (tab) {
       case 'users':
         return {
-          title: 'จัดการข้อมูลผู้ใช้งานและบุคลากร',
-          subtitle: 'User & Staff Management Portal',
+          title: 'จัดการผู้ใช้และบุคลากรโรงพยาบาล',
+          subtitle: 'Hospital Staff & User Management Portal',
         };
       case 'patients':
         return {
           title: 'ทะเบียนประวัติและเวชระเบียนคนไข้',
           subtitle: 'Patient Directory & Electronic Health Records',
         };
-      case 'schedule':
-        return {
-          title: 'ตารางฝึกกายภาพและปฏิทินการฟื้นฟู',
-          subtitle: 'Clinical Physical Therapy Schedule Planner',
-        };
       case 'pts':
         return {
           title: 'ข้อมูลนักกายภาพบำบัดและการกำกับดูแล',
           subtitle: 'Physiotherapist Directory & Clinical Governance',
         };
-      case 'minigames':
+      case 'library':
         return {
-          title: 'คลังโจทย์คำถามมินิเกมฝึกสมอง',
-          subtitle: 'Cognitive Rehabilitation Question Bank',
+          title: 'ท่ากายภาพ มินิเกมฝึกสมอง และ Modpack',
+          subtitle: 'Exercise Library, Minigame Bank & Clinical Modpacks',
+        };
+      case 'schedule':
+        return {
+          title: 'ตารางฝึกกายภาพและปฏิทินการฟื้นฟู',
+          subtitle: 'Clinical Physical Therapy Schedule Planner',
         };
       case 'audit':
         return {
           title: 'ประวัติการใช้งานและบันทึกความปลอดภัย',
           subtitle: 'Tamper-Evident System Audit Trail & Security',
         };
-      case 'settings':
+      default:
         return {
-          title: 'ตั้งค่าระบบและการประมวลผล AI ชีวมิติ',
-          subtitle: 'System & Medical AI Calibration Settings',
+          title: 'ระบบบริหารโรงพยาบาล Dr.Tech.Care',
+          subtitle: 'Hospital Clinical Administration Portal',
         };
     }
   };
@@ -103,9 +119,6 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
 
   return (
     <div className="flex h-screen w-screen overflow-hidden font-sans select-none relative">
-      {/* 3px Top Navigation Progress Bar */}
-      <TopProgressBar isLoading={isPageLoading} />
-
       {/* Mobile Slide-Out Drawer (Only on small screens when toggled) */}
       {isMobileMenuOpen && (
         <div
@@ -161,15 +174,19 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           }}
           className="flex-1 overflow-y-auto"
         >
+          {/* Master Prompt v3 Spec 8.1: 6 Windows */}
           {activeTab === 'users' && <StaffView />}
           {activeTab === 'patients' && <PatientsView />}
-          {activeTab === 'schedule' && (
-            <ClinicalScheduleView />
+          {activeTab === 'pts' && <PtsView />}
+          {activeTab === 'library' && <LibraryView />}
+          {activeTab === 'schedule' && <ClinicalScheduleView />}
+          {activeTab === 'audit' && (
+            <SecurityView
+              staffCalls={staffCalls}
+              onStaffCallHandled={onStaffCallHandled || fetchCalls}
+              sseConnected={sseConnected}
+            />
           )}
-          {activeTab === 'pts' && <PhysiotherapistDirectoryView />}
-          {activeTab === 'minigames' && <MiniGameQuestionsView />}
-          {activeTab === 'audit' && <SystemAuditLogView />}
-          {activeTab === 'settings' && <SystemAiSettingsView />}
         </main>
       </div>
 

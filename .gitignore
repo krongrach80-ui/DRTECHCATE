@@ -56,3 +56,6 @@ public/pt/
 public/kiosk/
 public/*/index.html
 
+# local runtime data (rule 2.1 zero sample data in repo)
+/data/
+

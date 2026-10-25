@@ -4,6 +4,8 @@
  * Strictly Isolated Presentation & Viewport Layer (Zero Backend / Core Mutation)
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
   detectDeviceTier,
@@ -176,6 +178,95 @@ describe('Universal Adaptive Responsive Engine & Embedded Thai-Latin Typography 
 
       // Restore document
       (global as unknown as { document: unknown }).document = originalDoc;
+    });
+  });
+
+  describe('5. Master Prompt Rule Invariants & Strict Separation Verification', () => {
+    const rootDir = process.cwd();
+
+    it('5.1 Rule 2.2: should not have fake setTimeout in ClinicalPtShell.tsx or ClinicalAdminShell.tsx for tab switching', () => {
+      const ptShellPath = path.resolve(rootDir, 'apps/pt/src/clinical-ui/ClinicalPtShell.tsx');
+      const adminShellPath = path.resolve(rootDir, 'apps/admin/src/clinical-ui/ClinicalAdminShell.tsx');
+
+      const ptContent = fs.readFileSync(ptShellPath, 'utf-8');
+      const adminContent = fs.readFileSync(adminShellPath, 'utf-8');
+
+      // Must not contain fake setTimeout tab switching
+      expect(ptContent).not.toMatch(/setIsPageLoading\(true\)/);
+      expect(ptContent).not.toMatch(/setTimeout\(\s*\(\)\s*=>\s*setIsPageLoading\(false\)/);
+      expect(adminContent).not.toMatch(/setIsPageLoading\(true\)/);
+      expect(adminContent).not.toMatch(/setTimeout\(\s*\(\)\s*=>\s*setIsPageLoading\(false\)/);
+    });
+
+    it('5.2 Rule 2.1: zero sample data in repo, gitignore /data/, and zero mock seed in SmartOnboardingService', () => {
+      const gitignorePath = path.resolve(rootDir, '.gitignore');
+      const servicePath = path.resolve(rootDir, 'apps/api/src/modules/smart-onboarding/service.ts');
+      const wizardModalPath = path.resolve(rootDir, 'apps/admin/src/smart-portal/SmartScheduleWizardModal.tsx');
+      const modpackModalPath = path.resolve(rootDir, 'apps/admin/src/smart-portal/SmartModpackModal.tsx');
+
+      const gitignore = fs.readFileSync(gitignorePath, 'utf-8');
+      const serviceContent = fs.readFileSync(servicePath, 'utf-8');
+      const wizardContent = fs.readFileSync(wizardModalPath, 'utf-8');
+      const modpackContent = fs.readFileSync(modpackModalPath, 'utf-8');
+
+      // /data/ must be gitignored to prevent sample/seed data in repo
+      expect(gitignore).toContain('/data/');
+
+      // Service must not contain seedDefaultDataIfEmpty
+      expect(serviceContent).not.toMatch(/seedDefaultDataIfEmpty/);
+
+      // Modals must fetch from real Supabase API via exercises.list()
+      expect(wizardContent).toContain('defaultApiClient.exercises.list()');
+      expect(wizardContent).not.toContain('defaultApiClient.smartOnboarding.getExercises()');
+      expect(modpackContent).toContain('defaultApiClient.exercises.list()');
+      expect(modpackContent).not.toContain('defaultApiClient.smartOnboarding.getExercises()');
+    });
+
+    it('5.3 Spec 8.1 & 8.2: ClinicalSidebar must have exactly 6 menus for Admin and 6 menus for PT, with PT strictly isolated', () => {
+      const sidebarPath = path.resolve(rootDir, 'apps/admin/src/clinical-ui/ClinicalSidebar.tsx');
+      const sidebarContent = fs.readFileSync(sidebarPath, 'utf-8');
+
+      // Admin 6 menus (8.1)
+      expect(sidebarContent).toContain("label: '1. จัดการผู้ใช้ staff'");
+      expect(sidebarContent).toContain("label: '2. ข้อมูลคนไข้'");
+      expect(sidebarContent).toContain("label: '3. ข้อมูลนักกายภาพ'");
+      expect(sidebarContent).toContain("label: '4. ท่ากายภาพและมินิเกม/modpack'");
+      expect(sidebarContent).toContain("label: '5. ตารางนัด'");
+      expect(sidebarContent).toContain("label: '6. ประวัติและความปลอดภัย'");
+
+      // PT 6 menus (8.2: 5 windows + welcome)
+      expect(sidebarContent).toContain("label: '1. หน้าต้อนรับ'");
+      expect(sidebarContent).toContain("label: '2. จัดการคนไข้ของตน'");
+      expect(sidebarContent).toContain("label: '3. ข้อมูลคนไข้/เวชระเบียน/ฝากเคส'");
+      expect(sidebarContent).toContain("label: '4. ข้อมูลตัวเอง'");
+      expect(sidebarContent).toContain("label: '5. ท่ากายภาพ'");
+      expect(sidebarContent).toContain("label: '6. ตารางนัด'");
+
+      // PT mode must not expose pts directory browsing
+      expect(sidebarContent).toContain('const visibleMenus = isPtMode ? ptMenus : adminMenus;');
+    });
+
+    it('5.4 Spec 8.3 & 12.1: Kiosk must disable pinch-to-zoom while Admin/PT retain maximum-scale=5.0 accessibility', () => {
+      const kioskHtmlPath = path.resolve(rootDir, 'apps/kiosk/index.html');
+      const adminHtmlPath = path.resolve(rootDir, 'apps/admin/index.html');
+      const ptHtmlPath = path.resolve(rootDir, 'apps/pt/index.html');
+      const kioskCssPath = path.resolve(rootDir, 'apps/kiosk/src/index.css');
+
+      const kioskHtml = fs.readFileSync(kioskHtmlPath, 'utf-8');
+      const adminHtml = fs.readFileSync(adminHtmlPath, 'utf-8');
+      const ptHtml = fs.readFileSync(ptHtmlPath, 'utf-8');
+      const kioskCss = fs.readFileSync(kioskCssPath, 'utf-8');
+
+      // Kiosk index.html must be maximum-scale=1.0, user-scalable=no
+      expect(kioskHtml).toMatch(/maximum-scale=1\.0/);
+      expect(kioskHtml).toMatch(/user-scalable=no/);
+
+      // Admin & PT index.html must retain maximum-scale=5.0 for standard accessibility
+      expect(adminHtml).toMatch(/maximum-scale=5\.0/);
+      expect(ptHtml).toMatch(/maximum-scale=5\.0/);
+
+      // Kiosk CSS must have touch-action: pan-x pan-y on html, body
+      expect(kioskCss).toMatch(/touch-action:\s*pan-x\s*pan-y;/);
     });
   });
 });

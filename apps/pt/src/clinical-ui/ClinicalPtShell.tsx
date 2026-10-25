@@ -1,80 +1,115 @@
 /**
  * apps/pt/src/clinical-ui/ClinicalPtShell.tsx
- * Master Prompt v5 Section 4: PT Clinical Emerald Presentation Shell
+ * Master Prompt v3 Spec 8.2 & Master Prompt v5: PT Clinical Emerald Presentation Shell
+ * Strictly Isolated: 5 Windows + Reception View. PT CANNOT view/edit other PTs' profiles.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ClinicalSidebar,
   ClinicalMenuId,
   ClinicalTopHeader,
   NewPatientRegistrationModal,
-  ClinicalScheduleView,
-  PhysiotherapistDirectoryView,
-  MiniGameQuestionsView,
-  SystemAiSettingsView,
 } from '../../../admin/src/clinical-ui/index.js';
 
+// Master Prompt v3 Spec 8.2: 6 PT Views
+import { ReceptionView } from '../views/ReceptionView';
 import { MyPatientsView } from '../views/MyPatientsView';
+import { ClinicalRecordsView } from '../views/ClinicalRecordsView';
+import { ExerciseCatalogView } from '../views/ExerciseCatalogView';
+import { PtScheduleView } from '../views/PtScheduleView';
+import { ProfileView } from '../views/ProfileView';
 
 import {
-  TopProgressBar,
   hospitalTheme,
 } from '../../../../packages/hospital-ui-kit/src/index.js';
-import { UserProfile } from '../../../../packages/api-client/src/index.js';
+import {
+  UserProfile,
+  StaffCallRecord,
+  PatientRecord,
+  defaultApiClient,
+} from '../../../../packages/api-client/src/index.js';
 
 interface ClinicalPtShellProps {
   currentUser: UserProfile | null;
   onLogout: () => void;
   onReturnToKiosk?: () => void;
+  staffCalls?: StaffCallRecord[];
+  onStaffCallHandled?: () => void;
+  onProfileUpdated?: () => void;
 }
 
 export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
   currentUser,
   onLogout,
   onReturnToKiosk,
+  staffCalls: initialStaffCalls,
+  onStaffCallHandled,
+  onProfileUpdated,
 }) => {
-  const [activeTab, setActiveTab] = useState<ClinicalMenuId>('schedule');
-  const [isPageLoading, setIsPageLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<ClinicalMenuId>('reception');
+  const [activeRecordsPatientId, setActiveRecordsPatientId] = useState<string | undefined>(undefined);
+  const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>(initialStaffCalls || []);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  const currentUserId = currentUser?.id || 'pt-01';
+
+  const fetchCalls = async () => {
+    try {
+      const calls = await defaultApiClient.kiosk.listStaffCalls();
+      setStaffCalls(calls);
+    } catch {
+      // non-blocking
+    }
+  };
+
+  useEffect(() => {
+    if (initialStaffCalls) {
+      setStaffCalls(initialStaffCalls);
+    } else {
+      fetchCalls();
+    }
+  }, [initialStaffCalls]);
+
+  // Tab change (Instant, zero fake setTimeout per Rule 2.2)
   const handleSelectTab = (tab: ClinicalMenuId) => {
     setIsMobileMenuOpen(false);
     if (tab === activeTab) return;
-    setIsPageLoading(true);
     setActiveTab(tab);
-    setTimeout(() => {
-      setIsPageLoading(false);
-    }, 200);
   };
 
   const getPageMeta = (tab: ClinicalMenuId): { title: string; subtitle: string } => {
     switch (tab) {
+      case 'reception':
+        return {
+          title: 'หน้าต้อนรับและคิวแจ้งเตือนคนไข้',
+          subtitle: 'Reception & Active Kiosk Queue',
+        };
       case 'patients':
         return {
-          title: 'คนไข้ในความรับผิดชอบและการส่งต่อเคส',
-          subtitle: 'Assigned Patients & Clinical Handover',
+          title: 'คนไข้ในความรับผิดชอบและการวางแผนฟื้นฟู',
+          subtitle: 'Assigned Patients & Care Plans',
+        };
+      case 'records':
+        return {
+          title: 'ข้อมูลคนไข้ เวชระเบียน และการฝากเคส',
+          subtitle: 'Clinical Health Records & Case Handover',
         };
       case 'schedule':
         return {
           title: 'ตารางฝึกกายภาพและคิวนัดหมายประจำวัน',
-          subtitle: 'Physical Therapy Schedule & Daily Queue',
+          subtitle: 'Physical Therapy Schedule & Daily Appointments',
         };
-      case 'pts':
+      case 'exercises':
         return {
-          title: 'รายนามนักกายภาพบำบัดและการฝากเคส',
-          subtitle: 'Physiotherapist Team & Case Coverage',
+          title: 'คลังท่ากายภาพบำบัดและการประเมิน',
+          subtitle: 'Exercise Catalog & Prescriptions',
         };
-      case 'minigames':
+      case 'profile':
         return {
-          title: 'คลังโจทย์มินิเกมฝึกสมองและการฟื้นฟู',
-          subtitle: 'Cognitive Rehabilitation Questions',
-        };
-      case 'settings':
-        return {
-          title: 'ตั้งค่าระบบและการประมวลผลชีวกลศาสตร์',
-          subtitle: 'Biomechanics & AI Settings',
+          title: 'ข้อมูลส่วนตัวของนักกายภาพบำบัด',
+          subtitle: 'Therapist Profile & Credentials',
         };
       default:
         return {
@@ -88,8 +123,6 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
 
   return (
     <div className="flex h-screen w-screen overflow-hidden font-sans select-none relative">
-      <TopProgressBar isLoading={isPageLoading} />
-
       {/* Mobile Slide-Out Drawer (Only on small screens when toggled) */}
       {isMobileMenuOpen && (
         <div
@@ -103,7 +136,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
             <ClinicalSidebar
               activeTab={activeTab}
               onSelectTab={handleSelectTab}
-              queueBadgeCount={6}
+              queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
               onLogout={onLogout}
               onReturnToKiosk={onReturnToKiosk}
               isPtMode={true}
@@ -117,7 +150,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
         <ClinicalSidebar
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
-          queueBadgeCount={6}
+          queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
           onLogout={onLogout}
           onReturnToKiosk={onReturnToKiosk}
           isPtMode={true}
@@ -145,20 +178,38 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
           }}
           className="flex-1 overflow-y-auto"
         >
+          {/* Master Prompt v3 Spec 8.2: 5 Windows + Reception */}
+          {activeTab === 'reception' && (
+            <ReceptionView
+              staffCalls={staffCalls}
+              onStaffCallHandled={onStaffCallHandled || fetchCalls}
+              currentUserId={currentUserId}
+            />
+          )}
           {activeTab === 'patients' && (
             <MyPatientsView
-              currentUserId={currentUser?.id || 'pt-01'}
-              onOpenRecords={(_patient) => {
-                // Open records view
+              currentUserId={currentUserId}
+              onOpenRecords={(p: PatientRecord) => {
+                setActiveRecordsPatientId(p.id);
+                setActiveTab('records');
               }}
             />
           )}
-          {activeTab === 'schedule' && (
-            <ClinicalScheduleView />
+          {activeTab === 'records' && (
+            <ClinicalRecordsView initialPatientId={activeRecordsPatientId} />
           )}
-          {activeTab === 'pts' && <PhysiotherapistDirectoryView />}
-          {activeTab === 'minigames' && <MiniGameQuestionsView />}
-          {activeTab === 'settings' && <SystemAiSettingsView />}
+          {activeTab === 'schedule' && (
+            <PtScheduleView currentUserId={currentUserId} />
+          )}
+          {activeTab === 'exercises' && (
+            <ExerciseCatalogView currentUserId={currentUserId} />
+          )}
+          {activeTab === 'profile' && currentUser && (
+            <ProfileView
+              currentUser={currentUser}
+              onProfileUpdated={onProfileUpdated || (() => {})}
+            />
+          )}
         </main>
       </div>
 

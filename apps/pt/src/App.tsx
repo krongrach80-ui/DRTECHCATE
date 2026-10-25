@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   UserProfile,
+  StaffCallRecord,
   defaultApiClient
 } from '../../../packages/api-client/src/index.js';
 import { ClinicalPtShell } from './clinical-ui/index.js';
@@ -8,6 +9,7 @@ import { ClinicalPtShell } from './clinical-ui/index.js';
 export const PtApp: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>([]);
 
   // Check auth session on mount
   const checkSession = async () => {
@@ -33,7 +35,8 @@ export const PtApp: React.FC = () => {
   // Fetch initial staff calls
   const fetchStaffCalls = async () => {
     try {
-      await defaultApiClient.kiosk.listStaffCalls();
+      const calls = await defaultApiClient.kiosk.listStaffCalls();
+      setStaffCalls(calls);
     } catch {
       // offline or no permissions
     }
@@ -90,6 +93,9 @@ export const PtApp: React.FC = () => {
         onReturnToKiosk={() => {
           window.location.href = '/';
         }}
+        staffCalls={staffCalls}
+        onStaffCallHandled={fetchStaffCalls}
+        onProfileUpdated={checkSession}
       />
     </div>
   );

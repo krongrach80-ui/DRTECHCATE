@@ -54,11 +54,8 @@ export const SystemAiSettingsView: React.FC = () => {
   };
 
   const handleSaveSettings = () => {
-    setIsSaving(true);
-    setTimeout(() => {
-      setIsSaving(false);
-      setSuccessMsg('บันทึกการตั้งค่าระบบ AI และเกณฑ์ความปลอดภัยเรียบร้อยแล้ว');
-    }, 400);
+    setIsSaving(false);
+    setSuccessMsg('บันทึกการตั้งค่าระบบ AI และเกณฑ์ความปลอดภัยเรียบร้อยแล้ว');
   };
 
   return (

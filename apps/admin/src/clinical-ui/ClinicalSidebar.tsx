@@ -11,20 +11,27 @@ import {
   UserCheck,
   Gamepad2,
   ShieldAlert,
-  Settings,
   LogOut,
   Monitor,
   HeartPulse,
+  ClipboardList,
+  Dumbbell,
+  User,
 } from 'lucide-react';
 import { hospitalTheme } from '../../../../packages/hospital-ui-kit/src/index.js';
 
 export type ClinicalMenuId =
   | 'users'
   | 'patients'
-  | 'schedule'
   | 'pts'
-  | 'minigames'
+  | 'library'
+  | 'schedule'
   | 'audit'
+  | 'reception'
+  | 'records'
+  | 'exercises'
+  | 'profile'
+  | 'minigames'
   | 'settings';
 
 interface ClinicalSidebarProps {
@@ -44,10 +51,11 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
   onReturnToKiosk,
   isPtMode = false,
 }) => {
-  const menus: Array<{ id: ClinicalMenuId; label: string; icon: React.ReactNode; badge?: number }> = [
+  // Master Prompt v3 Spec 8.1: Admin 6 Main Windows
+  const adminMenus: Array<{ id: ClinicalMenuId; label: string; icon: React.ReactNode; badge?: number }> = [
     {
       id: 'users',
-      label: '1. จัดการข้อมูล (ผู้ใช้งาน)',
+      label: '1. จัดการผู้ใช้ staff',
       icon: <Users className="w-4 h-4 shrink-0" />,
     },
     {
@@ -56,37 +64,65 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
       icon: <Activity className="w-4 h-4 shrink-0" />,
     },
     {
+      id: 'pts',
+      label: '3. ข้อมูลนักกายภาพ',
+      icon: <UserCheck className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'library',
+      label: '4. ท่ากายภาพและมินิเกม/modpack',
+      icon: <Gamepad2 className="w-4 h-4 shrink-0" />,
+    },
+    {
       id: 'schedule',
-      label: '3. ตารางกายภาพ',
+      label: '5. ตารางนัด',
       icon: <Calendar className="w-4 h-4 shrink-0" />,
       badge: queueBadgeCount > 0 ? queueBadgeCount : undefined,
     },
     {
-      id: 'pts',
-      label: '4. ข้อมูลนักกายภาพ',
-      icon: <UserCheck className="w-4 h-4 shrink-0" />,
-    },
-    {
-      id: 'minigames',
-      label: '5. โจทย์ในมินิเกม',
-      icon: <Gamepad2 className="w-4 h-4 shrink-0" />,
-    },
-    {
       id: 'audit',
-      label: '6. ประวัติการใช้งาน',
+      label: '6. ประวัติและความปลอดภัย',
       icon: <ShieldAlert className="w-4 h-4 shrink-0" />,
-    },
-    {
-      id: 'settings',
-      label: '7. ตั้งค่าระบบ',
-      icon: <Settings className="w-4 h-4 shrink-0" />,
     },
   ];
 
-  // If in PT mode, show 5 menus tailored for PT
-  const visibleMenus = isPtMode
-    ? menus.filter((m) => ['patients', 'schedule', 'pts', 'minigames', 'settings'].includes(m.id))
-    : menus;
+  // Master Prompt v3 Spec 8.2: PT 5 Windows + Welcome View
+  // Strictly isolated: PT CANNOT view/edit other PTs' profiles (pts tab excluded)
+  const ptMenus: Array<{ id: ClinicalMenuId; label: string; icon: React.ReactNode; badge?: number }> = [
+    {
+      id: 'reception',
+      label: '1. หน้าต้อนรับ',
+      icon: <HeartPulse className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'patients',
+      label: '2. จัดการคนไข้ของตน',
+      icon: <Activity className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'records',
+      label: '3. ข้อมูลคนไข้/เวชระเบียน/ฝากเคส',
+      icon: <ClipboardList className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'profile',
+      label: '4. ข้อมูลตัวเอง',
+      icon: <User className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'exercises',
+      label: '5. ท่ากายภาพ',
+      icon: <Dumbbell className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'schedule',
+      label: '6. ตารางนัด',
+      icon: <Calendar className="w-4 h-4 shrink-0" />,
+      badge: queueBadgeCount > 0 ? queueBadgeCount : undefined,
+    },
+  ];
+
+  const visibleMenus = isPtMode ? ptMenus : adminMenus;
 
   return (
     <aside

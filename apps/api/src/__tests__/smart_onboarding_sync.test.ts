@@ -11,7 +11,7 @@
  * 7. Permanent Patient Deletion (DB row + Disk Folder removal)
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, afterAll } from 'vitest';
 import request from 'supertest';
 import fs from 'fs';
 import path from 'path';
@@ -72,6 +72,17 @@ describe('[MASTER PROMPT v4] Smart Onboarding, Dual-Sync & Dynamic Rehab Engine'
       const patientDir = path.join(uploadsDir, testPatientId);
       if (fs.existsSync(patientDir)) {
         fs.rmSync(patientDir, { recursive: true, force: true });
+      }
+    } catch {
+      // ignore
+    }
+  });
+
+  afterAll(() => {
+    try {
+      const dataDir = path.resolve(process.cwd(), 'data');
+      if (fs.existsSync(dataDir)) {
+        fs.rmSync(dataDir, { recursive: true, force: true });
       }
     } catch {
       // ignore

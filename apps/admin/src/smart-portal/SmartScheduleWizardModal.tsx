@@ -86,13 +86,35 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
       try {
         const [patientsList, exList, modList] = await Promise.all([
           defaultApiClient.patients.list().catch(() => []),
-          defaultApiClient.smartOnboarding.getExercises().catch(() => []),
-          defaultApiClient.smartOnboarding.getModpacks().catch(() => []),
+          defaultApiClient.exercises.list().catch(() => []),
+          defaultApiClient.modpacks.list().catch(() => []),
         ]);
 
         setPatients(patientsList);
-        setAvailableExercises(exList);
-        setAvailableModpacks(modList);
+        setAvailableExercises(
+          exList.map((ex) => ({
+            id: ex.id,
+            name: ex.title,
+            target_joint: ex.target_joint || 'ทั่วไป',
+            demo_url: ex.image_path || undefined,
+            default_sets: ex.default_sets || 3,
+            default_reps: ex.default_reps || 10,
+          }))
+        );
+        setAvailableModpacks(
+          modList.map((m) => ({
+            id: m.id,
+            name: m.name || m.title || 'ชุดท่าฝึก',
+            items: (m.items || []).map((it) => ({
+              exercise_id: it.exercise_id,
+              name: it.exercise?.title || 'ท่ากายภาพ',
+              target_joint: it.exercise?.target_joint || 'ทั่วไป',
+              sets: it.sets || 3,
+              reps: it.reps || 10,
+              demo_url: it.exercise?.image_path || undefined,
+            })),
+          }))
+        );
 
         if (preselectedPatientId) {
           const match = patientsList.find((p) => p.id === preselectedPatientId || p.hn === preselectedPatientId);

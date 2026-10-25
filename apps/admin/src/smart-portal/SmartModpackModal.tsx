@@ -38,8 +38,19 @@ export const SmartModpackModal: React.FC<SmartModpackModalProps> = ({
     if (!isOpen) return;
     async function loadExercises() {
       try {
-        const list = await defaultApiClient.smartOnboarding.getExercises();
-        setAvailableExercises(list);
+        const list = await defaultApiClient.exercises.list();
+        setAvailableExercises(
+          list.map((ex) => ({
+            id: ex.id,
+            name: ex.title,
+            target_joint: ex.target_joint || '',
+            target_angle: 90,
+            safety_warnings: ex.warnings || '',
+            demo_url: ex.image_path || '',
+            default_sets: ex.default_sets || 3,
+            default_reps: ex.default_reps || 10,
+          }))
+        );
       } catch {
         // non-blocking
       }
@@ -78,9 +89,14 @@ export const SmartModpackModal: React.FC<SmartModpackModalProps> = ({
     setErrorMsg(null);
 
     try {
-      await defaultApiClient.smartOnboarding.saveModpack({
+      await defaultApiClient.modpacks.create({
         name: name.trim(),
-        items: selectedItems,
+        items: selectedItems.map((item, idx) => ({
+          exercise_id: item.exercise_id,
+          sets: item.sets,
+          reps: item.reps,
+          position: idx + 1,
+        })),
       });
 
       onSuccess();
