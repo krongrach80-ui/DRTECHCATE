@@ -627,14 +627,30 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               🏥
             </div>
             <h3 className="text-lg font-bold text-slate-800">เกี่ยวกับระบบ Dr.Tech.Care</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Enterprise Hospital Physical Therapy Platform v5.0</p>
+            <p className="text-xs text-slate-500 mt-0.5">Enterprise Hospital Physical Therapy Platform v6.0</p>
 
             <div className="space-y-2 mt-4 text-left">
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
                 <span className="text-lg">🟢</span>
                 <div>
-                  <div className="text-xs font-bold text-slate-800">366 Tests Passed (100% Invariants)</div>
-                  <div className="text-[11px] text-slate-500">ผ่านการทดสอบครบทุกระบบ API, Biometrics, UI</div>
+                  <div className="text-xs font-bold text-slate-800">376 Tests Passed (100% Invariants)</div>
+                  <div className="text-[11px] text-slate-500">ผ่านการทดสอบครบทุกระบบ API, Vault, Biometrics, UI</div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+                <span className="text-lg">📁</span>
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Strict Dossier Vault & 10 Snapshots</div>
+                  <div className="text-[11px] text-slate-500">เวชระเบียนรายบุคคล และนโยบายเก็บภาพสแกน 10 ครั้งล่าสุด</div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+                <span className="text-lg">🗓️</span>
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Therapy Schedule & Minigame Sync</div>
+                  <div className="text-[11px] text-slate-500">ซิงค์ตารางฝึก สลับเข้ามินิเกมฝึกสมองอัตโนมัติ (Bangkok Time)</div>
                 </div>
               </div>
 
@@ -650,7 +666,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 <span className="text-lg">🛡️</span>
                 <div>
                   <div className="text-xs font-bold text-slate-800">NIST SP 800-63B & PDPA Compliance</div>
-                  <div className="text-[11px] text-slate-500">ระบบรักษาความปลอดภัยระดับเวชภัณฑ์สากล</div>
+                  <div className="text-[11px] text-slate-500">ระบบรักษาความปลอดภัยระดับเวชภัณฑ์สากล Zero Regression</div>
                 </div>
               </div>
             </div>
