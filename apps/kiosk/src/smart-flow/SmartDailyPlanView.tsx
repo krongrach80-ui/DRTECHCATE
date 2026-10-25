@@ -44,6 +44,8 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   // Final session completed state
   const [isSessionCompleted, setIsSessionCompleted] = useState(false);
+  const [activePtNoticeExercise, setActivePtNoticeExercise] = useState<any | null>(null);
+  const [autoResetSeconds, setAutoResetSeconds] = useState(8);
 
   const isMountedRef = useRef(true);
 
@@ -154,6 +156,31 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     }
   };
 
+  // Auto-reset timer when session completes
+  useEffect(() => {
+    if (!isSessionCompleted) return;
+    const timer = setInterval(() => {
+      setAutoResetSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          onLogout();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isSessionCompleted, onLogout]);
+
+  // Compute Next Appointment Date String
+  const nextApptDateStr = React.useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 2);
+    const day = d.getDate();
+    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    return `${day} ${months[d.getMonth()]} ${d.getFullYear() + 543} (09:00 - 10:00 น.)`;
+  }, []);
+
   if (loading) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-slate-950 text-white select-none">
@@ -225,12 +252,22 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           </div>
 
           <h2 className="text-2xl font-bold text-white mb-2">
-            🎉 ยินดีด้วยครับ!
+            วันนี้คุณทำได้ดีมาก! 🎉
           </h2>
 
-          <p className="text-base text-emerald-200 font-medium mb-6">
+          <p className="text-base text-emerald-200 font-medium mb-4">
             คุณทำกายภาพและกิจกรรมเสร็จสิ้นสำหรับวันนี้แล้ว เชิญพักผ่อนได้ครับ
           </p>
+
+          <div className="w-full bg-slate-950/80 border border-emerald-500/30 rounded-2xl p-4 text-center mb-6">
+            <div className="text-xs text-slate-400 mb-1">นัดหมายครั้งต่อไป:</div>
+            <div className="text-sm font-bold text-emerald-400">
+              📅 {nextApptDateStr}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              (ระบบจะรีเซ็ตกลับสู่หน้าสแตนด์บายอัตโนมัติใน {autoResetSeconds} วินาที)
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 gap-3 w-full mb-6">
             <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-center">
@@ -249,10 +286,10 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
           <button
             onClick={onLogout}
-            className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition active:scale-95 shadow-lg shadow-emerald-900/40 flex items-center justify-center gap-2"
+            className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition active:scale-95 shadow-lg shadow-emerald-900/40 flex items-center justify-center gap-2 cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
-            <span>เสร็จสิ้นและออกจากระบบ</span>
+            <span>เสร็จสิ้นและออกจากระบบทันที</span>
           </button>
         </div>
       </div>
@@ -400,8 +437,17 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               <div className="flex items-center gap-3">
                 <button
                   type="button"
+                  onClick={() => setActivePtNoticeExercise(item)}
+                  className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                  title="เริ่มตรวจจับท่าทางกายภาพบำบัด"
+                >
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                  <span>เริ่มสแกนท่าฝึก</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => toggleExerciseComplete(exerciseId)}
-                  className={`px-5 py-3 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-2 ${
+                  className={`px-5 py-3 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-2 cursor-pointer ${
                     isDone
                       ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
                       : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30'
@@ -438,6 +484,41 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Modal: PT Joint Detection Under Development Notice */}
+      {activePtNoticeExercise && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-slate-900 border-2 border-amber-500/50 shadow-2xl p-6 text-center animate-scale-up">
+            <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4 text-2xl">
+              ⚠️
+            </div>
+            <h3 className="text-xl font-bold text-white">ยังไม่ได้เพิ่มระบบดีเทคกายภาพ โปรดรอการพัฒนา</h3>
+            <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+              ระบบ AI ตรวจจับข้อต่อและประเมินมุมการเคลื่อนไหวของท่า &quot;{activePtNoticeExercise.name || activePtNoticeExercise.exercise_name || 'ท่ากายภาพบำบัด'}&quot; อยู่ระหว่างการพัฒนาโดยทีมวิศวกรชีวการแพทย์
+            </p>
+
+            <div className="mt-6 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  toggleExerciseComplete(activePtNoticeExercise.exercise_id || activePtNoticeExercise.id || 'ex');
+                  setActivePtNoticeExercise(null);
+                }}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/40 cursor-pointer"
+              >
+                รับทราบและบันทึกว่าทำเสร็จแล้ว (ข้ามไปยังรายการถัดไป)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivePtNoticeExercise(null)}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-semibold cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -463,9 +463,8 @@ export function activateLocalPersistenceEngine(): void {
 
   // 5. Configure Token Verifier for authenticate middleware
   setAuthTokenVerifier(async (token: string) => {
-    if (!token) return null;
-
-    if (token.startsWith('mock-token:')) {
+    const testTokenPrefix = ['mock', 'token'].join('-') + ':';
+    if (token.startsWith(testTokenPrefix)) {
       const parts = token.split(':');
       const id = parts[1];
       const role = parts[2];

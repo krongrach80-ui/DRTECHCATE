@@ -17,6 +17,8 @@ import {
   Info,
   X,
   KeyRound,
+  RotateCw,
+  FlipHorizontal,
 } from 'lucide-react';
 import { PatientRecordFile } from '../../../../packages/smart-biometric-core/src/index.js';
 
@@ -41,6 +43,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [unrecognizedAlert, setUnrecognizedAlert] = useState<string | null>(null);
   const [matchedPatient, setMatchedPatient] = useState<PatientRecordFile | null>(null);
   const [similarityInfo, setSimilarityInfo] = useState<{ percent: number; distance: number } | null>(null);
+  const [cameraRotation, setCameraRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [isMirrored, setIsMirrored] = useState<boolean>(true);
 
   // Modals inside Kiosk Screen
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
@@ -52,6 +56,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const isMountedRef = useRef<boolean>(true);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hasTriggeredScanRef = useRef<boolean>(false);
+  const cameraRotationRef = useRef(cameraRotation);
+  const isMirroredRef = useRef(isMirrored);
+
+  useEffect(() => {
+    cameraRotationRef.current = cameraRotation;
+    isMirroredRef.current = isMirrored;
+  }, [cameraRotation, isMirrored]);
 
   // Trigger login scan at 0s
   const executeScanLogin = useCallback(async () => {
@@ -104,12 +115,17 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       if (!isMountedRef.current) return;
 
       if (res.matched && res.patient) {
+        const distance = typeof res.distance === 'number' ? res.distance : 0.20;
+        const similarityPercent = Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
+        console.log('[Calculated Distance]', distance);
+        console.log('[Matched Patient Name]', `${res.patient.first_name} ${res.patient.last_name}`);
+        console.log('[Similarity %]', similarityPercent);
         setMatchedPatient(res.patient);
         setSimilarityInfo({
-          percent: res.similarityPercentage ?? Math.round((res.similarity || 0.95) * 100),
-          distance: res.distance ?? 0.35,
+          percent: similarityPercent,
+          distance,
         });
-        setStatusText(`ยืนยันตัวตนสำเร็จ: คุณ ${res.patient.first_name} (${res.similarityPercentage || 95}%)`);
+        setStatusText(`ยืนยันตัวตนสำเร็จ: คุณ ${res.patient.first_name} (${similarityPercent}%)`);
       } else {
         setUnrecognizedAlert(
           res.message || 'ไม่พบบัญชีในระบบ กรุณาติดต่อแอดมิน หรือกดปุ่ม "ยังไม่มีบัญชี (สมัครใหม่ด้วยใบหน้า)"'
@@ -170,7 +186,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     const renderLoop = () => {
       if (!isMountedRef.current) return;
       if (previewCanvasRef.current && videoRef.current && videoRef.current.readyState >= 2) {
-        camera.renderPreview(previewCanvasRef.current, videoRef.current, true);
+        camera.setRotation(cameraRotationRef.current);
+        camera.setMirrorPreview(isMirroredRef.current);
+        camera.renderPreview(previewCanvasRef.current, videoRef.current, isMirroredRef.current);
       }
       animId = requestAnimationFrame(renderLoop);
     };
@@ -368,11 +386,44 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 </div>
               </div>
 
+              {/* Camera Orientation Controls (0, 90, 180, 270 and Mirror flip) */}
+              <div className="absolute top-2 left-2 flex items-center gap-1.5 z-20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rotations: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
+                    const next = rotations[(rotations.indexOf(cameraRotation) + 1) % rotations.length];
+                    setCameraRotation(next);
+                    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+                    services.camera.setRotation(next);
+                  }}
+                  className="px-2 py-1 rounded-lg bg-black/60 hover:bg-black/80 text-white text-[10px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer"
+                  title="หมุนกล้อง 90 องศา"
+                >
+                  <RotateCw className="w-3 h-3 text-cyan-300" />
+                  <span>{cameraRotation}°</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMirrored((prev) => !prev);
+                    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+                    services.camera.setMirrorPreview(!isMirrored);
+                  }}
+                  className={`p-1.5 rounded-lg text-white text-[10px] font-semibold flex items-center backdrop-blur-sm transition border border-white/20 cursor-pointer ${
+                    isMirrored ? 'bg-emerald-600/70' : 'bg-black/60'
+                  }`}
+                  title="สลับกลับหัว / กระจก"
+                >
+                  <FlipHorizontal className="w-3 h-3 text-emerald-300" />
+                </button>
+              </div>
+
               {/* Close/Toggle Camera button */}
               <button
                 type="button"
                 onClick={() => setCameraReady(false)}
-                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 text-white text-xs flex items-center justify-center hover:bg-rose-600 transition"
+                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 text-white text-xs flex items-center justify-center hover:bg-rose-600 transition cursor-pointer z-20"
                 title="ปิดกล้อง"
               >
                 ✕
@@ -534,14 +585,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 ⌫
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={handlePinLoginSuccess}
-              className="w-full py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold transition cursor-pointer"
-            >
-              ⚡ ใช้รหัสทดสอบด่วน: 1234 (เข้าสู่คอร์สกายภาพ)
-            </button>
           </div>
         </div>
       )}
@@ -571,13 +614,19 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               HN: <span className="font-mono text-blue-600">{matchedPatient.hn}</span> • อายุ: {matchedPatient.age} ปี
             </p>
 
-            <div className="mt-6 flex flex-col gap-3">
+            {/* Gesture Prompt */}
+            <div className="my-4 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center gap-2 text-emerald-800 text-xs font-bold">
+              <span className="text-xl">🙌</span>
+              <span>คุณพร้อมจะกายภาพรึยัง? ยก 2 มือขึ้นเพื่อเริ่ม</span>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3">
               <button
                 type="button"
                 onClick={() => onLoginSuccess(matchedPatient)}
-                className="touch-btn w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-base shadow-xl shadow-emerald-600/30"
+                className="touch-btn w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-base shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer"
               >
-                เข้าสู่คอร์สฝึกกายภาพวันนี้
+                <span>🙌 ยก 2 มือขึ้น หรือ กดที่นี่เพื่อเริ่มฝึก ➔</span>
               </button>
               <button
                 type="button"

@@ -66,6 +66,24 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
     } else {
       fetchCalls();
     }
+
+    // Real-Time Multi-Device Sync via SSE
+    let unsubSse: (() => void) | undefined;
+    try {
+      unsubSse = defaultApiClient.subscribeToEvents((_evt: { event: string; data: unknown }) => {
+        fetchCalls();
+      });
+    } catch {
+      // non-blocking
+    }
+
+    // Fallback sync polling every 12 seconds
+    const syncInterval = setInterval(fetchCalls, 12000);
+
+    return () => {
+      unsubSse?.();
+      clearInterval(syncInterval);
+    };
   }, [initialStaffCalls]);
 
   // Tab change (Instant, zero fake setTimeout per Rule 2.2)

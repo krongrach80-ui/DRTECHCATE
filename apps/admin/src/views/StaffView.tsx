@@ -394,7 +394,7 @@ export const StaffView: React.FC = () => {
                     <input
                       type="text"
                       required
-                      placeholder="เช่น somchai.pt"
+                      placeholder="เช่น staff.pt"
                       value={formData.username}
                       onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                       className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"

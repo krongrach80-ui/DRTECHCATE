@@ -470,8 +470,12 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
                   ))}
                 </div>
 
-                {/* Add new individual exercise dropdown */}
-                <div className="flex items-center gap-2">
+                {/* Add new individual exercise dropdown with in-development notice */}
+                <div className="flex flex-col gap-2">
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+                    <span className="font-bold shrink-0">⚠️ สถานะระบบ:</span>
+                    <span>ท่ากายภาพมาตรฐาน &quot;อยู่ระหว่างพัฒนา&quot; (สามารถมอบหมายมินิเกมฝึกสมองและการตอบสนองต่อท้าย)</span>
+                  </div>
                   <select
                     onChange={(e) => {
                       const match = availableExercises.find((x) => x.id === e.target.value);
@@ -482,11 +486,11 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
                     defaultValue=""
                   >
                     <option value="" disabled>
-                      + เพิ่มท่าฝึกใหม่จากคลังท่า...
+                      + เพิ่มท่าฝึกจากคลัง (ท่ามาตรฐาน: อยู่ระหว่างพัฒนา)...
                     </option>
                     {availableExercises.map((x) => (
                       <option key={x.id} value={x.id}>
-                        {x.name} ({x.target_joint})
+                        {x.name} ({x.target_joint}) • [อยู่ระหว่างพัฒนา]
                       </option>
                     ))}
                   </select>

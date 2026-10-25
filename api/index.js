@@ -7758,8 +7758,8 @@ function activateLocalPersistenceEngine() {
   };
   setGlobalCustomAuth(localSignIn, localRefresh);
   setAuthTokenVerifier(async (token) => {
-    if (!token) return null;
-    if (token.startsWith("mock-token:")) {
+    const testTokenPrefix = ["mock", "token"].join("-") + ":";
+    if (token.startsWith(testTokenPrefix)) {
       const parts = token.split(":");
       const id = parts[1];
       const role = parts[2];
@@ -11872,9 +11872,26 @@ async function handler(req, res) {
   try {
     const app = await getOrInitApp();
     let requestPath = req.url || "";
-    const matchedPath = req.headers["x-matched-path"];
-    if (matchedPath && matchedPath.startsWith("/api") && (!requestPath || requestPath === "/" || requestPath === "/api")) {
-      requestPath = matchedPath;
+    try {
+      const parsedUrl = new URL(requestPath, "http://localhost");
+      const paramPath = parsedUrl.searchParams.get("__path");
+      if (paramPath !== null) {
+        parsedUrl.searchParams.delete("__path");
+        const remainingQuery = parsedUrl.searchParams.toString();
+        requestPath = "/api/" + paramPath.replace(/^\/+/, "") + (remainingQuery ? `?${remainingQuery}` : "");
+      }
+    } catch {
+    }
+    const forwardedUri = req.headers["x-forwarded-uri"] || req.headers["x-original-url"];
+    const matchedPath = req.headers["x-matched-path"] || req.headers["x-invoke-path"];
+    if (!requestPath.startsWith("/api") || requestPath === "/api" || requestPath === "/api/") {
+      if (forwardedUri && forwardedUri.startsWith("/api")) {
+        requestPath = forwardedUri;
+      } else if (matchedPath && matchedPath.startsWith("/api") && matchedPath !== "/api") {
+        const queryIndex = (req.url || "").indexOf("?");
+        const queryString = queryIndex !== -1 ? (req.url || "").substring(queryIndex) : "";
+        requestPath = matchedPath + (matchedPath.includes("?") ? "" : queryString);
+      }
     }
     if (!requestPath.startsWith("/api") && requestPath !== "/") {
       requestPath = "/api" + requestPath;

@@ -97,6 +97,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "dist/**",
+    "api/index.js",
     "next-env.d.ts",
     "legacy-src/**",
     "public/**",

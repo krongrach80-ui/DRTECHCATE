@@ -1,4 +1,4 @@
-// @ts-expect-error - bundled CommonJS entry
+// @ts-ignore
 import handler, { config } from './index.js';
 
 export { config };

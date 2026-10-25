@@ -262,8 +262,16 @@ export class ApiClient {
   public readonly baseUrl: string;
   private authToken: string | null = null;
 
-  constructor(baseUrl: string = '/api') {
-    this.baseUrl = baseUrl.replace(/\/$/, '');
+  constructor(baseUrl?: string) {
+    let resolvedBase = baseUrl;
+    if (!resolvedBase) {
+      if (typeof process !== 'undefined' && process.env?.VITE_API_BASE_URL) {
+        resolvedBase = process.env.VITE_API_BASE_URL;
+      } else if (typeof window !== 'undefined' && ((window as any).__VITE_API_BASE_URL__ || (window as any).VITE_API_BASE_URL)) {
+        resolvedBase = (window as any).__VITE_API_BASE_URL__ || (window as any).VITE_API_BASE_URL;
+      }
+    }
+    this.baseUrl = (resolvedBase || '/api').replace(/\/$/, '');
     if (typeof window !== 'undefined') {
       try {
         this.authToken =
@@ -1248,7 +1256,19 @@ export class ApiClient {
       }
     };
 
-    const listeners = ['staff_call', 'patient_status', 'enrollment_done', 'audit_new'];
+    const listeners = [
+      'staff_call',
+      'staff_calls',
+      'patient_status',
+      'patient_registered',
+      'kiosk_login',
+      'enrollment_done',
+      'schedule_updated',
+      'case_transfer',
+      'audit',
+      'audit_new',
+      'audit_log',
+    ];
     listeners.forEach((eventName) => {
       eventSource.addEventListener(eventName, (e: Event) => {
         const me = e as MessageEvent;
@@ -1268,6 +1288,13 @@ export class ApiClient {
     return () => {
       eventSource.close();
     };
+  }
+
+  public subscribeToEvents(
+    callback: (event: { event: string; data: unknown }) => void,
+    onError?: (err: unknown) => void
+  ): () => void {
+    return this.connectEvents(callback, onError);
   }
 }
 
