@@ -1,15 +1,16 @@
-@import "tailwindcss";
 @import "../../../packages/hospital-ui-kit/src/hospital.css";
+@import "tailwindcss";
 
 @layer base {
   * {
     user-select: none !important;
     -webkit-user-select: none !important;
     -webkit-touch-callout: none !important;
+    touch-action: manipulation;
   }
 
   body {
-    font-family: 'Noto Sans Thai', 'Outfit', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-medical-sans, 'Prompt', 'Inter', 'Sarabun', sans-serif);
     background-color: #F0FDF9;
     color: #063932;
     overflow: hidden;

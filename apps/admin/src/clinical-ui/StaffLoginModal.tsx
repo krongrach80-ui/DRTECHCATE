@@ -58,12 +58,12 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
       <div
         style={{
           boxShadow: '0 20px 50px -10px rgba(6, 57, 50, 0.25)',
         }}
-        className="w-full max-w-md bg-white rounded-3xl border-2 border-emerald-500/20 overflow-hidden shadow-2xl relative font-sans"
+        className="w-full max-w-md bg-white rounded-2xl sm:rounded-3xl border-2 border-emerald-500/20 overflow-hidden shadow-2xl relative font-sans max-h-[92dvh] overflow-y-auto"
       >
         {/* Top Floating Close Button */}
         <button

@@ -220,8 +220,8 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full p-6 shadow-2xl relative text-slate-100 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl relative text-slate-100 flex flex-col max-h-[92dvh] sm:max-h-[90vh]">
         {/* Top Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
           <div>
@@ -512,7 +512,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
                 <label className="text-xs font-semibold text-slate-300 mb-2 block">
                   เลือกวันในสัปดาห์ที่นัดหมาย
                 </label>
-                <div className="grid grid-cols-7 gap-2">
+                <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
                   {allDaysOfWeek.map((d) => {
                     const isSelected = selectedDays.includes(d.key);
                     return (
@@ -520,7 +520,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
                         key={d.key}
                         type="button"
                         onClick={() => toggleDay(d.key)}
-                        className={`py-3 rounded-xl text-xs font-bold border transition ${
+                        className={`py-2 sm:py-3 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold border transition ${
                           isSelected
                             ? 'bg-emerald-600 border-emerald-500 text-white'
                             : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
@@ -534,7 +534,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
               </div>
 
               {/* Start & End Dates */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-300 mb-1 block">
                     วันที่เริ่มต้น
@@ -561,7 +561,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
               </div>
 
               {/* Time & Kiosk */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-300 mb-1 block">
                     ช่วงเวลานัดหมาย

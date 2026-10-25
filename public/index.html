@@ -2,14 +2,14 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
   <meta name="description" content="Dr.Tech.Care - ตู้ Kiosk กายภาพบำบัดและดูแลสุขภาพอัจฉริยะ เชื่อมโยงเวชระเบียนและระบบตรวจจับชีวมาตร AI">
   <title>Dr.Tech.Care - ตู้ Kiosk กายภาพบำบัด</title>
 
-  <!-- Google Fonts: Plus Jakarta Sans & Sarabun -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Unified Embedded Thai-Latin Medical Typography (Prompt, Inter, Sarabun) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 
   <style>
     :root {
@@ -25,7 +25,10 @@
       --amber-text: #78350F;
       --amber-subtext: #B45309;
       --blue-accent: #0EA5E9;
-      --font-family: 'Plus Jakarta Sans', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-medical-sans: 'Prompt', 'Inter', 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-family: var(--font-medical-sans);
+      --safe-area-top: env(safe-area-inset-top, 0px);
+      --safe-area-bottom: env(safe-area-inset-bottom, 0px);
     }
 
     * {
@@ -33,17 +36,29 @@
       margin: 0;
       padding: 0;
       -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    html, body, button, input, select, textarea {
+      font-family: var(--font-medical-sans) !important;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      font-feature-settings: "kern" 1;
+      -webkit-text-size-adjust: 100%;
     }
 
     html, body {
       width: 100%;
       height: 100%;
+      min-height: 100dvh;
       overflow: hidden;
-      font-family: var(--font-family);
       background: var(--bg-gradient);
       color: #0F172A;
       user-select: none;
       -webkit-user-select: none;
+      padding-top: var(--safe-area-top);
+      padding-bottom: var(--safe-area-bottom);
     }
 
     /* Ambient Decorative Top-Right Pattern & Glow */

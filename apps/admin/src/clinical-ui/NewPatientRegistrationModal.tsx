@@ -144,12 +144,12 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
       <div
         style={{
           boxShadow: '0 25px 60px -15px rgba(6, 57, 50, 0.25)',
         }}
-        className="w-full max-w-2xl bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-2xl relative font-sans"
+        className="w-full max-w-2xl bg-white rounded-2xl sm:rounded-3xl border border-slate-200 overflow-hidden shadow-2xl relative font-sans max-h-[92dvh] flex flex-col"
       >
         {/* Header */}
         <div className="pt-6 px-8 pb-3 border-b border-slate-100 flex items-center justify-between">

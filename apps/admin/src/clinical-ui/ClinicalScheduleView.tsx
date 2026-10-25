@@ -277,7 +277,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   }, [monthlyScheduleMap]);
 
   return (
-    <div className="p-8 space-y-6 font-sans">
+    <div className="p-4 sm:p-6 md:p-8 space-y-6 font-sans">
       {/* 1. Header with Active Patient Card */}
       <MedicalCard className="p-6 bg-white border border-slate-200">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
@@ -457,17 +457,20 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           </div>
         </div>
 
-        {/* Days of Week Header */}
-        <div className="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-slate-400">
-          {daysOfWeek.map((d) => (
-            <div key={d} className="py-1">
-              {d}
+        {/* Responsive Horizontal Scroll Container for Calendar Grid */}
+        <div className="overflow-x-auto -webkit-overflow-scrolling-touch pb-2 table-scroll-container">
+          <div className="min-w-[620px]">
+            {/* Days of Week Header */}
+            <div className="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-slate-400">
+              {daysOfWeek.map((d) => (
+                <div key={d} className="py-1">
+                  {d}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Calendar Grid 7x5 */}
-        <div className="grid grid-cols-7 gap-2">
+            {/* Calendar Grid 7x5 */}
+            <div className="grid grid-cols-7 gap-2">
           {/* Empty prefix slots */}
           {Array.from({ length: firstDayOffset }).map((_, i) => (
             <div key={`empty-${i}`} className="h-32 rounded-2xl bg-slate-50/50 border border-transparent" />
@@ -576,6 +579,8 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
               </div>
             );
           })}
+        </div>
+          </div>
         </div>
       </MedicalCard>
 

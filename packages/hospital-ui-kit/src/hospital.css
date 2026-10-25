@@ -1,7 +1,10 @@
 /**
  * packages/hospital-ui-kit/src/hospital.css
- * Master Prompt v5 Section 2: 60FPS Micro-Interactions, Shimmer & Spring Effects
+ * Master Prompt v5 & v7: 60FPS Micro-Interactions, Shimmer, Responsive Layout & Medical Typography
  */
+
+@import "./responsive/responsiveTypography.css";
+@import "./responsive/deviceLayout.css";
 
 @keyframes mintRipple {
   0% {

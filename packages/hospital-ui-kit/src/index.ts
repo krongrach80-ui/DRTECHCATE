@@ -11,3 +11,5 @@ export * from './components/SmoothStepper';
 export * from './components/StatusBadge';
 export * from './components/MedicalCard';
 export * from './syncCoordinator';
+export * from './responsive/viewportAdapter';
+export * from './responsive/ResponsiveShellWrapper';

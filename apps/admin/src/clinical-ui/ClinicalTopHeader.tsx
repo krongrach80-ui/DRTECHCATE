@@ -10,6 +10,7 @@ import {
   LogOut,
   ShieldCheck,
   User,
+  Menu,
 } from 'lucide-react';
 import { SmoothButton } from '../../../../packages/hospital-ui-kit/src/index.js';
 
@@ -22,6 +23,7 @@ interface ClinicalTopHeaderProps {
   onFastCheckIn: () => void;
   onLogout: () => void;
   isPtMode?: boolean;
+  onToggleMobileMenu?: () => void;
 }
 
 export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
@@ -33,17 +35,31 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
   onFastCheckIn,
   onLogout,
   isPtMode = false,
+  onToggleMobileMenu,
 }) => {
   return (
-    <header className="h-20 bg-white border-b border-slate-200/90 px-8 flex items-center justify-between shadow-sm shrink-0 z-20">
-      {/* Left Title with English Subtitle */}
-      <div>
-        <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-          <span>{title}</span>
-        </h2>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-          {subtitleEn}
-        </p>
+    <header className="h-20 bg-white border-b border-slate-200/90 px-4 md:px-8 flex items-center justify-between shadow-sm shrink-0 z-20">
+      {/* Left Title with English Subtitle & Mobile Hamburger */}
+      <div className="flex items-center gap-3">
+        {onToggleMobileMenu && (
+          <button
+            type="button"
+            id="btn-mobile-menu-toggle"
+            onClick={onToggleMobileMenu}
+            className="md:hidden p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-95 flex items-center justify-center shrink-0 cursor-pointer"
+            aria-label="เมนูหลัก"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+        <div>
+          <h2 className="text-base md:text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <span>{title}</span>
+          </h2>
+          <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider truncate max-w-[200px] sm:max-w-none">
+            {subtitleEn}
+          </p>
+        </div>
       </div>
 
       {/* Right Action Bar */}

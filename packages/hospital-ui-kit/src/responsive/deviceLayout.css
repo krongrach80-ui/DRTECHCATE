@@ -1,0 +1,144 @@
+/**
+ * packages/hospital-ui-kit/src/responsive/deviceLayout.css
+ * Master Prompt v7 Section 2: 4-Tier Universal Device Adaptation Engine
+ * Tiers: Mobile (< 768px) | Tablet (768-1024px) | Kiosk (Touch 1080p/4K) | Desktop (> 1024px)
+ */
+
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+}
+
+/* 1. Safe Area & Full Viewport Containers */
+.safe-viewport {
+  min-height: 100dvh;
+  padding-top: var(--safe-area-top);
+  padding-bottom: var(--safe-area-bottom);
+  padding-left: var(--safe-area-left);
+  padding-right: var(--safe-area-right);
+  box-sizing: border-box;
+}
+
+/* 2. Touch Manipulation & Anti-Accidental Zoom */
+.touch-friendly {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.touch-target-kiosk {
+  min-height: 56px;
+  min-width: 56px;
+}
+
+.touch-target-mobile {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+/* 3. Smooth Horizontal Scroll Container for Tables & Long Grids */
+.table-scroll-container,
+.responsive-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.table-scroll-container::-webkit-scrollbar,
+.responsive-table-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.table-scroll-container::-webkit-scrollbar-thumb,
+.responsive-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.25);
+  border-radius: 9999px;
+}
+
+/* =========================================================================
+ * TIER 1: SMARTPHONE & NARROW SCREENS (< 768px)
+ * ========================================================================= */
+@media (max-width: 767px) {
+  /* Cards & Grids stack to 1 column full width */
+  .responsive-grid-auto,
+  .responsive-grid-cards {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 2-column forms collapse into single column */
+  .responsive-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Responsive Modal bottom-sheet or full-screen */
+  .responsive-modal-sheet {
+    width: 95vw !important;
+    max-height: 92dvh !important;
+    overflow-y: auto !important;
+    margin: auto !important;
+    border-radius: 1.5rem !important;
+  }
+
+  /* Mobile Slide-Out Drawer Sidebar */
+  .mobile-drawer-closed {
+    transform: translateX(-100%) !important;
+    transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .mobile-drawer-open {
+    transform: translateX(0) !important;
+    transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  /* Hide desktop sidebar on mobile by default */
+  .sidebar-desktop-only {
+    display: none !important;
+  }
+
+  /* Mobile compact padding */
+  .mobile-compact-p {
+    padding: 1rem !important;
+  }
+}
+
+/* =========================================================================
+ * TIER 2: TABLETS & IPADS (768px - 1024px)
+ * ========================================================================= */
+@media (min-width: 768px) and (max-width: 1024px) {
+  /* 2 columns grid */
+  .responsive-grid-auto,
+  .responsive-grid-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .sidebar-compact {
+    width: 4.5rem !important;
+  }
+}
+
+/* =========================================================================
+ * TIER 3: PHYSICAL TOUCHSCREEN KIOSK (Portrait 1080x1920 or Landscape 1080p+)
+ * ========================================================================= */
+@media (hover: none) and (pointer: coarse) and (min-height: 1200px) {
+  .kiosk-touch-enlarged button,
+  .kiosk-touch-enlarged .touch-btn {
+    min-height: 56px !important;
+    font-size: 1.05rem !important;
+  }
+
+  .kiosk-card-centered {
+    transform-origin: center center;
+    max-width: 90vw !important;
+  }
+}
+
+/* =========================================================================
+ * TIER 4: DESKTOP & LAPTOPS (> 1024px)
+ * ========================================================================= */
+@media (min-width: 1025px) {
+  .mobile-only {
+    display: none !important;
+  }
+}

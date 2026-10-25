@@ -46,9 +46,11 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   // Modals state
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Tab change with 60FPS top progress bar transition
   const handleSelectTab = (tab: ClinicalMenuId) => {
+    setIsMobileMenuOpen(false);
     if (tab === activeTab) return;
     setIsPageLoading(true);
     setActiveTab(tab);
@@ -104,17 +106,40 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
       {/* 3px Top Navigation Progress Bar */}
       <TopProgressBar isLoading={isPageLoading} />
 
-      {/* Deep Forest Medical Teal Left Sidebar */}
-      <ClinicalSidebar
-        activeTab={activeTab}
-        onSelectTab={handleSelectTab}
-        queueBadgeCount={12}
-        onLogout={onLogout}
-        onReturnToKiosk={onReturnToKiosk}
-      />
+      {/* Mobile Slide-Out Drawer (Only on small screens when toggled) */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 md:hidden animate-fade-in flex"
+          onClick={() => setIsMobileMenuOpen(false)}
+        >
+          <div
+            className="w-72 max-w-[85vw] h-full shadow-2xl flex flex-col justify-between"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ClinicalSidebar
+              activeTab={activeTab}
+              onSelectTab={handleSelectTab}
+              queueBadgeCount={12}
+              onLogout={onLogout}
+              onReturnToKiosk={onReturnToKiosk}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Fixed Left Sidebar (Hidden on mobile) */}
+      <div className="hidden md:flex shrink-0">
+        <ClinicalSidebar
+          activeTab={activeTab}
+          onSelectTab={handleSelectTab}
+          queueBadgeCount={12}
+          onLogout={onLogout}
+          onReturnToKiosk={onReturnToKiosk}
+        />
+      </div>
 
       {/* Right Main Body Layout */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
         {/* Clean White Top Header Bar */}
         <ClinicalTopHeader
           title={pageMeta.title}
@@ -126,6 +151,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
             setActiveTab('schedule');
           }}
           onLogout={onLogout}
+          onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />
 
         {/* Sterile Mint-White Main Workspace */}

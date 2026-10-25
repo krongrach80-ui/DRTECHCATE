@@ -37,8 +37,10 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
   const [activeTab, setActiveTab] = useState<ClinicalMenuId>('schedule');
   const [isPageLoading, setIsPageLoading] = useState(false);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleSelectTab = (tab: ClinicalMenuId) => {
+    setIsMobileMenuOpen(false);
     if (tab === activeTab) return;
     setIsPageLoading(true);
     setActiveTab(tab);
@@ -88,16 +90,41 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
     <div className="flex h-screen w-screen overflow-hidden font-sans select-none relative">
       <TopProgressBar isLoading={isPageLoading} />
 
-      <ClinicalSidebar
-        activeTab={activeTab}
-        onSelectTab={handleSelectTab}
-        queueBadgeCount={6}
-        onLogout={onLogout}
-        onReturnToKiosk={onReturnToKiosk}
-        isPtMode={true}
-      />
+      {/* Mobile Slide-Out Drawer (Only on small screens when toggled) */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 md:hidden animate-fade-in flex"
+          onClick={() => setIsMobileMenuOpen(false)}
+        >
+          <div
+            className="w-72 max-w-[85vw] h-full shadow-2xl flex flex-col justify-between"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ClinicalSidebar
+              activeTab={activeTab}
+              onSelectTab={handleSelectTab}
+              queueBadgeCount={6}
+              onLogout={onLogout}
+              onReturnToKiosk={onReturnToKiosk}
+              isPtMode={true}
+            />
+          </div>
+        </div>
+      )}
 
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+      {/* Desktop Fixed Left Sidebar (Hidden on mobile) */}
+      <div className="hidden md:flex shrink-0">
+        <ClinicalSidebar
+          activeTab={activeTab}
+          onSelectTab={handleSelectTab}
+          queueBadgeCount={6}
+          onLogout={onLogout}
+          onReturnToKiosk={onReturnToKiosk}
+          isPtMode={true}
+        />
+      </div>
+
+      <div className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
         <ClinicalTopHeader
           title={pageMeta.title}
           subtitleEn={pageMeta.subtitle}
@@ -109,6 +136,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
           }}
           onLogout={onLogout}
           isPtMode={true}
+          onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />
 
         <main
