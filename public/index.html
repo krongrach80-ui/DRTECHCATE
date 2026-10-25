@@ -1033,15 +1033,6 @@
           </div>
         </div>
 
-        <!-- Quick Demo Fill Chips -->
-        <div>
-          <div style="font-size: 11px; color: #64748B; margin-bottom: 4px; font-weight: 600;">คลิกเพื่อกรอกข้อมูลทดสอบด่วน:</div>
-          <div class="fast-credentials-chips">
-            <button type="button" class="fast-chip" id="chip-fill-admin">👑 แอดมิน (admin)</button>
-            <button type="button" class="fast-chip" id="chip-fill-pt">🩺 นักกายภาพ (pt_staff)</button>
-          </div>
-        </div>
-
         <div class="staff-alert-banner">
           <span>ℹ️</span>
           <span>ระบบตรวจสอบสิทธิ์อัตโนมัติ: ผู้ดูแลระบบ Admin (7 เมนู) หรือ นักกายภาพบำบัด PT (5 เมนู)</span>
@@ -1091,12 +1082,6 @@
         <button type="button" class="key-btn action" id="btn-pin-clear">ล้าง</button>
         <button type="button" class="key-btn" data-key="0">0</button>
         <button type="button" class="key-btn action" id="btn-pin-back">⌫</button>
-      </div>
-
-      <div style="margin-top: 8px;">
-        <button type="button" class="fast-chip" id="btn-pin-demo" style="width: 100%; padding: 8px;">
-          ⚡ ใช้รหัสทดสอบด่วน: 1234 (เข้าสู่คอร์สกายภาพ)
-        </button>
       </div>
     </div>
   </div>
@@ -1191,14 +1176,10 @@
       const staffUser = document.getElementById('staff-username');
       const staffPass = document.getElementById('staff-password');
       const staffError = document.getElementById('staff-login-error');
-      const chipFillAdmin = document.getElementById('chip-fill-admin');
-      const chipFillPt = document.getElementById('chip-fill-pt');
-
       const modalPin = document.getElementById('modal-pin-entry');
       const btnClosePin = document.getElementById('btn-close-pin-modal');
       const btnPinClear = document.getElementById('btn-pin-clear');
       const btnPinBack = document.getElementById('btn-pin-back');
-      const btnPinDemo = document.getElementById('btn-pin-demo');
       const pinDots = [
         document.getElementById('pindot-0'),
         document.getElementById('pindot-1'),
@@ -1324,14 +1305,6 @@
         updatePinDots();
       });
 
-      btnPinDemo.addEventListener('click', () => {
-        enteredPin = '1234';
-        updatePinDots();
-        setTimeout(() => {
-          window.location.href = '/kiosk/';
-        }, 300);
-      });
-
       // --- Staff Login Modal Functions ---
       btnOpenStaff.addEventListener('click', () => {
         staffError.style.display = 'none';
@@ -1341,16 +1314,6 @@
 
       btnCloseStaff.addEventListener('click', () => {
         modalStaff.style.display = 'none';
-      });
-
-      chipFillAdmin.addEventListener('click', () => {
-        staffUser.value = 'admin';
-        staffPass.value = 'AdminPass123!';
-      });
-
-      chipFillPt.addEventListener('click', () => {
-        staffUser.value = 'pt_staff';
-        staffPass.value = 'PtPass123!';
       });
 
       staffForm.addEventListener('submit', async (e) => {
@@ -1364,37 +1327,32 @@
         staffError.style.display = 'none';
 
         try {
-          // Attempt real API login
           const res = await fetch('/api/auth/login', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
             body: JSON.stringify({ username, password })
           });
 
-          if (res.ok) {
-            const data = await res.json();
+          const data = await res.json().catch(() => ({}));
+
+          if (res.ok && (data.ok || data.user || data.token)) {
+            const token = data.token || data.accessToken || data.access_token;
+            if (token) {
+              try {
+                localStorage.setItem('drtech_auth_token', token);
+                sessionStorage.setItem('drtech_auth_token', token);
+              } catch (storageErr) {}
+            }
             const role = data.role || data.user?.role || (username.toLowerCase().includes('admin') ? 'admin' : 'pt');
             window.location.href = role === 'admin' ? '/admin/' : '/pt/';
             return;
           }
 
-          // Fallback check for static/local preview mode
-          if (username.toLowerCase().includes('admin')) {
-            window.location.href = '/admin/';
-            return;
-          } else if (username.toLowerCase().includes('pt')) {
-            window.location.href = '/pt/';
-            return;
-          }
-
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+          throw new Error(data.message || data.error?.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
         } catch (err) {
-          // If offline / local mock match
-          if (username === 'admin' || username === 'pt_staff') {
-            window.location.href = username === 'admin' ? '/admin/' : '/pt/';
-            return;
-          }
           staffError.textContent = err.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ';
           staffError.style.display = 'block';
         } finally {

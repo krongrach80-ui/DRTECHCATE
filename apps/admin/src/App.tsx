@@ -3,7 +3,7 @@ import {
   UserProfile,
   defaultApiClient
 } from '../../../packages/api-client/src/index.js';
-import { ClinicalAdminShell } from './clinical-ui/index.js';
+import { ClinicalAdminShell, StaffLoginModal } from './clinical-ui/index.js';
 
 export const AdminApp: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -85,6 +85,24 @@ export const AdminApp: React.FC = () => {
     await fetchStaffCalls();
   };
 
+  // Enforce authentication: If not authenticated, display login screen exclusively
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#F0FDF9] via-[#FFFFFF] to-[#EFF6FF] flex items-center justify-center p-4">
+        <StaffLoginModal
+          isOpen={true}
+          onClose={() => {
+            window.location.href = '/';
+          }}
+          onLogin={handleDirectLogin}
+          onReturnToKiosk={() => {
+            window.location.href = '/';
+          }}
+        />
+      </div>
+    );
+  }
+
   // Master Prompt v5: Clinical Emerald Shell 100% Default Presentation
   return (
     <div className="relative w-screen h-screen">
@@ -98,7 +116,6 @@ export const AdminApp: React.FC = () => {
       />
     </div>
   );
-
 };
 
 export const App = AdminApp;

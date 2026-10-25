@@ -5,6 +5,7 @@ import {
   defaultApiClient
 } from '../../../packages/api-client/src/index.js';
 import { ClinicalPtShell } from './clinical-ui/index.js';
+import { StaffLoginModal } from '../../admin/src/clinical-ui/index.js';
 
 export const PtApp: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -74,12 +75,39 @@ export const PtApp: React.FC = () => {
     }
   };
 
+  const handleDirectLogin = async (credentials: { username: string; password: string }) => {
+    const res = await defaultApiClient.auth.login(credentials);
+    if (res.role !== 'pt') {
+      throw new Error('บัญชีนี้ไม่มีสิทธิ์เข้าถึงส่วนงานนักกายภาพบำบัด (PT Only)');
+    }
+    setCurrentUser(res.user);
+    await fetchStaffCalls();
+  };
+
   // Loading Splash Screen (Hospital Mint-White Theme)
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#F0FDF9] via-[#FFFFFF] to-[#EFF6FF] flex flex-col items-center justify-center text-[#063932]">
         <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-600 rounded-full animate-spin mx-auto mb-3" />
         <p className="text-sm font-semibold text-emerald-900 tracking-wide">กำลังเข้าสู่ระบบนักกายภาพบำบัด DrTech.Care...</p>
+      </div>
+    );
+  }
+
+  // Enforce authentication: If not authenticated, display login screen exclusively
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#F0FDF9] via-[#FFFFFF] to-[#EFF6FF] flex items-center justify-center p-4">
+        <StaffLoginModal
+          isOpen={true}
+          onClose={() => {
+            window.location.href = '/';
+          }}
+          onLogin={handleDirectLogin}
+          onReturnToKiosk={() => {
+            window.location.href = '/';
+          }}
+        />
       </div>
     );
   }
@@ -99,7 +127,6 @@ export const PtApp: React.FC = () => {
       />
     </div>
   );
-
 };
 
 export const App = PtApp;

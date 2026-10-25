@@ -52,6 +52,9 @@ export class AuthController {
       res.status(200).json({
         ok: true,
         user: result.user,
+        token: result.accessToken,
+        accessToken: result.accessToken,
+        access_token: result.accessToken,
       });
     } catch (err) {
       next(err);
@@ -99,7 +102,13 @@ export class AuthController {
         path: '/api/auth',
       });
 
-      res.status(200).json({ ok: true, message: 'Session refreshed' });
+      res.status(200).json({
+        ok: true,
+        message: 'Session refreshed',
+        token: result.accessToken,
+        accessToken: result.accessToken,
+        access_token: result.accessToken,
+      });
     } catch (err) {
       next(err);
     }

@@ -79,6 +79,19 @@ export class StaffService {
       },
     });
 
+    // Register password in local persistence if active
+    try {
+      const { registerLocalUserPassword, isLocalPersistenceActive, saveLocalDatabase } = await import(
+        '../../lib/localStorage/localPersistenceEngine'
+      );
+      if (isLocalPersistenceActive()) {
+        registerLocalUserPassword(cleanUsername, input.password);
+        await saveLocalDatabase();
+      }
+    } catch {
+      // Non-blocking
+    }
+
     return created;
   }
 

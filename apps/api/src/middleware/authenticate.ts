@@ -4,6 +4,7 @@ import { logger } from './logger';
 import { getAdminClient } from '../lib/supabase/adminClient';
 import { getAuthClient } from '../lib/supabase/authClient';
 import { getEnv } from '../config/env';
+import { verifyStatelessToken } from '../lib/auth/token';
 
 export interface UserSession {
   id: string;
@@ -91,14 +92,33 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     const allowBearerInProd = env.ALLOW_BEARER_IN_PROD;
     const bearerAllowed = !isProd || allowBearerInProd;
 
-    const token =
-      req.cookies?.access_token ||
-      (bearerAllowed && req.headers.authorization?.startsWith('Bearer ')
-        ? req.headers.authorization.slice(7)
-        : undefined);
+    const authHeader = req.headers.authorization;
+    const bearerToken = (bearerAllowed && authHeader?.startsWith('Bearer '))
+      ? authHeader.slice(7).trim()
+      : undefined;
+    const token = bearerToken || req.cookies?.access_token;
 
     if (!token) {
       throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
+    }
+
+    // 0. Verify stateless HMAC-SHA256 signed token (instant zero-network check, cold start resilient)
+    const statelessUser = verifyStatelessToken(token);
+    if (statelessUser) {
+      if (statelessUser.status !== 'active') {
+        throw new AppError('User account is inactive or suspended', 403, 'ACCOUNT_INACTIVE');
+      }
+      if (forceLoggedOutUsers.has(statelessUser.id)) {
+        throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
+      }
+      req.user = {
+        id: statelessUser.id,
+        role: statelessUser.role,
+        full_name: statelessUser.full_name,
+        status: statelessUser.status,
+        iat: statelessUser.iat,
+      };
+      return next();
     }
 
     // If a custom token verifier has been injected (e.g. by test suite fixture), use it

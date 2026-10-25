@@ -241,36 +241,50 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setStatusText('เตรียมสแกนใหม่อีกครั้ง...');
   };
 
-  // Mock patient login via PIN for quick patient session start
-  const handlePinLoginSuccess = () => {
+  // Patient login via PIN - queries real patient registry
+  const handlePinLoginSuccess = async () => {
     setIsPinModalOpen(false);
-    const mockPatient: PatientRecordFile = {
-      patient_id: 'P-DEMO-001',
-      hn: 'HN-68-0042',
-      first_name: 'วิชัย',
-      last_name: 'จิตเกษม',
-      age: 62,
-      gender: 'male',
-      registration_status: 'active',
-      registered_via: 'kiosk',
-      biometrics: {
-        face_vector: new Array(512).fill(0),
-        registered_face_url: '/uploads/patients/P-DEMO-001/profile_face.jpg',
-        confidence_score: 0.99,
-        model_version: 'w600k_r50',
-        enrolled_at: new Date().toISOString(),
-      },
-      daily_checklists: {},
-      rehab_scores: [],
-      clinical: {
-        diagnosis: 'ข้อเข่าเสื่อม (Osteoarthritis)',
-        treatment_plan: 'ฝึกกำลังกล้ามเนื้อรอบข้อเข่าและเพิ่มมุมการเคลื่อนไหว',
-        progress_notes: [],
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    onLoginSuccess(mockPatient);
+    const pin = enteredPin;
+    try {
+      const res = await fetch(`/api/patients?q=${encodeURIComponent(pin)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : data.data || [];
+        if (list.length > 0) {
+          const p = list[0];
+          onLoginSuccess({
+            patient_id: p.id,
+            hn: p.hn,
+            first_name: p.first_name,
+            last_name: p.last_name,
+            age: p.age,
+            gender: p.sex,
+            registration_status: p.registration_status,
+            registered_via: p.registered_via || 'kiosk',
+            biometrics: {
+              face_vector: new Array(512).fill(0),
+              registered_face_url: '',
+              confidence_score: 1.0,
+              model_version: 'w600k_r50',
+              enrolled_at: new Date().toISOString(),
+            },
+            daily_checklists: {},
+            rehab_scores: [],
+            clinical: {
+              diagnosis: p.injury || 'กายภาพบำบัดฟื้นฟู',
+              treatment_plan: 'โปรแกรมฟื้นฟูสมรรถภาพทางกายภาพบำบัด',
+              progress_notes: [],
+            },
+            created_at: p.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          return;
+        }
+      }
+    } catch {
+      // Network error
+    }
+    setUnrecognizedAlert('ไม่พบข้อมูลผู้ป่วยสำหรับรหัสนี้ กรุณาสแกนใบหน้าหรือติดต่อเจ้าหน้าที่');
   };
 
   const handlePinKey = (digit: string) => {

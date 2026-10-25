@@ -22,6 +22,7 @@ import { setGlobalCustomAuth } from '../../modules/auth/service';
 import { setAuthTokenVerifier } from '../../middleware/authenticate';
 import { syncActiveBans } from '../../middleware/banCheck';
 import { logger } from '../../middleware/logger';
+import { createStatelessToken } from '../auth/token';
 import { StaffProfileRecord } from '../../modules/staff/schema';
 import { PatientRecord } from '../../modules/patients/schema';
 import { ExerciseRecord, ModpackRecord } from '../../modules/directory/schema';
@@ -415,7 +416,12 @@ export function activateLocalPersistenceEngine(): void {
       return { data: null, error: new Error('Invalid login credentials') };
     }
 
-    const token = `mock-token:${matchedStaff.id}:${matchedStaff.role}:active`;
+    const token = createStatelessToken({
+      id: matchedStaff.id,
+      role: matchedStaff.role,
+      full_name: matchedStaff.full_name,
+      status: matchedStaff.status,
+    });
     return {
       data: {
         user: { id: matchedStaff.id, email: cleanEmail },
@@ -435,10 +441,16 @@ export function activateLocalPersistenceEngine(): void {
     if (!staff) {
       return { data: null, error: new Error('Invalid refresh token') };
     }
+    const token = createStatelessToken({
+      id: staff.id,
+      role: staff.role,
+      full_name: staff.full_name,
+      status: staff.status,
+    });
     return {
       data: {
         session: {
-          access_token: `mock-token:${staff.id}:${staff.role}:active`,
+          access_token: token,
           refresh_token: refreshToken,
           expires_in: 86400 * 7,
         },

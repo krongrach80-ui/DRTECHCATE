@@ -260,9 +260,51 @@ export interface StaffCallRecord {
 
 export class ApiClient {
   public readonly baseUrl: string;
+  private authToken: string | null = null;
 
   constructor(baseUrl: string = '/api') {
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    if (typeof window !== 'undefined') {
+      try {
+        this.authToken =
+          localStorage.getItem('drtech_auth_token') ||
+          sessionStorage.getItem('drtech_auth_token') ||
+          null;
+      } catch {
+        // Storage disabled or sandboxed
+      }
+    }
+  }
+
+  public setAuthToken(token: string | null): void {
+    this.authToken = token;
+    if (typeof window !== 'undefined') {
+      try {
+        if (token) {
+          localStorage.setItem('drtech_auth_token', token);
+          sessionStorage.setItem('drtech_auth_token', token);
+        } else {
+          localStorage.removeItem('drtech_auth_token');
+          sessionStorage.removeItem('drtech_auth_token');
+        }
+      } catch {
+        // Storage disabled or sandboxed
+      }
+    }
+  }
+
+  public getAuthToken(): string | null {
+    if (!this.authToken && typeof window !== 'undefined') {
+      try {
+        this.authToken =
+          localStorage.getItem('drtech_auth_token') ||
+          sessionStorage.getItem('drtech_auth_token') ||
+          null;
+      } catch {
+        // Storage disabled or sandboxed
+      }
+    }
+    return this.authToken;
   }
 
   private async request<T>(
@@ -270,9 +312,11 @@ export class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const token = this.getAuthToken();
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'X-Requested-With': 'XMLHttpRequest', // CSRF guard bypass allowlist
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...(options.headers as Record<string, string>),
     };
 
@@ -322,16 +366,35 @@ export class ApiClient {
   // =========================================================================
   public readonly auth = {
     login: async (credentials: { username: string; password: string }) => {
-      return this.request<{ role: 'admin' | 'pt'; user: UserProfile }>('/auth/login', {
+      const res = await this.request<{
+        ok?: boolean;
+        role?: 'admin' | 'pt';
+        user?: UserProfile;
+        token?: string;
+        accessToken?: string;
+        access_token?: string;
+      }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify(credentials),
       });
+
+      const token = res.token || res.accessToken || res.access_token;
+      if (token) {
+        this.setAuthToken(token);
+      }
+      const user = res.user || (res as unknown as UserProfile);
+      const role = (res.role || user?.role || (credentials.username.toLowerCase().includes('admin') ? 'admin' : 'pt')) as 'admin' | 'pt';
+      return { role, user, token };
     },
 
     logout: async () => {
-      return this.request<{ message: string }>('/auth/logout', {
-        method: 'POST',
-      });
+      try {
+        return await this.request<{ message: string }>('/auth/logout', {
+          method: 'POST',
+        });
+      } finally {
+        this.setAuthToken(null);
+      }
     },
 
     me: async () => {
@@ -341,9 +404,19 @@ export class ApiClient {
     },
 
     refresh: async () => {
-      return this.request<{ message: string }>('/auth/refresh', {
+      const res = await this.request<{
+        message: string;
+        token?: string;
+        accessToken?: string;
+        access_token?: string;
+      }>('/auth/refresh', {
         method: 'POST',
       });
+      const token = res.token || res.accessToken || res.access_token;
+      if (token) {
+        this.setAuthToken(token);
+      }
+      return res;
     },
   };
 
@@ -404,10 +477,12 @@ export class ApiClient {
       const formData = new FormData();
       formData.append('avatar', file);
       const url = `${this.baseUrl}/staff/${id}/avatar`;
+      const token = this.getAuthToken();
       const res = await fetch(url, {
         method: 'POST',
         headers: {
           'X-Requested-With': 'XMLHttpRequest',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         credentials: 'include',
         body: formData,
@@ -578,10 +653,12 @@ export class ApiClient {
       const formData = new FormData();
       formData.append('media', file);
       const url = `${this.baseUrl}/exercises/${id}/media`;
+      const token = this.getAuthToken();
       const res = await fetch(url, {
         method: 'POST',
         headers: {
           'X-Requested-With': 'XMLHttpRequest',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         credentials: 'include',
         body: formData,
