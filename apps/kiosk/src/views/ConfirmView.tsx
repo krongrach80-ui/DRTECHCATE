@@ -159,7 +159,7 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
 
         {/* First Name Only Prompt */}
         <p className="text-sm text-slate-400">ท่านคือผู้รับบริการชื่อ</p>
-        <div className="text-4xl font-extrabold text-white mt-1 tracking-tight">
+        <div className="text-4xl font-extrabold text-white mt-1 tracking-normal">
           คุณ {firstName}
         </div>
         <p className="text-xs text-blue-300/80 mt-2">

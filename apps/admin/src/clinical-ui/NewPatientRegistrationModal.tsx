@@ -217,35 +217,40 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
       <div
         style={{
-          boxShadow: '0 25px 60px -15px rgba(6, 57, 50, 0.25)',
+          boxShadow: '0 25px 70px -15px rgba(6, 57, 50, 0.3)',
         }}
-        className="w-full max-w-2xl bg-white rounded-2xl sm:rounded-3xl border border-slate-200 overflow-hidden shadow-2xl relative font-sans max-h-[92dvh] flex flex-col"
+        className="w-full max-w-2xl bg-white rounded-3xl border border-emerald-500/20 overflow-hidden shadow-2xl relative font-sans max-h-[92dvh] flex flex-col"
       >
         {/* Header */}
-        <div className="pt-6 px-8 pb-3 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-emerald-500" />
-              <span>สมัครบัญชีคนไข้ใหม่ (ลงทะเบียนเปิดประวัติผู้ป่วย)</span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              ระบบสร้างเวชระเบียนและลงทะเบียนใบหน้าชีวมิติเชื่อมต่อตู้ Kiosk อัตโนมัติ
-            </p>
+        <div className="pt-6 sm:pt-7 px-6 sm:px-8 pb-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-md shadow-emerald-500/25 shrink-0">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-800 leading-snug">
+                สมัครบัญชีคนไข้ใหม่ (ลงทะเบียนเปิดประวัติผู้ป่วย)
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-normal">
+                ระบบสร้างเวชระเบียนและลงทะเบียนใบหน้าชีวมิติเชื่อมต่อตู้ Kiosk อัตโนมัติ
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+            className="p-2.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition active:scale-95 cursor-pointer shrink-0"
+            title="ปิดหน้าต่าง"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* 3-Step Pill Indicator */}
-        <div className="px-8 pt-3 bg-slate-50/50 border-b border-slate-100">
+        <div className="px-6 sm:px-8 py-3 bg-slate-50/70 border-b border-slate-100 shrink-0">
           <SmoothStepper
             steps={[
               { number: 1, label: '1. กรอกข้อมูลคนไข้' },
@@ -258,46 +263,43 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
         {/* Error Alert */}
         {errorMsg && (
-          <div className="mx-8 mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+          <div className="mx-6 sm:mx-8 mt-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm leading-relaxed shrink-0">
             {errorMsg}
           </div>
         )}
 
         {/* STEP 1: Form Inputs */}
         {step === 1 && (
-          <form onSubmit={handleProceedToScan} className="p-8 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={handleProceedToScan} className="p-6 sm:p-8 space-y-5 overflow-y-auto flex-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 sm:gap-y-5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   รหัสคนไข้ (HN / Patient Code)
                 </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={hn}
-                  className="w-full px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-600 select-all cursor-not-allowed"
-                />
+                <div className="w-full h-12 px-4 bg-slate-100/90 border border-slate-200/90 rounded-xl text-sm font-mono font-bold text-slate-700 flex items-center shadow-inner select-all cursor-not-allowed">
+                  {hn}
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  ชื่อ-นามสกุล คนไข้ *
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  ชื่อ-นามสกุล คนไข้ <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <User className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     required
                     placeholder="เช่น นายธนกร รุ่งเรือง"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className="w-full h-12 pl-11 pr-4 bg-slate-50/90 border border-slate-200/90 rounded-xl text-sm sm:text-base text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   อายุ (ปี)
                 </label>
                 <input
@@ -306,18 +308,18 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                   max="120"
                   value={age}
                   onChange={(e) => setAge(Number(e.target.value))}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500"
+                  className="w-full h-12 px-4 bg-slate-50/90 border border-slate-200/90 rounded-xl text-sm sm:text-base text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   เพศ
                 </label>
                 <select
                   value={sex}
                   onChange={(e) => setSex(e.target.value as 'male' | 'female')}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500"
+                  className="w-full h-12 px-4 bg-slate-50/90 border border-slate-200/90 rounded-xl text-sm sm:text-base text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm cursor-pointer"
                 >
                   <option value="male">ชาย (Male)</option>
                   <option value="female">หญิง (Female)</option>
@@ -325,29 +327,29 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   เบอร์โทรศัพท์ติดต่อ
                 </label>
                 <div className="relative">
-                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Phone className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="08X-XXX-XXXX"
-                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500"
+                    className="w-full h-12 pl-11 pr-4 bg-slate-50/90 border border-slate-200/90 rounded-xl text-sm sm:text-base text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  นักกายภาพผู้รับผิดชอบ *
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  นักกายภาพผู้รับผิดชอบ <span className="text-rose-500">*</span>
                 </label>
                 <select
                   value={responsiblePtId}
                   onChange={(e) => setResponsiblePtId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500"
+                  className="w-full h-12 px-4 bg-slate-50/90 border border-slate-200/90 rounded-xl text-sm sm:text-base text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm cursor-pointer"
                 >
                   {ptsList.length === 0 && <option value="">กำลังโหลดรายชื่อนักกายภาพ...</option>}
                   {ptsList.map((pt) => (
@@ -360,20 +362,20 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                 การวินิจฉัยเบื้องต้น / แผนการรักษา (Clinical Diagnosis)
               </label>
               <input
                 type="text"
                 value={diagnosis}
                 onChange={(e) => setDiagnosis(e.target.value)}
-                placeholder="เช่น ข้อไหล่ติดระยะฟื้นฟู"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500"
+                placeholder="เช่น ข้อไหล่ติดระยะฟื้นฟู, กล้ามเนื้อสะโพกอ่อนแรง"
+                className="w-full h-12 px-4 bg-slate-50/90 border border-slate-200/90 rounded-xl text-sm sm:text-base text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                 รหัส PIN สำรองสำหรับตู้ (4 หลัก)
               </label>
               <input
@@ -381,31 +383,34 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                 maxLength={4}
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
-                className="w-32 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 text-center tracking-widest font-mono font-bold"
+                placeholder="••••"
+                className="w-36 h-12 px-4 bg-slate-50/90 border border-slate-200/90 rounded-xl text-base text-slate-800 text-center tracking-widest font-mono font-bold focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm"
               />
             </div>
 
             {/* PDPA Biometric Consent Checkbox */}
-            <div className="p-3.5 rounded-2xl bg-sky-50/80 border border-sky-200/80 flex items-start gap-3">
+            <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex items-start gap-3.5 shadow-sm">
               <input
                 type="checkbox"
                 id="pdpa-consent"
                 checked={consentPdpa}
                 onChange={(e) => setConsentPdpa(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                className="mt-1 w-5 h-5 rounded-md text-emerald-600 border-emerald-300 focus:ring-emerald-500 cursor-pointer accent-emerald-600 shrink-0"
               />
-              <label htmlFor="pdpa-consent" className="text-xs text-sky-900 leading-relaxed cursor-pointer select-none">
-                <span className="font-bold">ความยินยอมจัดเก็บข้อมูลชีวมิติ (PDPA Biometric Consent):</span>{' '}
+              <label htmlFor="pdpa-consent" className="text-xs sm:text-sm text-emerald-950 leading-relaxed cursor-pointer select-none">
+                <span className="font-bold text-emerald-900 block mb-0.5">
+                  ความยินยอมจัดเก็บข้อมูลชีวมิติ (PDPA Biometric Consent)
+                </span>
                 คนไข้ยินยอมให้บันทึกภาพถ่ายและเวกเตอร์ 512 มิติ เพื่อใช้ในการพิสูจน์ตัวตนที่ตู้คีออสและเก็บในเซิร์ฟเวอร์โรงพยาบาลอย่างปลอดภัย
               </label>
             </div>
 
             {/* Bottom Actions */}
-            <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
+            <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 shrink-0">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 text-xs font-bold transition"
+                className="px-6 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 text-sm font-semibold transition active:scale-95 cursor-pointer"
               >
                 ยกเลิก
               </button>
@@ -415,6 +420,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                 size="md"
                 isLoading={isLoading}
                 icon={<ArrowRight className="w-4 h-4" />}
+                className="shadow-md shadow-emerald-600/20 text-sm font-bold"
               >
                 <span>ขั้นตอนถัดไป: สแกนใบหน้าคนไข้ ➔</span>
               </SmoothButton>
@@ -424,8 +430,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
         {/* STEP 2: Real Biometric Scan */}
         {step === 2 && (
-          <div className="p-8 flex flex-col items-center text-center space-y-4">
-            <div className="relative w-72 h-56 rounded-2xl bg-slate-900 border-4 border-emerald-500 overflow-hidden flex items-center justify-center shadow-xl">
+          <div className="p-6 sm:p-8 flex flex-col items-center text-center space-y-5 overflow-y-auto flex-1">
+            <div className="relative w-80 h-60 rounded-2xl bg-slate-900 border-4 border-emerald-500 overflow-hidden flex items-center justify-center shadow-xl">
               <video
                 ref={videoRef}
                 autoPlay
@@ -436,24 +442,24 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
               {!cameraActive && (
                 <div className="flex flex-col items-center justify-center p-4 text-slate-400 space-y-2">
                   <Camera className="w-12 h-12 text-emerald-400 animate-pulse" />
-                  <span className="text-xs">{cameraError || 'กำลังเริ่มต้นกล้องเว็บแคม...'}</span>
+                  <span className="text-sm font-medium">{cameraError || 'กำลังเริ่มต้นกล้องเว็บแคม...'}</span>
                 </div>
               )}
-              <div className="absolute top-2 left-2 text-[10px] font-mono text-emerald-400 bg-black/70 px-2 py-0.5 rounded flex items-center gap-1.5">
+              <div className="absolute top-2 left-2 text-[10px] font-mono text-emerald-400 bg-black/70 px-2.5 py-1 rounded-md flex items-center gap-1.5 shadow">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                 <span>AI CAMERA {cameraActive ? 'LIVE' : 'INITIALIZING'}</span>
               </div>
             </div>
 
             <div className="max-w-md w-full">
-              <h3 className="text-base font-bold text-slate-800 mb-1">
+              <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-1.5">
                 สแกนใบหน้าคนไข้เพื่อสร้างแม่แบบชีวมิติ 512 มิติ
               </h3>
-              <p className="text-xs text-slate-500 mb-4">
+              <p className="text-xs sm:text-sm text-slate-500 mb-5 leading-relaxed">
                 กรุณาให้คนไข้มองตรงมาที่กล้อง เพื่อบันทึกภาพถ่ายและสร้างแม่แบบเวกเตอร์สำหรับตู้ Kiosk
               </p>
 
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 <SmoothButton
                   type="button"
                   variant="primary"
@@ -461,7 +467,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                   onClick={handleCaptureBiometrics}
                   isLoading={isLoading}
                   icon={<Camera className="w-4 h-4" />}
-                  className="w-full"
+                  className="w-full shadow-lg shadow-emerald-600/25 text-sm sm:text-base font-bold py-3"
                 >
                   <span>📸 ถ่ายภาพใบหน้าและบันทึกแม่แบบชีวมิติ</span>
                 </SmoothButton>
@@ -472,7 +478,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                     stopCamera();
                     setStep(3);
                   }}
-                  className="w-full py-2 rounded-xl text-slate-400 hover:text-slate-600 text-xs font-semibold text-center transition"
+                  className="w-full py-2.5 rounded-xl text-slate-500 hover:text-slate-800 text-xs sm:text-sm font-semibold text-center transition hover:bg-slate-50"
                 >
                   ข้ามขั้นตอนนี้ (ไปขั้นตอนที่ 3) ➔
                 </button>
@@ -483,30 +489,30 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
         {/* STEP 3: Ready for Kiosk */}
         {step === 3 && (
-          <div className="p-8 flex flex-col items-center text-center space-y-5">
+          <div className="p-6 sm:p-8 flex flex-col items-center text-center space-y-6 overflow-y-auto flex-1">
             <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
               <CheckCircle2 className="w-10 h-10" />
             </div>
 
             <div>
-              <h3 className="text-lg font-black text-slate-800">
+              <h3 className="text-xl font-bold text-slate-800 leading-snug">
                 เปิดประวัติผู้ป่วยและบันทึกใบหน้าชีวมิติสำเร็จ!
               </h3>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-sm text-slate-500 mt-1.5 leading-relaxed">
                 คนไข้ <span className="font-bold text-emerald-700">{name}</span> (HN: {hn}) สามารถสแกนใบหน้าที่ตู้ Kiosk เพื่อเริ่มการฝึกกายภาพบำบัดได้ทันที
               </p>
             </div>
 
-            <div className="w-full max-w-sm p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-left text-xs space-y-1.5">
-              <div className="flex justify-between">
+            <div className="w-full max-w-md p-5 rounded-2xl bg-emerald-50/70 border border-emerald-200/90 text-left text-sm space-y-2.5 shadow-sm">
+              <div className="flex justify-between items-center">
                 <span className="text-slate-500">HN ผู้ป่วย:</span>
                 <span className="font-mono font-bold text-slate-800">{hn}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-slate-500">แผนการรักษา:</span>
-                <span className="font-semibold text-slate-800">{diagnosis}</span>
+                <span className="font-semibold text-slate-800">{diagnosis || 'กายภาพบำบัดฟื้นฟู'}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-slate-500">สถานะการยืนยันตัวตน:</span>
                 <span className="font-bold text-emerald-700">● 512-D L2 Normalized Ready</span>
               </div>
@@ -517,8 +523,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
               variant="primary"
               size="lg"
               onClick={handleFinish}
-              className="w-full max-w-xs"
-              icon={<ShieldCheck className="w-4 h-4" />}
+              className="w-full max-w-xs shadow-lg shadow-emerald-600/25 text-sm sm:text-base font-bold py-3"
+              icon={<ShieldCheck className="w-5 h-5" />}
             >
               <span>เสร็จสิ้น และพร้อมใช้งานตู้ Kiosk</span>
             </SmoothButton>

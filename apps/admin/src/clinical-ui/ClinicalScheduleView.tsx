@@ -331,7 +331,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
                     </span>
                   )}
                 </div>
-                <h2 className="text-xl font-black text-slate-800 tracking-tight">
+                <h2 className="text-xl font-bold text-slate-800 tracking-normal">
                   {`${selectedPatient.first_name} ${selectedPatient.last_name}`.trim()}
                 </h2>
                 <p className="text-xs text-slate-500">

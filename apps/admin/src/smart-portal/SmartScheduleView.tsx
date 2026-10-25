@@ -98,7 +98,7 @@ export const SmartScheduleView: React.FC = () => {
             <Activity className="w-4 h-4" />
             <span>Smart Physical Therapy Schedule Engine</span>
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">
+          <h1 className="text-2xl font-bold text-white tracking-normal">
             ตารางฝึกกายภาพบำบัด
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">

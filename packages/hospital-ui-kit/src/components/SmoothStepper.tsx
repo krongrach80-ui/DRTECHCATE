@@ -32,12 +32,12 @@ export const SmoothStepper: React.FC<SmoothStepperProps> = ({
           <React.Fragment key={step.number}>
             <div
               onClick={() => onStepClick && isCompleted && onStepClick(step.number)}
-              className={`flex items-center gap-2.5 px-3.5 py-2 rounded-2xl transition-all duration-300 ${
+              className={`flex items-center gap-2.5 px-4 py-2 rounded-2xl transition-all duration-300 ${
                 isActive
-                  ? 'bg-emerald-50 border-2 border-emerald-500 shadow-sm text-emerald-900 font-bold scale-[1.02]'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-md shadow-emerald-600/25 scale-[1.02]'
                   : isCompleted
-                  ? 'bg-slate-100/90 text-emerald-700 cursor-pointer hover:bg-slate-200'
-                  : 'bg-slate-50 text-slate-400 border border-slate-200/80'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-300/60 cursor-pointer hover:bg-emerald-100'
+                  : 'bg-slate-100/90 text-slate-500 border border-slate-200/80'
               }`}
             >
               <div
@@ -45,13 +45,15 @@ export const SmoothStepper: React.FC<SmoothStepperProps> = ({
                   isCompleted
                     ? 'bg-emerald-600 text-white'
                     : isActive
-                    ? 'bg-emerald-500 text-white shadow-sm'
-                    : 'bg-slate-200 text-slate-500'
+                    ? 'bg-white text-emerald-700 shadow-sm font-black'
+                    : 'bg-slate-200 text-slate-600'
                 }`}
               >
-                {isCompleted ? <Check className="w-3.5 h-3.5" /> : step.number}
+                {isCompleted ? <Check className="w-3.5 h-3.5 stroke-[2.5]" /> : step.number}
               </div>
-              <span className="text-xs tracking-tight">{step.label}</span>
+              <span className={`text-xs sm:text-sm tracking-normal whitespace-nowrap ${isActive ? 'text-white font-bold' : 'font-semibold'}`}>
+                {step.label}
+              </span>
             </div>
 
             {idx < steps.length - 1 && (

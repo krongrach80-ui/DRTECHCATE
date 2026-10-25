@@ -43,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight text-white font-['Outfit']">
+            <span className="text-xl font-bold tracking-normal text-white font-['Outfit']">
               DrTech<span className="text-blue-400">.Care</span>
             </span>
             <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">

@@ -56,7 +56,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
           </button>
         )}
         <div>
-          <h2 className="text-base md:text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+          <h2 className="text-base md:text-xl font-bold text-slate-800 tracking-normal flex items-center gap-2">
             <span>{title}</span>
           </h2>
           <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider truncate max-w-[200px] sm:max-w-none">

@@ -45,7 +45,7 @@ export const PhysioStepView: React.FC<PhysioStepViewProps> = ({
           <span className="px-3 py-1 rounded-xl bg-blue-500/10 text-blue-400 font-bold font-mono text-sm border border-blue-500/20">
             ท่าที่ {currentIndex + 1} / {totalExercises}
           </span>
-          <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+          <h3 className="text-xl sm:text-2xl font-bold text-white tracking-normal">
             {exercise.title}
           </h3>
         </div>

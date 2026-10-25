@@ -167,7 +167,7 @@ export const SmartInfoForm: React.FC<SmartInfoFormProps> = ({
           <Sparkles className="w-3.5 h-3.5" />
           <span>Step 2.3: กรอกข้อมูลส่วนตัว (ทางเลือก A หน้าตู้คีออส)</span>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white mb-1">
+        <h1 className="text-2xl font-bold tracking-normal text-white mb-1">
           กรอกข้อมูลส่วนตัวผู้ป่วย
         </h1>
         <p className="text-xs text-slate-400">

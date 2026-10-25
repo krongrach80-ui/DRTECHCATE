@@ -138,7 +138,7 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
             <HeartPulse className="w-6 h-6 animate-pulse" />
           </div>
           <div>
-            <h1 className="text-lg font-black tracking-tight text-white flex items-center gap-1.5">
+            <h1 className="text-lg font-bold tracking-normal text-white flex items-center gap-1.5">
               <span>Dr.Tech.Care</span>
             </h1>
             <p className="text-[11px] font-medium text-emerald-300/80">

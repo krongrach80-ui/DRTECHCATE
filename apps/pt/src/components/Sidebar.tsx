@@ -93,7 +93,7 @@ export const PtSidebar: React.FC<PtSidebarProps> = ({
             <Sparkles className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight flex items-center gap-1.5">
+            <h1 className="text-base font-bold text-white tracking-normal flex items-center gap-1.5">
               <span>DrTech.Care</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/30">
                 PT

@@ -381,14 +381,14 @@ export const StaffView: React.FC = () => {
             </div>
 
             {/* Wizard Steps Form */}
-            <form onSubmit={handleCreateStaff} className="p-6 space-y-4">
+            <form onSubmit={handleCreateStaff} className="p-6 space-y-5">
               {wizardStep === 1 && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-teal-300 uppercase tracking-wider">
+                  <h4 className="text-sm sm:text-base font-bold text-teal-300 tracking-normal">
                     1. ข้อมูลบัญชีผู้ใช้
                   </h4>
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
                       ชื่อผู้ใช้ (Username) *
                     </label>
                     <input
@@ -397,12 +397,12 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น staff.pt"
                       value={formData.username}
                       onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
                       รหัสผ่านเริ่มต้น (ขั้นต่ำ 12 ตัวอักษร) *
                     </label>
                     <input
@@ -412,12 +412,12 @@ export const StaffView: React.FC = () => {
                       placeholder="••••••••••••"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
                       ชื่อ - นามสกุลจริง *
                     </label>
                     <input
@@ -426,12 +426,12 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น กภ. ธนกฤต จิตมั่น"
                       value={formData.full_name}
                       onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
                       เบอร์โทรศัพท์
                     </label>
                     <input
@@ -439,7 +439,7 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น 0812345678"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
                 </div>
@@ -447,7 +447,7 @@ export const StaffView: React.FC = () => {
 
               {wizardStep === 2 && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-teal-300 uppercase tracking-wider">
+                  <h4 className="text-sm sm:text-base font-bold text-teal-300 tracking-normal">
                     2. กำหนดตำแหน่งและสิทธิ์การเข้าถึง
                   </h4>
 
@@ -457,13 +457,13 @@ export const StaffView: React.FC = () => {
                       onClick={() => setFormData({ ...formData, role: 'pt' })}
                       className={`p-4 rounded-2xl border text-left transition ${
                         formData.role === 'pt'
-                          ? 'bg-teal-600/20 border-teal-500 text-teal-300'
+                          ? 'bg-teal-600/20 border-teal-500 text-teal-300 ring-2 ring-teal-500/30'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
                       <UserCheck className="w-6 h-6 mb-2 text-teal-400" />
-                      <div className="font-bold text-sm text-white">นักกายภาพบำบัด (PT)</div>
-                      <div className="text-xs text-slate-400 mt-1">
+                      <div className="font-bold text-sm sm:text-base text-white">นักกายภาพบำบัด (PT)</div>
+                      <div className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed">
                         ดูแลคนไข้ของตนเอง สั่งคอร์ส และลงเวชระเบียน
                       </div>
                     </button>
@@ -473,20 +473,20 @@ export const StaffView: React.FC = () => {
                       onClick={() => setFormData({ ...formData, role: 'admin' })}
                       className={`p-4 rounded-2xl border text-left transition ${
                         formData.role === 'admin'
-                          ? 'bg-purple-600/20 border-purple-500 text-purple-300'
+                          ? 'bg-purple-600/20 border-purple-500 text-purple-300 ring-2 ring-purple-500/30'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
                       <Shield className="w-6 h-6 mb-2 text-purple-400" />
-                      <div className="font-bold text-sm text-white">ผู้อำนวยการ (Admin)</div>
-                      <div className="text-xs text-slate-400 mt-1">
+                      <div className="font-bold text-sm sm:text-base text-white">ผู้อำนวยการ (Admin)</div>
+                      <div className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed">
                         สิทธิ์สูงสุด จัดการบุคลากร ความปลอดภัย และตรวจสอบ Audit
                       </div>
                     </button>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
                       ประวัติโดยย่อ / ข้อมูลเพิ่มเติม
                     </label>
                     <textarea
@@ -494,7 +494,7 @@ export const StaffView: React.FC = () => {
                       placeholder="ระบุประวัติการศึกษา หรือข้อมูลเพิ่มเติม..."
                       value={formData.bio}
                       onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full p-3.5 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition leading-relaxed"
                     />
                   </div>
                 </div>
@@ -502,12 +502,12 @@ export const StaffView: React.FC = () => {
 
               {wizardStep === 3 && formData.role === 'pt' && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-teal-300 uppercase tracking-wider">
+                  <h4 className="text-sm sm:text-base font-bold text-teal-300 tracking-normal">
                     3. ข้อมูลใบอนุญาตประกอบวิชาชีพกายภาพบำบัด
                   </h4>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
                       เลขที่ใบประกอบวิชาชีพ (License No.) *
                     </label>
                     <input
@@ -516,24 +516,24 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น ก.12345"
                       value={formData.license_no}
                       onChange={(e) => setFormData({ ...formData, license_no: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
                       วันหมดอายุใบอนุญาต
                     </label>
                     <input
                       type="date"
                       value={formData.license_expiry}
                       onChange={(e) => setFormData({ ...formData, license_expiry: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
                       ความเชี่ยวชาญเฉพาะทาง (Specialty)
                     </label>
                     <input
@@ -541,7 +541,7 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น กายภาพบำบัดระบบกระดูกและกล้ามเนื้อ (MSK)"
                       value={formData.specialty}
                       onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
                 </div>
@@ -553,7 +553,7 @@ export const StaffView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setWizardStep((prev) => prev - 1)}
-                    className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 text-sm font-medium transition"
+                    className="h-11 px-5 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 text-sm font-semibold transition"
                   >
                     ย้อนกลับ
                   </button>
@@ -564,7 +564,7 @@ export const StaffView: React.FC = () => {
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40 disabled:opacity-50"
+                  className="h-11 flex items-center gap-2 px-6 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm sm:text-base transition shadow-lg shadow-teal-950/40 disabled:opacity-50 active:scale-[0.98]"
                 >
                   <span>
                     {wizardStep < (formData.role === 'pt' ? 3 : 2) ? 'ขั้นตอนถัดไป' : 'บันทึกและสร้างบัญชี'}

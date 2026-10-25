@@ -166,7 +166,7 @@ export const SmartEnrollmentView: React.FC<SmartEnrollmentViewProps> = ({
           <Sparkles className="w-3.5 h-3.5" />
           <span>Face-First High-Precision Enrollment (10 Frames)</span>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white mb-1">
+        <h1 className="text-2xl font-bold tracking-normal text-white mb-1">
           สมัครบัญชีใหม่ด้วยใบหน้า
         </h1>
         <p className="text-sm text-slate-400">

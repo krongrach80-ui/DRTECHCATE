@@ -145,7 +145,7 @@ export const IdleView: React.FC<IdleViewProps> = ({
       <div className="flex flex-col items-center text-center my-auto">
         <FloatingLogo />
 
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-white mt-10 tracking-tight">
+        <h1 className="text-4xl sm:text-5xl font-extrabold text-white mt-10 tracking-normal">
           DrTech<span className="text-blue-400">.Care</span>
         </h1>
         <p className="text-xl text-blue-200/80 font-light mt-3">

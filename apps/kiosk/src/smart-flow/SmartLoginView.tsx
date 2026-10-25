@@ -476,11 +476,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
         {/* 4. ส่วนท้ายการ์ด (Footer Branding) */}
         <div className="text-center mt-1">
-          <h2 className="text-xl font-extrabold text-[#064E3B] tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-extrabold text-[#064E3B] tracking-normal">
             Dr.Tech.Care
           </h2>
           <div>
-            <span className="inline-block mt-1.5 px-4 py-1 rounded-full bg-[#ECFDF5] border border-[#A7F3D0] text-[#047857] text-[11px] font-bold">
+            <span className="inline-block mt-1.5 px-4 py-1 rounded-full bg-[#ECFDF5] border border-[#A7F3D0] text-[#047857] text-xs font-bold">
               ระบบกายภาพบำบัดและดูแลสุขภาพอัจฉริยะ
             </span>
           </div>

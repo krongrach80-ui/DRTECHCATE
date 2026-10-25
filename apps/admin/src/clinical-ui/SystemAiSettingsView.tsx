@@ -131,7 +131,7 @@ export const SystemAiSettingsView: React.FC = () => {
       {/* Header & Global Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+          <h2 className="text-xl font-bold text-slate-800 tracking-normal flex items-center gap-2">
             <Settings className="w-6 h-6 text-emerald-600" />
             <span>ตั้งค่าระบบและการประมวลผล AI (System & AI Calibration)</span>
           </h2>

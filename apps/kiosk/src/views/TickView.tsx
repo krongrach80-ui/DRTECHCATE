@@ -24,7 +24,7 @@ export const TickView: React.FC<TickViewProps> = ({ onDone }) => {
           <span>บันทึกความก้าวหน้าเรียบร้อย</span>
         </div>
 
-        <h2 className="text-4xl sm:text-5xl font-black text-white tracking-tight">
+        <h2 className="text-4xl sm:text-5xl font-black text-white tracking-normal">
           ยอดเยี่ยมมากครับ!
         </h2>
         <p className="text-lg text-slate-400 mt-2">

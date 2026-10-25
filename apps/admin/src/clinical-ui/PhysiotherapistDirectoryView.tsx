@@ -78,29 +78,30 @@ export const PhysiotherapistDirectoryView: React.FC = () => {
     <div className="p-8 space-y-8 font-sans">
       {/* Top Search & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+        <div className="relative w-full sm:w-96">
+          <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             placeholder="ค้นหาชื่อนักกายภาพ, เลขใบอนุญาต, ความเชี่ยวชาญ..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 shadow-sm"
+            className="w-full h-11 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 shadow-sm transition"
           />
         </div>
 
         <button
           type="button"
           onClick={fetchData}
-          className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-800 transition"
+          className="h-11 px-4 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-800 transition flex items-center gap-2 shadow-sm"
           title="รีเฟรชข้อมูล"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <span className="text-sm font-medium">รีเฟรช</span>
         </button>
       </div>
 
       {successMsg && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{successMsg}</span>
@@ -114,7 +115,7 @@ export const PhysiotherapistDirectoryView: React.FC = () => {
       {/* 3-Column Physiotherapist Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredPts.map((pt) => (
-          <MedicalCard key={pt.id} className="p-6 flex flex-col justify-between border border-slate-200">
+          <MedicalCard key={pt.id} className="p-6 flex flex-col justify-between border border-slate-200 shadow-sm hover:shadow-md transition">
             <div>
               {/* Header with Avatar & Badge */}
               <div className="flex items-start justify-between gap-3 mb-4">
@@ -123,13 +124,13 @@ export const PhysiotherapistDirectoryView: React.FC = () => {
                     {pt.full_name.charAt(0) || 'PT'}
                   </div>
                   <div>
-                    <h3 className="text-base font-black text-slate-800 tracking-tight">
+                    <h3 className="text-base font-bold text-slate-800 tracking-normal">
                       {pt.full_name}
                     </h3>
-                    <p className="text-xs font-semibold text-emerald-700">
+                    <p className="text-xs sm:text-sm font-semibold text-emerald-700">
                       {pt.pt_details?.specialty || 'ผู้เชี่ยวชาญการฟื้นฟูกระดูกและข้อ'}
                     </p>
-                    <span className="text-[11px] font-mono text-slate-400">
+                    <span className="text-xs font-mono text-slate-400">
                       วท.บ. เลขที่ {pt.pt_details?.license_no || 'PT-48291'}
                     </span>
                   </div>

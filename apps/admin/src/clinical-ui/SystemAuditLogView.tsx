@@ -101,7 +101,7 @@ export const SystemAuditLogView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+          <h2 className="text-xl font-bold text-slate-800 tracking-normal flex items-center gap-2">
             <ShieldAlert className="w-6 h-6 text-emerald-600" />
             <span>ประวัติการใช้งานและบันทึกความปลอดภัย (Audit & Security Logs)</span>
           </h2>
