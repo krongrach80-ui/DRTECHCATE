@@ -16,40 +16,51 @@ export type SmartFlowStep = 'login' | 'enroll' | 'info_form' | 'daily_plan';
 
 interface SmartFlowControllerProps {
   customDetector?: FaceDetector;
+  onOpenStaffLoginModal?: () => void;
+  onStepChange?: (step: SmartFlowStep) => void;
 }
 
-export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({ customDetector }) => {
+export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
+  customDetector,
+  onOpenStaffLoginModal,
+  onStepChange,
+}) => {
   const [currentStep, setCurrentStep] = useState<SmartFlowStep>('login');
   const [activePatient, setActivePatient] = useState<PatientRecordFile | null>(null);
   const [pendingPatientId, setPendingPatientId] = useState<string | null>(null);
 
+  const changeStep = (nextStep: SmartFlowStep) => {
+    setCurrentStep(nextStep);
+    onStepChange?.(nextStep);
+  };
+
   // 1. Login success -> Route to Daily Plan
   const handleLoginSuccess = (patient: PatientRecordFile) => {
     setActivePatient(patient);
-    setCurrentStep('daily_plan');
+    changeStep('daily_plan');
   };
 
   // 2. Unrecognized face -> Route to 10-snap Enrollment
   const handleNavigateToEnroll = () => {
-    setCurrentStep('enroll');
+    changeStep('enroll');
   };
 
   // 3. 10-snap Enrollment success -> Route to Dual-Channel Info Input
   const handleEnrollSuccess = (patientId: string) => {
     setPendingPatientId(patientId);
-    setCurrentStep('info_form');
+    changeStep('info_form');
   };
 
   // 4. Info form completed (Option A or Option B) -> Auto reset to Welcome / Login screen
   const handleInfoCompleted = () => {
     setPendingPatientId(null);
-    setCurrentStep('login');
+    changeStep('login');
   };
 
   // 5. Daily plan completed / logout -> Reset to Welcome / Login screen
   const handleLogout = () => {
     setActivePatient(null);
-    setCurrentStep('login');
+    changeStep('login');
   };
 
   return (
@@ -59,13 +70,14 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({ custom
           onLoginSuccess={handleLoginSuccess}
           onNavigateToEnroll={handleNavigateToEnroll}
           customDetector={customDetector}
+          onOpenStaffLoginModal={onOpenStaffLoginModal}
         />
       )}
 
       {currentStep === 'enroll' && (
         <SmartEnrollmentView
           onEnrollSuccess={handleEnrollSuccess}
-          onCancel={() => setCurrentStep('login')}
+          onCancel={() => changeStep('login')}
           customDetector={customDetector}
         />
       )}
@@ -74,7 +86,7 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({ custom
         <SmartInfoForm
           patientId={pendingPatientId}
           onCompleted={handleInfoCompleted}
-          onCancel={() => setCurrentStep('login')}
+          onCancel={() => changeStep('login')}
         />
       )}
 

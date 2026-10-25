@@ -25,13 +25,14 @@ import { TickView } from './views/TickView';
 import { CompleteView } from './views/CompleteView';
 import { CallStaffView } from './views/CallStaffView';
 import { EnrollView } from './views/EnrollView';
-import { SmartFlowController } from './smart-flow/index.js';
+import { SmartFlowController, SmartFlowStep } from './smart-flow/index.js';
 import { KioskClinicalHeader } from './clinical-ui/index.js';
 import { StaffLoginModal } from '../../admin/src/clinical-ui/StaffLoginModal';
 import { NewPatientRegistrationModal } from '../../admin/src/clinical-ui/NewPatientRegistrationModal';
 
 export const App: React.FC = () => {
   const [flowMode, setFlowMode] = useState<'smart' | 'classic'>('smart');
+  const [smartStep, setSmartStep] = useState<SmartFlowStep>('login');
   const [isStaffLoginModalOpen, setIsStaffLoginModalOpen] = useState(false);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const machine = useMemo(() => new KioskStateMachine(), []);
@@ -183,16 +184,21 @@ export const App: React.FC = () => {
 
   if (flowMode === 'smart') {
     return (
-      <div className="w-screen h-screen flex flex-col bg-gradient-to-br from-[#F0FDF9] via-[#FFFFFF] to-[#EFF6FF] text-[#063932] select-none overflow-hidden relative font-sans">
-        <KioskClinicalHeader
-          kioskId={kioskId}
-          onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากตู้ Kiosk')}
-          onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
-          onOpenStaffLoginModal={() => setIsStaffLoginModalOpen(true)}
-        />
+      <div className="w-screen h-screen flex flex-col bg-gradient-to-br from-[#E6F8F5] via-[#F4FBF9] to-[#E0F2FE] text-[#063932] select-none overflow-hidden relative font-sans">
+        {smartStep !== 'login' && (
+          <KioskClinicalHeader
+            kioskId={kioskId}
+            onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากตู้ Kiosk')}
+            onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
+            onOpenStaffLoginModal={() => setIsStaffLoginModalOpen(true)}
+          />
+        )}
 
         <div className="flex-1 overflow-hidden relative">
-          <SmartFlowController />
+          <SmartFlowController
+            onStepChange={setSmartStep}
+            onOpenStaffLoginModal={() => setIsStaffLoginModalOpen(true)}
+          />
         </div>
 
         {/* Staff Login Modal */}
