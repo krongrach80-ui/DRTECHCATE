@@ -38,18 +38,29 @@ export const config = {
 };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  const app = await bootstrapApp();
+  try {
+    const app = await bootstrapApp();
 
-  // If Vercel rewrote the request to /api, recover original path from x-matched-path
-  let requestPath = req.url || '';
-  const matchedPath = req.headers['x-matched-path'] as string | undefined;
-  if (matchedPath && matchedPath.startsWith('/api') && (!requestPath || requestPath === '/' || requestPath === '/api')) {
-    requestPath = matchedPath;
-  }
-  if (!requestPath.startsWith('/api') && requestPath !== '/') {
-    requestPath = '/api' + requestPath;
-  }
-  req.url = requestPath;
+    // If Vercel rewrote the request to /api, recover original path from x-matched-path
+    let requestPath = req.url || '';
+    const matchedPath = req.headers['x-matched-path'] as string | undefined;
+    if (matchedPath && matchedPath.startsWith('/api') && (!requestPath || requestPath === '/' || requestPath === '/api')) {
+      requestPath = matchedPath;
+    }
+    if (!requestPath.startsWith('/api') && requestPath !== '/') {
+      requestPath = '/api' + requestPath;
+    }
+    req.url = requestPath;
 
-  return (app as any)(req, res);
+    return (app as any)(req, res);
+  } catch (err: any) {
+    console.error('Serverless Handler Error:', err);
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      status: 'error',
+      message: err?.message || String(err),
+      stack: err?.stack,
+    }));
+  }
 }
