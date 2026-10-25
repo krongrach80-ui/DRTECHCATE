@@ -109,11 +109,15 @@ export function createApp(
   app.use('/api', healthRoutes);
   app.use('/api', eventRoutes);
   const uploadsDir = path.resolve(process.cwd(), 'public', 'uploads');
-  if (!fs.existsSync(path.join(uploadsDir, 'patients'))) {
-    fs.mkdirSync(path.join(uploadsDir, 'patients'), { recursive: true });
-  }
-  if (!fs.existsSync(path.join(uploadsDir, 'exercises'))) {
-    fs.mkdirSync(path.join(uploadsDir, 'exercises'), { recursive: true });
+  try {
+    if (!fs.existsSync(path.join(uploadsDir, 'patients'))) {
+      fs.mkdirSync(path.join(uploadsDir, 'patients'), { recursive: true });
+    }
+    if (!fs.existsSync(path.join(uploadsDir, 'exercises'))) {
+      fs.mkdirSync(path.join(uploadsDir, 'exercises'), { recursive: true });
+    }
+  } catch {
+    // Read-only filesystem in serverless environments
   }
   app.use('/uploads', express.static(uploadsDir));
   app.use('/public/uploads', express.static(uploadsDir));

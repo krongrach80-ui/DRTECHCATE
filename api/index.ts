@@ -38,9 +38,17 @@ export const config = {
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const app = await bootstrapApp();
-  // Ensure req.url preserves /api if rewritten by Vercel
-  if (req.url && !req.url.startsWith('/api') && req.url !== '/') {
-    req.url = '/api' + req.url;
+
+  // If Vercel rewrote the request to /api, recover original path from x-matched-path
+  let requestPath = req.url || '';
+  const matchedPath = req.headers['x-matched-path'] as string | undefined;
+  if (matchedPath && matchedPath.startsWith('/api') && (!requestPath || requestPath === '/' || requestPath === '/api')) {
+    requestPath = matchedPath;
   }
+  if (!requestPath.startsWith('/api') && requestPath !== '/') {
+    requestPath = '/api' + requestPath;
+  }
+  req.url = requestPath;
+
   return (app as any)(req, res);
 }
