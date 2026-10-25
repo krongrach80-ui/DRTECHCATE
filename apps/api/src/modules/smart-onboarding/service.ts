@@ -4,8 +4,6 @@
  * Master Prompt v4: Sovereign Isolated Medical-Grade Architecture
  */
 
-import fs from 'fs';
-import path from 'path';
 import { logger } from '../../middleware/logger';
 import { dispatchHospitalEvent } from '../events/routes';
 import {
@@ -17,6 +15,10 @@ import {
 } from '../../../../../packages/smart-biometric-core/src/index.js';
 import { PatientVaultService, defaultPatientVaultService } from './vault.service';
 import { getAdminClient } from '../../lib/supabase/adminClient';
+import { IDirectoryRepository, defaultDirectoryRepository } from '../directory/repository';
+import { IPatientRepository, defaultPatientRepository } from '../patients/repository';
+import { ICourseRepository, defaultCourseRepository } from '../courses/repository';
+import { IRecordsRepository, defaultRecordsRepository } from '../records/repository';
 
 export interface ExerciseItem {
   id: string;
@@ -35,22 +37,29 @@ export interface ModpackItem {
   description?: string;
   target_condition: string;
   exercises: PrescribedExercise[];
+  items?: any[];
   include_minigame: boolean;
 }
 
 export class SmartOnboardingService {
   private vaultService: PatientVaultService;
-  private exercisesFile: string;
-  private modpacksFile: string;
+  private directoryRepo: IDirectoryRepository;
+  private patientRepo: IPatientRepository;
+  private courseRepo: ICourseRepository;
+  private recordsRepo: IRecordsRepository;
 
-  constructor(vaultService: PatientVaultService = defaultPatientVaultService) {
+  constructor(
+    vaultService: PatientVaultService = defaultPatientVaultService,
+    directoryRepo: IDirectoryRepository = defaultDirectoryRepository,
+    patientRepo: IPatientRepository = defaultPatientRepository,
+    courseRepo: ICourseRepository = defaultCourseRepository,
+    recordsRepo: IRecordsRepository = defaultRecordsRepository
+  ) {
     this.vaultService = vaultService;
-    const dataDir = path.resolve(process.cwd(), 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-    this.exercisesFile = path.join(dataDir, 'exercises.json');
-    this.modpacksFile = path.join(dataDir, 'modpacks.json');
+    this.directoryRepo = directoryRepo;
+    this.patientRepo = patientRepo;
+    this.courseRepo = courseRepo;
+    this.recordsRepo = recordsRepo;
   }
 
   /**
@@ -311,7 +320,7 @@ export class SmartOnboardingService {
   /**
    * 5. Schedule Management (3-Step Wizard Save)
    */
-  public saveSchedule(patientId: string, schedule: any): PatientRecordFile {
+  public async saveSchedule(patientId: string, schedule: any): Promise<PatientRecordFile> {
     const existing = this.vaultService.getPatientRecord(patientId);
     if (!existing) {
       throw new Error(`Patient vault for ${patientId} not found`);
@@ -324,6 +333,47 @@ export class SmartOnboardingService {
     };
 
     this.vaultService.savePatientRecord(patientId, updated);
+
+    // Save into Supabase courses and course_items tables via courseRepo
+    try {
+      const dayAliasesMap: Record<string, number> = {
+        Sun: 0, อาทิตย์: 0, 'อา.': 0,
+        Mon: 1, จันทร์: 1, 'จ.': 1,
+        Tue: 2, อังคาร: 2, 'อ.': 2,
+        Wed: 3, พุธ: 3, 'พ.': 3,
+        Thu: 4, พฤหัสบดี: 4, 'พฤ.': 4,
+        Fri: 5, ศุกร์: 5, 'ศ.': 5,
+        Sat: 6, เสาร์: 6, 'ส.': 6,
+      };
+      const days: string[] = schedule.daysOfWeek || schedule.days_of_week || [];
+      const weekdays: number[] = days
+        .map((d) => (typeof d === 'number' ? d : dayAliasesMap[d]))
+        .filter((n) => typeof n === 'number' && !isNaN(n));
+
+      const prescribed = schedule.assigned_exercises || schedule.prescribed_exercises || [];
+      const courseItems = prescribed.map((ex: any, idx: number) => ({
+        exercise_id: ex.exercise_id || ex.id,
+        sets: ex.sets || 3,
+        reps: ex.reps || 10,
+        position: idx + 1,
+      }));
+
+      await this.courseRepo.createCourse(
+        {
+          patient_id: patientId,
+          start_date: schedule.startDate || schedule.start_date || new Date().toISOString().slice(0, 10),
+          end_date: schedule.endDate || schedule.end_date || new Date().toISOString().slice(0, 10),
+          weekdays: weekdays.length > 0 ? weekdays : [1, 3, 5],
+          start_time: schedule.timeSlot || schedule.time_slot || '09:00 - 10:00',
+          kiosk_id: schedule.assigned_kiosk_id || schedule.kioskId || 'kiosk-01',
+          include_minigame: Boolean(schedule.include_minigame),
+        },
+        'system',
+        courseItems
+      );
+    } catch (courseErr) {
+      logger.warn({ courseErr, patientId }, 'Supabase course save bypassed');
+    }
 
     // Realtime event dispatch
     dispatchHospitalEvent({
@@ -440,7 +490,7 @@ export class SmartOnboardingService {
   /**
    * 7. Record Rehab Scores & Checklists
    */
-  public saveRehabScore(patientId: string, score: RehabScoreEntry): PatientRecordFile {
+  public async saveRehabScore(patientId: string, score: RehabScoreEntry): Promise<PatientRecordFile> {
     const existing = this.vaultService.getPatientRecord(patientId);
     if (!existing) {
       throw new Error(`Patient vault for ${patientId} not found`);
@@ -453,6 +503,18 @@ export class SmartOnboardingService {
     };
 
     this.vaultService.savePatientRecord(patientId, updated);
+
+    // Save into Supabase treatment_results table via recordsRepo
+    try {
+      await this.recordsRepo.createTreatmentResult(
+        patientId,
+        JSON.stringify(score),
+        'system'
+      );
+    } catch (recErr) {
+      logger.warn({ recErr, patientId }, 'Supabase treatment_results save bypassed');
+    }
+
     return updated;
   }
 
@@ -488,60 +550,110 @@ export class SmartOnboardingService {
   }
 
   /**
-   * 9. Exercise Library & Modpack CRUD
+   * 9. Exercise Library & Modpack CRUD (100% Repository & Supabase)
    */
-  public getExercises(): ExerciseItem[] {
+  public async getExercises(): Promise<ExerciseItem[]> {
     try {
-      if (fs.existsSync(this.exercisesFile)) {
-        return JSON.parse(fs.readFileSync(this.exercisesFile, 'utf-8'));
-      }
-    } catch {
-      // Fallback
+      const list = await this.directoryRepo.listExercises();
+      return list.map((ex) => ({
+        id: ex.id,
+        name: ex.title,
+        target_joint: ex.target_joint || '',
+        target_angle: 90,
+        safety_warnings: ex.warnings || '',
+        demo_url: ex.image_path || '',
+        default_sets: ex.default_sets || 3,
+        default_reps: ex.default_reps || 10,
+      }));
+    } catch (err) {
+      logger.warn({ err }, 'Failed to list exercises from directory repository');
+      return [];
     }
-    return [];
   }
 
-  public saveExercise(item: ExerciseItem): ExerciseItem {
-    const exerciseItem: ExerciseItem = {
-      ...item,
-      id: item.id || `ex-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+  public async saveExercise(item: ExerciseItem): Promise<ExerciseItem> {
+    const created = await this.directoryRepo.createExercise(
+      {
+        title: item.name || (item as any).title,
+        target_joint: item.target_joint,
+        warnings: item.safety_warnings || (item as any).safety_precaution,
+        image_path: item.demo_url,
+        default_sets: item.default_sets ?? 3,
+        default_reps: item.default_reps ?? 10,
+        difficulty: ((item as any).difficulty as 'beginner' | 'intermediate' | 'advanced') || 'beginner',
+      },
+      'system'
+    );
+
+    return {
+      id: created.id,
+      name: created.title,
+      target_joint: created.target_joint || '',
+      target_angle: item.target_angle || 90,
+      safety_warnings: created.warnings || '',
+      demo_url: created.image_path || '',
+      default_sets: created.default_sets || 3,
+      default_reps: created.default_reps || 10,
     };
-    const list = this.getExercises();
-    const existingIdx = list.findIndex((x) => x.id === exerciseItem.id);
-    if (existingIdx >= 0) {
-      list[existingIdx] = exerciseItem;
-    } else {
-      list.push(exerciseItem);
-    }
-    fs.writeFileSync(this.exercisesFile, JSON.stringify(list, null, 2), 'utf-8');
-    return exerciseItem;
   }
 
-  public getModpacks(): ModpackItem[] {
+  public async getModpacks(): Promise<ModpackItem[]> {
     try {
-      if (fs.existsSync(this.modpacksFile)) {
-        return JSON.parse(fs.readFileSync(this.modpacksFile, 'utf-8'));
-      }
-    } catch {
-      // Fallback
+      const list = await this.directoryRepo.listModpacks();
+      return list.map((m) => ({
+        id: m.id,
+        name: m.name,
+        description: m.description || '',
+        target_condition: (m as any).target_condition || '',
+        exercises: (m.items || []).map((it) => ({
+          exercise_id: it.exercise_id,
+          name: it.exercise?.title || '',
+          target_joint: it.exercise?.target_joint || '',
+          sets: it.sets,
+          reps: it.reps,
+        })),
+        items: m.items,
+        include_minigame: false,
+      }));
+    } catch (err) {
+      logger.warn({ err }, 'Failed to list modpacks from directory repository');
+      return [];
     }
-    return [];
   }
 
-  public saveModpack(modpack: ModpackItem): ModpackItem {
-    const modpackItem: ModpackItem = {
-      ...modpack,
-      id: modpack.id || `mp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+  public async saveModpack(modpack: ModpackItem): Promise<ModpackItem> {
+    const rawItems = ((modpack as any).items || modpack.exercises || []);
+    const items = rawItems.map((it: any, idx: number) => ({
+      exercise_id: it.exercise_id,
+      sets: it.sets || 3,
+      reps: it.reps || 10,
+      position: idx + 1,
+    }));
+
+    const created = await this.directoryRepo.createModpack(
+      {
+        name: modpack.name,
+        description: modpack.description || null,
+        items,
+      },
+      'system'
+    );
+
+    return {
+      id: created.id,
+      name: created.name,
+      description: created.description || '',
+      target_condition: modpack.target_condition || '',
+      exercises: (created.items || []).map((it) => ({
+        exercise_id: it.exercise_id,
+        name: it.exercise?.title || '',
+        target_joint: it.exercise?.target_joint || '',
+        sets: it.sets,
+        reps: it.reps,
+      })),
+      items: created.items,
+      include_minigame: Boolean(modpack.include_minigame),
     };
-    const list = this.getModpacks();
-    const existingIdx = list.findIndex((m) => m.id === modpackItem.id);
-    if (existingIdx >= 0) {
-      list[existingIdx] = modpackItem;
-    } else {
-      list.push(modpackItem);
-    }
-    fs.writeFileSync(this.modpacksFile, JSON.stringify(list, null, 2), 'utf-8');
-    return modpackItem;
   }
 }
 

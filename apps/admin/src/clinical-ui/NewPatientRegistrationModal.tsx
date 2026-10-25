@@ -109,31 +109,12 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       });
 
       setCreatedPatientId(res.id);
-      setStep(2);
-      startBiometricScanSimulation(res.id);
+      setStep(3);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลงทะเบียนคนไข้ได้');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Step 2 Scan simulation
-  const startBiometricScanSimulation = (_patientId: string) => {
-    setIsScanning(true);
-    setScanProgress(10);
-
-    const interval = setInterval(() => {
-      setScanProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsScanning(false);
-          setStep(3);
-          return 100;
-        }
-        return prev + 18;
-      });
-    }, 280);
   };
 
   const handleFinish = () => {

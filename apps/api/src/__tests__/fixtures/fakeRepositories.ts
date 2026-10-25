@@ -439,9 +439,33 @@ export class FakeRecordsRepository implements IRecordsRepository {
 
 export class FakeSecurityRepository implements ISecurityRepository {
   public inMemoryBans = new Map<string, BanRecord>();
+  private currentAiSettings: any = {
+    cosine_similarity: 0.80,
+    margin_threshold: 0.08,
+    liveness_enabled: true,
+    pose_confidence: 0.65,
+    landmark_visibility: 0.55,
+    rom_tolerance: 10,
+    max_trunk_lean: 22,
+    max_velocity: 220,
+    voice_guidance: true,
+    his_cloud_sync: true,
+  };
 
   clearInMemory(): void {
     this.inMemoryBans.clear();
+    this.currentAiSettings = {
+      cosine_similarity: 0.80,
+      margin_threshold: 0.08,
+      liveness_enabled: true,
+      pose_confidence: 0.65,
+      landmark_visibility: 0.55,
+      rom_tolerance: 10,
+      max_trunk_lean: 22,
+      max_velocity: 220,
+      voice_guidance: true,
+      his_cloud_sync: true,
+    };
   }
 
   async createBan(data: {
@@ -505,6 +529,15 @@ export class FakeSecurityRepository implements ISecurityRepository {
 
   async getActiveBans(): Promise<BanRecord[]> {
     return this.listBans({ active_only: true });
+  }
+
+  async getAiSettings(): Promise<any> {
+    return { ...this.currentAiSettings };
+  }
+
+  async saveAiSettings(settings: any): Promise<any> {
+    this.currentAiSettings = { ...settings, updated_at: new Date().toISOString() };
+    return { ...this.currentAiSettings };
   }
 }
 

@@ -4,7 +4,7 @@ import { addActiveBan, removeActiveBan, syncActiveBans } from '../../middleware/
 import { audit } from '../audit';
 import { logger } from '../../middleware/logger';
 import { ISecurityRepository, defaultSecurityRepository } from './repository';
-import { BanCreateInput, BanRecord, BanQueryFilter } from './schema';
+import { BanCreateInput, BanRecord, BanQueryFilter, AiSettings, DEFAULT_AI_SETTINGS } from './schema';
 import { getEnv } from '../../config/env';
 
 export class SecurityService {
@@ -177,6 +177,54 @@ export class SecurityService {
       logger.error({ err }, 'Failed to synchronize active bans from database: failing closed');
       throw new AppError('Security service unavailable: failed to load active ban cache from database', 503, 'SERVICE_UNAVAILABLE');
     }
+  }
+
+  /**
+   * Retrieves current AI calibrations and thresholds.
+   */
+  async getAiSettings(): Promise<AiSettings> {
+    return this.repo.getAiSettings();
+  }
+
+  /**
+   * Updates AI thresholds and persists them with audit trail.
+   */
+  async updateAiSettings(
+    input: Partial<AiSettings>,
+    adminUser: UserSession,
+    clientIp: string,
+    clientDeviceId?: string
+  ): Promise<AiSettings> {
+    const current = await this.repo.getAiSettings();
+    const updated: AiSettings = {
+      ...current,
+      ...input,
+    };
+    return this.repo.saveAiSettings(updated, {
+      actor_type: adminUser.role,
+      actor_id: adminUser.id,
+      ip: clientIp,
+      device_id: clientDeviceId || null,
+      action: 'AI_SETTINGS_UPDATED',
+    });
+  }
+
+  /**
+   * Resets AI calibrations to standard hospital defaults.
+   */
+  async resetAiSettings(
+    adminUser: UserSession,
+    clientIp: string,
+    clientDeviceId?: string
+  ): Promise<AiSettings> {
+    const reset = { ...DEFAULT_AI_SETTINGS };
+    return this.repo.saveAiSettings(reset, {
+      actor_type: adminUser.role,
+      actor_id: adminUser.id,
+      ip: clientIp,
+      device_id: clientDeviceId || null,
+      action: 'AI_SETTINGS_RESET',
+    });
   }
 }
 

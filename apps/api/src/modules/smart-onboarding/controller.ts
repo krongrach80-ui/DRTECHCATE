@@ -96,7 +96,7 @@ export class SmartOnboardingController {
         });
         return;
       }
-      const data = this.service.saveSchedule(patient_id, schedule);
+      const data = await this.service.saveSchedule(patient_id, schedule);
       res.status(200).json({
         ok: true,
         data,
@@ -131,7 +131,7 @@ export class SmartOnboardingController {
         });
         return;
       }
-      const data = this.service.saveRehabScore(patient_id, score);
+      const data = await this.service.saveRehabScore(patient_id, score);
       res.status(200).json({
         ok: true,
         data,
@@ -190,7 +190,7 @@ export class SmartOnboardingController {
 
   getExercises = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const data = this.service.getExercises();
+      const data = await this.service.getExercises();
       res.status(200).json({ ok: true, data });
     } catch (err) {
       next(err);
@@ -199,7 +199,7 @@ export class SmartOnboardingController {
 
   saveExercise = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const data = this.service.saveExercise(req.body);
+      const data = await this.service.saveExercise(req.body);
       res.status(201).json({ ok: true, data });
     } catch (err) {
       next(err);
@@ -208,7 +208,7 @@ export class SmartOnboardingController {
 
   getModpacks = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const data = this.service.getModpacks();
+      const data = await this.service.getModpacks();
       res.status(200).json({ ok: true, data });
     } catch (err) {
       next(err);
@@ -217,7 +217,7 @@ export class SmartOnboardingController {
 
   saveModpack = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const data = this.service.saveModpack(req.body);
+      const data = await this.service.saveModpack(req.body);
       res.status(201).json({ ok: true, data });
     } catch (err) {
       next(err);

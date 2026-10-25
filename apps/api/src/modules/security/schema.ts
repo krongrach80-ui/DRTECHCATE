@@ -33,3 +33,31 @@ export interface BanRecord {
   created_by: string | null;
   created_at: string;
 }
+
+export interface AiSettings {
+  cosine_similarity: number;
+  margin_threshold: number;
+  liveness_enabled: boolean;
+  pose_confidence: number;
+  landmark_visibility: number;
+  rom_tolerance: number;
+  max_trunk_lean: number;
+  max_velocity: number;
+  voice_guidance: boolean;
+  his_cloud_sync: boolean;
+  updated_at?: string;
+}
+
+export const DEFAULT_AI_SETTINGS: AiSettings = {
+  cosine_similarity: 0.80,
+  margin_threshold: 0.08,
+  liveness_enabled: true,
+  pose_confidence: 0.65,
+  landmark_visibility: 0.55,
+  rom_tolerance: 10,
+  max_trunk_lean: 22,
+  max_velocity: 220,
+  voice_guidance: true,
+  his_cloud_sync: true,
+};
+

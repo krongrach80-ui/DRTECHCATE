@@ -1,7 +1,8 @@
 import { getAdminClient } from '../../lib/supabase/adminClient';
 import { AppError } from '../../middleware/errorHandler';
 import { logger } from '../../middleware/logger';
-import { BanRecord, BanType, BanQueryFilter } from './schema';
+import { BanRecord, BanType, BanQueryFilter, AiSettings, DEFAULT_AI_SETTINGS } from './schema';
+import { randomUUID } from 'crypto';
 
 export interface ISecurityRepository {
   createBan(data: {
@@ -17,6 +18,11 @@ export interface ISecurityRepository {
   listBans(filter?: BanQueryFilter): Promise<BanRecord[]>;
   deleteBan(id: string): Promise<boolean>;
   getActiveBans(): Promise<BanRecord[]>;
+  getAiSettings(): Promise<AiSettings>;
+  saveAiSettings(
+    settings: AiSettings,
+    auditInput: { actor_type: string; actor_id: string; ip?: string; device_id?: string | null; action?: string }
+  ): Promise<AiSettings>;
 }
 
 export class SecurityRepository implements ISecurityRepository {
@@ -152,6 +158,57 @@ export class SecurityRepository implements ISecurityRepository {
 
   async getActiveBans(): Promise<BanRecord[]> {
     return this.listBans({ active_only: true });
+  }
+
+  async getAiSettings(): Promise<AiSettings> {
+    try {
+      const adminClient = getAdminClient();
+      const { data, error } = await adminClient
+        .from('audit_logs')
+        .select('metadata, created_at')
+        .eq('entity', 'system_settings')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error || !data || !data.metadata) {
+        return DEFAULT_AI_SETTINGS;
+      }
+      return {
+        ...DEFAULT_AI_SETTINGS,
+        ...(data.metadata as Partial<AiSettings>),
+        updated_at: data.created_at,
+      };
+    } catch {
+      return DEFAULT_AI_SETTINGS;
+    }
+  }
+
+  async saveAiSettings(
+    settings: AiSettings,
+    auditInput: { actor_type: string; actor_id: string; ip?: string; device_id?: string | null; action?: string }
+  ): Promise<AiSettings> {
+    try {
+      const adminClient = getAdminClient();
+      const now = new Date().toISOString();
+      const saved: AiSettings = { ...settings, updated_at: now };
+      await adminClient.from('audit_logs').insert({
+        id: randomUUID(),
+        actor_type: auditInput.actor_type,
+        actor_id: auditInput.actor_id,
+        action: auditInput.action || 'AI_SETTINGS_UPDATED',
+        entity: 'system_settings',
+        entity_id: 'ai_calibration',
+        ip: auditInput.ip || null,
+        device_id: auditInput.device_id || null,
+        metadata: saved as unknown as Record<string, unknown>,
+        created_at: now,
+      });
+      return saved;
+    } catch (err) {
+      logger.warn({ err }, 'Failed to persist AI settings audit log');
+      return settings;
+    }
   }
 }
 

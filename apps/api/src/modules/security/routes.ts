@@ -36,6 +36,11 @@ export function createSecurityRouter(
   router.get('/bans', authenticate, requireRole('admin'), securityController.listBans);
   router.delete('/bans/:id', authenticate, requireRole('admin'), securityController.revokeBan);
 
+  // AI & Biometrics Settings calibration endpoints (admin only)
+  router.get('/settings/ai', authenticate, requireRole('admin'), securityController.getAiSettings);
+  router.patch('/settings/ai', authenticate, requireRole('admin'), securityController.updateAiSettings);
+  router.post('/settings/ai/reset', authenticate, requireRole('admin'), securityController.resetAiSettings);
+
   return router;
 }
 

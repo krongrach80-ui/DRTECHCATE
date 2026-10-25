@@ -57,12 +57,13 @@ export const SmartExerciseLibraryModal: React.FC<SmartExerciseLibraryModalProps>
     setErrorMsg(null);
 
     try {
-      await defaultApiClient.smartOnboarding.saveExercise({
-        name: name.trim(),
+      await defaultApiClient.exercises.create({
+        title: name.trim(),
         target_joint: targetJoint,
-        target_angle: Number(targetAngle),
-        safety_precaution: safetyPrecaution.trim() || undefined,
-        demo_url: demoFileBase64 || undefined,
+        warnings: safetyPrecaution.trim() || undefined,
+        image_path: demoFileBase64 || undefined,
+        default_sets: 3,
+        default_reps: 10,
       });
 
       onSuccess();

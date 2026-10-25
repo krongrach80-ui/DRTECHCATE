@@ -3,7 +3,7 @@
  * Master Prompt v5 Section 4.7: 3 Hospital AI & Biometrics Setting Cards with Smooth Range Sliders
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Settings,
   ScanFace,
@@ -11,6 +11,7 @@ import {
   Volume2,
   Cloud,
   CheckCircle2,
+  AlertCircle,
   RotateCcw,
   Save,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import {
   MedicalCard,
   SmoothButton,
 } from '../../../../packages/hospital-ui-kit/src/index.js';
+import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 
 export const SystemAiSettingsView: React.FC = () => {
   // Card 1: AI Face & Biometrics
@@ -36,26 +38,92 @@ export const SystemAiSettingsView: React.FC = () => {
   const [voiceGuidance, setVoiceGuidance] = useState(true);
   const [hisCloudSync, setHisCloudSync] = useState(true);
 
+  const [_isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleResetDefaults = () => {
-    setCosineSimilarity(0.80);
-    setMarginThreshold(0.08);
-    setLivenessEnabled(true);
-    setPoseConfidence(0.65);
-    setLandmarkVisibility(0.55);
-    setRomTolerance(10);
-    setMaxTrunkLean(22);
-    setMaxVelocity(220);
-    setVoiceGuidance(true);
-    setHisCloudSync(true);
-    setSuccessMsg('รีเซ็ตค่าพารามิเตอร์ AI กลับสู่ค่ามาตรฐานทางการแพทย์เรียบร้อย');
+  // Load active AI parameters from Supabase backend on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSettings = async () => {
+      try {
+        setIsLoading(true);
+        const settings = await defaultApiClient.security.getAiSettings();
+        if (isMounted && settings) {
+          setCosineSimilarity(settings.cosine_similarity ?? 0.80);
+          setMarginThreshold(settings.margin_threshold ?? 0.08);
+          setLivenessEnabled(settings.liveness_enabled ?? true);
+          setPoseConfidence(settings.pose_confidence ?? 0.65);
+          setLandmarkVisibility(settings.landmark_visibility ?? 0.55);
+          setRomTolerance(settings.rom_tolerance ?? 10);
+          setMaxTrunkLean(settings.max_trunk_lean ?? 22);
+          setMaxVelocity(settings.max_velocity ?? 220);
+          setVoiceGuidance(settings.voice_guidance ?? true);
+          setHisCloudSync(settings.his_cloud_sync ?? true);
+        }
+      } catch (err: unknown) {
+        if (isMounted) {
+          setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถโหลดการตั้งค่าระบบ AI ได้');
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    void fetchSettings();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleResetDefaults = async () => {
+    setIsSaving(true);
+    setSuccessMsg(null);
+    setErrorMsg(null);
+    try {
+      const reset = await defaultApiClient.security.resetAiSettings();
+      setCosineSimilarity(reset.cosine_similarity);
+      setMarginThreshold(reset.margin_threshold);
+      setLivenessEnabled(reset.liveness_enabled);
+      setPoseConfidence(reset.pose_confidence);
+      setLandmarkVisibility(reset.landmark_visibility);
+      setRomTolerance(reset.rom_tolerance);
+      setMaxTrunkLean(reset.max_trunk_lean);
+      setMaxVelocity(reset.max_velocity);
+      setVoiceGuidance(reset.voice_guidance);
+      setHisCloudSync(reset.his_cloud_sync);
+      setSuccessMsg('รีเซ็ตค่าพารามิเตอร์ AI กลับสู่ค่ามาตรฐานทางการแพทย์เรียบร้อย');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถรีเซ็ตค่าพารามิเตอร์ AI ได้');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleSaveSettings = () => {
-    setIsSaving(false);
-    setSuccessMsg('บันทึกการตั้งค่าระบบ AI และเกณฑ์ความปลอดภัยเรียบร้อยแล้ว');
+  const handleSaveSettings = async () => {
+    setIsSaving(true);
+    setSuccessMsg(null);
+    setErrorMsg(null);
+    try {
+      await defaultApiClient.security.updateAiSettings({
+        cosine_similarity: cosineSimilarity,
+        margin_threshold: marginThreshold,
+        liveness_enabled: livenessEnabled,
+        pose_confidence: poseConfidence,
+        landmark_visibility: landmarkVisibility,
+        rom_tolerance: romTolerance,
+        max_trunk_lean: maxTrunkLean,
+        max_velocity: maxVelocity,
+        voice_guidance: voiceGuidance,
+        his_cloud_sync: hisCloudSync,
+      });
+      setSuccessMsg('บันทึกการตั้งค่าระบบ AI และเกณฑ์ความปลอดภัยลงฐานข้อมูล Supabase สำเร็จ');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถบันทึกการตั้งค่าระบบ AI ได้');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -93,6 +161,13 @@ export const SystemAiSettingsView: React.FC = () => {
           </SmoothButton>
         </div>
       </div>
+
+      {errorMsg && (
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
 
       {successMsg && (
         <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">

@@ -226,6 +226,20 @@ export interface AuditRecord {
   created_at: string;
 }
 
+export interface AiSettings {
+  cosine_similarity: number;
+  margin_threshold: number;
+  liveness_enabled: boolean;
+  pose_confidence: number;
+  landmark_visibility: number;
+  rom_tolerance: number;
+  max_trunk_lean: number;
+  max_velocity: number;
+  voice_guidance: boolean;
+  his_cloud_sync: boolean;
+  updated_at?: string;
+}
+
 export interface KioskRecord {
   id: string;
   name: string;
@@ -758,6 +772,23 @@ export class ApiClient {
       return this.request<{ message: string }>(`/security/force-logout/${userId}`, {
         method: 'POST',
         body: JSON.stringify({ reason }),
+      });
+    },
+
+    getAiSettings: async () => {
+      return this.request<AiSettings>('/security/settings/ai', { method: 'GET' });
+    },
+
+    updateAiSettings: async (settings: Partial<AiSettings>) => {
+      return this.request<AiSettings>('/security/settings/ai', {
+        method: 'PATCH',
+        body: JSON.stringify(settings),
+      });
+    },
+
+    resetAiSettings: async () => {
+      return this.request<AiSettings>('/security/settings/ai/reset', {
+        method: 'POST',
       });
     },
   };

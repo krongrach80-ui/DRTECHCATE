@@ -70,4 +70,59 @@ export class SecurityController {
       next(err);
     }
   };
+
+  getAiSettings = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = await this.securityService.getAiSettings();
+      res.status(200).json({
+        ok: true,
+        data,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  updateAiSettings = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
+      }
+      const clientIp = (req.ip || req.socket.remoteAddress || '127.0.0.1').replace(/^.*:/, '');
+      const clientDeviceId = req.cookies?.staff_device_id;
+      const data = await this.securityService.updateAiSettings(
+        req.body,
+        req.user,
+        clientIp,
+        clientDeviceId
+      );
+      res.status(200).json({
+        ok: true,
+        data,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  resetAiSettings = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
+      }
+      const clientIp = (req.ip || req.socket.remoteAddress || '127.0.0.1').replace(/^.*:/, '');
+      const clientDeviceId = req.cookies?.staff_device_id;
+      const data = await this.securityService.resetAiSettings(
+        req.user,
+        clientIp,
+        clientDeviceId
+      );
+      res.status(200).json({
+        ok: true,
+        data,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
