@@ -101,6 +101,13 @@ import { defaultStaffService } from '../../modules/staff/service';
 import { defaultDirectoryService } from '../../modules/directory/service';
 import { defaultCourseService } from '../../modules/courses/service';
 import { defaultAuditService } from '../../modules/audit/service';
+import {
+  IFaceEnrollmentRepository,
+  setDefaultFaceEnrollmentRepository,
+  ConsentRecord,
+  EnrollmentTicketData,
+  defaultFaceEnrollmentService,
+} from '../../modules/face';
 
 export class FakePatientRepository implements IPatientRepository {
   public inMemoryPatients = new Map<string, PatientRecord>();
@@ -1530,6 +1537,170 @@ export class FakeKioskRepository implements IKioskRepository {
   }
 }
 
+export class FakeFaceEnrollmentRepository implements IFaceEnrollmentRepository {
+  public inMemoryConsents = new Map<string, ConsentRecord>();
+  public inMemoryTickets = new Map<string, EnrollmentTicketData>();
+  public inMemoryTemplates: Array<{ patient_id: string; embedding: number[]; pose: string }> = [];
+  public inMemoryStorageFiles = new Map<string, Buffer>();
+  public inMemoryEnrollments = new Map<string, { id: string; patient_id: string; status: string }>();
+  public failRpc: boolean = false;
+  public failUpload: boolean = false;
+
+  clearInMemory(): void {
+    this.inMemoryConsents.clear();
+    this.inMemoryTickets.clear();
+    this.inMemoryTemplates = [];
+    this.inMemoryStorageFiles.clear();
+    this.inMemoryEnrollments.clear();
+    this.failRpc = false;
+    this.failUpload = false;
+  }
+
+  async getActiveConsent(patientId: string, consentId?: string): Promise<ConsentRecord | null> {
+    for (const consent of this.inMemoryConsents.values()) {
+      if (consent.subject_id === patientId && !consent.revoked_at) {
+        if (!consentId || consent.id === consentId) {
+          return consent;
+        }
+      }
+    }
+    return null;
+  }
+
+  async isPatientAccessibleByPt(patientId: string, ptId: string): Promise<boolean> {
+    return currentFakePatientRepo.isPatientAccessibleByPt(patientId, ptId);
+  }
+
+  async getEnrollmentTicket(ticketId: string): Promise<EnrollmentTicketData | null> {
+    return this.inMemoryTickets.get(ticketId) || null;
+  }
+
+  async findDuplicateFaceCandidate(
+    probe: number[],
+    excludePatientId: string,
+    threshold: number
+  ): Promise<{ patient_id: string; score: number } | null> {
+    let bestMatch: { patient_id: string; score: number } | null = null;
+    let maxScore = -1;
+
+    for (const t of this.inMemoryTemplates) {
+      if (t.patient_id === excludePatientId) continue;
+      let dot = 0;
+      for (let i = 0; i < probe.length; i++) {
+        dot += probe[i] * t.embedding[i];
+      }
+      if (dot > maxScore) {
+        maxScore = dot;
+        if (dot >= threshold) {
+          bestMatch = { patient_id: t.patient_id, score: dot };
+        }
+      }
+    }
+
+    return bestMatch;
+  }
+
+  async uploadBiometricImages(
+    patientId: string,
+    enrollmentId: string,
+    images: Array<{ frameIndex: number; buffer: Buffer }>
+  ): Promise<string[]> {
+    if (this.failUpload) {
+      throw new AppError('Storage service unavailable', 503, 'STORAGE_UNAVAILABLE');
+    }
+
+    const uploadedPaths: string[] = [];
+    for (const img of images) {
+      const frameNum = String(img.frameIndex + 1).padStart(2, '0');
+      const filePath = `${patientId}/${enrollmentId}/frame_${frameNum}.jpg`;
+      this.inMemoryStorageFiles.set(filePath, img.buffer);
+      uploadedPaths.push(filePath);
+    }
+    return uploadedPaths;
+  }
+
+  async deleteBiometricFiles(filePaths: string[]): Promise<void> {
+    for (const path of filePaths) {
+      this.inMemoryStorageFiles.delete(path);
+    }
+  }
+
+  async deletePatientBiometricStorage(patientId: string): Promise<number> {
+    let count = 0;
+    for (const key of Array.from(this.inMemoryStorageFiles.keys())) {
+      if (key.startsWith(`${patientId}/`)) {
+        this.inMemoryStorageFiles.delete(key);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  async callEnrollFaceAtomic(params: {
+    patientId: string;
+    staffId: string;
+    modelVersion: string;
+    poses: string[];
+    embeddings: number[][];
+    consentId?: string | null;
+    ticketId?: string | null;
+  }): Promise<string> {
+    if (this.failRpc) {
+      throw new AppError('RPC enroll_face_atomic execution failed: database constraint violation', 500, 'RPC_FAILED');
+    }
+
+    const enrollmentId = randomUUID();
+    this.inMemoryEnrollments.set(enrollmentId, {
+      id: enrollmentId,
+      patient_id: params.patientId,
+      status: 'active',
+    });
+
+    for (let i = 0; i < params.poses.length; i++) {
+      this.inMemoryTemplates.push({
+        patient_id: params.patientId,
+        pose: params.poses[i],
+        embedding: params.embeddings[i],
+      });
+    }
+
+    if (params.ticketId && this.inMemoryTickets.has(params.ticketId)) {
+      const t = this.inMemoryTickets.get(params.ticketId)!;
+      t.used_at = new Date().toISOString();
+    }
+
+    const patient = currentFakePatientRepo.inMemoryPatients.get(params.patientId);
+    if (patient) {
+      patient.registration_status = 'active';
+    }
+
+    return enrollmentId;
+  }
+
+  async rollbackEnrollment(enrollmentId: string, patientId: string): Promise<void> {
+    this.inMemoryEnrollments.delete(enrollmentId);
+    this.inMemoryTemplates = this.inMemoryTemplates.filter((t) => t.patient_id !== patientId);
+    const patient = currentFakePatientRepo.inMemoryPatients.get(patientId);
+    if (patient) {
+      patient.registration_status = 'awaiting_face';
+    }
+  }
+
+  async deleteBiometrics(patientId: string): Promise<void> {
+    this.inMemoryTemplates = this.inMemoryTemplates.filter((t) => t.patient_id !== patientId);
+    for (const [id, en] of this.inMemoryEnrollments.entries()) {
+      if (en.patient_id === patientId) {
+        this.inMemoryEnrollments.delete(id);
+      }
+    }
+    await this.deletePatientBiometricStorage(patientId);
+    const patient = currentFakePatientRepo.inMemoryPatients.get(patientId);
+    if (patient) {
+      patient.registration_status = 'awaiting_face';
+    }
+  }
+}
+
 export const currentFakePatientRepo = new FakePatientRepository();
 export const currentFakeRecordsRepo = new FakeRecordsRepository();
 export const currentFakeSecurityRepo = new FakeSecurityRepository();
@@ -1539,6 +1710,7 @@ export const currentFakeCourseRepo = new FakeCourseRepository();
 export const currentFakeAuditRepo = new FakeAuditRepository();
 export const currentFakeAuthRepo = new FakeAuthRepository();
 export const currentFakeKioskRepo = new FakeKioskRepository();
+export const currentFakeFaceEnrollmentRepo = new FakeFaceEnrollmentRepository();
 
 export function setupTestFakeRepositories(): void {
   setDefaultPatientRepository(currentFakePatientRepo);
@@ -1550,6 +1722,7 @@ export function setupTestFakeRepositories(): void {
   setDefaultAuditRepository(currentFakeAuditRepo);
   setDefaultAuthRepository(currentFakeAuthRepo);
   setDefaultKioskRepository(currentFakeKioskRepo);
+  setDefaultFaceEnrollmentRepository(currentFakeFaceEnrollmentRepo);
 
   defaultPatientService.setRepository(currentFakePatientRepo);
   defaultRecordsService.setRepository(currentFakeRecordsRepo);
@@ -1561,6 +1734,8 @@ export function setupTestFakeRepositories(): void {
   defaultCourseService.setPatientRepository(currentFakePatientRepo);
   defaultCourseService.setDirectoryRepository(currentFakeDirectoryRepo);
   defaultAuditService.setRepository(currentFakeAuditRepo);
+  defaultFaceEnrollmentService.setRepository(currentFakeFaceEnrollmentRepo);
+  defaultFaceEnrollmentService.setPatientRepository(currentFakePatientRepo);
 }
 
 export function resetAllFakeRepositories(): void {
@@ -1572,4 +1747,5 @@ export function resetAllFakeRepositories(): void {
   currentFakeCourseRepo.clearInMemory();
   currentFakeAuditRepo.clearInMemoryLogs();
   currentFakeKioskRepo.clearPairings();
+  currentFakeFaceEnrollmentRepo.clearInMemory();
 }

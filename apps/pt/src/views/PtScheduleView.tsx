@@ -23,6 +23,10 @@ import {
   KioskRecord,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import {
+  SmartScheduleView,
+  SmartScheduleWizardModal
+} from '../smart-portal/index.js';
 
 interface PtScheduleViewProps {
   currentUserId: string;
@@ -31,7 +35,8 @@ interface PtScheduleViewProps {
 export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
   currentUserId: _currentUserId,
 }) => {
-  const [subTab, setSubTab] = useState<'today' | 'calendar'>('today');
+  const [subTab, setSubTab] = useState<'today' | 'calendar' | 'smart'>('today');
+  const [isSmartWizardOpen, setIsSmartWizardOpen] = useState(false);
   const [todayCourses, setTodayCourses] = useState<TodayCourseItem[]>([]);
   const [calendarCourses, setCalendarCourses] = useState<CourseRecord[]>([]);
   const [patients, setPatients] = useState<PatientRecord[]>([]);
@@ -204,6 +209,13 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
+            onClick={() => setIsSmartWizardOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Smart Wizard (v4)</span>
+          </button>
+          <button
             onClick={() => {
               setIsWizardOpen(true);
               setWizardStep(1);
@@ -264,7 +276,21 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
           <CalendarIcon className="w-4 h-4" />
           <span>ปฏิทินคอร์สทั้งหมด (Calendar View) ({calendarCourses.length})</span>
         </button>
+        <button
+          onClick={() => setSubTab('smart')}
+          className={`pb-3 px-4 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+            subTab === 'smart'
+              ? 'border-emerald-400 text-emerald-300'
+              : 'border-transparent text-emerald-400/70 hover:text-emerald-200'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+          <span>Smart Schedule (v4)</span>
+        </button>
       </div>
+
+      {/* Master Prompt v4: Smart Schedule View */}
+      {subTab === 'smart' && <SmartScheduleView />}
 
       {/* SubTab 1: Today Queue */}
       {subTab === 'today' && (
@@ -783,6 +809,16 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Master Prompt v4: Smart Schedule Wizard Modal */}
+      <SmartScheduleWizardModal
+        isOpen={isSmartWizardOpen}
+        onClose={() => setIsSmartWizardOpen(false)}
+        onSuccess={() => {
+          setIsSmartWizardOpen(false);
+          fetchInitialData();
+        }}
+      />
     </div>
   );
 };

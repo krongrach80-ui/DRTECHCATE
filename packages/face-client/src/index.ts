@@ -11,3 +11,4 @@ export * from './quality';
 export * from './embed';
 export * from './liveness';
 export * from './flow';
+export * from './ring';

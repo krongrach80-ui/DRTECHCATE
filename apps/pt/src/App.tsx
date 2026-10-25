@@ -14,8 +14,10 @@ import {
   defaultApiClient
 } from '../../../packages/api-client/src/index.js';
 import { Sparkles, User, Lock, AlertCircle } from 'lucide-react';
+import { ClinicalPtShell } from './clinical-ui/index.js';
 
 export const PtApp: React.FC = () => {
+  const [shellMode, setShellMode] = useState<'clinical' | 'classic'>('clinical');
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [currentTab, setCurrentTab] = useState<PtViewTab>('reception');
@@ -122,6 +124,14 @@ export const PtApp: React.FC = () => {
     setCurrentTab('records');
   };
 
+  const handleLogout = async () => {
+    try {
+      await defaultApiClient.auth.logout();
+    } finally {
+      setCurrentUser(null);
+    }
+  };
+
   // Loading Splash Screen
   if (authLoading) {
     return (
@@ -211,10 +221,45 @@ export const PtApp: React.FC = () => {
     );
   }
 
+  if (shellMode === 'clinical') {
+    return (
+      <div className="relative w-screen h-screen">
+        <div className="absolute top-4 right-52 z-50">
+          <button
+            type="button"
+            onClick={() => setShellMode('classic')}
+            className="px-3 py-1 rounded-full bg-white/90 hover:bg-white border border-slate-200 text-xs font-semibold text-slate-600 shadow-sm backdrop-blur transition"
+          >
+            ⚙️ โหมดคลาสสิก
+          </button>
+        </div>
+
+        <ClinicalPtShell
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onReturnToKiosk={() => {
+            window.location.href = '/';
+          }}
+        />
+      </div>
+    );
+  }
+
   const unhandledCallsCount = staffCalls.filter((c) => !c.handled_at).length;
 
   return (
-    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans">
+    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans relative">
+      <div className="absolute top-4 right-4 z-50">
+        <button
+          type="button"
+          onClick={() => setShellMode('clinical')}
+          className="px-3.5 py-1.5 rounded-full bg-emerald-950 border border-emerald-500/50 text-xs font-bold text-emerald-300 shadow-lg transition flex items-center gap-1.5"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>🏥 สลับเป็น Clinical Emerald Shell v5</span>
+        </button>
+      </div>
+
       {/* PT Sidebar Navigation */}
       <PtSidebar
         currentTab={currentTab}

@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   X,
   RefreshCw,
-  HelpCircle
+  HelpCircle,
+  Sparkles
 } from 'lucide-react';
 import {
   ExerciseRecord,
@@ -18,6 +19,10 @@ import {
   ModpackRecord,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import {
+  SmartExerciseLibraryModal,
+  SmartModpackModal
+} from '../smart-portal/index.js';
 
 export const LibraryView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'exercises' | 'minigames' | 'modpacks'>('exercises');
@@ -25,6 +30,8 @@ export const LibraryView: React.FC = () => {
   const [minigames, setMinigames] = useState<MinigameRecord[]>([]);
   const [modpacks, setModpacks] = useState<ModpackRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isSmartExerciseModalOpen, setIsSmartExerciseModalOpen] = useState<boolean>(false);
+  const [isSmartModpackModalOpen, setIsSmartModpackModalOpen] = useState<boolean>(false);
 
   // Modals
   const [isExerciseModalOpen, setIsExerciseModalOpen] = useState<boolean>(false);
@@ -254,22 +261,40 @@ export const LibraryView: React.FC = () => {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           {activeTab === 'exercises' && (
-            <button
-              onClick={() => setIsExerciseModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
-            >
-              <Plus className="w-4 h-4" />
-              <span>เพิ่มท่ากายภาพใหม่</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsSmartExerciseModalOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Smart Exercise Upload (v4)</span>
+              </button>
+              <button
+                onClick={() => setIsExerciseModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+              >
+                <Plus className="w-4 h-4" />
+                <span>เพิ่มท่ากายภาพใหม่</span>
+              </button>
+            </div>
           )}
           {activeTab === 'modpacks' && (
-            <button
-              onClick={() => setIsModpackModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
-            >
-              <Plus className="w-4 h-4" />
-              <span>สร้างชุดท่า Modpack ใหม่</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsSmartModpackModalOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Smart Modpack Builder (v4)</span>
+              </button>
+              <button
+                onClick={() => setIsModpackModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+              >
+                <Plus className="w-4 h-4" />
+                <span>สร้างชุดท่า Modpack ใหม่</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -886,6 +911,26 @@ export const LibraryView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Master Prompt v4: Smart Exercise Media Upload Modal */}
+      <SmartExerciseLibraryModal
+        isOpen={isSmartExerciseModalOpen}
+        onClose={() => setIsSmartExerciseModalOpen(false)}
+        onSuccess={() => {
+          setIsSmartExerciseModalOpen(false);
+          fetchData();
+        }}
+      />
+
+      {/* Master Prompt v4: Smart Modpack Preset Builder Modal */}
+      <SmartModpackModal
+        isOpen={isSmartModpackModalOpen}
+        onClose={() => setIsSmartModpackModalOpen(false)}
+        onSuccess={() => {
+          setIsSmartModpackModalOpen(false);
+          fetchData();
+        }}
+      />
     </div>
   );
 };

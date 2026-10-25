@@ -20,6 +20,7 @@ import {
   PtDirectoryRecord,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import { SmartPendingPatientsBanner } from '../smart-portal/index.js';
 
 interface MyPatientsViewProps {
   currentUserId: string;
@@ -257,6 +258,9 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
           </button>
         </div>
       )}
+
+      {/* Master Prompt v4: Pending Patients Real-time Queue Banner */}
+      <SmartPendingPatientsBanner onPatientUpdated={fetchPatients} />
 
       {/* Search & Filter Bar */}
       <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row gap-4 justify-between items-center">

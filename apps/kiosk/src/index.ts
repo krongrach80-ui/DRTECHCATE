@@ -22,6 +22,7 @@ export * from './views/TickView.js';
 export * from './views/CompleteView.js';
 export * from './views/CallStaffView.js';
 export * from './views/EnrollView.js';
+export * from './services/faceClientService.js';
 
 import {
   KioskPairingPayload,

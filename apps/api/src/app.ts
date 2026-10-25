@@ -19,17 +19,22 @@ import { auditRoutes, createAuditRouter } from './modules/audit/routes';
 import { AuditController } from './modules/audit/controller';
 import { staffRoutes } from './modules/staff/routes';
 import { directoryRoutes } from './modules/directory/routes';
-import { createPatientsRouter, createFaceRouter } from './modules/patients/routes';
+import { createPatientsRouter } from './modules/patients/routes';
+import { createFaceRouter, FaceEnrollmentController } from './modules/face';
 import { createCoursesRouter } from './modules/courses/routes';
 import { createRecordsRouter } from './modules/records/routes';
+import { smartOnboardingRoutes } from './modules/smart-onboarding/routes';
 import { authenticate } from './middleware/authenticate';
 import { getEnv } from './config/env';
+import path from 'path';
+import fs from 'fs';
 
 export function createApp(
   customLogger?: Logger,
   authController?: AuthController,
   securityController?: SecurityController,
-  auditController?: AuditController
+  auditController?: AuditController,
+  faceEnrollmentController?: FaceEnrollmentController
 ): Express {
   const app: Express = express();
   const env = getEnv();
@@ -78,7 +83,13 @@ export function createApp(
   // 3. CORS with explicit origin allowlist
   app.use(createCorsMiddleware());
 
-  // 4. Strict JSON body parser with 100kb payload limit
+  // 4. Strict JSON body parser with 100kb payload limit for general API routes,
+  // with 10mb limit for biometric enrollment endpoints (/api/face/enroll, /api/kiosk/enroll, /api/smart-onboarding/create-pending)
+  app.use('/api/face/enroll', express.json({ limit: '10mb' }));
+  app.use('/api/kiosk/enroll', express.json({ limit: '10mb' }));
+  app.use('/api/smart-onboarding/create-pending', express.json({ limit: '10mb' }));
+  app.use('/api/smart-onboarding/scan-login', express.json({ limit: '10mb' }));
+  app.use('/api/smart-onboarding/exercises', express.json({ limit: '10mb' }));
   app.use(express.json({ limit: '100kb' }));
 
   // 5. Cookie Parser (for HttpOnly JWT / Kiosk device tokens)
@@ -97,8 +108,18 @@ export function createApp(
   app.use('/', healthRoutes);
   app.use('/api', healthRoutes);
   app.use('/api', eventRoutes);
+  const uploadsDir = path.resolve(process.cwd(), 'public', 'uploads');
+  if (!fs.existsSync(path.join(uploadsDir, 'patients'))) {
+    fs.mkdirSync(path.join(uploadsDir, 'patients'), { recursive: true });
+  }
+  if (!fs.existsSync(path.join(uploadsDir, 'exercises'))) {
+    fs.mkdirSync(path.join(uploadsDir, 'exercises'), { recursive: true });
+  }
+  app.use('/uploads', express.static(uploadsDir));
+  app.use('/public/uploads', express.static(uploadsDir));
   app.use('/api/auth', authController ? createAuthRouter(authController) : authRoutes);
   app.use('/api/kiosk', kioskRoutes);
+  app.use('/api/smart-onboarding', smartOnboardingRoutes);
   app.use(
     '/api/security',
     authController || securityController
@@ -109,7 +130,7 @@ export function createApp(
   app.use('/api/staff', staffRoutes);
   app.use('/api', directoryRoutes);
   app.use('/api/patients', createPatientsRouter());
-  app.use('/api/face', createFaceRouter());
+  app.use('/api/face', createFaceRouter(faceEnrollmentController));
   app.use('/api/courses', createCoursesRouter());
   app.use('/api', createRecordsRouter());
   app.get(['/me', '/api/me'], authenticate, (req: Request, res: Response) => {

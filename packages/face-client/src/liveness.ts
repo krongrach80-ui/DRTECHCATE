@@ -3,6 +3,8 @@
  * Liveness & Presentation Attack Detection (PAD) per Master Prompt v3 Section 7.5
  */
 
+import { RequiredPose } from './quality';
+
 export interface PadResult {
   isLive: boolean;
   score: number;
@@ -15,14 +17,31 @@ export interface PadProvider {
   checkLiveness(frame: HTMLCanvasElement | ImageData | unknown): Promise<PadResult>;
 }
 
-
-export type ChallengeStep = 'left' | 'right' | 'nod' | 'front';
+export type ChallengeStep = RequiredPose;
 
 export interface ActiveChallengeState {
   currentStepIndex: number;
   steps: ChallengeStep[];
   completedSteps: ChallengeStep[];
   isComplete: boolean;
+}
+
+/**
+ * Passive PAD Provider fallback / mock
+ */
+export class PassivePadProvider implements PadProvider {
+  public readonly name = 'passive-pad-provider';
+  public readonly mode = 'active_plus_passive';
+
+  constructor(private mockScore: number = 0.98) {}
+
+  public async checkLiveness(_frame: HTMLCanvasElement | ImageData | unknown): Promise<PadResult> {
+    return {
+      isLive: this.mockScore >= 0.5,
+      score: this.mockScore,
+      confidence: 0.95,
+    };
+  }
 }
 
 export class ActiveChallengeTracker {
@@ -58,5 +77,23 @@ export class ActiveChallengeTracker {
       completedSteps: [...this.completedSteps],
       isComplete: this.isComplete(),
     };
+  }
+}
+
+/**
+ * Returns user-friendly Thai guidance instruction for each pose / challenge step.
+ */
+export function getThaiPoseInstruction(pose: RequiredPose): string {
+  switch (pose) {
+    case 'front':
+      return 'มองตรงที่กล้องและยิ้มเล็กน้อย';
+    case 'left':
+      return 'ค่อยๆ หันศีรษะไปทางซ้าย';
+    case 'right':
+      return 'ค่อยๆ หันศีรษะไปทางขวา';
+    case 'nod':
+      return 'พยักหน้าลงช้าๆ';
+    default:
+      return 'มองตรงที่กล้อง';
   }
 }

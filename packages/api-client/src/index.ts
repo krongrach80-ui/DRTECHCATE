@@ -826,6 +826,23 @@ export class ApiClient {
       });
     },
 
+    enroll: async (payload: {
+      patient_id: string;
+      ticket?: string;
+      consent_id?: string;
+      frames: Array<{ pose: 'front' | 'left' | 'right' | 'nod'; embedding: number[]; jpeg_base64?: string }>;
+      model_version?: string;
+    }) => {
+      return this.request<{
+        enrollment_id: string;
+        patient_id: string;
+        registration_status: string;
+      }>('/kiosk/enroll', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
     requestChallenge: async (kioskId: string) => {
       return this.request<{ nonce: string; device_id: string; steps: string[] }>('/kiosk/challenge', {
         method: 'POST',
@@ -894,7 +911,177 @@ export class ApiClient {
   };
 
   // =========================================================================
-  // 11. SSE REAL-TIME EVENTS
+  // 11. FACE BIOMETRIC OPERATIONS
+  // =========================================================================
+  public face = {
+    enroll: async (payload: {
+      patient_id: string;
+      consent_id?: string;
+      frames: Array<{ pose: 'front' | 'left' | 'right' | 'nod'; embedding: number[]; jpeg_base64?: string }>;
+      model_version?: string;
+    }) => {
+      return this.request<{
+        enrollment_id: string;
+        patient_id: string;
+        registration_status: string;
+      }>('/face/enroll', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    deleteBiometrics: async (patientId: string) => {
+      return this.request<{ success: boolean; message: string }>(`/face/${patientId}`, {
+        method: 'DELETE',
+      });
+    },
+  };
+
+  public async enrollFace(payload: {
+    patient_id: string;
+    consent_id?: string;
+    frames: Array<{ pose: 'front' | 'left' | 'right' | 'nod'; embedding: number[]; jpeg_base64?: string }>;
+    model_version?: string;
+  }): Promise<{
+    enrollment_id: string;
+    patient_id: string;
+    registration_status: string;
+    message?: string;
+  }> {
+    return this.face.enroll(payload);
+  }
+
+  public async kioskEnrollFace(payload: {
+    patient_id: string;
+    ticket?: string;
+    consent_id?: string;
+    frames: Array<{ pose: 'front' | 'left' | 'right' | 'nod'; embedding: number[]; jpeg_base64?: string }>;
+    model_version?: string;
+  }): Promise<{
+    enrollment_id: string;
+    patient_id: string;
+    registration_status: string;
+    message?: string;
+  }> {
+    return this.kiosk.enroll(payload);
+  }
+
+  public async deletePatientFace(patientId: string): Promise<{ success?: boolean; message: string }> {
+    return this.face.deleteBiometrics(patientId);
+  }
+
+  // =========================================================================
+  // 12. SMART ONBOARDING & BIOMETRIC DUAL-SYNC (Master Prompt v4)
+  // =========================================================================
+  public smartOnboarding = {
+    scanLogin: async (payload: { probe: number[]; snapshot?: string }) => {
+      return this.request<{
+        matched: boolean;
+        patient?: any;
+        similarity?: number;
+        distance?: number;
+        similarityPercentage?: number;
+        message?: string;
+      }>('/smart-onboarding/scan-login', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    createPending: async (payload: {
+      frames: Array<{ pose: string; embedding: number[]; jpeg_base64?: string }>;
+      model_version?: string;
+    }) => {
+      return this.request<{
+        patient_id: string;
+        hn: string;
+        registration_status: string;
+        profile_face_url: string;
+      }>('/smart-onboarding/create-pending', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    completeInfo: async (payload: {
+      patient_id: string;
+      first_name: string;
+      last_name: string;
+      age: number;
+      gender: string;
+      phone?: string;
+      initial_symptoms?: string;
+    }) => {
+      return this.request<any>('/smart-onboarding/complete-info', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    listPending: async () => {
+      return this.request<any[]>('/smart-onboarding/pending-patients', {
+        method: 'GET',
+      });
+    },
+
+    saveSchedule: async (payload: { patient_id: string; schedule: any }) => {
+      return this.request<any>('/smart-onboarding/schedule', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    getDailyPlan: async (patientId: string, date?: string) => {
+      const q = date ? `?date=${encodeURIComponent(date)}` : '';
+      return this.request<{
+        is_scheduled_today: boolean;
+        reason?: string;
+        schedule?: any;
+        exercises: any[];
+        include_minigame: boolean;
+      }>(`/smart-onboarding/daily-plan/${patientId}${q}`, {
+        method: 'GET',
+      });
+    },
+
+    saveRehabScore: async (payload: { patient_id: string; score: any }) => {
+      return this.request<any>('/smart-onboarding/rehab-score', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    deletePatient: async (patientId: string) => {
+      return this.request<{ ok: boolean; message: string }>(`/smart-onboarding/patient/${patientId}`, {
+        method: 'DELETE',
+      });
+    },
+
+    getExercises: async () => {
+      return this.request<any[]>('/smart-onboarding/exercises', { method: 'GET' });
+    },
+
+    saveExercise: async (exercise: any) => {
+      return this.request<any>('/smart-onboarding/exercises', {
+        method: 'POST',
+        body: JSON.stringify(exercise),
+      });
+    },
+
+    getModpacks: async () => {
+      return this.request<any[]>('/smart-onboarding/modpacks', { method: 'GET' });
+    },
+
+    saveModpack: async (modpack: any) => {
+      return this.request<any>('/smart-onboarding/modpacks', {
+        method: 'POST',
+        body: JSON.stringify(modpack),
+      });
+    },
+  };
+
+  // =========================================================================
+  // 12. SSE REAL-TIME EVENTS
   // =========================================================================
   public connectEvents(
     onMessage: (event: { event: string; data: unknown }) => void,
@@ -937,3 +1124,13 @@ export class ApiClient {
 }
 
 export const defaultApiClient = new ApiClient();
+
+export const enrollFace = (payload: Parameters<ApiClient['enrollFace']>[0]) =>
+  defaultApiClient.enrollFace(payload);
+
+export const kioskEnrollFace = (payload: Parameters<ApiClient['kioskEnrollFace']>[0]) =>
+  defaultApiClient.kioskEnrollFace(payload);
+
+export const deletePatientFace = (patientId: string) =>
+  defaultApiClient.deletePatientFace(patientId);
+

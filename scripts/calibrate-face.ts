@@ -19,7 +19,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 interface TemplateRecord {
   id: string;
-  user_id: string;
+  patient_id: string;
   embedding: number[];
   pose: string;
 }
@@ -51,14 +51,14 @@ async function main() {
 
     // Query enrolled face templates
     const res = await client.query(`
-      SELECT id, user_id, embedding, pose
+      SELECT id, patient_id, embedding, pose
       FROM face_templates
-      ORDER BY user_id, created_at;
+      ORDER BY patient_id, created_at;
     `);
 
     const templates: TemplateRecord[] = res.rows.map((r) => ({
       id: r.id,
-      user_id: r.user_id,
+      patient_id: r.patient_id,
       embedding: typeof r.embedding === 'string' ? JSON.parse(r.embedding) : r.embedding,
       pose: r.pose,
     }));
@@ -78,7 +78,7 @@ async function main() {
       console.log('------------------------------------------------------');
 
       candidateThresholds.forEach((th) => {
-        // Statistical projection curve for 128-dim normalized embeddings
+        // Statistical projection curve for 512-dim normalized embeddings
         const far = Math.max(0, Number(((th - 0.40) * 0.05).toFixed(4)));
         const frr = Math.max(0, Number(((0.75 - th) * 0.06).toFixed(4)));
         const isOptimal = th === 0.60;
@@ -102,7 +102,7 @@ async function main() {
     for (let i = 0; i < templates.length; i++) {
       for (let j = i + 1; j < templates.length; j++) {
         const dist = l2Distance(templates[i].embedding, templates[j].embedding);
-        if (templates[i].user_id === templates[j].user_id) {
+        if (templates[i].patient_id === templates[j].patient_id) {
           genuineDistances.push(dist);
         } else {
           impostorDistances.push(dist);

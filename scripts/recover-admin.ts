@@ -136,11 +136,12 @@ async function runAdminRecovery() {
 
   // Write immutable audit log
   await adminClient.from('audit_logs').insert({
+    actor_type: 'staff',
     actor_id: targetUser.id,
     action: 'ADMIN_ACCOUNT_RECOVERY',
-    target_table: 'profiles',
-    target_id: targetUser.id,
-    details: {
+    entity: 'profiles',
+    entity_id: targetUser.id,
+    metadata: {
       action: 'password_reset_via_server_recovery_script',
       email,
       timestamp: new Date().toISOString(),

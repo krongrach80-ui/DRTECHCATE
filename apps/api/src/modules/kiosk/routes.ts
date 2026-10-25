@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { KioskController } from './controller';
 import { KioskFaceAuthController } from './faceAuth.controller';
+import { FaceEnrollmentController, defaultFaceEnrollmentController } from '../face';
 import {
   pairKioskSchema,
   createPairCodeSchema,
@@ -44,9 +45,13 @@ export function ensureFaceAuthEnabled(_req: Request, _res: Response, next: NextF
 
 export function createKioskRouter(
   deviceController = new KioskController(),
-  faceAuthController = new KioskFaceAuthController()
+  faceAuthController = new KioskFaceAuthController(),
+  faceEnrollmentController: FaceEnrollmentController = defaultFaceEnrollmentController
 ): Router {
   const router = Router();
+
+  // POST /api/kiosk/enroll (Kiosk terminal face enrollment)
+  router.post('/enroll', faceEnrollmentController.enrollKiosk);
 
   // =========================================================================
   // SYSTEM 4: KIOSK DEVICE PAIRING

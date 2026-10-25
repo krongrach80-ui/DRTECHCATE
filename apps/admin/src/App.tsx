@@ -14,9 +14,11 @@ import {
   StaffCallRecord,
   defaultApiClient
 } from '../../../packages/api-client/src/index.js';
-import { Shield, User, Lock, AlertCircle } from 'lucide-react';
+import { Shield, User, Lock, AlertCircle, Sparkles } from 'lucide-react';
+import { ClinicalAdminShell, StaffLoginModal } from './clinical-ui/index.js';
 
 export const AdminApp: React.FC = () => {
+  const [shellMode, setShellMode] = useState<'clinical' | 'classic'>('clinical');
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [currentTab, setCurrentTab] = useState<AdminViewTab>('staff');
@@ -121,10 +123,81 @@ export const AdminApp: React.FC = () => {
     );
   }
 
-  // If not authenticated as Admin, show login screen
+  const handleDirectLogin = async (credentials: { username: string; password: string }) => {
+    const res = await defaultApiClient.auth.login(credentials);
+    if (res.role !== 'admin') {
+      throw new Error('บัญชีนี้ไม่มีสิทธิ์เข้าถึงส่วนงานผู้อำนวยการโรงพยาบาล (Admin Only)');
+    }
+    setCurrentUser(res.user);
+    await fetchStaffCalls();
+  };
+
+  // Master Prompt v5: Clinical Emerald Shell Presentation
+  if (shellMode === 'clinical') {
+    if (!currentUser) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-[#F0FDF9] via-[#F8FAFC] to-[#EFF6FF] flex items-center justify-center p-4 relative font-sans">
+          <div className="absolute top-4 right-4 z-50">
+            <button
+              type="button"
+              onClick={() => setShellMode('classic')}
+              className="px-3.5 py-1.5 rounded-full bg-white/90 hover:bg-white border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur transition"
+            >
+              ⚙️ สลับเป็นโหมดคลาสสิก
+            </button>
+          </div>
+
+          <StaffLoginModal
+            isOpen={true}
+            onClose={() => {}}
+            onLogin={handleDirectLogin}
+            onReturnToKiosk={() => {
+              window.location.href = '/';
+            }}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="relative w-screen h-screen">
+        <div className="absolute top-4 right-52 z-50">
+          <button
+            type="button"
+            onClick={() => setShellMode('classic')}
+            className="px-3 py-1 rounded-full bg-white/90 hover:bg-white border border-slate-200 text-xs font-semibold text-slate-600 shadow-sm backdrop-blur transition"
+          >
+            ⚙️ โหมดคลาสสิก
+          </button>
+        </div>
+
+        <ClinicalAdminShell
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onReturnToKiosk={() => {
+            window.location.href = '/';
+          }}
+          onLogin={handleDirectLogin}
+        />
+      </div>
+    );
+  }
+
+  // If not authenticated as Admin, show login screen (Classic)
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative">
+        <div className="absolute top-4 right-4 z-50">
+          <button
+            type="button"
+            onClick={() => setShellMode('clinical')}
+            className="px-3.5 py-1.5 rounded-full bg-emerald-950 border border-emerald-500/50 text-xs font-bold text-emerald-300 shadow-lg transition flex items-center gap-1.5"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>🏥 สลับเป็น Clinical Emerald Shell v5</span>
+          </button>
+        </div>
+
         <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-2">
             <div className="w-16 h-16 rounded-2xl bg-teal-500/10 border border-teal-500/30 text-teal-400 flex items-center justify-center mx-auto mb-3 shadow-inner">
@@ -198,9 +271,20 @@ export const AdminApp: React.FC = () => {
     );
   }
 
-  // Main Admin Dashboard
+  // Main Admin Dashboard (Classic)
   return (
-    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans">
+    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans relative">
+      <div className="absolute top-4 right-4 z-50">
+        <button
+          type="button"
+          onClick={() => setShellMode('clinical')}
+          className="px-3.5 py-1.5 rounded-full bg-emerald-950 border border-emerald-500/50 text-xs font-bold text-emerald-300 shadow-lg transition flex items-center gap-1.5"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>🏥 สลับเป็น Clinical Emerald Shell v5</span>
+        </button>
+      </div>
+
       <Sidebar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}

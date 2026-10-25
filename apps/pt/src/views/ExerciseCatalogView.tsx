@@ -17,6 +17,10 @@ import {
   ExerciseRecord,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import {
+  SmartExerciseLibraryModal,
+  SmartModpackModal
+} from '../smart-portal/index.js';
 
 interface ExerciseCatalogViewProps {
   currentUserId: string;
@@ -32,6 +36,8 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isSmartExerciseModalOpen, setIsSmartExerciseModalOpen] = useState(false);
+  const [isSmartModpackModalOpen, setIsSmartModpackModalOpen] = useState(false);
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -219,6 +225,20 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
             title="รีเฟรช"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={() => setIsSmartExerciseModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Smart Upload (v4)</span>
+          </button>
+          <button
+            onClick={() => setIsSmartModpackModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Smart Modpack (v4)</span>
           </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
@@ -631,6 +651,26 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Master Prompt v4: Smart Exercise Media Upload Modal */}
+      <SmartExerciseLibraryModal
+        isOpen={isSmartExerciseModalOpen}
+        onClose={() => setIsSmartExerciseModalOpen(false)}
+        onSuccess={() => {
+          setIsSmartExerciseModalOpen(false);
+          fetchExercises();
+        }}
+      />
+
+      {/* Master Prompt v4: Smart Modpack Preset Builder Modal */}
+      <SmartModpackModal
+        isOpen={isSmartModpackModalOpen}
+        onClose={() => setIsSmartModpackModalOpen(false)}
+        onSuccess={() => {
+          setIsSmartModpackModalOpen(false);
+          fetchExercises();
+        }}
+      />
     </div>
   );
 };

@@ -25,15 +25,19 @@ import { TickView } from './views/TickView';
 import { CompleteView } from './views/CompleteView';
 import { CallStaffView } from './views/CallStaffView';
 import { EnrollView } from './views/EnrollView';
+import { SmartFlowController } from './smart-flow/index.js';
+import { KioskClinicalHeader } from './clinical-ui/index.js';
 
 export const App: React.FC = () => {
+  const [flowMode, setFlowMode] = useState<'smart' | 'classic'>('smart');
   const machine = useMemo(() => new KioskStateMachine(), []);
   const [state, setState] = useState<KioskState>('IDLE');
   const [context, setContext] = useState<MissionContext>(machine.getContext());
   const [kioskId, setKioskId] = useState<string>('kiosk-01');
   const [isPairingOpen, setIsPairingOpen] = useState<boolean>(false);
   const [isPaired, setIsPaired] = useState<boolean>(true);
-  const [isDetectorReady, _setIsDetectorReady] = useState<boolean>(false);
+  const [isDetectorReady, setIsDetectorReady] = useState<boolean>(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // Subscribe to pure State Machine updates
   useEffect(() => {
@@ -101,6 +105,24 @@ export const App: React.FC = () => {
     [kioskId, machine]
   );
 
+  // Handle identity confirmation / denial
+  const handleConfirmIdentity = useCallback(
+    async (confirmed: boolean) => {
+      if (sessionToken) {
+        try {
+          await defaultApiClient.kiosk.confirmIdentity(sessionToken, confirmed);
+        } catch {
+          // Fallback safely
+        }
+      }
+      if (!confirmed) {
+        setSessionToken(null);
+      }
+      machine.handleEvent({ type: 'CONFIRM_IDENTITY', confirmed });
+    },
+    [sessionToken, machine]
+  );
+
   // Handle exercise step complete
   const handlePhysioStepComplete = useCallback(async () => {
     if (context.plan && context.patientId) {
@@ -155,8 +177,34 @@ export const App: React.FC = () => {
     machine.handleEvent({ type: 'FINISH_MISSION' });
   }, [context.plan, context.patientId, machine]);
 
+  if (flowMode === 'smart') {
+    return (
+      <div className="w-screen h-screen flex flex-col bg-slate-950 text-slate-100 select-none overflow-hidden relative">
+        <KioskClinicalHeader
+          kioskId={kioskId}
+          onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากตู้ Kiosk')}
+        />
+
+        {/* Floating Mode Switcher Button */}
+        <div className="absolute top-20 right-4 z-40 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFlowMode('classic')}
+            className="px-3 py-1 rounded-full bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-300 hover:text-white transition shadow-lg backdrop-blur-md flex items-center gap-1.5"
+          >
+            <span>⚙️ สลับเป็นโหมดคลาสสิก</span>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-hidden relative">
+          <SmartFlowController />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-screen h-screen flex flex-col bg-slate-950 text-slate-100 select-none overflow-hidden">
+    <div className="w-screen h-screen flex flex-col bg-slate-950 text-slate-100 select-none overflow-hidden relative">
       {/* Top Header Bar */}
       <Header
         kioskId={kioskId}
@@ -165,12 +213,23 @@ export const App: React.FC = () => {
         onOpenPairing={() => setIsPairingOpen(true)}
       />
 
+      <div className="absolute top-4 right-28 z-40">
+        <button
+          type="button"
+          onClick={() => setFlowMode('smart')}
+          className="px-3.5 py-1 rounded-full bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-xs font-semibold text-emerald-300 transition shadow-lg backdrop-blur-md flex items-center gap-1.5"
+        >
+          <span>⚡ สลับเป็น Smart Flow v4</span>
+        </button>
+      </div>
+
       {/* Main View Port (Driven strictly by Section 9 State Machine) */}
       <main className="flex-1 w-full h-[calc(100vh-5rem)] overflow-hidden relative">
         {state === 'IDLE' && (
           <IdleView
             isDetectorReady={isDetectorReady}
-            onStart={() => machine.handleEvent({ type: 'TAP_SCREEN' })}
+            onDetectorReadyChange={setIsDetectorReady}
+            onStart={() => machine.handleEvent({ type: 'FACE_PRESENT' })}
             onCallStaff={() => handleTriggerStaffCall('ระบบสแกนใบหน้ายังไม่พร้อมใช้งาน ต้องการเจ้าหน้าที่')}
           />
         )}
@@ -192,14 +251,17 @@ export const App: React.FC = () => {
             kioskId={kioskId}
             failedCount={context.failedVerifyCount}
             errorMessage={context.errorMessage}
-            onSuccess={(pId, fName, av) =>
+            onSuccess={(pId, fName, av, sToken) => {
+              if (sToken) {
+                setSessionToken(sToken);
+              }
               machine.handleEvent({
                 type: 'VERIFY_SUCCESS',
                 patientId: pId,
                 patientFirstName: fName,
                 avatarUrl: av,
-              })
-            }
+              });
+            }}
             onFailure={(err) => machine.handleEvent({ type: 'VERIFY_FAILED', error: err })}
             onCallStaff={() => handleTriggerStaffCall('สแกนใบหน้าไม่ผ่าน ต้องการเจ้าหน้าที่ช่วยเหลือ')}
           />
@@ -209,8 +271,8 @@ export const App: React.FC = () => {
           <ConfirmView
             firstName={context.patientFirstName || 'ผู้รับบริการ'}
             avatarUrl={context.avatarUrl}
-            onConfirm={() => machine.handleEvent({ type: 'CONFIRM_IDENTITY', confirmed: true })}
-            onDeny={() => machine.handleEvent({ type: 'CONFIRM_IDENTITY', confirmed: false })}
+            onConfirm={() => handleConfirmIdentity(true)}
+            onDeny={() => handleConfirmIdentity(false)}
           />
         )}
 
@@ -263,9 +325,11 @@ export const App: React.FC = () => {
         {state === 'ENROLL' && (
           <EnrollView
             ticketId={context.enrollmentTicketId}
+            patientId={context.patientId || `patient-${context.enrollmentTicketId || 'new'}`}
             framesCount={context.enrollmentFramesCount}
             onFrameCaptured={() => machine.handleEvent({ type: 'ENROLL_FRAME_CAPTURED' })}
             onComplete={() => machine.handleEvent({ type: 'ENROLL_COMPLETE' })}
+            onCallStaff={() => handleTriggerStaffCall('การลงทะเบียนใบหน้าขัดข้อง')}
           />
         )}
 

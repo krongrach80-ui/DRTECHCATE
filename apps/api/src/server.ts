@@ -2,6 +2,7 @@ import { createApp } from './app';
 import { getEnv } from './config/env';
 import { logger } from './middleware/logger';
 import { syncBansFromDatabase } from './middleware/banCheck';
+import { startCleanupScheduler, stopCleanupScheduler } from './jobs/cleanup';
 
 export async function startServer(): Promise<void> {
   try {
@@ -38,10 +39,12 @@ export async function startServer(): Promise<void> {
 
     const server = app.listen(env.PORT, () => {
       logger.info(`DrTech.Care Express 5 API Server started on port ${env.PORT} [${env.NODE_ENV}]`);
+      startCleanupScheduler();
     });
 
     const shutdown = (signal: string) => {
       logger.info(`${signal} received, shutting down gracefully...`);
+      stopCleanupScheduler();
       server.close(() => {
         logger.info('HTTP server closed.');
         process.exit(0);

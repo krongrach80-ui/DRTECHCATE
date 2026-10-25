@@ -1,14 +1,19 @@
 /**
  * packages/face-client/src/embed.ts
- * Face Embedding Extraction & Vector Math per Master Prompt v3 Section 7.1
- * Interface EmbeddingModel { name, version, dim, embed }
+ * Face Embedding Extraction & Vector Math per Master Prompt v3 Section 7.1.2 & 7.1.3
+ * Runs ONNX Runtime Web with local model weights (/models/...) in WASM mode.
+ * Architecture Invariant:
+ * - Converts 112x112 face canvas to Float32Array NCHW [1, 3, 112, 112] with (pixel - 127.5) / 128.0
+ * - Fail-closed: Throws MODEL_WEIGHTS_NOT_INSTALLED if model weights are missing.
+ * - Memory Wipe: Flushes Float32Array buffer with .fill(0) immediately after inference.
  */
 
 export interface EmbeddingModel {
   name: string;
   version: string;
   dim: number;
-  embed(alignedFace: HTMLCanvasElement | ImageData | unknown): Promise<number[]>;
+  embed(alignedFace: HTMLCanvasElement | ImageData): Promise<number[]>;
+  close?(): Promise<void>;
 }
 
 /**
@@ -55,16 +60,110 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
- * Generates a synthetic 512-dim unit vector from a seed number or string
+ * Converts a 112x112 HTMLCanvasElement or ImageData to a normalized Float32Array in NCHW format [1, 3, 112, 112].
+ * Applies standard ArcFace normalization: (pixel - 127.5) / 128.0
  */
-export function generateSyntheticVector(seed: number | string, dim: number = 512): number[] {
-  const seedNum = typeof seed === 'number' ? seed : seed.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const raw: number[] = [];
-  for (let i = 0; i < dim; i++) {
-    // Deterministic pseudo-random based on seed and dimension index
-    const val = Math.sin(seedNum * 997 + i * 1337);
-    raw.push(val);
+export function canvasToNchwTensor(
+  source: HTMLCanvasElement | ImageData,
+  width: number = 112,
+  height: number = 112
+): Float32Array {
+  let data: Uint8ClampedArray;
+  if ('data' in source) {
+    data = source.data;
+  } else {
+    const ctx = source.getContext('2d');
+    if (!ctx) {
+      throw new Error('Failed to get 2D rendering context for canvasToNchwTensor');
+    }
+    const imgData = ctx.getImageData(0, 0, width, height);
+    data = imgData.data;
   }
-  return l2Normalize(raw);
+
+  const channelSize = width * height;
+  // Shape: 1 x 3 x 112 x 112 -> 37,632 floats
+  const tensorData = new Float32Array(3 * channelSize);
+
+  for (let i = 0; i < channelSize; i++) {
+    const r = data[i * 4];
+    const g = data[i * 4 + 1];
+    const b = data[i * 4 + 2];
+
+    // Channel 0: Red
+    tensorData[i] = (r - 127.5) / 128.0;
+    // Channel 1: Green
+    tensorData[channelSize + i] = (g - 127.5) / 128.0;
+    // Channel 2: Blue
+    tensorData[2 * channelSize + i] = (b - 127.5) / 128.0;
+  }
+
+  return tensorData;
 }
 
+/**
+ * Production ONNX Runtime Web Embedding Model
+ * Executes ArcFace 512-D ONNX model locally in WASM.
+ */
+export class OnnxEmbeddingModel implements EmbeddingModel {
+  public readonly name: string = 'arcface-r50-onnx';
+  public readonly version: string = 'w600k_r50';
+  public readonly dim: number = 512;
+  private session: any = null;
+  private modelUrl: string;
+
+  constructor(modelUrl: string = '/models/w600k_r50.onnx') {
+    this.modelUrl = modelUrl;
+  }
+
+  public async initialize(): Promise<void> {
+    if (this.session) return;
+    try {
+      const ort = await import('onnxruntime-web');
+      this.session = await ort.InferenceSession.create(this.modelUrl, {
+        executionProviders: ['wasm'],
+      });
+    } catch (err: any) {
+      throw new Error(
+        `MODEL_WEIGHTS_NOT_INSTALLED: Could not load ONNX model weights from ${this.modelUrl}. ` +
+          `Please ensure the model file is installed in the public /models/ directory. (${err?.message || err})`
+      );
+    }
+  }
+
+  public async embed(alignedFace: HTMLCanvasElement | ImageData): Promise<number[]> {
+    if (!this.session) {
+      await this.initialize();
+    }
+
+    const ort = await import('onnxruntime-web');
+    const tensorData = canvasToNchwTensor(alignedFace, 112, 112);
+
+    try {
+      const inputTensor = new ort.Tensor('float32', tensorData, [1, 3, 112, 112]);
+      const inputName = this.session.inputNames ? this.session.inputNames[0] : 'data';
+      const outputName = this.session.outputNames ? this.session.outputNames[0] : 'fc1';
+
+      const feeds: Record<string, any> = {};
+      feeds[inputName] = inputTensor;
+
+      const results = await this.session.run(feeds);
+      const outputTensor = results[outputName];
+      if (!outputTensor || !outputTensor.data) {
+        throw new Error('ONNX inference failed: Model output tensor is empty');
+      }
+
+      const rawVec = Array.from(outputTensor.data as Float32Array).slice(0, 512);
+      return l2Normalize(rawVec);
+    } finally {
+      // Rule 2.5: Zero out intermediate tensor buffer immediately
+      tensorData.fill(0);
+    }
+  }
+
+  public async close(): Promise<void> {
+    if (this.session?.release) {
+      await this.session.release();
+    }
+    this.session = null;
+  }
+}

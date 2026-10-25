@@ -13,7 +13,6 @@ import {
   l2Normalize,
   averageAndNormalize,
   cosineSimilarity,
-  generateSyntheticVector,
   FaceQualityChecker,
   FaceAligner,
   CameraManager,
@@ -23,6 +22,7 @@ import {
   MockPadProvider,
   MockFaceDetector,
   MockEmbeddingModel,
+  generateSyntheticVector,
 } from '../../../../packages/face-client/test/mocks';
 
 describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suite', () => {
@@ -31,6 +31,12 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
 
   const getBangkokTodayStr = () =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+
+  const getBangkokDayOfWeek = () => {
+    const todayStr = getBangkokTodayStr();
+    const [y, m, d] = todayStr.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  };
 
   const mockChallenges = new Map<string, any>();
   const mockTemplates: { id: string; patient_id: string; vector: number[]; active: boolean; created_at: string }[] = [];
@@ -348,8 +354,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
 
     it('2.2 Patient with an active appointment today on this kiosk is admitted to candidate set', async () => {
       const todayStr = getBangkokTodayStr();
-      const todayDate = new Date();
-      const currentDayOfWeek = todayDate.getUTCDay();
+      const currentDayOfWeek = getBangkokDayOfWeek();
 
       // 1. Create Patient A
       const patientA = await defaultPatientRepository.createPatient(
@@ -404,7 +409,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
   describe('3. Dual Criteria & Margin Requirement (DoD 2: Margin Delta below FACE_T_MARGIN -> Rejected)', () => {
     it('3.1 DoD 2: When candidate 2 meets accept threshold but score delta from candidate 1 is below FACE_T_MARGIN -> REJECTED', async () => {
       const todayStr = getBangkokTodayStr();
-      const currentDayOfWeek = new Date().getUTCDay();
+      const currentDayOfWeek = getBangkokDayOfWeek();
 
       // Create two patients both scheduled for today
       const p1 = await defaultPatientRepository.createPatient(
@@ -449,7 +454,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
       // Produces similarity ~0.96 with probe.
       // Delta = 1.0 - 0.96 = 0.04, which is strictly LESS than FACE_T_MARGIN (0.10)
       const orthogonal = generateSyntheticVector('orthogonal-vector', 512);
-      const blended = baseVec.map((v, idx) => 0.96 * v + 0.04 * orthogonal[idx]);
+      const blended = baseVec.map((v: number, idx: number) => 0.96 * v + 0.04 * orthogonal[idx]);
       const normalizedBlended = l2Normalize(blended);
       await defaultKioskRepository.saveFaceTemplate(p2.id, normalizedBlended);
 
@@ -479,7 +484,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
 
     it('3.2 Succeeds when candidate 1 meets accept threshold and margin delta >= FACE_T_MARGIN', async () => {
       const todayStr = getBangkokTodayStr();
-      const currentDayOfWeek = new Date().getUTCDay();
+      const currentDayOfWeek = getBangkokDayOfWeek();
 
       const p1 = await defaultPatientRepository.createPatient(
         { first_name: 'สมศรี', last_name: 'มั่นใจเดี่ยว' },
@@ -541,7 +546,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
 
     it('3.3 Masks biometric score numbers from error message when score is below accept threshold', async () => {
       const todayStr = getBangkokTodayStr();
-      const currentDayOfWeek = new Date().getUTCDay();
+      const currentDayOfWeek = getBangkokDayOfWeek();
 
       const p = await defaultPatientRepository.createPatient(
         { first_name: 'นเรศ', last_name: 'คะแนนเฉียด' },
@@ -571,9 +576,9 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
 
       // Generate strictly orthogonal component to guarantee exact cosine similarity of 0.50 (in retry zone 0.45 <= score < 0.60)
       const ortho = generateSyntheticVector('retry-ortho', 512);
-      const dot = tVec.reduce((sum, v, i) => sum + v * ortho[i], 0);
-      const strictlyOrtho = l2Normalize(ortho.map((v, i) => v - dot * tVec[i]));
-      const blendedProbe = tVec.map((v, i) => 0.50 * v + Math.sqrt(0.75) * strictlyOrtho[i]);
+      const dot = tVec.reduce((sum: number, v: number, i: number) => sum + v * ortho[i], 0);
+      const strictlyOrtho = l2Normalize(ortho.map((v: number, i: number) => v - dot * tVec[i]));
+      const blendedProbe = tVec.map((v: number, i: number) => 0.50 * v + Math.sqrt(0.75) * strictlyOrtho[i]);
 
       const res = await request(app)
         .post('/api/kiosk/verify')
@@ -592,7 +597,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
 
     it('3.4 Logs candidate scores to server debug log when LOG_FACE_SCORES is enabled and never logs vectors', async () => {
       const todayStr = getBangkokTodayStr();
-      const currentDayOfWeek = new Date().getUTCDay();
+      const currentDayOfWeek = getBangkokDayOfWeek();
 
       const p1 = await defaultPatientRepository.createPatient(
         { first_name: 'วีระ', last_name: 'ดีบักคะแนน' },
@@ -713,7 +718,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
   describe('5. Privacy Minimization & Identity Confirmation', () => {
     it('5.1 Successful verification returns ONLY first_name and signed avatar URL (NO HN, NO last_name)', async () => {
       const todayStr = getBangkokTodayStr();
-      const currentDayOfWeek = new Date().getUTCDay();
+      const currentDayOfWeek = getBangkokDayOfWeek();
 
       const patient = await defaultPatientRepository.createPatient(
         { first_name: 'จิราภรณ์', last_name: 'ศรีสมุทรศักดิ์' },
@@ -776,7 +781,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
 
     it('5.2 When patient denies identity (confirmed: false), session is invalidated immediately', async () => {
       const todayStr = getBangkokTodayStr();
-      const currentDayOfWeek = new Date().getUTCDay();
+      const currentDayOfWeek = getBangkokDayOfWeek();
 
       const patient = await defaultPatientRepository.createPatient(
         { first_name: 'กิตติ', last_name: 'วงศ์สว่าง' },
@@ -840,7 +845,7 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
 
     it('5.3 Successful verification records SHA-256 hash of kiosk session token in audit log (NEVER plaintext token)', async () => {
       const todayStr = getBangkokTodayStr();
-      const currentDayOfWeek = new Date().getUTCDay();
+      const currentDayOfWeek = getBangkokDayOfWeek();
 
       const patient = await defaultPatientRepository.createPatient(
         { first_name: 'ปรีชา', last_name: 'ตรวจสอบออดิท' },
@@ -970,6 +975,8 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
       const mockPad = new MockPadProvider(true, 0.98);
 
       const dummyCanvas = {} as HTMLCanvasElement;
+      let phase: 'left' | 'nod' | 'front' = 'left';
+      mockDetector.setPoseByKeyword('left');
 
       const result = await FaceFlowManager.executeVerificationProbe(
         {
@@ -983,6 +990,17 @@ describe('[UNIT] DrTech.Care System 7: Kiosk Face Authentication & Liveness Suit
           embeddingModel: mockEmbedder,
           padProvider: mockPad,
           requiredFramesCount: 3,
+          onProgress: (info) => {
+            if (info.status === 'challenge' && info.qualityPassed) {
+              if (phase === 'left') {
+                phase = 'nod';
+                mockDetector.setPoseByKeyword('nod');
+              }
+            } else if (info.status === 'probe') {
+              phase = 'front';
+              mockDetector.setPoseByKeyword('front');
+            }
+          },
         },
         () => dummyCanvas
       );

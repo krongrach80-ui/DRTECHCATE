@@ -10,7 +10,8 @@ import {
   ChevronRight,
   Gamepad2,
   Trash2,
-  Monitor
+  Monitor,
+  Sparkles
 } from 'lucide-react';
 import {
   CourseRecord,
@@ -20,9 +21,14 @@ import {
   TodayCourseItem,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import {
+  SmartScheduleView,
+  SmartScheduleWizardModal
+} from '../smart-portal/index.js';
 
 export const ScheduleView: React.FC = () => {
-  const [viewMode, setViewMode] = useState<'today' | 'calendar'>('today');
+  const [viewMode, setViewMode] = useState<'today' | 'calendar' | 'smart'>('today');
+  const [isSmartWizardOpen, setIsSmartWizardOpen] = useState<boolean>(false);
   const [todayCourses, setTodayCourses] = useState<TodayCourseItem[]>([]);
   const [calendarCourses, setCalendarCourses] = useState<CourseRecord[]>([]);
   const [patients, setPatients] = useState<PatientRecord[]>([]);
@@ -197,6 +203,13 @@ export const ScheduleView: React.FC = () => {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
+            onClick={() => setIsSmartWizardOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Smart Wizard (v4)</span>
+          </button>
+          <button
             onClick={() => {
               setIsWizardOpen(true);
               setWizardStep(1);
@@ -255,7 +268,21 @@ export const ScheduleView: React.FC = () => {
         >
           มุมมองปฏิทิน (Calendar View)
         </button>
+        <button
+          onClick={() => setViewMode('smart')}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+            viewMode === 'smart'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/50'
+              : 'text-emerald-400 hover:text-emerald-200'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Smart Schedule Manager (v4)</span>
+        </button>
       </div>
+
+      {/* VIEW SMART: MASTER PROMPT V4 SCHEDULE VIEW */}
+      {viewMode === 'smart' && <SmartScheduleView />}
 
       {/* VIEW A: TODAY'S QUEUE */}
       {viewMode === 'today' && (
@@ -667,6 +694,16 @@ export const ScheduleView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Smart Schedule Wizard Modal (v4) */}
+      <SmartScheduleWizardModal
+        isOpen={isSmartWizardOpen}
+        onClose={() => setIsSmartWizardOpen(false)}
+        onSuccess={() => {
+          setIsSmartWizardOpen(false);
+          fetchInitialData();
+        }}
+      />
     </div>
   );
 };

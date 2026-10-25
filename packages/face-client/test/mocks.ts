@@ -4,20 +4,42 @@
  * STRICT COMPLIANCE: Moved to test folder only; NEVER exported in production index.ts bundle.
  */
 
-import { FaceDetector, FaceDetectionResult } from '../src/detect';
-import { EmbeddingModel, generateSyntheticVector } from '../src/embed';
+import { FaceDetector, FaceDetectionResult, HeadPose, EyeOpenness } from '../src/detect';
+import { EmbeddingModel, l2Normalize } from '../src/embed';
 import { PadProvider, PadResult } from '../src/liveness';
+import { RequiredPose } from '../src/quality';
 
 /**
- * Mock Face Detector for testing, unit tests, and CI
+ * Generates a synthetic 512-dim unit vector from a seed number or string
+ * STRICTLY TEST UTILITY ONLY.
+ */
+export function generateSyntheticVector(seed: number | string, dim: number = 512): number[] {
+  const seedNum =
+    typeof seed === 'number'
+      ? seed
+      : seed.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const raw: number[] = [];
+  for (let i = 0; i < dim; i++) {
+    const val = Math.sin(seedNum * 997 + i * 1337);
+    raw.push(val);
+  }
+  return l2Normalize(raw);
+}
+
+/**
+ * Mock Face Detector for unit tests and CI
  */
 export class MockFaceDetector implements FaceDetector {
-  name = 'mock-face-detector';
+  public name = 'mock-face-detector';
+  public defaultConfidence: number = 0.98;
+  public defaultCount: number = 1;
+  public defaultPose: HeadPose = { yaw: 0, pitch: 0, roll: 0 };
+  public defaultEyes: EyeOpenness = { leftEyeOpen: 1.0, rightEyeOpen: 1.0 };
 
-  constructor(
-    private defaultConfidence: number = 0.98,
-    private defaultCount: number = 1
-  ) {}
+  constructor(confidence: number = 0.98, count: number = 1) {
+    this.defaultConfidence = confidence;
+    this.defaultCount = count;
+  }
 
   public setCount(count: number): void {
     this.defaultCount = count;
@@ -25,6 +47,31 @@ export class MockFaceDetector implements FaceDetector {
 
   public setConfidence(conf: number): void {
     this.defaultConfidence = conf;
+  }
+
+  public setPose(pose: HeadPose): void {
+    this.defaultPose = pose;
+  }
+
+  public setPoseByKeyword(poseKeyword: RequiredPose): void {
+    switch (poseKeyword) {
+      case 'front':
+        this.defaultPose = { yaw: 0, pitch: 0, roll: 0 };
+        break;
+      case 'left':
+        this.defaultPose = { yaw: -20, pitch: 0, roll: 0 };
+        break;
+      case 'right':
+        this.defaultPose = { yaw: 20, pitch: 0, roll: 0 };
+        break;
+      case 'nod':
+        this.defaultPose = { yaw: 0, pitch: -16, roll: 0 };
+        break;
+    }
+  }
+
+  public setEyes(eyes: EyeOpenness): void {
+    this.defaultEyes = eyes;
   }
 
   public async detect(_frame: HTMLCanvasElement | ImageData | HTMLVideoElement): Promise<FaceDetectionResult> {
@@ -39,7 +86,7 @@ export class MockFaceDetector implements FaceDetector {
 
     if (this.defaultCount > 1) {
       return {
-        hasFace: true,
+        hasFace: false,
         multipleFaces: true,
         confidence: this.defaultConfidence,
         faceCount: this.defaultCount,
@@ -51,25 +98,27 @@ export class MockFaceDetector implements FaceDetector {
       multipleFaces: false,
       confidence: this.defaultConfidence,
       faceCount: 1,
-      box: { x: 100, y: 100, width: 200, height: 240 },
+      box: { x: 50, y: 50, width: 200, height: 240 },
       landmarks: {
-        leftEye: { x: 150, y: 180 },
-        rightEye: { x: 250, y: 180 },
-        noseTip: { x: 200, y: 220 },
-        leftMouth: { x: 160, y: 280 },
-        rightMouth: { x: 240, y: 280 },
+        leftEye: { x: 100, y: 120 },
+        rightEye: { x: 180, y: 120 },
+        noseTip: { x: 140, y: 160 },
+        leftMouth: { x: 110, y: 200 },
+        rightMouth: { x: 170, y: 200 },
       },
+      pose: { ...this.defaultPose },
+      eyes: { ...this.defaultEyes },
     };
   }
 }
 
 /**
- * Mock Embedding Model for testing & development
+ * Mock Embedding Model for testing
  */
 export class MockEmbeddingModel implements EmbeddingModel {
-  name = 'mock-adaface-ir50';
-  version = 'adaface-ir50-v1';
-  dim = 512;
+  public name = 'mock-arcface-onnx';
+  public version = 'mock-v1';
+  public dim = 512;
 
   constructor(private seed: number | string = 1) {}
 
@@ -77,7 +126,7 @@ export class MockEmbeddingModel implements EmbeddingModel {
     this.seed = seed;
   }
 
-  public async embed(_alignedFace: unknown): Promise<number[]> {
+  public async embed(_alignedFace: HTMLCanvasElement | ImageData): Promise<number[]> {
     return generateSyntheticVector(this.seed, this.dim);
   }
 }
@@ -86,8 +135,8 @@ export class MockEmbeddingModel implements EmbeddingModel {
  * Mock PAD Provider for testing
  */
 export class MockPadProvider implements PadProvider {
-  name = 'mock-pad-provider';
-  mode = 'active_plus_passive' as const;
+  public name = 'mock-pad-provider';
+  public mode = 'active_plus_passive' as const;
 
   constructor(
     private defaultResult: boolean = true,

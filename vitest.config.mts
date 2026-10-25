@@ -5,7 +5,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['apps/api/src/**/*.test.ts', 'packages/**/*.test.ts'],
+    include: [
+      'apps/api/src/**/*.test.ts',
+      'apps/kiosk/src/**/*.test.ts',
+      'packages/**/*.test.ts',
+    ],
     setupFiles: ['./vitest.setup.ts'],
   },
   resolve: {

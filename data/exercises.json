@@ -1,0 +1,83 @@
+[
+  {
+    "id": "ex-01",
+    "name": "ท่ายกแขนไปข้างหน้า (Shoulder Flexion)",
+    "target_joint": "ข้อไหล่",
+    "target_angle": 90,
+    "safety_warnings": "ไม่ควรยกเกินจุดที่รู้สึกเจ็บ",
+    "demo_url": "/uploads/exercises/shoulder_flexion.jpg",
+    "default_sets": 3,
+    "default_reps": 10
+  },
+  {
+    "id": "ex-02",
+    "name": "ท่ากางแขนออกด้านข้าง (Shoulder Abduction)",
+    "target_joint": "ข้อไหล่",
+    "target_angle": 90,
+    "safety_warnings": "ระวังอย่ายกไหล่เกร็งชิดหู",
+    "demo_url": "/uploads/exercises/shoulder_abduction.jpg",
+    "default_sets": 3,
+    "default_reps": 10
+  },
+  {
+    "id": "ex-03",
+    "name": "ท่ายืดเหยียดข้อเข่า (Knee Extension)",
+    "target_joint": "ข้อเข่า",
+    "target_angle": 180,
+    "safety_warnings": "เหยียดช้าๆ ค้างไว้ 3 วินาที",
+    "demo_url": "/uploads/exercises/knee_extension.jpg",
+    "default_sets": 3,
+    "default_reps": 12
+  },
+  {
+    "id": "ex-04",
+    "name": "ท่ากระดกข้อเท้า (Ankle Dorsiflexion)",
+    "target_joint": "ข้อเท้า",
+    "target_angle": 45,
+    "safety_warnings": "ฝึกบนเก้าอี้ที่มั่นคง",
+    "demo_url": "/uploads/exercises/ankle_dorsi.jpg",
+    "default_sets": 3,
+    "default_reps": 15
+  },
+  {
+    "name": "ท่ายกแขนเหนือศีรษะ (Overhead Raise)",
+    "target_joint": "ไหล่ (Shoulder)",
+    "target_angle": 120,
+    "safety_precaution": "อย่ากลั้นหายใจขณะยกแขน"
+  },
+  {
+    "name": "ท่ายกแขนเหนือศีรษะ (Overhead Raise)",
+    "target_joint": "ไหล่ (Shoulder)",
+    "target_angle": 120,
+    "safety_precaution": "อย่ากลั้นหายใจขณะยกแขน",
+    "id": "ex-1792868330239-niuh"
+  },
+  {
+    "name": "ท่ายกแขนเหนือศีรษะ (Overhead Raise)",
+    "target_joint": "ไหล่ (Shoulder)",
+    "target_angle": 120,
+    "safety_precaution": "อย่ากลั้นหายใจขณะยกแขน",
+    "id": "ex-1792868342556-0m2t"
+  },
+  {
+    "name": "ท่ายกแขนเหนือศีรษะ (Overhead Raise)",
+    "target_joint": "ไหล่ (Shoulder)",
+    "target_angle": 120,
+    "safety_precaution": "อย่ากลั้นหายใจขณะยกแขน",
+    "id": "ex-1792869442140-djtt"
+  },
+  {
+    "name": "ท่ายกแขนเหนือศีรษะ (Overhead Raise)",
+    "target_joint": "ไหล่ (Shoulder)",
+    "target_angle": 120,
+    "safety_precaution": "อย่ากลั้นหายใจขณะยกแขน",
+    "id": "ex-1792871310839-j27p"
+  },
+  {
+    "name": "ท่ายกแขนเหนือศีรษะ (Overhead Raise)",
+    "target_joint": "ไหล่ (Shoulder)",
+    "target_angle": 120,
+    "safety_precaution": "อย่ากลั้นหายใจขณะยกแขน",
+    "id": "ex-1792896591689-cr9t"
+  }
+]
