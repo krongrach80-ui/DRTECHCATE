@@ -1,38 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { PtViewTab } from './types';
-import { PtSidebar } from './components/Sidebar';
-import { ReceptionView } from './views/ReceptionView';
-import { MyPatientsView } from './views/MyPatientsView';
-import { ClinicalRecordsView } from './views/ClinicalRecordsView';
-import { ExerciseCatalogView } from './views/ExerciseCatalogView';
-import { PtScheduleView } from './views/PtScheduleView';
-import { ProfileView } from './views/ProfileView';
 import {
   UserProfile,
-  StaffCallRecord,
-  PatientRecord,
   defaultApiClient
 } from '../../../packages/api-client/src/index.js';
-import { Sparkles, User, Lock, AlertCircle } from 'lucide-react';
 import { ClinicalPtShell } from './clinical-ui/index.js';
 
 export const PtApp: React.FC = () => {
-  const [shellMode, setShellMode] = useState<'clinical' | 'classic'>('clinical');
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
-  const [currentTab, setCurrentTab] = useState<PtViewTab>('reception');
-
-  // Real-time events state
-  const [sseConnected, setSseConnected] = useState<boolean>(false);
-  const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>([]);
-
-  // Inter-view navigation state
-  const [activeRecordsPatientId, setActiveRecordsPatientId] = useState<string | undefined>(undefined);
-
-  // Login form state
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [loginLoading, setLoginLoading] = useState<boolean>(false);
 
   // Check auth session on mount
   const checkSession = async () => {
@@ -58,8 +33,7 @@ export const PtApp: React.FC = () => {
   // Fetch initial staff calls
   const fetchStaffCalls = async () => {
     try {
-      const calls = await defaultApiClient.kiosk.listStaffCalls();
-      setStaffCalls(calls);
+      await defaultApiClient.kiosk.listStaffCalls();
     } catch {
       // offline or no permissions
     }
@@ -77,52 +51,17 @@ export const PtApp: React.FC = () => {
 
     const cleanup = defaultApiClient.connectEvents(
       (event) => {
-        setSseConnected(true);
         if (event.event === 'kiosk:staff_call') {
           fetchStaffCalls();
         }
       },
-      () => {
-        setSseConnected(false);
-      }
+      () => {}
     );
 
     return () => {
       cleanup();
     };
   }, [currentUser]);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!loginForm.username.trim() || !loginForm.password) {
-      setLoginError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน');
-      return;
-    }
-
-    try {
-      setLoginLoading(true);
-      setLoginError(null);
-      const res = await defaultApiClient.auth.login({
-        username: loginForm.username.trim(),
-        password: loginForm.password,
-      });
-      if (res.user.role !== 'pt') {
-        setLoginError('พอร์ทัลนี้สำหรับนักกายภาพบำบัด (PT) เท่านั้น');
-        await defaultApiClient.auth.logout();
-        return;
-      }
-      setCurrentUser(res.user);
-    } catch (err: unknown) {
-      setLoginError(err instanceof Error ? err.message : 'เข้าสู่ระบบไม่สำเร็จ');
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  const handleOpenRecordsForPatient = (p: PatientRecord) => {
-    setActiveRecordsPatientId(p.id);
-    setCurrentTab('records');
-  };
 
   const handleLogout = async () => {
     try {

@@ -1,36 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Sidebar
-} from './components/Sidebar';
-import { StaffView } from './views/StaffView';
-import { PatientsView } from './views/PatientsView';
-import { PtsView } from './views/PtsView';
-import { LibraryView } from './views/LibraryView';
-import { ScheduleView } from './views/ScheduleView';
-import { SecurityView } from './views/SecurityView';
-import { AdminViewTab } from './types';
-import {
   UserProfile,
-  StaffCallRecord,
   defaultApiClient
 } from '../../../packages/api-client/src/index.js';
-import { Shield, User, Lock, AlertCircle, Sparkles } from 'lucide-react';
-import { ClinicalAdminShell, StaffLoginModal } from './clinical-ui/index.js';
+import { ClinicalAdminShell } from './clinical-ui/index.js';
 
 export const AdminApp: React.FC = () => {
-  const [shellMode, setShellMode] = useState<'clinical' | 'classic'>('clinical');
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
-  const [currentTab, setCurrentTab] = useState<AdminViewTab>('staff');
-
-  // Real-time events state
-  const [sseConnected, setSseConnected] = useState<boolean>(false);
-  const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>([]);
-
-  // Login form state
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [loginLoading, setLoginLoading] = useState<boolean>(false);
 
   // Check auth session on load
   const checkSession = async () => {
@@ -51,8 +28,7 @@ export const AdminApp: React.FC = () => {
 
   const fetchStaffCalls = async () => {
     try {
-      const calls = await defaultApiClient.kiosk.listStaffCalls();
-      setStaffCalls(calls);
+      await defaultApiClient.kiosk.listStaffCalls();
     } catch {
       // non-blocking
     }
@@ -69,40 +45,17 @@ export const AdminApp: React.FC = () => {
 
     const disconnect = defaultApiClient.connectEvents(
       (event: { event: string; data: unknown }) => {
-        setSseConnected(true);
         if (event.event === 'staff_call') {
           fetchStaffCalls();
         }
       },
-      () => {
-        setSseConnected(false);
-      }
+      () => {}
     );
 
     return () => {
       disconnect();
     };
   }, [currentUser]);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setLoginLoading(true);
-      setLoginError(null);
-      const res = await defaultApiClient.auth.login(loginForm);
-      if (res.role !== 'admin') {
-        setLoginError('บัญชีนี้ไม่มีสิทธิ์เข้าถึงส่วนงานผู้อำนวยการโรงพยาบาล (Admin Only)');
-        await defaultApiClient.auth.logout();
-        return;
-      }
-      setCurrentUser(res.user);
-      await fetchStaffCalls();
-    } catch (err: unknown) {
-      setLoginError(err instanceof Error ? err.message : 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
-    } finally {
-      setLoginLoading(false);
-    }
-  };
 
   const handleLogout = async () => {
     try {

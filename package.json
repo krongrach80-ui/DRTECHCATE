@@ -19,11 +19,12 @@
     "dev:pt": "vite --config apps/pt/vite.config.ts --port 5174",
     "dev:kiosk": "vite --config apps/kiosk/vite.config.ts --port 5175",
     "build:apps": "vite build apps/admin && vite build apps/pt && vite build apps/kiosk",
-    "copy:apps": "tsx scripts/copy-apps.ts"
+    "copy:apps": "node scripts/copy-apps.js"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.1",
     "@supabase/supabase-js": "^2.118.0",
+    "@tailwindcss/vite": "^4.3.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^18.0.8",
@@ -37,10 +38,13 @@
     "pino-http": "^11.0.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vite": "^8.3.5",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
@@ -57,9 +61,6 @@
     "pg": "^8.23.1",
     "playwright": "^1.64.1",
     "supertest": "^7.3.1",
-    "tailwindcss": "^4",
-    "tsx": "^4.23.15",
-    "typescript": "^5",
     "vitest": "^5.0.5"
   }
 }
