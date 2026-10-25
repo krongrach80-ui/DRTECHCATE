@@ -1061,13 +1061,13 @@ var init_audit = __esm({
   }
 });
 
-// api/index.ts
-var index_exports = {};
-__export(index_exports, {
+// apps/api/src/serverless.ts
+var serverless_exports = {};
+__export(serverless_exports, {
   config: () => config,
   default: () => handler
 });
-module.exports = __toCommonJS(index_exports);
+module.exports = __toCommonJS(serverless_exports);
 
 // apps/api/src/app.ts
 var import_express14 = __toESM(require("express"));
@@ -9708,7 +9708,7 @@ function createApp(customLogger, authController, securityController, auditContro
   return app;
 }
 
-// api/index.ts
+// apps/api/src/serverless.ts
 init_env();
 
 // apps/api/src/lib/localStorage/localPersistenceEngine.ts
@@ -11494,7 +11494,7 @@ function activateLocalPersistenceEngine() {
   console.log("------------------------------------------------------------------------");
 }
 
-// api/index.ts
+// apps/api/src/serverless.ts
 init_banCheck();
 var appInstance = null;
 async function getOrInitApp() {
@@ -11546,3 +11546,4 @@ async function handler(req, res) {
 0 && (module.exports = {
   config
 });
+module.exports = module.exports.default; module.exports.default = module.exports; module.exports.config = config;

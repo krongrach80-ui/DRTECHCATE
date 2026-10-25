@@ -20,7 +20,7 @@
     "dev:kiosk": "vite --config apps/kiosk/vite.config.ts --port 5175",
     "build:apps": "vite build apps/admin && vite build apps/pt && vite build apps/kiosk",
     "copy:apps": "node scripts/copy-apps.js",
-    "build:api": "esbuild api/index.ts --bundle --platform=node --format=cjs --target=node20 --packages=external --outfile=api/index.js"
+    "build:api": "esbuild apps/api/src/serverless.ts --bundle --platform=node --format=cjs --target=node20 --packages=external --footer:js=\"module.exports = module.exports.default; module.exports.default = module.exports; module.exports.config = config;\" --outfile=api/index.js"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.1",

@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { createApp } from '../apps/api/src/app';
-import { getEnv } from '../apps/api/src/config/env';
-import { activateLocalPersistenceEngine } from '../apps/api/src/lib/localStorage/localPersistenceEngine';
-import { syncBansFromDatabase } from '../apps/api/src/middleware/banCheck';
+import { createApp } from './app';
+import { getEnv } from './config/env';
+import { activateLocalPersistenceEngine } from './lib/localStorage/localPersistenceEngine';
+import { syncBansFromDatabase } from './middleware/banCheck';
 
 let appInstance: any = null;
 
@@ -55,4 +55,3 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }));
   }
 }
-
