@@ -1,24 +1,22 @@
 import type { IncomingMessage, ServerResponse } from 'http';
+import { createApp } from '../apps/api/src/app';
+import { getEnv } from '../apps/api/src/config/env';
+import { activateLocalPersistenceEngine } from '../apps/api/src/lib/localStorage/localPersistenceEngine';
+import { syncBansFromDatabase } from '../apps/api/src/middleware/banCheck';
 
 let appInstance: any = null;
 
 async function getOrInitApp() {
   if (!appInstance) {
-    const { activateLocalPersistenceEngine } = await import('../apps/api/src/lib/localStorage/localPersistenceEngine');
     activateLocalPersistenceEngine();
-
     try {
-      const { getEnv } = await import('../apps/api/src/config/env');
       const env = getEnv();
       if (!env.USE_LOCAL_STORAGE) {
-        const { syncBansFromDatabase } = await import('../apps/api/src/middleware/banCheck');
         await syncBansFromDatabase().catch(() => {});
       }
     } catch {
-      // Local engine fallback
+      // Local fallback
     }
-
-    const { createApp } = await import('../apps/api/src/app');
     appInstance = createApp();
   }
   return appInstance;
@@ -57,3 +55,4 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }));
   }
 }
+

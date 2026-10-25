@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx apps/api/src/server.ts",
-    "build": "npm run build:apps && npm run copy:apps",
+    "build": "npm run build:apps && npm run copy:apps && npm run build:api",
     "build:types": "tsc -p tsconfig.build.json",
     "start": "tsx apps/api/src/server.ts",
     "lint": "eslint",
@@ -19,7 +19,8 @@
     "dev:pt": "vite --config apps/pt/vite.config.ts --port 5174",
     "dev:kiosk": "vite --config apps/kiosk/vite.config.ts --port 5175",
     "build:apps": "vite build apps/admin && vite build apps/pt && vite build apps/kiosk",
-    "copy:apps": "node scripts/copy-apps.js"
+    "copy:apps": "node scripts/copy-apps.js",
+    "build:api": "esbuild api/index.ts --bundle --platform=node --format=cjs --target=node20 --packages=external --outfile=api/index.js"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.1",
