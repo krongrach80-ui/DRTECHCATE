@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   User,
   Menu,
+  Monitor,
 } from 'lucide-react';
 import { SmoothButton } from '../../../../packages/hospital-ui-kit/src/index.js';
 
@@ -22,6 +23,7 @@ interface ClinicalTopHeaderProps {
   onOpenNewPatientModal: () => void;
   onFastCheckIn: () => void;
   onLogout: () => void;
+  onReturnToKiosk?: () => void;
   isPtMode?: boolean;
   onToggleMobileMenu?: () => void;
 }
@@ -34,6 +36,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
   onOpenNewPatientModal,
   onFastCheckIn,
   onLogout,
+  onReturnToKiosk,
   isPtMode = false,
   onToggleMobileMenu,
 }) => {
@@ -89,6 +92,19 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
           <Zap className="w-3.5 h-3.5 text-amber-500" />
           <span>+ เช็คอินเร่งด่วน</span>
         </button>
+
+        {/* Return to Kiosk Quick Action Button */}
+        {onReturnToKiosk && (
+          <button
+            type="button"
+            onClick={onReturnToKiosk}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-semibold transition active:scale-95 cursor-pointer"
+            title="กลับสู่หน้าตู้ Kiosk"
+          >
+            <Monitor className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">หน้า Kiosk</span>
+          </button>
+        )}
 
         {/* User Profile Badge */}
         <div className="flex items-center gap-3 pl-3 border-l border-slate-200">

@@ -106,10 +106,11 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
           <button
             type="button"
             onClick={handleTriggerStaffModal}
+            title="เข้าสู่ระบบบุคลากร / รพ."
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#063932] hover:bg-[#084c43] border border-emerald-500/40 text-emerald-100 text-xs font-bold shadow-md transition active:scale-95 cursor-pointer"
           >
             <Shield className="w-3.5 h-3.5 text-emerald-400" />
-            <span>สำหรับเจ้าหน้าที่</span>
+            <span>🛡️ เข้าสู่ระบบบุคลากร / รพ.</span>
           </button>
         </div>
       </header>

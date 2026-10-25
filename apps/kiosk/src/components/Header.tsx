@@ -6,6 +6,7 @@ interface HeaderProps {
   onCallStaff?: () => void;
   onOpenPairing?: () => void;
   isPaired?: boolean;
+  onOpenStaffLoginModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -13,6 +14,7 @@ export const Header: React.FC<HeaderProps> = ({
   onCallStaff,
   onOpenPairing,
   isPaired = true,
+  onOpenStaffLoginModal,
 }) => {
   const [currentTime, setCurrentTime] = useState<string>('');
 
@@ -81,6 +83,18 @@ export const Header: React.FC<HeaderProps> = ({
             })}
           </div>
         </div>
+
+        {/* Staff Portal Trigger */}
+        {onOpenStaffLoginModal && (
+          <button
+            type="button"
+            onClick={onOpenStaffLoginModal}
+            title="เข้าสู่ระบบบุคลากร / รพ."
+            className="touch-btn flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs transition shadow-lg shadow-emerald-950/40 cursor-pointer"
+          >
+            <span>🛡️ เข้าสู่ระบบบุคลากร / รพ.</span>
+          </button>
+        )}
 
         {/* Emergency Staff Call Button */}
         {onCallStaff && (

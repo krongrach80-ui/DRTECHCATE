@@ -5,7 +5,11 @@ import {
   MissionContext,
   TodayCoursePlan,
 } from '../../../packages/mission-engine/src/index.js';
-import { defaultApiClient } from '../../../packages/api-client/src/index.js';
+import {
+  UserProfile,
+  StaffCallRecord,
+  defaultApiClient,
+} from '../../../packages/api-client/src/index.js';
 
 // Components
 import { Header } from './components/Header';
@@ -29,8 +33,15 @@ import { SmartFlowController, SmartFlowStep } from './smart-flow/index.js';
 import { KioskClinicalHeader } from './clinical-ui/index.js';
 import { StaffLoginModal } from '../../admin/src/clinical-ui/StaffLoginModal';
 import { NewPatientRegistrationModal } from '../../admin/src/clinical-ui/NewPatientRegistrationModal';
+import { ClinicalAdminShell } from '../../admin/src/clinical-ui/ClinicalAdminShell';
+import { ClinicalPtShell } from '../../pt/src/clinical-ui/ClinicalPtShell';
+
+export type RoleMode = 'kiosk' | 'admin' | 'pt';
 
 export const App: React.FC = () => {
+  const [roleMode, setRoleMode] = useState<RoleMode>('kiosk');
+  const [currentStaffUser, setCurrentStaffUser] = useState<UserProfile | null>(null);
+  const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>([]);
   const [flowMode, setFlowMode] = useState<'smart' | 'classic'>('smart');
   const [smartStep, setSmartStep] = useState<SmartFlowStep>('login');
   const [isStaffLoginModalOpen, setIsStaffLoginModalOpen] = useState(false);
@@ -43,6 +54,161 @@ export const App: React.FC = () => {
   const [isPaired, setIsPaired] = useState<boolean>(true);
   const [isDetectorReady, setIsDetectorReady] = useState<boolean>(false);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
+
+  const fetchStaffCalls = useCallback(async () => {
+    try {
+      const calls = await defaultApiClient.kiosk.listStaffCalls();
+      setStaffCalls(calls);
+    } catch {
+      // non-blocking
+    }
+  }, []);
+
+  // Check auth session & route on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function checkAuthAndRoute() {
+      const path = window.location.pathname.toLowerCase();
+      try {
+        const user = await defaultApiClient.auth.me();
+        if (isMounted && user) {
+          setCurrentStaffUser(user);
+          const role = (user.role || '').toLowerCase();
+          if (path.startsWith('/admin')) {
+            if (role === 'admin' || role === 'director' || user.username === 'director') {
+              setRoleMode('admin');
+              return;
+            }
+          } else if (path.startsWith('/pt')) {
+            if (role === 'pt') {
+              setRoleMode('pt');
+              return;
+            }
+          }
+        }
+      } catch {
+        // unauthenticated
+      }
+
+      if (isMounted) {
+        if (path.startsWith('/admin') || path.startsWith('/pt')) {
+          setIsStaffLoginModalOpen(true);
+        }
+      }
+    }
+
+    checkAuthAndRoute();
+    fetchStaffCalls();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchStaffCalls]);
+
+  // Sync route with browser back/forward history
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase();
+      if (
+        path.startsWith('/admin') &&
+        currentStaffUser &&
+        (currentStaffUser.role === 'admin' ||
+          (currentStaffUser.role as string) === 'director' ||
+          currentStaffUser.username === 'director')
+      ) {
+        setRoleMode('admin');
+      } else if (path.startsWith('/pt') && currentStaffUser && currentStaffUser.role === 'pt') {
+        setRoleMode('pt');
+      } else {
+        setRoleMode('kiosk');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentStaffUser]);
+
+  // Real-time SSE for staff calls in admin / pt workspaces
+  useEffect(() => {
+    if (roleMode === 'admin' || roleMode === 'pt') {
+      const disconnect = defaultApiClient.connectEvents(
+        (event) => {
+          if (event.event === 'staff_call' || event.event === 'kiosk:staff_call') {
+            fetchStaffCalls();
+          }
+        },
+        () => {}
+      );
+      return () => {
+        disconnect();
+      };
+    }
+  }, [roleMode, fetchStaffCalls]);
+
+  const handleStaffLogin = useCallback(
+    async (credentials: { username: string; password: string }) => {
+      const res = await defaultApiClient.auth.login(credentials);
+      if (res.user) {
+        setCurrentStaffUser(res.user);
+        setIsStaffLoginModalOpen(false);
+        await fetchStaffCalls();
+        const role = (res.user.role || res.role || '').toLowerCase();
+        if (role === 'admin' || role === 'director' || res.user.username === 'director') {
+          setRoleMode('admin');
+          if (window.location.pathname !== '/admin') {
+            window.history.pushState({ mode: 'admin' }, '', '/admin');
+          }
+        } else if (role === 'pt') {
+          setRoleMode('pt');
+          if (window.location.pathname !== '/pt') {
+            window.history.pushState({ mode: 'pt' }, '', '/pt');
+          }
+        } else {
+          setRoleMode('kiosk');
+        }
+      }
+    },
+    [fetchStaffCalls]
+  );
+
+  const handleStaffLogout = useCallback(async () => {
+    try {
+      await defaultApiClient.auth.logout();
+    } catch {
+      // non-blocking
+    }
+    setCurrentStaffUser(null);
+    setRoleMode('kiosk');
+    if (window.location.pathname !== '/') {
+      window.history.pushState({ mode: 'kiosk' }, '', '/');
+    }
+  }, []);
+
+  const handleReturnToKiosk = useCallback(() => {
+    setRoleMode('kiosk');
+    if (window.location.pathname !== '/') {
+      window.history.pushState({ mode: 'kiosk' }, '', '/');
+    }
+  }, []);
+
+  const handleOpenStaffLoginModal = useCallback(async () => {
+    if (currentStaffUser) {
+      const role = (currentStaffUser.role || '').toLowerCase();
+      if (role === 'admin' || role === 'director' || currentStaffUser.username === 'director') {
+        setRoleMode('admin');
+        if (window.location.pathname !== '/admin') {
+          window.history.pushState({ mode: 'admin' }, '', '/admin');
+        }
+        return;
+      } else if (role === 'pt') {
+        setRoleMode('pt');
+        if (window.location.pathname !== '/pt') {
+          window.history.pushState({ mode: 'pt' }, '', '/pt');
+        }
+        return;
+      }
+    }
+    setIsStaffLoginModalOpen(true);
+  }, [currentStaffUser]);
 
   // Subscribe to pure State Machine updates
   useEffect(() => {
@@ -182,6 +348,43 @@ export const App: React.FC = () => {
     machine.handleEvent({ type: 'FINISH_MISSION' });
   }, [context.plan, context.patientId, machine]);
 
+  if (roleMode === 'admin') {
+    return (
+      <div className="relative w-screen h-screen overflow-hidden font-sans select-none">
+        <ClinicalAdminShell
+          currentUser={currentStaffUser}
+          onLogout={handleStaffLogout}
+          onReturnToKiosk={handleReturnToKiosk}
+          onLogin={handleStaffLogin}
+          staffCalls={staffCalls}
+          onStaffCallHandled={fetchStaffCalls}
+        />
+      </div>
+    );
+  }
+
+  if (roleMode === 'pt') {
+    return (
+      <div className="relative w-screen h-screen overflow-hidden font-sans select-none">
+        <ClinicalPtShell
+          currentUser={currentStaffUser}
+          onLogout={handleStaffLogout}
+          onReturnToKiosk={handleReturnToKiosk}
+          staffCalls={staffCalls}
+          onStaffCallHandled={fetchStaffCalls}
+          onProfileUpdated={async () => {
+            try {
+              const u = await defaultApiClient.auth.me();
+              if (u) setCurrentStaffUser(u);
+            } catch {
+              // non-blocking
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   if (flowMode === 'smart') {
     return (
       <div className="w-screen h-screen flex flex-col bg-gradient-to-br from-[#E6F8F5] via-[#F4FBF9] to-[#E0F2FE] text-[#063932] select-none overflow-hidden relative font-sans">
@@ -190,27 +393,28 @@ export const App: React.FC = () => {
             kioskId={kioskId}
             onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากตู้ Kiosk')}
             onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
-            onOpenStaffLoginModal={() => setIsStaffLoginModalOpen(true)}
+            onOpenStaffLoginModal={handleOpenStaffLoginModal}
           />
         )}
 
         <div className="flex-1 overflow-hidden relative">
           <SmartFlowController
             onStepChange={setSmartStep}
-            onOpenStaffLoginModal={() => setIsStaffLoginModalOpen(true)}
+            onOpenStaffLoginModal={handleOpenStaffLoginModal}
           />
         </div>
 
         {/* Staff Login Modal */}
         <StaffLoginModal
           isOpen={isStaffLoginModalOpen}
-          onClose={() => setIsStaffLoginModalOpen(false)}
-          onLogin={async (credentials) => {
-            const res = await defaultApiClient.auth.login(credentials);
-            if (res.user) {
-              window.location.href = res.role === 'admin' ? '/admin' : '/pt';
+          onClose={() => {
+            setIsStaffLoginModalOpen(false);
+            if (window.location.pathname !== '/') {
+              window.history.pushState({ mode: 'kiosk' }, '', '/');
             }
           }}
+          onLogin={handleStaffLogin}
+          onReturnToKiosk={handleReturnToKiosk}
         />
 
         {/* 3-Step New Patient Registration Modal */}
@@ -233,6 +437,7 @@ export const App: React.FC = () => {
         isPaired={isPaired}
         onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากแถบเมนูด้านบน')}
         onOpenPairing={() => setIsPairingOpen(true)}
+        onOpenStaffLoginModal={handleOpenStaffLoginModal}
       />
 
       <div className="absolute top-4 right-28 z-40">
@@ -372,6 +577,28 @@ export const App: React.FC = () => {
         onSuccess={(id) => {
           setKioskId(id);
           setIsPaired(true);
+        }}
+      />
+
+      {/* Staff Login Modal */}
+      <StaffLoginModal
+        isOpen={isStaffLoginModalOpen}
+        onClose={() => {
+          setIsStaffLoginModalOpen(false);
+          if (window.location.pathname !== '/') {
+            window.history.pushState({ mode: 'kiosk' }, '', '/');
+          }
+        }}
+        onLogin={handleStaffLogin}
+        onReturnToKiosk={handleReturnToKiosk}
+      />
+
+      {/* 3-Step New Patient Registration Modal */}
+      <NewPatientRegistrationModal
+        isOpen={isNewPatientModalOpen}
+        onClose={() => setIsNewPatientModalOpen(false)}
+        onSuccess={(_newPatientId) => {
+          setIsNewPatientModalOpen(false);
         }}
       />
     </div>

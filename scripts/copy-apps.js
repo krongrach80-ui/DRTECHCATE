@@ -31,4 +31,15 @@ for (const app of apps) {
   copyDirSync(src, dest);
 }
 
+// Single-App Unification: Copy the unified kiosk app index.html to public/index.html,
+// public/admin/index.html, and public/pt/index.html so all legacy direct paths and root
+// URL serve the unified application SPA unconditionally.
+const kioskIndexHtml = path.join(root, 'dist', 'apps', 'kiosk', 'index.html');
+if (fs.existsSync(kioskIndexHtml)) {
+  fs.copyFileSync(kioskIndexHtml, path.join(root, 'public', 'index.html'));
+  fs.copyFileSync(kioskIndexHtml, path.join(root, 'public', 'admin', 'index.html'));
+  fs.copyFileSync(kioskIndexHtml, path.join(root, 'public', 'pt', 'index.html'));
+  console.log('✓ Unified SPA index.html copied to public/, public/admin/, and public/pt/');
+}
+
 console.log('Successfully copied all apps to public/');

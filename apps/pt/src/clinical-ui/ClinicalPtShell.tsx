@@ -186,6 +186,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
             setActiveTab('schedule');
           }}
           onLogout={onLogout}
+          onReturnToKiosk={onReturnToKiosk}
           isPtMode={true}
           onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />

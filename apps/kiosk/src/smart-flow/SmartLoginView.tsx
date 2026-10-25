@@ -508,14 +508,15 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           <span>เกี่ยวกับระบบ</span>
         </button>
 
-        {/* Pill 2: ระบบบุคลากร / รพ. */}
+        {/* Pill 2: เข้าสู่ระบบบุคลากร / รพ. */}
         <button
           type="button"
           onClick={onOpenStaffLoginModal}
+          title="เข้าสู่ระบบบุคลากร / รพ."
           className="px-4 py-1.5 rounded-full bg-white border-[1.5px] border-[#10B981] text-[#065F46] text-xs font-bold shadow-md shadow-emerald-500/15 hover:-translate-y-0.5 active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
         >
           <Shield className="w-3.5 h-3.5 text-emerald-600" />
-          <span>ระบบบุคลากร / รพ.</span>
+          <span>🛡️ เข้าสู่ระบบบุคลากร / รพ.</span>
         </button>
       </div>
 

@@ -44,6 +44,11 @@ input, button, select, textarea, optgroup {
   font-family: inherit !important;
 }
 
+input, textarea, [contenteditable="true"] {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
 /* Prevent Thai character squishing / vowel overlapping */
 [lang="th"], body, * {
   letter-spacing: normal;

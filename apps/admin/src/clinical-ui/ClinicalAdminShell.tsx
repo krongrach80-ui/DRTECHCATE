@@ -182,6 +182,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
             setActiveTab('schedule');
           }}
           onLogout={onLogout}
+          onReturnToKiosk={onReturnToKiosk}
           onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />
 

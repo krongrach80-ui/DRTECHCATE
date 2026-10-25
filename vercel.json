@@ -27,19 +27,19 @@
     },
     {
       "source": "/admin/:path*",
-      "destination": "/admin/index.html"
+      "destination": "/kiosk/index.html"
     },
     {
       "source": "/admin",
-      "destination": "/admin/index.html"
+      "destination": "/kiosk/index.html"
     },
     {
       "source": "/pt/:path*",
-      "destination": "/pt/index.html"
+      "destination": "/kiosk/index.html"
     },
     {
       "source": "/pt",
-      "destination": "/pt/index.html"
+      "destination": "/kiosk/index.html"
     },
     {
       "source": "/kiosk/:path*",
@@ -51,6 +51,10 @@
     },
     {
       "source": "/",
+      "destination": "/kiosk/index.html"
+    },
+    {
+      "source": "/(.*)",
       "destination": "/kiosk/index.html"
     }
   ]
