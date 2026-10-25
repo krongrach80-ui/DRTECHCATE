@@ -6,10 +6,10 @@
   <meta name="description" content="Dr.Tech.Care - ตู้ Kiosk กายภาพบำบัดและดูแลสุขภาพอัจฉริยะ เชื่อมโยงเวชระเบียนและระบบตรวจจับชีวมาตร AI">
   <title>Dr.Tech.Care - ตู้ Kiosk กายภาพบำบัด</title>
 
-  <!-- Unified Embedded Thai-Latin Medical Typography (Prompt, Inter, Sarabun) -->
+  <!-- Unified Embedded Thai-Latin Medical Typography (Prompt, Sarabun) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap&subset=thai,latin" rel="stylesheet" />
 
   <style>
     :root {
@@ -25,27 +25,44 @@
       --amber-text: #78350F;
       --amber-subtext: #B45309;
       --blue-accent: #0EA5E9;
-      --font-medical-sans: 'Prompt', 'Inter', 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-medical-sans: 'Prompt', 'Sarabun', 'Noto Sans Thai', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-heading: 'Prompt', 'Sarabun', sans-serif;
+      --font-body: 'Prompt', 'Sarabun', sans-serif;
       --font-family: var(--font-medical-sans);
       --safe-area-top: env(safe-area-inset-top, 0px);
       --safe-area-bottom: env(safe-area-inset-bottom, 0px);
     }
 
-    * {
+    *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
+      font-family: var(--font-medical-sans);
+      letter-spacing: normal;
     }
 
-    html, body, button, input, select, textarea {
+    html, body {
       font-family: var(--font-medical-sans) !important;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       text-rendering: optimizeLegibility;
       font-feature-settings: "kern" 1;
       -webkit-text-size-adjust: 100%;
+      line-height: 1.5;
+    }
+
+    input, button, select, textarea, optgroup {
+      font-family: inherit !important;
+    }
+
+    [lang="th"], body, * {
+      letter-spacing: normal;
+    }
+
+    .tracking-tight, .tracking-tighter {
+      letter-spacing: 0 !important;
     }
 
     html, body {
@@ -1035,13 +1052,13 @@
 
         <div class="staff-alert-banner">
           <span>ℹ️</span>
-          <span>ระบบตรวจสอบสิทธิ์อัตโนมัติ: ผู้ดูแลระบบ Admin (7 เมนู) หรือ นักกายภาพบำบัด PT (5 เมนู)</span>
+          <span>ระบบตรวจสอบสิทธิ์อัตโนมัติ: ผอ.รพ. / Super Admin หรือ นักกายภาพบำบัด PT</span>
         </div>
 
         <div id="staff-login-error" style="display: none; padding: 8px 12px; border-radius: 8px; background: #FFF1F2; border: 1px solid #FECDD3; color: #BE123C; font-size: 11.5px; font-weight: 600;"></div>
 
         <button type="submit" class="staff-btn-submit" id="btn-submit-staff">
-          <span>➔ เข้าสู่ระบบบุคลากร</span>
+          <span>เข้าสู่ระบบบุคลากร</span>
         </button>
 
         <div style="font-size: 10px; color: #94A3B8; text-align: center; margin-top: 4px;">
@@ -1357,7 +1374,7 @@
           staffError.style.display = 'block';
         } finally {
           btnSubmit.disabled = false;
-          btnSubmit.innerHTML = '<span>➔ เข้าสู่ระบบบุคลากร</span>';
+          btnSubmit.innerHTML = '<span>เข้าสู่ระบบบุคลากร</span>';
         }
       });
 

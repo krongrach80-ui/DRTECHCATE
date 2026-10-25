@@ -14,7 +14,7 @@ export type DeviceTier =
   | 'desktop';
 
 export const MEDICAL_FONT_STACK =
-  "'Prompt', 'Inter', 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif";
+  "'Prompt', 'Sarabun', 'Noto Sans Thai', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
 export const FLUID_TYPOGRAPHY_DEFINITIONS = {
   h1: { minRem: 1.35, maxRem: 2.25, vwRate: 2.2, baseRem: 0.5 },

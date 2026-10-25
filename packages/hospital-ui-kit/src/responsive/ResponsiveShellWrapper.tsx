@@ -47,7 +47,7 @@ export const ResponsiveShellWrapper: React.FC<ResponsiveShellWrapperProps> = ({
             >
               {mobileDrawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-            <span className="font-bold text-sm tracking-tight text-white">{headerTitle}</span>
+            <span className="font-bold text-sm text-white">{headerTitle}</span>
           </div>
 
           <div className="flex items-center gap-1.5 text-[11px] text-emerald-300 bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-800/80">

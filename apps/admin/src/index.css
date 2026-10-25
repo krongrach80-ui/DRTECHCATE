@@ -1,10 +1,43 @@
 @import "../../../packages/hospital-ui-kit/src/hospital.css";
 @import "tailwindcss";
 
-@layer base {
-  body {
-    font-family: var(--font-medical-sans, 'Prompt', 'Inter', 'Sarabun', sans-serif);
-    background-color: #F0FDF9;
-    color: #063932;
-  }
+@theme {
+  --font-sans: 'Prompt', 'Sarabun', 'Noto Sans Thai', sans-serif;
+  --font-heading: 'Prompt', 'Sarabun', sans-serif;
+  --font-body: 'Prompt', 'Sarabun', sans-serif;
+}
+
+:root {
+  --font-medical-sans: 'Prompt', 'Sarabun', 'Noto Sans Thai', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Prompt', 'Sarabun', sans-serif;
+  --font-body: 'Prompt', 'Sarabun', sans-serif;
+}
+
+/* Force font on ALL elements, inputs, buttons, headings, dialogs */
+*, *::before, *::after {
+  font-family: var(--font-medical-sans);
+}
+
+html, body {
+  font-family: var(--font-medical-sans) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  line-height: 1.5;
+  background-color: #F0FDF9;
+  color: #063932;
+}
+
+input, button, select, textarea, optgroup {
+  font-family: inherit !important;
+}
+
+/* Prevent Thai character squishing / vowel overlapping */
+[lang="th"], body, * {
+  letter-spacing: normal;
+}
+
+/* Override negative tracking on Thai elements */
+.tracking-tight, .tracking-tighter {
+  letter-spacing: 0 !important;
 }

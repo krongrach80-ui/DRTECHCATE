@@ -141,7 +141,7 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
           <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200/60 text-emerald-800 text-[11px] flex items-start gap-2">
             <Info className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
             <span className="leading-relaxed">
-              ระบบตรวจสอบสิทธิ์อัตโนมัติ: Admin (7 เมนู) หรือ นักกายภาพ (5 เมนู)
+              ระบบตรวจสอบสิทธิ์อัตโนมัติ: ผอ.รพ. / Super Admin หรือ นักกายภาพบำบัด PT
             </span>
           </div>
 
@@ -155,7 +155,7 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
             className="w-full mt-2"
             icon={<ArrowRight className="w-4 h-4" />}
           >
-            <span>➔ เข้าสู่ระบบบุคลากร</span>
+            <span>เข้าสู่ระบบบุคลากร</span>
           </SmoothButton>
 
           {/* Secondary Action Buttons */}
