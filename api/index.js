@@ -1634,10 +1634,11 @@ var init_repository3 = __esm({
             if (process.env.NODE_ENV === "test") {
               throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
             }
-            const { currentFakePatientRepo: currentFakePatientRepo2, saveLocalDbState } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
-            const localPat = await currentFakePatientRepo2.createPatient(input);
+            const { currentFakePatientRepo: currentFakePatientRepo2 } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
+            const localPat = await currentFakePatientRepo2.createPatient(input, _createdBy, ptId);
             try {
-              saveLocalDbState();
+              const { saveLocalDatabase: saveLocalDatabase2 } = await Promise.resolve().then(() => (init_localPersistenceEngine(), localPersistenceEngine_exports));
+              await saveLocalDatabase2();
             } catch {
             }
             return localPat;
@@ -1669,10 +1670,11 @@ var init_repository3 = __esm({
           if (process.env.NODE_ENV === "test") {
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
           }
-          const { currentFakePatientRepo: currentFakePatientRepo2, saveLocalDbState } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
-          const localPat = await currentFakePatientRepo2.createPatient(input);
+          const { currentFakePatientRepo: currentFakePatientRepo2 } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
+          const localPat = await currentFakePatientRepo2.createPatient(input, _createdBy, ptId);
           try {
-            saveLocalDbState();
+            const { saveLocalDatabase: saveLocalDatabase2 } = await Promise.resolve().then(() => (init_localPersistenceEngine(), localPersistenceEngine_exports));
+            await saveLocalDatabase2();
           } catch {
           }
           return localPat;
@@ -2564,10 +2566,11 @@ var init_repository6 = __esm({
             if (process.env.NODE_ENV === "test") {
               throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
             }
-            const { currentFakeStaffRepo: currentFakeStaffRepo2, saveLocalDbState } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
+            const { currentFakeStaffRepo: currentFakeStaffRepo2 } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
             const localStaff = await currentFakeStaffRepo2.createStaff(profileData, ptData);
             try {
-              saveLocalDbState();
+              const { saveLocalDatabase: saveLocalDatabase2 } = await Promise.resolve().then(() => (init_localPersistenceEngine(), localPersistenceEngine_exports));
+              await saveLocalDatabase2();
             } catch {
             }
             return localStaff;
@@ -2613,10 +2616,11 @@ var init_repository6 = __esm({
           if (process.env.NODE_ENV === "test") {
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
           }
-          const { currentFakeStaffRepo: currentFakeStaffRepo2, saveLocalDbState } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
+          const { currentFakeStaffRepo: currentFakeStaffRepo2 } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
           const localStaff = await currentFakeStaffRepo2.createStaff(profileData, ptData);
           try {
-            saveLocalDbState();
+            const { saveLocalDatabase: saveLocalDatabase2 } = await Promise.resolve().then(() => (init_localPersistenceEngine(), localPersistenceEngine_exports));
+            await saveLocalDatabase2();
           } catch {
           }
           return localStaff;

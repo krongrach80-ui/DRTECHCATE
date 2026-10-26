@@ -215,9 +215,12 @@ export class PatientRepository implements IPatientRepository {
         if (process.env.NODE_ENV === 'test') {
           throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
         }
-        const { currentFakePatientRepo, saveLocalDbState } = await import('../../__tests__/fixtures/fakeRepositories');
-        const localPat = await currentFakePatientRepo.createPatient(input);
-        try { saveLocalDbState(); } catch {}
+        const { currentFakePatientRepo } = await import('../../__tests__/fixtures/fakeRepositories');
+        const localPat = await currentFakePatientRepo.createPatient(input as any, _createdBy, ptId);
+        try {
+          const { saveLocalDatabase } = await import('../../lib/localStorage/localPersistenceEngine');
+          await saveLocalDatabase();
+        } catch {}
         return localPat;
       }
 
@@ -255,9 +258,12 @@ export class PatientRepository implements IPatientRepository {
       if (process.env.NODE_ENV === 'test') {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-      const { currentFakePatientRepo, saveLocalDbState } = await import('../../__tests__/fixtures/fakeRepositories');
-      const localPat = await currentFakePatientRepo.createPatient(input);
-      try { saveLocalDbState(); } catch {}
+      const { currentFakePatientRepo } = await import('../../__tests__/fixtures/fakeRepositories');
+      const localPat = await currentFakePatientRepo.createPatient(input as any, _createdBy, ptId);
+      try {
+        const { saveLocalDatabase } = await import('../../lib/localStorage/localPersistenceEngine');
+        await saveLocalDatabase();
+      } catch {}
       return localPat;
     }
   }

@@ -284,9 +284,12 @@ export class StaffRepository implements IStaffRepository {
         if (process.env.NODE_ENV === 'test') {
           throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
         }
-        const { currentFakeStaffRepo, saveLocalDbState } = await import('../../__tests__/fixtures/fakeRepositories');
+        const { currentFakeStaffRepo } = await import('../../__tests__/fixtures/fakeRepositories');
         const localStaff = await currentFakeStaffRepo.createStaff(profileData, ptData);
-        try { saveLocalDbState(); } catch {}
+        try {
+          const { saveLocalDatabase } = await import('../../lib/localStorage/localPersistenceEngine');
+          await saveLocalDatabase();
+        } catch {}
         return localStaff;
       }
 
@@ -333,9 +336,12 @@ export class StaffRepository implements IStaffRepository {
       if (process.env.NODE_ENV === 'test') {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-      const { currentFakeStaffRepo, saveLocalDbState } = await import('../../__tests__/fixtures/fakeRepositories');
+      const { currentFakeStaffRepo } = await import('../../__tests__/fixtures/fakeRepositories');
       const localStaff = await currentFakeStaffRepo.createStaff(profileData, ptData);
-      try { saveLocalDbState(); } catch {}
+      try {
+        const { saveLocalDatabase } = await import('../../lib/localStorage/localPersistenceEngine');
+        await saveLocalDatabase();
+      } catch {}
       return localStaff;
     }
   }
