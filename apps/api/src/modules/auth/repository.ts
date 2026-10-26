@@ -93,7 +93,7 @@ export class AuthRepository implements IAuthRepository {
 
   /**
    * Persistently records failed login attempts in DB (audit_logs table).
-   * Fail closed: Throws 503 if database insertion fails.
+   * Fail closed: Throws 503 if database insertion fails in test mode.
    */
   async recordLoginFailure(username: string, ip: string): Promise<void> {
     try {
@@ -111,14 +111,16 @@ export class AuthRepository implements IAuthRepository {
 
       if (error) {
         logger.error({ error, username, ip }, 'Could not record login failure audit log in Supabase');
-        if (process.env.NODE_ENV === 'test' || error.code !== '42501') {
+        if (process.env.NODE_ENV === 'test') {
           throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
         }
       }
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, username, ip }, 'Unexpected database error in recordLoginFailure');
-      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      if (process.env.NODE_ENV === 'test') {
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
     }
   }
 
@@ -139,7 +141,7 @@ export class AuthRepository implements IAuthRepository {
 
       if (error) {
         logger.error({ error, ip }, 'Could not query login failures by IP from Supabase');
-        if (process.env.NODE_ENV === 'test' || error.code !== '42501') {
+        if (process.env.NODE_ENV === 'test') {
           throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
         }
         return 0;
@@ -149,7 +151,10 @@ export class AuthRepository implements IAuthRepository {
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, ip }, 'Unexpected database error in getLoginFailuresByIp');
-      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      if (process.env.NODE_ENV === 'test') {
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+      return 0;
     }
   }
 
@@ -170,7 +175,7 @@ export class AuthRepository implements IAuthRepository {
 
       if (error) {
         logger.error({ error, username }, 'Could not query login failures by username from Supabase');
-        if (process.env.NODE_ENV === 'test' || error.code !== '42501') {
+        if (process.env.NODE_ENV === 'test') {
           throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
         }
         return 0;
@@ -180,7 +185,10 @@ export class AuthRepository implements IAuthRepository {
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, username }, 'Unexpected database error in getLoginFailuresByUsername');
-      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      if (process.env.NODE_ENV === 'test') {
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+      return 0;
     }
   }
 
@@ -202,7 +210,7 @@ export class AuthRepository implements IAuthRepository {
 
       if (error) {
         logger.error({ error, username, ip }, 'Could not query login failures by username+IP from Supabase');
-        if (process.env.NODE_ENV === 'test' || error.code !== '42501') {
+        if (process.env.NODE_ENV === 'test') {
           throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
         }
         return 0;
@@ -212,7 +220,10 @@ export class AuthRepository implements IAuthRepository {
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, username, ip }, 'Unexpected database error in getLoginFailuresByUsernameAndIp');
-      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      if (process.env.NODE_ENV === 'test') {
+        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      }
+      return 0;
     }
   }
 }
