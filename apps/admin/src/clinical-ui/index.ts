@@ -13,3 +13,4 @@ export * from './MiniGameQuestionsView';
 export * from './SystemAuditLogView';
 export * from './SystemAiSettingsView';
 export * from './ClinicalAdminShell';
+export * from './ErrorBoundary';

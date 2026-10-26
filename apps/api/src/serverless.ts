@@ -1,7 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { createApp } from './app';
 import { getEnv } from './config/env';
-import { activateLocalPersistenceEngine } from './lib/localStorage/localPersistenceEngine';
 import { syncBansFromDatabase } from './middleware/banCheck';
 
 process.env.ALLOW_BEARER_IN_PROD = 'true';
@@ -10,14 +9,14 @@ let appInstance: any = null;
 
 async function getOrInitApp() {
   if (!appInstance) {
-    activateLocalPersistenceEngine();
-    try {
-      const env = getEnv();
-      if (!env.USE_LOCAL_STORAGE) {
-        await syncBansFromDatabase().catch(() => {});
-      }
-    } catch {
-      // Local fallback
+    const env = getEnv();
+    if (env.USE_LOCAL_STORAGE && env.NODE_ENV !== 'production') {
+      const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
+      activateLocalPersistenceEngine();
+    } else {
+      await syncBansFromDatabase().catch((err) => {
+        console.warn('Initial ban sync error:', err);
+      });
     }
     appInstance = createApp();
   }

@@ -404,7 +404,7 @@ RETURNS public.user_role
 LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_role public.user_role;
@@ -428,7 +428,7 @@ RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_uid UUID;
@@ -472,7 +472,7 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 BEGIN
   IF candidate_ids IS NULL OR array_length(candidate_ids, 1) = 0 THEN
@@ -529,7 +529,7 @@ CREATE OR REPLACE FUNCTION public.enroll_face_atomic(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_enrollment_id UUID;
@@ -630,7 +630,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.check_profile_update_privileges()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_role public.user_role;
@@ -668,7 +668,7 @@ FOR EACH ROW EXECUTE FUNCTION public.check_profile_update_privileges();
 CREATE OR REPLACE FUNCTION public.enforce_content_ownership()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_role public.user_role;
@@ -731,7 +731,7 @@ FOR EACH ROW EXECUTE FUNCTION public.enforce_content_ownership();
 CREATE OR REPLACE FUNCTION public.enforce_modpack_item_ownership()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_role public.user_role;
@@ -805,7 +805,7 @@ FOR EACH ROW EXECUTE FUNCTION public.enforce_modpack_item_ownership();
 CREATE OR REPLACE FUNCTION public.check_course_ownership()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_role public.user_role;
@@ -864,7 +864,7 @@ FOR EACH ROW EXECUTE FUNCTION public.check_course_ownership();
 CREATE OR REPLACE FUNCTION public.prevent_audit_logs_tampering()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 BEGIN
   RAISE EXCEPTION 'Audit logs are insert-only. Modification is strictly forbidden.';
@@ -880,7 +880,7 @@ FOR EACH ROW EXECUTE FUNCTION public.prevent_audit_logs_tampering();
 CREATE OR REPLACE FUNCTION public.prevent_medical_notes_tampering()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 BEGIN
   RAISE EXCEPTION 'Medical notes are append-only. Modification is strictly forbidden.';
@@ -896,7 +896,7 @@ FOR EACH ROW EXECUTE FUNCTION public.prevent_medical_notes_tampering();
 CREATE OR REPLACE FUNCTION public.prevent_treatment_results_tampering()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = ''
+SET search_path = public, extensions, pg_temp
 AS $$
 BEGIN
   RAISE EXCEPTION 'Treatment results are append-only. Modification is strictly forbidden.';

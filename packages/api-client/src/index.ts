@@ -568,7 +568,11 @@ export class ApiClient {
       if (params.page) query.set('page', String(params.page));
       if (params.limit) query.set('limit', String(params.limit));
       const qs = query.toString() ? `?${query.toString()}` : '';
-      return this.request<PatientRecord[]>(`/patients${qs}`, { method: 'GET' });
+      const res = await this.request<any>(`/patients${qs}`, { method: 'GET' });
+      if (Array.isArray(res)) return res as PatientRecord[];
+      if (res && Array.isArray(res.patients)) return res.patients as PatientRecord[];
+      if (res && Array.isArray(res.data)) return res.data as PatientRecord[];
+      return [] as PatientRecord[];
     },
 
     get: async (id: string) => {
@@ -642,13 +646,19 @@ export class ApiClient {
   // =========================================================================
   public readonly pts = {
     list: async () => {
-      return this.request<PtRecord[]>('/pts', { method: 'GET' });
+      const res = await this.request<any>('/pts', { method: 'GET' });
+      if (Array.isArray(res)) return res as PtRecord[];
+      if (res && Array.isArray(res.data)) return res.data as PtRecord[];
+      return [] as PtRecord[];
     },
   };
 
   public readonly directory = {
     listPts: async () => {
-      return this.request<PtDirectoryRecord[]>('/pts', { method: 'GET' });
+      const res = await this.request<any>('/pts', { method: 'GET' });
+      if (Array.isArray(res)) return res as PtDirectoryRecord[];
+      if (res && Array.isArray(res.data)) return res.data as PtDirectoryRecord[];
+      return [] as PtDirectoryRecord[];
     },
   };
 

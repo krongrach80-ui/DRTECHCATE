@@ -132,9 +132,9 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
     }
   };
 
-  const selectedPatient = patients.find((p) => p.id === selectedPatientId);
+  const selectedPatient = (Array.isArray(patients) ? patients : []).find((p) => p.id === selectedPatientId);
 
-  const filteredPatients = patients.filter(
+  const filteredPatients = (Array.isArray(patients) ? patients : []).filter(
     (p) =>
       p.first_name.toLowerCase().includes(patientSearch.toLowerCase()) ||
       p.last_name.toLowerCase().includes(patientSearch.toLowerCase()) ||

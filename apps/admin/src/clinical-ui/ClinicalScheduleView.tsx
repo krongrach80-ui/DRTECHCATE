@@ -68,9 +68,10 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         defaultApiClient.patients.list().catch(() => []),
         defaultApiClient.smartOnboarding.listDossiers().catch(() => []),
       ]);
-      setPatients(list);
-      setDossiers(dossierList);
-      setSelectedPatient((prev) => prev ?? (list.length > 0 ? list[0] : null));
+      const patientArr = Array.isArray(list) ? list : [];
+      setPatients(patientArr);
+      setDossiers(Array.isArray(dossierList) ? dossierList : []);
+      setSelectedPatient((prev) => prev ?? (patientArr.length > 0 ? patientArr[0] : null));
     } catch {
       // non-blocking
     } finally {
@@ -351,7 +352,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
                 }}
                 className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-semibold cursor-pointer transition focus:outline-none"
               >
-                {patients.map((p) => (
+                {(Array.isArray(patients) ? patients : []).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.first_name} {p.last_name} ({p.hn || p.id})
                   </option>

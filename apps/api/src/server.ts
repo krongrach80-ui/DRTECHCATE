@@ -10,12 +10,19 @@ export async function startServer(): Promise<void> {
 
     // Local Persistence Engine Activation (Docker-Bypass Mode for standalone local execution)
     if (env.USE_LOCAL_STORAGE) {
+      if (env.NODE_ENV === 'production') {
+        throw new Error('USE_LOCAL_STORAGE=true is strictly forbidden in production mode. Real Supabase connection is required.');
+      }
       const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
       activateLocalPersistenceEngine();
     } else {
       try {
         await syncBansFromDatabase();
       } catch (err: unknown) {
+        if (env.NODE_ENV === 'production') {
+          logger.fatal({ err }, 'Supabase database unreachable in production mode. Fail-closed: in-memory fallback is strictly forbidden.');
+          throw err;
+        }
         logger.warn({ err }, 'Supabase database unreachable. Falling back to Local Persistence Engine.');
         const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
         activateLocalPersistenceEngine();

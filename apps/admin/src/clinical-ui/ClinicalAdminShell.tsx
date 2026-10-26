@@ -14,6 +14,7 @@ import { PatientsView } from '../views/PatientsView';
 import { PtsView } from '../views/PtsView';
 import { LibraryView } from '../views/LibraryView';
 import { SecurityView } from '../views/SecurityView';
+import { ErrorBoundary } from './ErrorBoundary';
 
 import {
   hospitalTheme,
@@ -198,18 +199,20 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           className="flex-1 overflow-y-auto"
         >
           {/* Master Prompt v3 Spec 8.1: 6 Windows */}
-          {activeTab === 'users' && <StaffView />}
-          {activeTab === 'patients' && <PatientsView />}
-          {activeTab === 'pts' && <PtsView />}
-          {activeTab === 'library' && <LibraryView />}
-          {activeTab === 'schedule' && <ClinicalScheduleView />}
-          {activeTab === 'audit' && (
-            <SecurityView
-              staffCalls={staffCalls}
-              onStaffCallHandled={onStaffCallHandled || fetchCalls}
-              sseConnected={sseConnected}
-            />
-          )}
+          <ErrorBoundary moduleName={pageMeta.title}>
+            {activeTab === 'users' && <StaffView />}
+            {activeTab === 'patients' && <PatientsView />}
+            {activeTab === 'pts' && <PtsView />}
+            {activeTab === 'library' && <LibraryView />}
+            {activeTab === 'schedule' && <ClinicalScheduleView />}
+            {activeTab === 'audit' && (
+              <SecurityView
+                staffCalls={staffCalls}
+                onStaffCallHandled={onStaffCallHandled || fetchCalls}
+                sseConnected={sseConnected}
+              />
+            )}
+          </ErrorBoundary>
         </main>
       </div>
 

@@ -173,7 +173,7 @@ export const ScheduleView: React.FC = () => {
 
   const weekdayNames = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
 
-  const filteredPatients = patients.filter(
+  const filteredPatients = (Array.isArray(patients) ? patients : []).filter(
     (p) =>
       p.first_name.toLowerCase().includes(patientSearch.toLowerCase()) ||
       p.last_name.toLowerCase().includes(patientSearch.toLowerCase()) ||

@@ -65,7 +65,7 @@ function parseEnv(rawEnv = process.env) {
     APP_URL: isVercel ? rawEnv.APP_URL && !String(rawEnv.APP_URL).includes("localhost") ? rawEnv.APP_URL : "https://drtechcarev2.vercel.app" : rawEnv.APP_URL || void 0,
     TRUST_PROXY_HOPS: rawEnv.TRUST_PROXY_HOPS !== void 0 ? rawEnv.TRUST_PROXY_HOPS : isVercel ? 1 : void 0,
     PAD_MODE: rawEnv.PAD_MODE || (isVercel ? "active_only" : void 0),
-    USE_LOCAL_STORAGE: rawEnv.USE_LOCAL_STORAGE !== void 0 ? rawEnv.USE_LOCAL_STORAGE : isVercel ? "true" : void 0,
+    USE_LOCAL_STORAGE: rawEnv.USE_LOCAL_STORAGE !== void 0 ? rawEnv.USE_LOCAL_STORAGE : isVercel ? "false" : void 0,
     ALLOW_INSECURE_COOKIES: isVercel ? false : rawEnv.ALLOW_INSECURE_COOKIES !== void 0 ? rawEnv.ALLOW_INSECURE_COOKIES : void 0,
     ALLOW_BEARER_IN_PROD: rawEnv.ALLOW_BEARER_IN_PROD !== void 0 ? rawEnv.ALLOW_BEARER_IN_PROD : isVercel ? "true" : void 0,
     SUPABASE_URL: rawEnv.SUPABASE_URL || rawEnv.NEXT_PUBLIC_SUPABASE_URL || (isVercel ? "https://mctegvnrvmglbibuuczi.supabase.co" : void 0),
@@ -10267,7 +10267,7 @@ var PatientController = class {
         if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHORIZED");
         const filter = PatientQuerySchema.parse(req.query);
         const result = await this.service.listPatients(filter, req.user);
-        res.status(200).json({ ok: true, ...result });
+        res.status(200).json({ ok: true, data: result.patients, ...result });
       } catch (err) {
         next(err);
       }
@@ -11857,20 +11857,19 @@ function createApp(customLogger, authController, securityController, auditContro
 
 // apps/api/src/serverless.ts
 init_env();
-init_localPersistenceEngine();
 init_banCheck();
 process.env.ALLOW_BEARER_IN_PROD = "true";
 var appInstance = null;
 async function getOrInitApp() {
   if (!appInstance) {
-    activateLocalPersistenceEngine();
-    try {
-      const env = getEnv();
-      if (!env.USE_LOCAL_STORAGE) {
-        await syncBansFromDatabase().catch(() => {
-        });
-      }
-    } catch {
+    const env = getEnv();
+    if (env.USE_LOCAL_STORAGE && env.NODE_ENV !== "production") {
+      const { activateLocalPersistenceEngine: activateLocalPersistenceEngine2 } = await Promise.resolve().then(() => (init_localPersistenceEngine(), localPersistenceEngine_exports));
+      activateLocalPersistenceEngine2();
+    } else {
+      await syncBansFromDatabase().catch((err) => {
+        console.warn("Initial ban sync error:", err);
+      });
     }
     appInstance = createApp();
   }

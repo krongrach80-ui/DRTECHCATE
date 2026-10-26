@@ -28,7 +28,7 @@ export class PatientController {
       if (!req.user) throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
       const filter = PatientQuerySchema.parse(req.query);
       const result = await this.service.listPatients(filter, req.user);
-      res.status(200).json({ ok: true, ...result });
+      res.status(200).json({ ok: true, data: result.patients, ...result });
     } catch (err) {
       next(err);
     }

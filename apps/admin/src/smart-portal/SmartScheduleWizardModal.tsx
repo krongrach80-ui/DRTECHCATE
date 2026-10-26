@@ -234,7 +234,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
     }
   };
 
-  const filteredPatients = patients.filter(
+  const filteredPatients = (Array.isArray(patients) ? patients : []).filter(
     (p) =>
       `${p.first_name} ${p.last_name || ''} ${p.hn || ''}`
         .toLowerCase()
