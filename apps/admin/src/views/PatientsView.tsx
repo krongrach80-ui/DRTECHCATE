@@ -94,6 +94,14 @@ export const PatientsView: React.FC = () => {
   useEffect(() => {
     fetchPatients();
     fetchPts();
+
+    const handlePatientCreated = () => {
+      fetchPatients();
+    };
+    window.addEventListener('patient-created', handlePatientCreated);
+    return () => {
+      window.removeEventListener('patient-created', handlePatientCreated);
+    };
   }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {

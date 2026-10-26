@@ -24,7 +24,6 @@ import { syncActiveBans } from '../../middleware/banCheck';
 import { logger } from '../../middleware/logger';
 import { createStatelessToken } from '../auth/token';
 import { StaffProfileRecord } from '../../modules/staff/schema';
-import { PatientRecord } from '../../modules/patients/schema';
 import { ExerciseRecord, ModpackRecord } from '../../modules/directory/schema';
 import { KioskDeviceRecord } from '../../modules/kiosk/repository';
 
