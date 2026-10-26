@@ -14,8 +14,8 @@
 }
 
 /* Force font on ALL elements, inputs, buttons, headings, dialogs */
-*, *::before, *::after {
-  font-family: var(--font-medical-sans) !important;
+*, *::before, *::after, html, body, input, button, select, textarea, optgroup, [lang="th"], .font-sans {
+  font-family: 'Prompt', 'Leelawadee UI', 'Sarabun', 'Thonburi', 'Sukhumvit Set', -apple-system, BlinkMacSystemFont, sans-serif !important;
   letter-spacing: 0.015em;
 }
 
