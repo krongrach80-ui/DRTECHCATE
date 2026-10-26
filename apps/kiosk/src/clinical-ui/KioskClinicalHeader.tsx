@@ -104,6 +104,8 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
 
           {/* Hospital Staff Portal Trigger */}
           <button
+            id="header-open-staff-login-btn"
+            data-testid="header-open-staff-login-btn"
             type="button"
             onClick={handleTriggerStaffModal}
             title="เข้าสู่ระบบบุคลากร / รพ."

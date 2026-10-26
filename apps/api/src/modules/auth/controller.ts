@@ -52,6 +52,7 @@ export class AuthController {
       res.status(200).json({
         ok: true,
         user: result.user,
+        data: result.user,
         token: result.accessToken,
         accessToken: result.accessToken,
         access_token: result.accessToken,
@@ -119,6 +120,7 @@ export class AuthController {
       res.status(200).json({
         ok: true,
         user: req.user,
+        data: req.user,
       });
     } catch (err) {
       next(err);

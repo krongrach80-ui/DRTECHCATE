@@ -136,7 +136,11 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   const pageMeta = getPageMeta(activeTab);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden font-sans select-none relative">
+    <div
+      id="clinical-admin-shell"
+      data-testid="clinical-admin-shell"
+      className="flex h-screen w-screen overflow-hidden font-sans select-none relative"
+    >
       {/* Mobile Slide-Out Drawer (Only on small screens when toggled) */}
       {isMobileMenuOpen && (
         <div

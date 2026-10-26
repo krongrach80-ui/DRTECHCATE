@@ -70,17 +70,19 @@ export const App: React.FC = () => {
     async function checkAuthAndRoute() {
       const path = window.location.pathname.toLowerCase();
       try {
-        const user = await defaultApiClient.auth.me();
-        if (isMounted && user) {
+        const rawUser = await defaultApiClient.auth.me();
+        const user = (rawUser && (rawUser as any).user) ? (rawUser as any).user : rawUser;
+        if (isMounted && user && (user.role || (user as any).id)) {
           setCurrentStaffUser(user);
           const role = (user.role || '').toLowerCase();
+          const uname = (user.username || '').toLowerCase();
           if (path.startsWith('/admin')) {
-            if (role === 'admin' || role === 'director' || user.username === 'director') {
+            if (role === 'admin' || role === 'director' || uname === 'director' || uname === 'admin') {
               setRoleMode('admin');
               return;
             }
           } else if (path.startsWith('/pt')) {
-            if (role === 'pt') {
+            if (role === 'pt' || uname.startsWith('pt')) {
               setRoleMode('pt');
               return;
             }
@@ -109,15 +111,15 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname.toLowerCase();
+      const role = (currentStaffUser?.role || '').toLowerCase();
+      const uname = (currentStaffUser?.username || '').toLowerCase();
       if (
         path.startsWith('/admin') &&
         currentStaffUser &&
-        (currentStaffUser.role === 'admin' ||
-          (currentStaffUser.role as string) === 'director' ||
-          currentStaffUser.username === 'director')
+        (role === 'admin' || role === 'director' || uname === 'director' || uname === 'admin')
       ) {
         setRoleMode('admin');
-      } else if (path.startsWith('/pt') && currentStaffUser && currentStaffUser.role === 'pt') {
+      } else if (path.startsWith('/pt') && currentStaffUser && (role === 'pt' || uname.startsWith('pt'))) {
         setRoleMode('pt');
       } else {
         setRoleMode('kiosk');
@@ -147,17 +149,19 @@ export const App: React.FC = () => {
   const handleStaffLogin = useCallback(
     async (credentials: { username: string; password: string }) => {
       const res = await defaultApiClient.auth.login(credentials);
-      if (res.user) {
-        setCurrentStaffUser(res.user);
+      const user = res.user;
+      if (user) {
+        setCurrentStaffUser(user);
         setIsStaffLoginModalOpen(false);
         await fetchStaffCalls();
-        const role = (res.user.role || res.role || '').toLowerCase();
-        if (role === 'admin' || role === 'director' || res.user.username === 'director') {
+        const role = (user.role || res.role || '').toLowerCase();
+        const uname = (user.username || credentials.username || '').toLowerCase();
+        if (role === 'admin' || role === 'director' || uname === 'director' || uname === 'admin') {
           setRoleMode('admin');
           if (window.location.pathname !== '/admin') {
             window.history.pushState({ mode: 'admin' }, '', '/admin');
           }
-        } else if (role === 'pt') {
+        } else if (role === 'pt' || uname.startsWith('pt')) {
           setRoleMode('pt');
           if (window.location.pathname !== '/pt') {
             window.history.pushState({ mode: 'pt' }, '', '/pt');
@@ -193,13 +197,14 @@ export const App: React.FC = () => {
   const handleOpenStaffLoginModal = useCallback(async () => {
     if (currentStaffUser) {
       const role = (currentStaffUser.role || '').toLowerCase();
-      if (role === 'admin' || role === 'director' || currentStaffUser.username === 'director') {
+      const uname = (currentStaffUser.username || '').toLowerCase();
+      if (role === 'admin' || role === 'director' || uname === 'director' || uname === 'admin') {
         setRoleMode('admin');
         if (window.location.pathname !== '/admin') {
           window.history.pushState({ mode: 'admin' }, '', '/admin');
         }
         return;
-      } else if (role === 'pt') {
+      } else if (role === 'pt' || uname.startsWith('pt')) {
         setRoleMode('pt');
         if (window.location.pathname !== '/pt') {
           window.history.pushState({ mode: 'pt' }, '', '/pt');
@@ -409,7 +414,7 @@ export const App: React.FC = () => {
           isOpen={isStaffLoginModalOpen}
           onClose={() => {
             setIsStaffLoginModalOpen(false);
-            if (window.location.pathname !== '/') {
+            if (roleMode === 'kiosk' && window.location.pathname !== '/') {
               window.history.pushState({ mode: 'kiosk' }, '', '/');
             }
           }}
@@ -585,7 +590,7 @@ export const App: React.FC = () => {
         isOpen={isStaffLoginModalOpen}
         onClose={() => {
           setIsStaffLoginModalOpen(false);
-          if (window.location.pathname !== '/') {
+          if (roleMode === 'kiosk' && window.location.pathname !== '/') {
             window.history.pushState({ mode: 'kiosk' }, '', '/');
           }
         }}

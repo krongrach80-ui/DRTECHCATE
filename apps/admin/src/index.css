@@ -1,6 +1,11 @@
 @import "../../../packages/hospital-ui-kit/src/hospital.css";
 @import "tailwindcss";
 
+@source "../../../packages";
+@source "../src";
+@source "../../pt/src";
+@source "../../kiosk/src";
+
 @theme {
   --font-sans: 'Prompt', 'Sarabun', 'Leelawadee UI', 'Thonburi', 'Sukhumvit Set', 'Noto Sans Thai', sans-serif;
   --font-heading: 'Prompt', 'Sarabun', 'Leelawadee UI', sans-serif;

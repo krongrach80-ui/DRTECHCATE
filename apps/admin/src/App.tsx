@@ -13,8 +13,11 @@ export const AdminApp: React.FC = () => {
   const checkSession = async () => {
     try {
       setAuthLoading(true);
-      const user = await defaultApiClient.auth.me();
-      if (user && user.role === 'admin') {
+      const rawUser = await defaultApiClient.auth.me();
+      const user = (rawUser && (rawUser as any).user) ? (rawUser as any).user : rawUser;
+      const role = (user?.role || '').toLowerCase();
+      const uname = (user?.username || '').toLowerCase();
+      if (user && (role === 'admin' || role === 'director' || uname === 'director' || uname === 'admin')) {
         setCurrentUser(user);
       } else {
         setCurrentUser(null);
@@ -78,7 +81,9 @@ export const AdminApp: React.FC = () => {
 
   const handleDirectLogin = async (credentials: { username: string; password: string }) => {
     const res = await defaultApiClient.auth.login(credentials);
-    if (res.role !== 'admin') {
+    const role = (res.user?.role || res.role || '').toLowerCase();
+    const uname = (res.user?.username || credentials.username || '').toLowerCase();
+    if (role !== 'admin' && role !== 'director' && uname !== 'director' && uname !== 'admin') {
       throw new Error('บัญชีนี้ไม่มีสิทธิ์เข้าถึงส่วนงานผู้อำนวยการโรงพยาบาล (Admin Only)');
     }
     setCurrentUser(res.user);

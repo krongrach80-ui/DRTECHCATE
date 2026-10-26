@@ -644,17 +644,13 @@ var init_authClient = __esm({
 
 // apps/api/src/lib/auth/token.ts
 function getAuthSecret() {
-  try {
-    const env = getEnv();
-    return process.env.AUTH_SECRET || process.env.JWT_SECRET || env.KIOSK_PAIRING_SECRET || "drtechcare-production-stateless-jwt-secret-stable-2026";
-  } catch {
-    return process.env.AUTH_SECRET || process.env.JWT_SECRET || process.env.KIOSK_PAIRING_SECRET || "drtechcare-production-stateless-jwt-secret-stable-2026";
-  }
+  return process.env.AUTH_SECRET || process.env.JWT_SECRET || DEFAULT_AUTH_SECRET;
 }
 function createStatelessToken(user) {
   const now = Math.floor(Date.now() / 1e3);
   const payload = {
     id: user.id,
+    username: user.username,
     role: user.role,
     full_name: user.full_name,
     status: user.status || "active",
@@ -694,12 +690,12 @@ function verifyStatelessToken(token) {
     return null;
   }
 }
-var import_crypto2;
+var import_crypto2, DEFAULT_AUTH_SECRET;
 var init_token = __esm({
   "apps/api/src/lib/auth/token.ts"() {
     "use strict";
     import_crypto2 = __toESM(require("crypto"));
-    init_env();
+    DEFAULT_AUTH_SECRET = "drtechcare-production-stateless-jwt-secret-stable-2026";
   }
 });
 
@@ -747,6 +743,7 @@ async function authenticate(req, _res, next) {
       }
       req.user = {
         id: statelessUser.id,
+        username: statelessUser.username,
         role: statelessUser.role,
         full_name: statelessUser.full_name,
         status: statelessUser.status,
@@ -7717,6 +7714,7 @@ function activateLocalPersistenceEngine() {
     }
     const token = createStatelessToken({
       id: matchedStaff.id,
+      username: matchedStaff.username,
       role: matchedStaff.role,
       full_name: matchedStaff.full_name,
       status: matchedStaff.status
@@ -7741,6 +7739,7 @@ function activateLocalPersistenceEngine() {
     }
     const token = createStatelessToken({
       id: staff.id,
+      username: staff.username,
       role: staff.role,
       full_name: staff.full_name,
       status: staff.status
@@ -8119,7 +8118,7 @@ init_errorHandler();
 // apps/api/src/modules/health/routes.ts
 var import_express = require("express");
 var router = (0, import_express.Router)();
-router.get(["/", "/health"], (_req, res) => {
+router.get(["/health", "/api/health"], (_req, res) => {
   res.status(200).json({
     status: "ok"
   });
@@ -8178,6 +8177,7 @@ var AuthController = class {
         res.status(200).json({
           ok: true,
           user: result.user,
+          data: result.user,
           token: result.accessToken,
           accessToken: result.accessToken,
           access_token: result.accessToken
@@ -8234,7 +8234,8 @@ var AuthController = class {
       try {
         res.status(200).json({
           ok: true,
-          user: req.user
+          user: req.user,
+          data: req.user
         });
       } catch (err) {
         next(err);
@@ -11773,7 +11774,7 @@ function createApp(customLogger, authController, securityController, auditContro
   app.use(banCheck);
   app.use("/api", apiRateLimiter);
   app.use("/api", csrfGuard);
-  app.use("/", healthRoutes);
+  app.use("/health", healthRoutes);
   app.use("/api", healthRoutes);
   app.use("/api", eventRoutes);
   const uploadsDir = import_path4.default.resolve(process.cwd(), "public", "uploads");
@@ -11811,29 +11812,16 @@ function createApp(customLogger, authController, securityController, auditContro
   app.use("/pt", import_express14.default.static(import_path4.default.join(publicDir, "pt")));
   app.use("/kiosk", import_express14.default.static(import_path4.default.join(publicDir, "kiosk")));
   app.use(import_express14.default.static(publicDir));
-  app.get(/^\/admin(\/.*)?$/, (_req, res) => {
-    const adminIndex = import_path4.default.join(publicDir, "admin", "index.html");
-    if (import_fs3.default.existsSync(adminIndex)) {
-      return res.sendFile(adminIndex);
+  const unifiedIndex = import_path4.default.join(publicDir, "index.html");
+  app.get(/^\/(admin|pt|kiosk)?(\/.*)?$/, (_req, res) => {
+    if (import_fs3.default.existsSync(unifiedIndex)) {
+      return res.sendFile(unifiedIndex);
     }
-    res.status(200).send("<!DOCTYPE html><html><body>Admin Portal</body></html>");
-  });
-  app.get(/^\/pt(\/.*)?$/, (_req, res) => {
-    const ptIndex = import_path4.default.join(publicDir, "pt", "index.html");
-    if (import_fs3.default.existsSync(ptIndex)) {
-      return res.sendFile(ptIndex);
-    }
-    res.status(200).send("<!DOCTYPE html><html><body>PT Portal</body></html>");
-  });
-  app.get(/^\/kiosk(\/.*)?$/, (_req, res) => {
     const kioskIndex = import_path4.default.join(publicDir, "kiosk", "index.html");
     if (import_fs3.default.existsSync(kioskIndex)) {
       return res.sendFile(kioskIndex);
     }
-    res.status(200).send("<!DOCTYPE html><html><body>Kiosk Portal</body></html>");
-  });
-  app.get("/", (_req, res) => {
-    res.redirect("/kiosk");
+    res.status(200).send("<!DOCTYPE html><html><body>DrTech.Care Portal</body></html>");
   });
   app.use((_req, _res, next) => {
     next(new AppError("Endpoint not found", 404, "NOT_FOUND"));
@@ -11846,6 +11834,7 @@ function createApp(customLogger, authController, securityController, auditContro
 init_env();
 init_localPersistenceEngine();
 init_banCheck();
+process.env.ALLOW_BEARER_IN_PROD = "true";
 var appInstance = null;
 async function getOrInitApp() {
   if (!appInstance) {

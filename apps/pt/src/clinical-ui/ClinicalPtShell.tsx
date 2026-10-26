@@ -140,7 +140,11 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
   const pageMeta = getPageMeta(activeTab);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden font-sans select-none relative">
+    <div
+      id="clinical-pt-shell"
+      data-testid="clinical-pt-shell"
+      className="flex h-screen w-screen overflow-hidden font-sans select-none relative"
+    >
       {/* Mobile Slide-Out Drawer (Only on small screens when toggled) */}
       {isMobileMenuOpen && (
         <div

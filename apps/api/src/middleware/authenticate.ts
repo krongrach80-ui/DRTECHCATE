@@ -8,6 +8,7 @@ import { verifyStatelessToken } from '../lib/auth/token';
 
 export interface UserSession {
   id: string;
+  username?: string;
   role: string;
   full_name: string;
   status: string;
@@ -113,6 +114,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       }
       req.user = {
         id: statelessUser.id,
+        username: statelessUser.username,
         role: statelessUser.role,
         full_name: statelessUser.full_name,
         status: statelessUser.status,

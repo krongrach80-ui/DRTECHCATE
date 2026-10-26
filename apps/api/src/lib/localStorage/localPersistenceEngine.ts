@@ -418,6 +418,7 @@ export function activateLocalPersistenceEngine(): void {
 
     const token = createStatelessToken({
       id: matchedStaff.id,
+      username: matchedStaff.username,
       role: matchedStaff.role,
       full_name: matchedStaff.full_name,
       status: matchedStaff.status,
@@ -443,6 +444,7 @@ export function activateLocalPersistenceEngine(): void {
     }
     const token = createStatelessToken({
       id: staff.id,
+      username: staff.username,
       role: staff.role,
       full_name: staff.full_name,
       status: staff.status,

@@ -105,7 +105,7 @@ export function createApp(
   app.use('/api', csrfGuard);
 
   // 9. Public / System routes
-  app.use('/', healthRoutes);
+  app.use('/health', healthRoutes);
   app.use('/api', healthRoutes);
   app.use('/api', eventRoutes);
   const uploadsDir = path.resolve(process.cwd(), 'public', 'uploads');
@@ -149,30 +149,17 @@ export function createApp(
   app.use('/kiosk', express.static(path.join(publicDir, 'kiosk')));
   app.use(express.static(publicDir));
 
-  // SPA Routes
-  app.get(/^\/admin(\/.*)?$/, (_req: Request, res: Response) => {
-    const adminIndex = path.join(publicDir, 'admin', 'index.html');
-    if (fs.existsSync(adminIndex)) {
-      return res.sendFile(adminIndex);
+  // SPA Routes - Single-App Unification: Serve unified SPA for /, /admin, /pt, /kiosk
+  const unifiedIndex = path.join(publicDir, 'index.html');
+  app.get(/^\/(admin|pt|kiosk)?(\/.*)?$/, (_req: Request, res: Response) => {
+    if (fs.existsSync(unifiedIndex)) {
+      return res.sendFile(unifiedIndex);
     }
-    res.status(200).send('<!DOCTYPE html><html><body>Admin Portal</body></html>');
-  });
-  app.get(/^\/pt(\/.*)?$/, (_req: Request, res: Response) => {
-    const ptIndex = path.join(publicDir, 'pt', 'index.html');
-    if (fs.existsSync(ptIndex)) {
-      return res.sendFile(ptIndex);
-    }
-    res.status(200).send('<!DOCTYPE html><html><body>PT Portal</body></html>');
-  });
-  app.get(/^\/kiosk(\/.*)?$/, (_req: Request, res: Response) => {
     const kioskIndex = path.join(publicDir, 'kiosk', 'index.html');
     if (fs.existsSync(kioskIndex)) {
       return res.sendFile(kioskIndex);
     }
-    res.status(200).send('<!DOCTYPE html><html><body>Kiosk Portal</body></html>');
-  });
-  app.get('/', (_req: Request, res: Response) => {
-    res.redirect('/kiosk');
+    res.status(200).send('<!DOCTYPE html><html><body>DrTech.Care Portal</body></html>');
   });
 
   // 11. 404 Route Not Found

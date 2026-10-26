@@ -381,18 +381,28 @@ export class ApiClient {
         token?: string;
         accessToken?: string;
         access_token?: string;
+        data?: {
+          user?: UserProfile;
+          token?: string;
+        };
       }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify(credentials),
       });
 
-      const token = res.token || res.accessToken || res.access_token;
+      const token = res.token || res.accessToken || res.access_token || res.data?.token;
       if (token) {
         this.setAuthToken(token);
       }
-      const user = res.user || (res as unknown as UserProfile);
-      const role = (res.role || user?.role || (credentials.username.toLowerCase().includes('admin') ? 'admin' : 'pt')) as 'admin' | 'pt';
-      return { role, user, token };
+      const rawUser = res.user || res.data?.user || (res as unknown as UserProfile);
+      const uname = rawUser?.username || credentials.username.trim().toLowerCase();
+      const rawRole = (res.role || rawUser?.role || (uname.includes('admin') || uname === 'director' ? 'admin' : 'pt')) as 'admin' | 'pt';
+      const user: UserProfile = {
+        ...rawUser,
+        username: uname,
+        role: rawRole,
+      };
+      return { role: rawRole, user, token };
     },
 
     logout: async () => {
@@ -406,9 +416,18 @@ export class ApiClient {
     },
 
     me: async () => {
-      return this.request<UserProfile>('/auth/me', {
+      const res = await this.request<any>('/auth/me', {
         method: 'GET',
       });
+      if (res && typeof res === 'object') {
+        if (res.user && typeof res.user === 'object') {
+          return res.user as UserProfile;
+        }
+        if (res.data && typeof res.data === 'object') {
+          return (res.data.user || res.data) as UserProfile;
+        }
+      }
+      return res as UserProfile;
     },
 
     refresh: async () => {

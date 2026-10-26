@@ -510,6 +510,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
         {/* Pill 2: เข้าสู่ระบบบุคลากร / รพ. */}
         <button
+          id="open-staff-login-btn"
+          data-testid="open-staff-login-btn"
           type="button"
           onClick={onOpenStaffLoginModal}
           title="เข้าสู่ระบบบุคลากร / รพ."

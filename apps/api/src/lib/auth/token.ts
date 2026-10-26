@@ -3,6 +3,7 @@ import { getEnv } from '../../config/env';
 
 export interface StatelessTokenPayload {
   id: string;
+  username?: string;
   role: string;
   full_name: string;
   status: string;
@@ -10,23 +11,14 @@ export interface StatelessTokenPayload {
   exp: number;
 }
 
-function getAuthSecret(): string {
-  try {
-    const env = getEnv();
-    return (
-      process.env.AUTH_SECRET ||
-      process.env.JWT_SECRET ||
-      env.KIOSK_PAIRING_SECRET ||
-      'drtechcare-production-stateless-jwt-secret-stable-2026'
-    );
-  } catch {
-    return (
-      process.env.AUTH_SECRET ||
-      process.env.JWT_SECRET ||
-      process.env.KIOSK_PAIRING_SECRET ||
-      'drtechcare-production-stateless-jwt-secret-stable-2026'
-    );
-  }
+export const DEFAULT_AUTH_SECRET = 'drtechcare-production-stateless-jwt-secret-stable-2026';
+
+export function getAuthSecret(): string {
+  return (
+    process.env.AUTH_SECRET ||
+    process.env.JWT_SECRET ||
+    DEFAULT_AUTH_SECRET
+  );
 }
 
 /**
@@ -35,6 +27,7 @@ function getAuthSecret(): string {
  */
 export function createStatelessToken(user: {
   id: string;
+  username?: string;
   role: string;
   full_name: string;
   status?: string;
@@ -42,6 +35,7 @@ export function createStatelessToken(user: {
   const now = Math.floor(Date.now() / 1000);
   const payload: StatelessTokenPayload = {
     id: user.id,
+    username: user.username,
     role: user.role,
     full_name: user.full_name,
     status: user.status || 'active',

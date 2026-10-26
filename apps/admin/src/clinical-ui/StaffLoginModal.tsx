@@ -13,6 +13,7 @@ import {
   X,
   Info,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import {
   SmoothButton,
@@ -49,7 +50,6 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
       setIsLoading(true);
       setErrorMsg(null);
       await onLogin({ username: username.trim(), password });
-      onClose();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
     } finally {
@@ -95,7 +95,11 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
 
         {/* Error Alert */}
         {errorMsg && (
-          <div className="mx-8 sm:mx-10 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-center gap-2.5">
+          <div
+            id="staff-login-error"
+            data-testid="staff-login-error"
+            className="mx-8 sm:mx-10 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-center gap-2.5 animate-in fade-in"
+          >
             <AlertTriangle className="w-5 h-5 shrink-0 text-rose-600" />
             <span className="leading-relaxed font-medium">{errorMsg}</span>
           </div>
@@ -104,35 +108,55 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-8 sm:p-10 space-y-5">
           <div>
-            <label className="block text-sm sm:text-base font-semibold text-slate-700 mb-2">
+            <label
+              htmlFor="staff-login-username"
+              className="block text-sm sm:text-base font-semibold text-slate-700 mb-2"
+            >
               Username (ชื่อผู้ใช้) *
             </label>
-            <div className="relative">
-              <User className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <div className="relative flex items-center">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 z-10 flex items-center justify-center w-5 h-5">
+                <User className="w-5 h-5" />
+              </div>
               <input
+                id="staff-login-username"
+                data-testid="staff-login-username"
+                name="username"
                 type="text"
                 required
+                autoComplete="username"
                 placeholder="เช่น admin หรือ pt_staff"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full h-13 pl-12 pr-4 bg-slate-50 border border-slate-200 rounded-2xl text-base text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition shadow-sm"
+                style={{ paddingLeft: '3.25rem', paddingRight: '1rem' }}
+                className="w-full h-13 pl-14 pr-4 bg-slate-50 border border-slate-200 rounded-2xl text-base text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition shadow-sm"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm sm:text-base font-semibold text-slate-700 mb-2">
+            <label
+              htmlFor="staff-login-password"
+              className="block text-sm sm:text-base font-semibold text-slate-700 mb-2"
+            >
               Password (รหัสผ่าน) *
             </label>
-            <div className="relative">
-              <Lock className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <div className="relative flex items-center">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 z-10 flex items-center justify-center w-5 h-5">
+                <Lock className="w-5 h-5" />
+              </div>
               <input
+                id="staff-login-password"
+                data-testid="staff-login-password"
+                name="password"
                 type="password"
                 required
+                autoComplete="current-password"
                 placeholder="••••••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full h-13 pl-12 pr-4 bg-slate-50 border border-slate-200 rounded-2xl text-base text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition shadow-sm"
+                style={{ paddingLeft: '3.25rem', paddingRight: '1rem' }}
+                className="w-full h-13 pl-14 pr-4 bg-slate-50 border border-slate-200 rounded-2xl text-base text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition shadow-sm"
               />
             </div>
           </div>
@@ -146,17 +170,25 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
           </div>
 
           {/* Primary Action Button */}
-          <SmoothButton
+          <button
+            id="staff-login-submit-btn"
+            data-testid="staff-login-submit-btn"
             type="submit"
-            variant="primary"
-            size="lg"
-            isLoading={isLoading}
-            loadingText="กำลังตรวจสอบสิทธิ์อย่างปลอดภัย..."
-            className="w-full mt-3 h-13 text-base sm:text-lg font-bold shadow-lg shadow-emerald-900/15"
-            icon={<ArrowRight className="w-5 h-5" />}
+            disabled={isLoading}
+            className="w-full mt-3 h-13 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-[0.98] text-white font-bold text-base sm:text-lg shadow-lg shadow-emerald-950/20 transition flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <span>เข้าสู่ระบบบุคลากร</span>
-          </SmoothButton>
+            {isLoading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin text-white shrink-0" />
+                <span>กำลังเข้าสู่ระบบ...</span>
+              </>
+            ) : (
+              <>
+                <ArrowRight className="w-5 h-5 shrink-0" />
+                <span>เข้าสู่ระบบบุคลากร</span>
+              </>
+            )}
+          </button>
 
           {/* Secondary Action Buttons */}
           <div className="pt-2 flex flex-col gap-2.5">
@@ -166,8 +198,8 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
                 onClick={onReturnToKiosk}
                 className="w-full h-12 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm sm:text-base font-semibold transition flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer"
               >
-                <ArrowLeft className="w-4 h-4" />
-                <span>← กลับหน้าหลัก (คนไข้)</span>
+                <ArrowLeft className="w-4 h-4 shrink-0" />
+                <span>กลับหน้าหลัก (คนไข้)</span>
               </button>
             )}
 
