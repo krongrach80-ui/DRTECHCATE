@@ -11825,11 +11825,16 @@ var SmartOnboardingService = class {
       }
     }
     const matched = records.find((r) => {
+      if (!r) return false;
       const storedPin = r.history?.pin || r.clinical?.pin || "1234";
+      const rHn = r.hn ? String(r.hn).trim() : "";
+      const rId = r.patient_id ? String(r.patient_id).trim() : "";
+      const rPhone = r.phone ? String(r.phone).trim() : "";
       if (hn) {
-        return (r.hn === hn || r.patient_id === hn) && (storedPin === cleanPin || r.hn.endsWith(cleanPin));
+        const cleanHn = hn.trim();
+        return (rHn === cleanHn || rId === cleanHn) && (storedPin === cleanPin || Boolean(rHn) && rHn.endsWith(cleanPin));
       }
-      return storedPin === cleanPin || r.hn === cleanPin || r.hn.endsWith(cleanPin) || r.patient_id === cleanPin || Boolean(r.phone) && (r.phone === cleanPin || Boolean(r.phone?.endsWith(cleanPin)));
+      return storedPin === cleanPin || Boolean(rHn) && (rHn === cleanPin || rHn.endsWith(cleanPin)) || Boolean(rId) && rId === cleanPin || Boolean(rPhone) && (rPhone === cleanPin || rPhone.endsWith(cleanPin));
     });
     if (matched) {
       return {
