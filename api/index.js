@@ -1508,7 +1508,6 @@ var init_service2 = __esm({
           user: {
             id: profile.id,
             role: profile.role,
-            username: profile.username || cleanUsername,
             full_name: profile.full_name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || profile.username || "\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"
           },
           deviceId

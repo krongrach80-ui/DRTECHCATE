@@ -237,12 +237,10 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
                     username: 'pt_somchai',
                     full_name: 'กภ.สมชาย กายภาพดี',
                     role: 'pt',
-                    is_active: true,
-                    created_at: new Date().toISOString(),
+                    status: 'active',
                     pt_details: {
                       license_no: 'วภ. 9876',
                       specialty: 'เวชศาสตร์ฟื้นฟูกระดูกและระบบประสาท',
-                      workload_status: 'available',
                     },
                   }
                 }

@@ -909,6 +909,207 @@ BEFORE UPDATE OR DELETE ON public.treatment_results
 FOR EACH ROW EXECUTE FUNCTION public.prevent_treatment_results_tampering();
 
 -- ============================================================================
+-- 7.1 CLINICAL ANALYTICS VIEWS (ENFORCE security_invoker = true)
+-- ============================================================================
+
+CREATE OR REPLACE VIEW public.view_patient_recovery_trajectory WITH (security_invoker = true) AS
+SELECT
+  p.id AS patient_id,
+  p.hn,
+  p.first_name || ' ' || p.last_name AS patient_name,
+  p.injury,
+  prof.full_name AS responsible_pt_name,
+  mr.run_date,
+  mr.pain_score AS current_pain_vas,
+  LAG(mr.pain_score) OVER (PARTITION BY mr.patient_id ORDER BY mr.run_date ASC) AS previous_pain_vas,
+  (LAG(mr.pain_score) OVER (PARTITION BY mr.patient_id ORDER BY mr.run_date ASC) - mr.pain_score) AS pain_reduction_delta,
+  mr.status AS mission_status,
+  mr.feedback AS patient_feedback
+FROM public.mission_runs mr
+JOIN public.patients p ON p.id = mr.patient_id
+LEFT JOIN public.profiles prof ON prof.id = p.responsible_pt_id
+WHERE mr.status = 'completed';
+
+CREATE OR REPLACE VIEW public.view_clinic_daily_summary WITH (security_invoker = true) AS
+SELECT
+  CURRENT_DATE AS report_date,
+  (SELECT COUNT(*) FROM public.checkins WHERE date = CURRENT_DATE) AS total_checked_in,
+  (SELECT COUNT(*) FROM public.courses WHERE CURRENT_DATE BETWEEN start_date AND end_date AND status = 'active') AS active_courses_today,
+  (SELECT COUNT(*) FROM public.mission_runs WHERE run_date = CURRENT_DATE AND status = 'completed') AS missions_completed_today,
+  (SELECT COUNT(*) FROM public.staff_calls WHERE created_at::DATE = CURRENT_DATE AND handled_at IS NULL) AS pending_emergency_calls,
+  (SELECT COALESCE(ROUND(AVG(pain_score), 1), 0) FROM public.mission_runs WHERE run_date = CURRENT_DATE AND status = 'completed' AND pain_score IS NOT NULL) AS avg_pain_score_today;
+
+CREATE OR REPLACE VIEW public.view_kiosk_live_telemetry WITH (security_invoker = true) AS
+SELECT
+  kd.id AS kiosk_id,
+  kd.name AS kiosk_name,
+  kd.location,
+  kd.is_active,
+  kd.last_seen_at,
+  CASE
+    WHEN kd.last_seen_at IS NULL THEN 'offline'
+    WHEN kd.last_seen_at >= NOW() - INTERVAL '5 minutes' THEN 'online'
+    ELSE 'stale'
+  END AS connection_status,
+  COUNT(sc.id) FILTER (WHERE sc.handled_at IS NULL) AS unhandled_staff_calls_count
+FROM public.kiosk_devices kd
+LEFT JOIN public.staff_calls sc ON sc.kiosk_id = kd.id
+GROUP BY kd.id, kd.name, kd.location, kd.is_active, kd.last_seen_at;
+
+-- ============================================================================
+-- 7.2 LEGACY / COMPATIBILITY TRIGGER FUNCTIONS (ENFORCE search_path = public, extensions, pg_temp)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.trg_fn_prevent_medical_notes_modification()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, extensions, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION 'Medical notes are append-only. Modification is strictly forbidden.';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_fn_prevent_treatment_results_modification()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, extensions, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION 'Treatment results are append-only. Modification is strictly forbidden.';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_fn_prevent_audit_logs_modification()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, extensions, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION 'Audit logs are insert-only. Modification is strictly forbidden.';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_fn_enforce_exercise_ownership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions, pg_temp
+AS $$
+DECLARE
+  v_role public.user_role;
+  v_uid UUID;
+BEGIN
+  v_uid := (SELECT auth.uid());
+  v_role := public.current_user_role();
+  IF v_role = 'pt' THEN
+    IF OLD.created_by <> v_uid THEN
+      RAISE EXCEPTION 'Forbidden: Physiotherapists can only modify or delete exercises they personally created.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_fn_enforce_minigame_ownership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions, pg_temp
+AS $$
+DECLARE
+  v_role public.user_role;
+  v_uid UUID;
+BEGIN
+  v_uid := (SELECT auth.uid());
+  v_role := public.current_user_role();
+  IF v_role = 'pt' THEN
+    IF OLD.created_by <> v_uid THEN
+      RAISE EXCEPTION 'Forbidden: Physiotherapists can only modify or delete minigames they personally created.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_fn_enforce_minigame_question_ownership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions, pg_temp
+AS $$
+DECLARE
+  v_role public.user_role;
+  v_uid UUID;
+BEGIN
+  v_uid := (SELECT auth.uid());
+  v_role := public.current_user_role();
+  IF v_role = 'pt' THEN
+    IF OLD.created_by <> v_uid THEN
+      RAISE EXCEPTION 'Forbidden: Physiotherapists can only modify or delete questions they personally created.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_fn_enforce_modpack_ownership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions, pg_temp
+AS $$
+DECLARE
+  v_role public.user_role;
+  v_uid UUID;
+BEGIN
+  v_uid := (SELECT auth.uid());
+  v_role := public.current_user_role();
+  IF v_role = 'pt' THEN
+    IF OLD.created_by <> v_uid THEN
+      RAISE EXCEPTION 'Forbidden: Physiotherapists can only modify or delete modpacks they personally created.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_fn_enforce_course_assignment_permission()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions, pg_temp
+AS $$
+DECLARE
+  v_role public.user_role;
+  v_uid UUID;
+BEGIN
+  v_uid := (SELECT auth.uid());
+  v_role := public.current_user_role();
+  IF v_role = 'pt' THEN
+    IF NOT public.is_patient_accessible_by_pt(NEW.patient_id) THEN
+      RAISE EXCEPTION 'Forbidden: Physiotherapist cannot create or assign a course to a patient who is not under their active care.';
+    END IF;
+    IF NEW.pt_id <> v_uid THEN
+      RAISE EXCEPTION 'Forbidden: Physiotherapist cannot assign a course under another PT ID.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_fn_touch_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, extensions, pg_temp
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+-- ============================================================================
 -- 8. ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
 

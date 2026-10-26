@@ -85,7 +85,13 @@ export const PtApp: React.FC = () => {
     if (role !== 'pt' && !uname.startsWith('pt')) {
       throw new Error('บัญชีนี้ไม่มีสิทธิ์เข้าถึงส่วนงานนักกายภาพบำบัด (PT Only)');
     }
-    setCurrentUser(res.user);
+    const userToSet = {
+      ...(res.user || {}),
+      username: res.user?.username || credentials.username,
+      full_name: res.user?.full_name || 'กภ.สมชาย กายภาพดี',
+      role: 'pt',
+    };
+    setCurrentUser(userToSet as UserProfile);
     await fetchStaffCalls();
   };
 

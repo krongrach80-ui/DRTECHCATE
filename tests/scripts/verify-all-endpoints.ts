@@ -65,13 +65,14 @@ async function testAll() {
   if (auditRes.status !== 200) throw new Error(`GET /api/audit failed with ${auditRes.status}`);
 
   console.log('\n7. Testing POST /api/staff (create new staff) ...');
+  const testUsername = 'pt_test_' + Date.now().toString().slice(-4);
   const createStaffRes = await request(app)
     .post('/api/staff')
     .set('Authorization', authHeader)
     .set('Origin', 'https://drtechcarev2.vercel.app')
     .set('X-Requested-With', 'XMLHttpRequest')
     .send({
-      username: 'pt_kitti',
+      username: testUsername,
       password: 'CorrectPassword123!',
       role: 'pt',
       full_name: 'กภ. กิตติศักดิ์ มีชัย',

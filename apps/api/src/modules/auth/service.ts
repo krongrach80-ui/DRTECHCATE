@@ -13,6 +13,7 @@ export interface LoginResult {
   user: {
     id: string;
     role: string;
+    username?: string;
     full_name: string;
   };
   deviceId: string;
@@ -231,7 +232,6 @@ export class AuthService {
       user: {
         id: profile.id,
         role: profile.role,
-        username: profile.username || cleanUsername,
         full_name: profile.full_name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || profile.username || 'ผู้ใช้งาน',
       },
       deviceId,

@@ -86,7 +86,13 @@ export const AdminApp: React.FC = () => {
     if (role !== 'admin' && role !== 'director' && uname !== 'director' && uname !== 'admin') {
       throw new Error('บัญชีนี้ไม่มีสิทธิ์เข้าถึงส่วนงานผู้อำนวยการโรงพยาบาล (Admin Only)');
     }
-    setCurrentUser(res.user);
+    const userToSet = {
+      ...(res.user || {}),
+      username: res.user?.username || credentials.username,
+      full_name: res.user?.full_name || (uname === 'director' ? 'ผู้อำนวยการโรงพยาบาล' : 'ผู้ดูแลระบบ'),
+      role: res.user?.role || (uname === 'director' ? 'director' : 'admin'),
+    };
+    setCurrentUser(userToSet as UserProfile);
     await fetchStaffCalls();
   };
 
