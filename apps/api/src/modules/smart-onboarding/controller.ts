@@ -39,8 +39,9 @@ export class SmartOnboardingController {
         ok: true,
         ...result,
       });
-    } catch (err) {
-      next(err);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ ok: false, error: { code: 'INTERNAL_ERROR', message: errMsg } });
     }
   };
 
@@ -56,8 +57,9 @@ export class SmartOnboardingController {
         ok: true,
         ...result,
       });
-    } catch (err) {
-      next(err);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ ok: false, error: { code: 'INTERNAL_ERROR', message: errMsg } });
     }
   };
 

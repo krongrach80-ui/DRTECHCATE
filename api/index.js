@@ -12570,7 +12570,8 @@ var SmartOnboardingController = class {
           ...result
         });
       } catch (err) {
-        next(err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ ok: false, error: { code: "INTERNAL_ERROR", message: errMsg } });
       }
     };
     this.scanLogin = async (req, res, next) => {
@@ -12586,7 +12587,8 @@ var SmartOnboardingController = class {
           ...result
         });
       } catch (err) {
-        next(err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ ok: false, error: { code: "INTERNAL_ERROR", message: errMsg } });
       }
     };
     this.createPending = async (req, res, next) => {
