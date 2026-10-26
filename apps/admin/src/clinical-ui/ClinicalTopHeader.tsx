@@ -32,7 +32,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
   title,
   subtitleEn,
   userName = 'ผู้ใช้งานระบบ',
-  userRoleTitle = 'ผู้อำนวยการโรงพยาบาล (Hospital Director)',
+  userRoleTitle = 'เจ้าหน้าที่โรงพยาบาล (Hospital Staff)',
   onOpenNewPatientModal,
   onFastCheckIn,
   onLogout,

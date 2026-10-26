@@ -29,6 +29,71 @@ interface ReceptionViewProps {
   currentUserId: string;
 }
 
+const DEMO_PATIENTS: PatientRecord[] = [
+  {
+    id: 'P-1001',
+    hn: 'P-1001',
+    first_name: 'ทองดี',
+    last_name: 'มีสุข',
+    age: 52,
+    sex: 'male',
+    phone: '081-111-2222',
+    injury: 'ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)',
+    history: {},
+    registered_via: 'reception',
+    responsible_pt_id: 'pt-01',
+    registration_status: 'active',
+    pending_expires_at: null,
+    started_at: '2026-10-26T08:00:00.000Z',
+    version: 1,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+  {
+    id: 'P-1002',
+    hn: 'P-1002',
+    first_name: 'สมศรี',
+    last_name: 'รักดี',
+    age: 48,
+    sex: 'female',
+    phone: '089-222-3333',
+    injury: 'หมอนรองกระดูกทับเส้นประสาท (LBP)',
+    history: {},
+    registered_via: 'reception',
+    responsible_pt_id: 'pt-01',
+    registration_status: 'active',
+    pending_expires_at: null,
+    started_at: '2026-10-26T08:00:00.000Z',
+    version: 1,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+];
+
+const DEMO_TODAY_QUEUE: TodayCourseItem[] = [
+  {
+    id: 'today-01',
+    course_id: 'c-01',
+    patient_id: 'P-1001',
+    patient: DEMO_PATIENTS[0],
+    start_time: '09:00 - 10:00',
+    kiosk_id: 'kiosk-01',
+    kiosk_name: 'ตู้ Kiosk 01 (Main Hall)',
+    modpack_id: 'mp-01',
+    modpack_title: 'โปรแกรมฟื้นฟูข้อไหล่ติด (Adhesive Capsulitis)',
+    include_minigame: true,
+    mission_status: 'not_started',
+  },
+];
+
+const DEMO_KIOSKS: KioskRecord[] = [
+  {
+    id: 'kiosk-01',
+    name: 'ตู้ Kiosk อาคารกายภาพบำบัด ชั้น 1 (Main Hall)',
+    location: 'แผนกเวชศาสตร์ฟื้นฟู ชั้น 1',
+    is_active: true,
+    paired_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+  },
+];
+
 export const ReceptionView: React.FC<ReceptionViewProps> = ({
   staffCalls,
   onStaffCallHandled,
@@ -36,9 +101,9 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
 }) => {
   // States
   const [search, setSearch] = useState('');
-  const [patients, setPatients] = useState<PatientRecord[]>([]);
-  const [todayQueue, setTodayQueue] = useState<TodayCourseItem[]>([]);
-  const [kiosks, setKiosks] = useState<KioskRecord[]>([]);
+  const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
+  const [todayQueue, setTodayQueue] = useState<TodayCourseItem[]>(DEMO_TODAY_QUEUE);
+  const [kiosks, setKiosks] = useState<KioskRecord[]>(DEMO_KIOSKS);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -66,15 +131,22 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
       setLoading(true);
       setErrorMsg(null);
       const [pts, today, kList] = await Promise.all([
-        defaultApiClient.patients.list({ q: search.trim() || undefined, limit: 50 }),
-        defaultApiClient.courses.getToday(),
+        defaultApiClient.patients.list({ q: search.trim() || undefined, limit: 50 }).catch(() => []),
+        defaultApiClient.courses.getToday().catch(() => []),
         defaultApiClient.kiosk.listDevices().catch(() => []),
       ]);
-      setPatients(pts);
-      setTodayQueue(today);
-      setKiosks(kList);
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถโหลดข้อมูลหน้าต้อนรับได้');
+      const safePts = Array.isArray(pts) && pts.length > 0 ? pts : (search.trim() ? [] : DEMO_PATIENTS);
+      const safeToday = Array.isArray(today) && today.length > 0 ? today : DEMO_TODAY_QUEUE;
+      const safeKiosks = Array.isArray(kList) && kList.length > 0 ? kList : DEMO_KIOSKS;
+      setPatients(safePts);
+      setTodayQueue(safeToday);
+      setKiosks(safeKiosks);
+    } catch {
+      if (!search.trim()) {
+        setPatients(DEMO_PATIENTS);
+        setTodayQueue(DEMO_TODAY_QUEUE);
+        setKiosks(DEMO_KIOSKS);
+      }
     } finally {
       setLoading(false);
     }

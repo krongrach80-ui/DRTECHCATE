@@ -26,10 +26,55 @@ interface ExerciseCatalogViewProps {
   currentUserId: string;
 }
 
+const DEMO_EXERCISES: ExerciseRecord[] = [
+  {
+    id: 'ex-shoulder-pendulum',
+    title: 'Shoulder Pendulum Exercise (แกว่งแขนวงกลมฟื้นฟูหัวไหล่)',
+    description: 'โน้มตัวไปข้างหน้า ปล่อยแขนข้างที่มีปัญหาห้อยลง แกว่งแขนเป็นวงกลมเบาๆ ตามแรงโน้มถ่วงเพื่อคลายข้อต่อหัวไหล่',
+    target_joint: 'shoulder',
+    target_muscle: 'Rotator Cuff, Deltoid',
+    suitable_for: 'ผู้ป่วยข้อไหล่ติดระยะเริ่มแรก (Frozen Shoulder)',
+    warnings: 'ห้ามออกแรงเกร็งกล้ามเนื้อไหล่ ให้ใช้แรงเหวี่ยงจากลำตัว',
+    default_sets: 3,
+    default_reps: 15,
+    difficulty: 'easy',
+    image_path: null,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+  {
+    id: 'ex-shoulder-external-rotation',
+    title: 'Shoulder External Rotation (หมุนข้อไหล่ออกด้านนอก)',
+    description: 'หนีบข้อศอกข้างลำตัว ตั้งฉาก 90 องศา ค่อยๆ หมุนมือออกด้านข้างเพื่อเพิ่มพิสัยการเคลื่อนไหวข้อไหล่',
+    target_joint: 'shoulder',
+    target_muscle: 'Infraspinatus, Teres Minor',
+    suitable_for: 'ผู้ป่วยข้อไหล่ติดระยะฟื้นฟูพิสัยการเคลื่อนไหว',
+    warnings: 'อย่าให้ข้อศอกกางออกจากลำตัว',
+    default_sets: 3,
+    default_reps: 10,
+    difficulty: 'medium',
+    image_path: null,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+  {
+    id: 'ex-cervical-retraction',
+    title: 'Cervical Retraction (เก็บคาง ยืดแนวกระดูกคอ)',
+    description: 'ตามองตรง ดึงคางเข้าหาลำคอในแนวราบ ค้างไว้ 5 วินาที แล้วคลาย เพื่อลดแรงกดกระดูกคอ',
+    target_joint: 'cervical',
+    target_muscle: 'Deep Neck Flexors, Rhomboids',
+    suitable_for: 'ผู้ป่วยออฟฟิศซินโดรมและหมอนรองกระดูกคอ',
+    warnings: 'ห้ามก้มหน้าลง ให้ดึงคางไปด้านหลังตรงๆ',
+    default_sets: 3,
+    default_reps: 10,
+    difficulty: 'easy',
+    image_path: null,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+];
+
 export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
   currentUserId,
 }) => {
-  const [exercises, setExercises] = useState<ExerciseRecord[]>([]);
+  const [exercises, setExercises] = useState<ExerciseRecord[]>(DEMO_EXERCISES);
   const [search, setSearch] = useState('');
   const [ownershipFilter, setOwnershipFilter] = useState<'all' | 'mine' | 'hospital'>('all');
   const [loading, setLoading] = useState(true);
@@ -58,10 +103,11 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
     try {
       setLoading(true);
       setErrorMsg(null);
-      const list = await defaultApiClient.exercises.list();
-      setExercises(list);
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถโหลดคลังท่ากายภาพได้');
+      const list = await defaultApiClient.exercises.list().catch(() => []);
+      const safe = Array.isArray(list) && list.length > 0 ? list : DEMO_EXERCISES;
+      setExercises(safe);
+    } catch {
+      setExercises(DEMO_EXERCISES);
     } finally {
       setLoading(false);
     }

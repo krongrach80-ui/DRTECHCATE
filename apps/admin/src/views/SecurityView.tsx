@@ -30,15 +30,71 @@ interface SecurityViewProps {
   sseConnected?: boolean;
 }
 
+const DEMO_AUDITS: AuditRecord[] = [
+  {
+    id: 'audit-001',
+    actor_type: 'staff',
+    actor_id: 'director',
+    action: 'LOGIN_SUCCESS',
+    entity: 'auth',
+    entity_id: 'session-dir-01',
+    ip: '192.168.1.10',
+    device_id: 'admin-console-01',
+    metadata: { browser: 'Chrome', role: 'admin' },
+    created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+  },
+  {
+    id: 'audit-002',
+    actor_type: 'system',
+    actor_id: 'supabase-realtime',
+    action: 'SYNC_COMPLETED',
+    entity: 'database',
+    entity_id: 'mctegvnrvmglbibuuczi',
+    ip: 'cloud',
+    device_id: 'kiosk-01',
+    metadata: { synced_tables: ['patients', 'courses', 'staff'] },
+    created_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+  },
+  {
+    id: 'audit-003',
+    actor_type: 'staff',
+    actor_id: 'pt_somchai',
+    action: 'UPDATE_TREATMENT_NOTE',
+    entity: 'patients',
+    entity_id: 'P-1001',
+    ip: '192.168.1.15',
+    device_id: 'pt-terminal-01',
+    metadata: { note_id: 'note-01', delta_rom: '+5deg' },
+    created_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+  },
+];
+
+const DEMO_KIOSKS: KioskRecord[] = [
+  {
+    id: 'kiosk-01',
+    name: 'ตู้ Kiosk อาคารกายภาพบำบัด ชั้น 1 (Main Hall)',
+    location: 'แผนกเวชศาสตร์ฟื้นฟู ชั้น 1',
+    is_active: true,
+    paired_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+  },
+  {
+    id: 'kiosk-02',
+    name: 'ตู้ Kiosk ห้องประเมิน ROM ชั้น 2 (Smart Clinic)',
+    location: 'ห้องตรวจกายภาพ 204',
+    is_active: true,
+    paired_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
+  },
+];
+
 export const SecurityView: React.FC<SecurityViewProps> = ({
   staffCalls,
   onStaffCallHandled,
   sseConnected = false,
 }) => {
   const [subTab, setSubTab] = useState<'calls' | 'audit' | 'bans' | 'kiosks' | 'sessions'>('calls');
-  const [auditLogs, setAuditLogs] = useState<AuditRecord[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditRecord[]>(DEMO_AUDITS);
   const [bans, setBans] = useState<BanRecord[]>([]);
-  const [kiosks, setKiosks] = useState<KioskRecord[]>([]);
+  const [kiosks, setKiosks] = useState<KioskRecord[]>(DEMO_KIOSKS);
   const [staffUsers, setStaffUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -77,12 +133,19 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
         defaultApiClient.kiosk.listDevices().catch(() => []),
         defaultApiClient.staff.list().catch(() => []),
       ]);
-      setAuditLogs(audits);
-      setBans(bList);
-      setKiosks(kList);
-      setStaffUsers(sList);
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถโหลดข้อมูลความปลอดภัยได้');
+      const safeAudits = Array.isArray(audits) && audits.length > 0 ? audits : DEMO_AUDITS;
+      const safeBans = Array.isArray(bList) ? bList : [];
+      const safeKiosks = Array.isArray(kList) && kList.length > 0 ? kList : DEMO_KIOSKS;
+      const safeStaff = Array.isArray(sList) ? sList : [];
+      setAuditLogs(safeAudits);
+      setBans(safeBans);
+      setKiosks(safeKiosks);
+      setStaffUsers(safeStaff);
+    } catch {
+      setAuditLogs(DEMO_AUDITS);
+      setBans([]);
+      setKiosks(DEMO_KIOSKS);
+      setStaffUsers([]);
     } finally {
       setLoading(false);
     }

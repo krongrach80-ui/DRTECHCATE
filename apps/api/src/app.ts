@@ -133,6 +133,7 @@ export function createApp(
   app.use('/api/audit', auditController ? createAuditRouter(auditController) : auditRoutes);
   app.use('/api/staff', staffRoutes);
   app.use('/api', directoryRoutes);
+  app.use('/api/directory', directoryRoutes);
   app.use('/api/patients', createPatientsRouter());
   app.use('/api/face', createFaceRouter(faceEnrollmentController));
   app.use('/api/courses', createCoursesRouter());

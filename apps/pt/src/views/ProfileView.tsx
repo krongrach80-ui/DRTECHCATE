@@ -61,17 +61,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const fetchCasesAndTransfers = useCallback(async () => {
     try {
       const [allPatients, allPts, allTransfers] = await Promise.all([
-        defaultApiClient.patients.list({ limit: 100 }),
+        defaultApiClient.patients.list({ limit: 100 }).catch(() => []),
         defaultApiClient.pts.list().catch(() => []),
         defaultApiClient.caseTransfers.list().catch(() => []),
       ]);
 
-      const assigned = allPatients.filter(
+      const safePatients = Array.isArray(allPatients) ? allPatients : [];
+      const safePts = Array.isArray(allPts) ? allPts : [];
+      const safeTransfers = Array.isArray(allTransfers) ? allTransfers : [];
+
+      const assigned = safePatients.filter(
         (p) => p.responsible_pt_id === currentUser.id
       );
       setMyPatients(assigned);
-      setActivePtList(allPts.filter((p) => p.user_id !== currentUser.id));
-      setTransfers(allTransfers);
+      setActivePtList(safePts.filter((p) => p.user_id !== currentUser.id));
+      setTransfers(safeTransfers);
 
       if (assigned.length > 0 && !delegationFormData.patient_id) {
         setDelegationFormData((prev) => ({
@@ -79,8 +83,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           patient_id: assigned[0].id,
         }));
       }
-      if (allPts.length > 0 && !delegationFormData.covering_pt_id) {
-        const otherPt = allPts.find((p) => p.user_id !== currentUser.id);
+      if (safePts.length > 0 && !delegationFormData.covering_pt_id) {
+        const otherPt = safePts.find((p) => p.user_id !== currentUser.id);
         if (otherPt) {
           setDelegationFormData((prev) => ({
             ...prev,

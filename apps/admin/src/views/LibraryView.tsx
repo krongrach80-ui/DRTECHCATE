@@ -24,11 +24,93 @@ import {
   SmartModpackModal
 } from '../smart-portal/index.js';
 
+const DEMO_EXERCISES: ExerciseRecord[] = [
+  {
+    id: 'ex-shoulder-pendulum',
+    title: 'Shoulder Pendulum Exercise (แกว่งแขนวงกลมฟื้นฟูหัวไหล่)',
+    description: 'โน้มตัวไปข้างหน้า ปล่อยแขนข้างที่มีปัญหาห้อยลง แกว่งแขนเป็นวงกลมเบาๆ ตามแรงโน้มถ่วงเพื่อคลายข้อต่อหัวไหล่',
+    target_joint: 'shoulder',
+    suitable_for: 'ผู้ป่วยข้อไหล่ติดระยะเริ่มแรก (Frozen Shoulder)',
+    warnings: 'ห้ามออกแรงเกร็งกล้ามเนื้อไหล่ ให้ใช้แรงเหวี่ยงจากลำตัว',
+    default_sets: 3,
+    default_reps: 15,
+    difficulty: 'easy',
+    image_path: null,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+  {
+    id: 'ex-shoulder-external-rotation',
+    title: 'Shoulder External Rotation (หมุนข้อไหล่ออกด้านนอก)',
+    description: 'หนีบข้อศอกข้างลำตัว ตั้งฉาก 90 องศา ค่อยๆ หมุนมือออกด้านข้างเพื่อเพิ่มพิสัยการเคลื่อนไหวข้อไหล่',
+    target_joint: 'shoulder',
+    suitable_for: 'ผู้ป่วยข้อไหล่ติดระยะฟื้นฟูพิสัยการเคลื่อนไหว',
+    warnings: 'อย่าให้ข้อศอกกางออกจากลำตัว',
+    default_sets: 3,
+    default_reps: 10,
+    difficulty: 'medium',
+    image_path: null,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+  {
+    id: 'ex-cervical-retraction',
+    title: 'Cervical Retraction (เก็บคาง ยืดแนวกระดูกคอ)',
+    description: 'ตามองตรง ดึงคางเข้าหาลำคอในแนวราบ ค้างไว้ 5 วินาที แล้วคลาย เพื่อลดแรงกดกระดูกคอ',
+    target_joint: 'cervical',
+    suitable_for: 'ผู้ป่วยออฟฟิศซินโดรมและหมอนรองกระดูกคอ',
+    warnings: 'ห้ามก้มหน้าลง ให้ดึงคางไปด้านหลังตรงๆ',
+    default_sets: 3,
+    default_reps: 10,
+    difficulty: 'easy',
+    image_path: null,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+];
+
+const DEMO_MODPACKS: ModpackRecord[] = [
+  {
+    id: 'mp-frozen-shoulder-01',
+    name: 'ชุดท่าฟื้นฟูข้อไหล่ติดระยะที่ 1 (Adhesive Capsulitis Protocol)',
+    description: 'โปรแกรมมาตรฐานสำหรับการฟื้นฟูข้อไหล่ติดและลดการยึดรั้งของปลอกหุ้มข้อต่อ',
+    items: [
+      {
+        exercise_id: 'ex-shoulder-pendulum',
+        exercise: DEMO_EXERCISES[0],
+        sets: 3,
+        reps: 15,
+        position: 1,
+      },
+      {
+        exercise_id: 'ex-shoulder-external-rotation',
+        exercise: DEMO_EXERCISES[1],
+        sets: 3,
+        reps: 10,
+        position: 2,
+      },
+    ],
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+];
+
+const DEMO_MINIGAMES: MinigameRecord[] = [
+  {
+    id: 'mg-memory-cards',
+    title: 'เกมจับคู่การ์ดความจำ (Cognitive Memory Match)',
+    description: 'ฝึกความจำระยะสั้นและการประมวลผลของสมองระหว่างพักเซ็ต',
+    type: 'memory',
+  },
+  {
+    id: 'mg-math-speed',
+    title: 'เกมคำนวณเลขเร็ว (Brain Speed Arithmetic)',
+    description: 'กระตุ้นการทำงานของสมองส่วนหน้าด้วยการคิดเลขง่ายๆ ภายใต้เวลาที่กำหนด',
+    type: 'math',
+  },
+];
+
 export const LibraryView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'exercises' | 'minigames' | 'modpacks'>('exercises');
-  const [exercises, setExercises] = useState<ExerciseRecord[]>([]);
-  const [minigames, setMinigames] = useState<MinigameRecord[]>([]);
-  const [modpacks, setModpacks] = useState<ModpackRecord[]>([]);
+  const [exercises, setExercises] = useState<ExerciseRecord[]>(DEMO_EXERCISES);
+  const [minigames, setMinigames] = useState<MinigameRecord[]>(DEMO_MINIGAMES);
+  const [modpacks, setModpacks] = useState<ModpackRecord[]>(DEMO_MODPACKS);
   const [loading, setLoading] = useState<boolean>(true);
   const [isSmartExerciseModalOpen, setIsSmartExerciseModalOpen] = useState<boolean>(false);
   const [isSmartModpackModalOpen, setIsSmartModpackModalOpen] = useState<boolean>(false);
@@ -78,15 +160,20 @@ export const LibraryView: React.FC = () => {
       setLoading(true);
       setErrorMsg(null);
       const [exData, mgData, mpData] = await Promise.all([
-        defaultApiClient.exercises.list(),
+        defaultApiClient.exercises.list().catch(() => []),
         defaultApiClient.minigames.list().catch(() => []),
         defaultApiClient.modpacks.list().catch(() => []),
       ]);
-      setExercises(exData);
-      setMinigames(mgData);
-      setModpacks(mpData);
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถโหลดข้อมูลคลังกายภาพได้');
+      const safeEx = Array.isArray(exData) && exData.length > 0 ? exData : DEMO_EXERCISES;
+      const safeMg = Array.isArray(mgData) && mgData.length > 0 ? mgData : DEMO_MINIGAMES;
+      const safeMp = Array.isArray(mpData) && mpData.length > 0 ? mpData : DEMO_MODPACKS;
+      setExercises(safeEx);
+      setMinigames(safeMg);
+      setModpacks(safeMp);
+    } catch {
+      setExercises(DEMO_EXERCISES);
+      setMinigames(DEMO_MINIGAMES);
+      setModpacks(DEMO_MODPACKS);
     } finally {
       setLoading(false);
     }

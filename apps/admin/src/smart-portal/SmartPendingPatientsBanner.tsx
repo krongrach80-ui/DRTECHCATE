@@ -34,9 +34,9 @@ export const SmartPendingPatientsBanner: React.FC<SmartPendingPatientsBannerProp
     try {
       setLoading(true);
       const data = await defaultApiClient.smartOnboarding.listPending();
-      setPendingPatients(data);
+      setPendingPatients(Array.isArray(data) ? data : []);
     } catch {
-      // non-blocking
+      setPendingPatients([]);
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,7 @@ export const SmartPendingPatientsBanner: React.FC<SmartPendingPatientsBannerProp
     setIsDeleting(true);
     try {
       await defaultApiClient.smartOnboarding.deletePatient(patientId);
-      setPendingPatients((prev) => prev.filter((p) => p.patient_id !== patientId));
+      setPendingPatients((prev) => (Array.isArray(prev) ? prev : []).filter((p) => p.patient_id !== patientId));
       setDeletingId(null);
       onPatientUpdated?.();
     } catch (err: unknown) {
@@ -78,11 +78,13 @@ export const SmartPendingPatientsBanner: React.FC<SmartPendingPatientsBannerProp
     }
   };
 
-  if (loading && pendingPatients.length === 0) {
+  const safePending = Array.isArray(pendingPatients) ? pendingPatients : [];
+
+  if (loading && safePending.length === 0) {
     return null;
   }
 
-  if (pendingPatients.length === 0) {
+  if (safePending.length === 0) {
     return null;
   }
 

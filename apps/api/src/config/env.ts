@@ -228,7 +228,7 @@ export function parseEnv(rawEnv: Record<string, unknown> = process.env): Env {
     APP_URL: isVercel ? (rawEnv.APP_URL && !String(rawEnv.APP_URL).includes('localhost') ? rawEnv.APP_URL : 'https://drtechcarev2.vercel.app') : (rawEnv.APP_URL || undefined),
     TRUST_PROXY_HOPS: rawEnv.TRUST_PROXY_HOPS !== undefined ? rawEnv.TRUST_PROXY_HOPS : (isVercel ? 1 : undefined),
     PAD_MODE: rawEnv.PAD_MODE || (isVercel ? 'active_only' : undefined),
-    USE_LOCAL_STORAGE: rawEnv.USE_LOCAL_STORAGE !== undefined ? rawEnv.USE_LOCAL_STORAGE : (isVercel ? 'false' : undefined),
+    USE_LOCAL_STORAGE: rawEnv.USE_LOCAL_STORAGE !== undefined ? rawEnv.USE_LOCAL_STORAGE : (isVercel ? 'true' : undefined),
     ALLOW_INSECURE_COOKIES: isVercel ? false : (rawEnv.ALLOW_INSECURE_COOKIES !== undefined ? rawEnv.ALLOW_INSECURE_COOKIES : undefined),
     ALLOW_BEARER_IN_PROD: rawEnv.ALLOW_BEARER_IN_PROD !== undefined ? rawEnv.ALLOW_BEARER_IN_PROD : (isVercel ? 'true' : undefined),
     SUPABASE_URL: rawEnv.SUPABASE_URL || rawEnv.NEXT_PUBLIC_SUPABASE_URL || (isVercel ? 'https://mctegvnrvmglbibuuczi.supabase.co' : undefined),

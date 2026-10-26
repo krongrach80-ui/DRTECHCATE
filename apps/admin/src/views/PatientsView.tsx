@@ -121,8 +121,8 @@ export const PatientsView: React.FC = () => {
 
   const fetchPts = async () => {
     try {
-      const data = await defaultApiClient.staff.list();
-      setPtsList(data.filter((u: UserProfile) => u.role === 'pt'));
+      const data = await defaultApiClient.staff.list().catch(() => []);
+      setPtsList(Array.isArray(data) ? data.filter((u: UserProfile) => u.role === 'pt') : []);
     } catch {
       // non-blocking
     }

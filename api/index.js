@@ -65,7 +65,7 @@ function parseEnv(rawEnv = process.env) {
     APP_URL: isVercel ? rawEnv.APP_URL && !String(rawEnv.APP_URL).includes("localhost") ? rawEnv.APP_URL : "https://drtechcarev2.vercel.app" : rawEnv.APP_URL || void 0,
     TRUST_PROXY_HOPS: rawEnv.TRUST_PROXY_HOPS !== void 0 ? rawEnv.TRUST_PROXY_HOPS : isVercel ? 1 : void 0,
     PAD_MODE: rawEnv.PAD_MODE || (isVercel ? "active_only" : void 0),
-    USE_LOCAL_STORAGE: rawEnv.USE_LOCAL_STORAGE !== void 0 ? rawEnv.USE_LOCAL_STORAGE : isVercel ? "false" : void 0,
+    USE_LOCAL_STORAGE: rawEnv.USE_LOCAL_STORAGE !== void 0 ? rawEnv.USE_LOCAL_STORAGE : isVercel ? "true" : void 0,
     ALLOW_INSECURE_COOKIES: isVercel ? false : rawEnv.ALLOW_INSECURE_COOKIES !== void 0 ? rawEnv.ALLOW_INSECURE_COOKIES : void 0,
     ALLOW_BEARER_IN_PROD: rawEnv.ALLOW_BEARER_IN_PROD !== void 0 ? rawEnv.ALLOW_BEARER_IN_PROD : isVercel ? "true" : void 0,
     SUPABASE_URL: rawEnv.SUPABASE_URL || rawEnv.NEXT_PUBLIC_SUPABASE_URL || (isVercel ? "https://mctegvnrvmglbibuuczi.supabase.co" : void 0),
@@ -1508,7 +1508,8 @@ var init_service2 = __esm({
           user: {
             id: profile.id,
             role: profile.role,
-            full_name: `${profile.first_name} ${profile.last_name}`.trim()
+            username: profile.username || cleanUsername,
+            full_name: profile.full_name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || profile.username || "\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"
           },
           deviceId
         };
@@ -7417,6 +7418,7 @@ var init_fakeRepositories = __esm({
 var localPersistenceEngine_exports = {};
 __export(localPersistenceEngine_exports, {
   activateLocalPersistenceEngine: () => activateLocalPersistenceEngine,
+  ensurePrimaryStaffAndPatients: () => ensurePrimaryStaffAndPatients,
   isLocalPersistenceActive: () => isLocalPersistenceActive,
   loadLocalDatabase: () => loadLocalDatabase,
   registerLocalUserPassword: () => registerLocalUserPassword,
@@ -7502,14 +7504,116 @@ function loadLocalDatabase() {
         currentFakeFaceEnrollmentRepo.inMemoryEnrollments.set(en.id, en);
       }
     }
+    ensurePrimaryStaffAndPatients();
     return true;
   } catch (err) {
     logger.warn({ err }, "Could not parse local database file, using fresh defaults");
     return false;
   }
 }
+function ensurePrimaryStaffAndPatients() {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const staffList = Array.from(currentFakeStaffRepo.inMemoryStaff.values());
+  if (!staffList.some((s) => s.username === "director")) {
+    currentFakeStaffRepo.inMemoryStaff.set("director-uuid", {
+      id: "director-uuid",
+      username: "director",
+      full_name: "\u0E1C\u0E2D. \u0E19\u0E1E. \u0E27\u0E34\u0E08\u0E31\u0E22 \u0E2A\u0E38\u0E02\u0E40\u0E01\u0E29\u0E21",
+      role: "admin",
+      status: "active",
+      phone: "081-999-8888",
+      bio: "\u0E1C\u0E39\u0E49\u0E2D\u0E33\u0E19\u0E27\u0E22\u0E01\u0E32\u0E23\u0E42\u0E23\u0E07\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25\u0E41\u0E25\u0E30\u0E2B\u0E31\u0E27\u0E2B\u0E19\u0E49\u0E32\u0E28\u0E39\u0E19\u0E22\u0E4C\u0E40\u0E27\u0E0A\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39",
+      avatar_url: null,
+      force_logout_at: null,
+      last_login_at: now,
+      created_at: now,
+      updated_at: now
+    });
+  }
+  if (!staffList.some((s) => s.username === "admin")) {
+    currentFakeStaffRepo.inMemoryStaff.set("admin-super-uuid", {
+      id: "admin-super-uuid",
+      username: "admin",
+      full_name: "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E42\u0E23\u0E07\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25 (Admin)",
+      role: "admin",
+      status: "active",
+      phone: "082-000-1111",
+      bio: "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E2A\u0E32\u0E23\u0E2A\u0E19\u0E40\u0E17\u0E28\u0E42\u0E23\u0E07\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25",
+      avatar_url: null,
+      force_logout_at: null,
+      last_login_at: now,
+      created_at: now,
+      updated_at: now
+    });
+  }
+  if (!staffList.some((s) => s.username === "pt_somchai")) {
+    currentFakeStaffRepo.inMemoryStaff.set("pt-somchai-uuid", {
+      id: "pt-somchai-uuid",
+      username: "pt_somchai",
+      full_name: "\u0E01\u0E20. \u0E20\u0E31\u0E17\u0E23\u0E1E\u0E25 \u0E40\u0E08\u0E23\u0E34\u0E0D\u0E2A\u0E38\u0E02",
+      role: "pt",
+      status: "active",
+      phone: "085-555-4444",
+      bio: "\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E0A\u0E33\u0E19\u0E32\u0E0D\u0E01\u0E32\u0E23 \u0E1B\u0E23\u0E30\u0E08\u0E33\u0E28\u0E39\u0E19\u0E22\u0E4C\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E2A\u0E21\u0E23\u0E23\u0E16\u0E20\u0E32\u0E1E",
+      avatar_url: null,
+      force_logout_at: null,
+      last_login_at: now,
+      created_at: now,
+      updated_at: now,
+      pt_details: {
+        license_no: "\u0E01\u0E20.12345",
+        license_expiry: "2028-12-31",
+        specialty: "\u0E40\u0E27\u0E0A\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E02\u0E49\u0E2D\u0E41\u0E25\u0E30\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D",
+        age: 35,
+        sex: "male"
+      }
+    });
+  }
+  const patList = Array.from(currentFakePatientRepo.inMemoryPatients.values());
+  if (patList.length === 0) {
+    currentFakePatientRepo.inMemoryPatients.set("P-1001", {
+      id: "P-1001",
+      hn: "P-1001",
+      first_name: "\u0E17\u0E2D\u0E07\u0E14\u0E35",
+      last_name: "\u0E21\u0E35\u0E2A\u0E38\u0E02",
+      age: 52,
+      sex: "male",
+      phone: "081-111-2222",
+      injury: "\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E15\u0E34\u0E14\u0E23\u0E30\u0E22\u0E30\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39",
+      history: {},
+      registered_via: "reception",
+      responsible_pt_id: "pt-somchai-uuid",
+      registration_status: "active",
+      pending_expires_at: null,
+      started_at: now,
+      version: 1,
+      created_at: now,
+      updated_at: now
+    });
+    currentFakePatientRepo.inMemoryPatients.set("P-1002", {
+      id: "P-1002",
+      hn: "P-1002",
+      first_name: "\u0E2A\u0E21\u0E28\u0E23\u0E35",
+      last_name: "\u0E23\u0E31\u0E01\u0E14\u0E35",
+      age: 48,
+      sex: "female",
+      phone: "089-222-3333",
+      injury: "\u0E2B\u0E21\u0E2D\u0E19\u0E23\u0E2D\u0E07\u0E01\u0E23\u0E30\u0E14\u0E39\u0E01\u0E17\u0E31\u0E1A\u0E40\u0E2A\u0E49\u0E19\u0E1B\u0E23\u0E30\u0E2A\u0E32\u0E17 (LBP)",
+      history: {},
+      registered_via: "reception",
+      responsible_pt_id: "pt-somchai-uuid",
+      registration_status: "active",
+      pending_expires_at: null,
+      started_at: now,
+      version: 1,
+      created_at: now,
+      updated_at: now
+    });
+  }
+}
 function seedDefaultLocalData() {
   const now = (/* @__PURE__ */ new Date()).toISOString();
+  ensurePrimaryStaffAndPatients();
   const directorId = "director-uuid";
   const adminId = "admin-super-uuid";
   const ptId = "pt-somchai-uuid";
@@ -11824,6 +11928,7 @@ function createApp(customLogger, authController, securityController, auditContro
   app.use("/api/audit", auditController ? createAuditRouter(auditController) : auditRoutes);
   app.use("/api/staff", staffRoutes);
   app.use("/api", directoryRoutes);
+  app.use("/api/directory", directoryRoutes);
   app.use("/api/patients", createPatientsRouter());
   app.use("/api/face", createFaceRouter(faceEnrollmentController));
   app.use("/api/courses", createCoursesRouter());
@@ -11863,13 +11968,18 @@ var appInstance = null;
 async function getOrInitApp() {
   if (!appInstance) {
     const env = getEnv();
-    if (env.USE_LOCAL_STORAGE && env.NODE_ENV !== "production") {
+    const isServiceRolePlaceholder = !env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY.includes("placeholder") || env.SUPABASE_SERVICE_ROLE_KEY.includes("bypass") || env.SUPABASE_SERVICE_ROLE_KEY.includes("local-dev");
+    if (env.USE_LOCAL_STORAGE || isServiceRolePlaceholder) {
       const { activateLocalPersistenceEngine: activateLocalPersistenceEngine2 } = await Promise.resolve().then(() => (init_localPersistenceEngine(), localPersistenceEngine_exports));
       activateLocalPersistenceEngine2();
     } else {
-      await syncBansFromDatabase().catch((err) => {
-        console.warn("Initial ban sync error:", err);
-      });
+      try {
+        await syncBansFromDatabase();
+      } catch (err) {
+        console.warn("Initial ban sync error, activating fallback persistence engine:", err);
+        const { activateLocalPersistenceEngine: activateLocalPersistenceEngine2 } = await Promise.resolve().then(() => (init_localPersistenceEngine(), localPersistenceEngine_exports));
+        activateLocalPersistenceEngine2();
+      }
     }
     appInstance = createApp();
   }

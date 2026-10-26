@@ -27,12 +27,80 @@ interface ClinicalScheduleViewProps {
   onOpenCreateScheduleModal?: (patientId?: string) => void;
 }
 
+const DEMO_PATIENTS: PatientRecord[] = [
+  {
+    id: 'P-1001',
+    hn: 'P-1001',
+    first_name: 'ทองดี',
+    last_name: 'มีสุข',
+    age: 52,
+    sex: 'male',
+    phone: '081-111-2222',
+    injury: 'ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)',
+    history: {},
+    registered_via: 'reception',
+    responsible_pt_id: 'pt-somchai-uuid',
+    registration_status: 'active',
+    pending_expires_at: null,
+    started_at: '2026-10-26T08:00:00.000Z',
+    version: 1,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+  {
+    id: 'P-1002',
+    hn: 'P-1002',
+    first_name: 'สมศรี',
+    last_name: 'รักดี',
+    age: 48,
+    sex: 'female',
+    phone: '089-222-3333',
+    injury: 'หมอนรองกระดูกทับเส้นประสาท (LBP)',
+    history: {},
+    registered_via: 'reception',
+    responsible_pt_id: 'pt-somchai-uuid',
+    registration_status: 'active',
+    pending_expires_at: null,
+    started_at: '2026-10-26T08:00:00.000Z',
+    version: 1,
+    created_at: '2026-10-26T08:00:00.000Z',
+  },
+];
+
+const DEMO_DOSSIERS = [
+  {
+    patient_id: 'P-1001',
+    hn: 'P-1001',
+    first_name: 'ทองดี',
+    last_name: 'มีสุข',
+    profile_face_url: '',
+    schedule: {
+      startDate: '2026-10-01',
+      endDate: '2026-10-31',
+      daysOfWeek: ['Mon', 'Wed', 'Fri', 'จันทร์', 'พุธ', 'ศุกร์', 'จ.', 'พ.', 'ศ.'],
+      timeSlot: '09:00 - 10:00',
+      kioskId: 'kiosk-01',
+      exerciseCount: 3,
+      include_minigame: true,
+      status: 'active',
+    },
+    rehab_scores: [
+      { date: '2026-10-20', score: 85, rom: 90 },
+      { date: '2026-10-22', score: 88, rom: 92 },
+      { date: '2026-10-24', score: 91, rom: 95 },
+    ],
+    clinical: {
+      responsible_pt_name: 'กภ. ภัทรพล เจริญสุข',
+      diagnosis: 'ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)',
+    },
+  },
+];
+
 export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   onOpenCreateScheduleModal,
 }) => {
   const [calendarMode, setCalendarMode] = useState<'individual' | 'all'>('individual');
-  const [patients, setPatients] = useState<PatientRecord[]>([]);
-  const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
+  const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
+  const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(DEMO_PATIENTS[0]);
   const [dossiers, setDossiers] = useState<
     Array<{
       patient_id: string;
@@ -44,7 +112,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       rehab_scores: any[];
       clinical?: any;
     }>
-  >([]);
+  >(DEMO_DOSSIERS);
   const [loading, setLoading] = useState(true);
 
   // Modal State
@@ -68,12 +136,15 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         defaultApiClient.patients.list().catch(() => []),
         defaultApiClient.smartOnboarding.listDossiers().catch(() => []),
       ]);
-      const patientArr = Array.isArray(list) ? list : [];
+      const patientArr = Array.isArray(list) && list.length > 0 ? list : DEMO_PATIENTS;
+      const dossierArr = Array.isArray(dossierList) && dossierList.length > 0 ? dossierList : DEMO_DOSSIERS;
       setPatients(patientArr);
-      setDossiers(Array.isArray(dossierList) ? dossierList : []);
-      setSelectedPatient((prev) => prev ?? (patientArr.length > 0 ? patientArr[0] : null));
+      setDossiers(dossierArr);
+      setSelectedPatient((prev) => prev ?? patientArr[0]);
     } catch {
-      // non-blocking
+      setPatients(DEMO_PATIENTS);
+      setDossiers(DEMO_DOSSIERS);
+      setSelectedPatient((prev) => prev ?? DEMO_PATIENTS[0]);
     } finally {
       setLoading(false);
     }

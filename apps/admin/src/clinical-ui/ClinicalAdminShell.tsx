@@ -180,8 +180,22 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
         <ClinicalTopHeader
           title={pageMeta.title}
           subtitleEn={pageMeta.subtitle}
-          userName={currentUser?.full_name || (currentUser?.role === 'admin' ? 'ผู้อำนวยการคลินิก' : 'ผู้ดูแลระบบ')}
-          userRoleTitle={currentUser?.role === 'admin' ? 'ผู้อำนวยการโรงพยาบาล (Hospital Director)' : 'นักกายภาพบำบัด (PT)'}
+          userName={
+            currentUser?.full_name?.trim() ||
+            (currentUser?.username === 'director' ? 'ผู้อำนวยการโรงพยาบาล' : undefined) ||
+            (currentUser?.username === 'admin' ? 'ผู้ดูแลระบบโรงพยาบาล (Admin)' : undefined) ||
+            currentUser?.username ||
+            'ผู้ดูแลระบบ'
+          }
+          userRoleTitle={
+            currentUser?.username === 'director'
+              ? 'ผู้อำนวยการโรงพยาบาล (Hospital Director)'
+              : (currentUser?.role === 'admin' || currentUser?.username === 'admin')
+              ? 'ผู้ดูแลระบบโรงพยาบาล (Hospital Administrator)'
+              : currentUser?.role === 'pt'
+              ? 'นักกายภาพบำบัด (PT)'
+              : 'เจ้าหน้าที่โรงพยาบาล (Hospital Staff)'
+          }
           onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
           onFastCheckIn={() => {
             setActiveTab('schedule');
@@ -199,7 +213,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           className="flex-1 overflow-y-auto"
         >
           {/* Master Prompt v3 Spec 8.1: 6 Windows */}
-          <ErrorBoundary moduleName={pageMeta.title}>
+          <ErrorBoundary key={activeTab} moduleName={pageMeta.title}>
             {activeTab === 'users' && <StaffView />}
             {activeTab === 'patients' && <PatientsView />}
             {activeTab === 'pts' && <PtsView />}

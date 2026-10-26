@@ -116,8 +116,8 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
       } else {
         setPatients([]);
       }
-      setDelegatedTransfers(transfers);
-      setPtsList(directory);
+      setDelegatedTransfers(Array.isArray(transfers) ? transfers : []);
+      setPtsList(Array.isArray(directory) ? directory : []);
     } catch {
       if (!search.trim()) {
         setPatients(DEMO_PATIENTS);
@@ -249,7 +249,7 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
   };
 
   const activeTransferredIds = new Set(
-    delegatedTransfers
+    (Array.isArray(delegatedTransfers) ? delegatedTransfers : [])
       .filter((t) => t.status === 'active' && t.to_pt_id === currentUserId)
       .map((t) => t.patient_id)
   );
@@ -632,7 +632,7 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
                   className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
                 >
                   <option value="">-- เลือกนักกายภาพบำบัด --</option>
-                  {ptsList
+                  {(Array.isArray(ptsList) ? ptsList : [])
                     .filter((pt) => pt.id !== currentUserId)
                     .map((pt) => (
                       <option key={pt.id} value={pt.id}>

@@ -146,6 +146,7 @@ export function loadLocalDatabase(): boolean {
         currentFakeFaceEnrollmentRepo.inMemoryEnrollments.set(en.id, en);
       }
     }
+    ensurePrimaryStaffAndPatients();
     return true;
   } catch (err: unknown) {
     logger.warn({ err }, 'Could not parse local database file, using fresh defaults');
@@ -153,10 +154,117 @@ export function loadLocalDatabase(): boolean {
   }
 }
 
+export function ensurePrimaryStaffAndPatients(): void {
+  const now = new Date().toISOString();
+  const staffList = Array.from(currentFakeStaffRepo.inMemoryStaff.values());
+
+  if (!staffList.some((s) => s.username === 'director')) {
+    currentFakeStaffRepo.inMemoryStaff.set('director-uuid', {
+      id: 'director-uuid',
+      username: 'director',
+      full_name: 'ผอ. นพ. วิจัย สุขเกษม',
+      role: 'admin',
+      status: 'active',
+      phone: '081-999-8888',
+      bio: 'ผู้อำนวยการโรงพยาบาลและหัวหน้าศูนย์เวชศาสตร์ฟื้นฟู',
+      avatar_url: null,
+      force_logout_at: null,
+      last_login_at: now,
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
+  if (!staffList.some((s) => s.username === 'admin')) {
+    currentFakeStaffRepo.inMemoryStaff.set('admin-super-uuid', {
+      id: 'admin-super-uuid',
+      username: 'admin',
+      full_name: 'ผู้ดูแลระบบโรงพยาบาล (Admin)',
+      role: 'admin',
+      status: 'active',
+      phone: '082-000-1111',
+      bio: 'ผู้ดูแลระบบสารสนเทศโรงพยาบาล',
+      avatar_url: null,
+      force_logout_at: null,
+      last_login_at: now,
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
+  if (!staffList.some((s) => s.username === 'pt_somchai')) {
+    currentFakeStaffRepo.inMemoryStaff.set('pt-somchai-uuid', {
+      id: 'pt-somchai-uuid',
+      username: 'pt_somchai',
+      full_name: 'กภ. ภัทรพล เจริญสุข',
+      role: 'pt',
+      status: 'active',
+      phone: '085-555-4444',
+      bio: 'นักกายภาพบำบัดชำนาญการ ประจำศูนย์ฟื้นฟูสมรรถภาพ',
+      avatar_url: null,
+      force_logout_at: null,
+      last_login_at: now,
+      created_at: now,
+      updated_at: now,
+      pt_details: {
+        license_no: 'กภ.12345',
+        license_expiry: '2028-12-31',
+        specialty: 'เวชศาสตร์ฟื้นฟูข้อและกล้ามเนื้อ',
+        age: 35,
+        sex: 'male',
+      },
+    });
+  }
+
+  const patList = Array.from(currentFakePatientRepo.inMemoryPatients.values());
+  if (patList.length === 0) {
+    currentFakePatientRepo.inMemoryPatients.set('P-1001', {
+      id: 'P-1001',
+      hn: 'P-1001',
+      first_name: 'ทองดี',
+      last_name: 'มีสุข',
+      age: 52,
+      sex: 'male',
+      phone: '081-111-2222',
+      injury: 'ข้อไหล่ติดระยะฟื้นฟู',
+      history: {},
+      registered_via: 'reception',
+      responsible_pt_id: 'pt-somchai-uuid',
+      registration_status: 'active',
+      pending_expires_at: null,
+      started_at: now,
+      version: 1,
+      created_at: now,
+      updated_at: now,
+    });
+
+    currentFakePatientRepo.inMemoryPatients.set('P-1002', {
+      id: 'P-1002',
+      hn: 'P-1002',
+      first_name: 'สมศรี',
+      last_name: 'รักดี',
+      age: 48,
+      sex: 'female',
+      phone: '089-222-3333',
+      injury: 'หมอนรองกระดูกทับเส้นประสาท (LBP)',
+      history: {},
+      registered_via: 'reception',
+      responsible_pt_id: 'pt-somchai-uuid',
+      registration_status: 'active',
+      pending_expires_at: null,
+      started_at: now,
+      version: 1,
+      created_at: now,
+      updated_at: now,
+    });
+  }
+}
+
 export function seedDefaultLocalData(): void {
   const now = new Date().toISOString();
 
   // 1. Seed Staff Users
+  ensurePrimaryStaffAndPatients();
   const directorId = 'director-uuid';
   const adminId = 'admin-super-uuid';
   const ptId = 'pt-somchai-uuid';

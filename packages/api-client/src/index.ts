@@ -492,7 +492,12 @@ export class ApiClient {
   // =========================================================================
   public readonly staff = {
     list: async () => {
-      return this.request<UserProfile[]>('/staff', { method: 'GET' });
+      const res = await this.request<any>('/staff', { method: 'GET' });
+      if (Array.isArray(res)) return res as UserProfile[];
+      if (res && Array.isArray(res.staff)) return res.staff as UserProfile[];
+      if (res && Array.isArray(res.users)) return res.users as UserProfile[];
+      if (res && Array.isArray(res.data)) return res.data as UserProfile[];
+      return [] as UserProfile[];
     },
 
     get: async (id: string) => {
@@ -664,7 +669,11 @@ export class ApiClient {
 
   public readonly caseTransfers = {
     list: async () => {
-      return this.request<CaseTransferRecord[]>('/case-transfers', { method: 'GET' });
+      const res = await this.request<any>('/case-transfers', { method: 'GET' }).catch(() => []);
+      if (Array.isArray(res)) return res as CaseTransferRecord[];
+      if (res && Array.isArray(res.data)) return res.data as CaseTransferRecord[];
+      if (res && Array.isArray(res.transfers)) return res.transfers as CaseTransferRecord[];
+      return [] as CaseTransferRecord[];
     },
 
     create: async (data: {
@@ -699,7 +708,11 @@ export class ApiClient {
   // =========================================================================
   public readonly exercises = {
     list: async () => {
-      return this.request<ExerciseRecord[]>('/exercises', { method: 'GET' });
+      const res = await this.request<any>('/exercises', { method: 'GET' });
+      if (Array.isArray(res)) return res as ExerciseRecord[];
+      if (res && Array.isArray(res.exercises)) return res.exercises as ExerciseRecord[];
+      if (res && Array.isArray(res.data)) return res.data as ExerciseRecord[];
+      return [] as ExerciseRecord[];
     },
 
     get: async (id: string) => {
@@ -746,7 +759,11 @@ export class ApiClient {
 
   public readonly minigames = {
     list: async () => {
-      return this.request<MinigameRecord[]>('/minigames', { method: 'GET' });
+      const res = await this.request<any>('/minigames', { method: 'GET' });
+      if (Array.isArray(res)) return res as MinigameRecord[];
+      if (res && Array.isArray(res.minigames)) return res.minigames as MinigameRecord[];
+      if (res && Array.isArray(res.data)) return res.data as MinigameRecord[];
+      return [] as MinigameRecord[];
     },
 
     get: async (id: string) => {
@@ -782,7 +799,11 @@ export class ApiClient {
 
   public readonly modpacks = {
     list: async () => {
-      return this.request<ModpackRecord[]>('/modpacks', { method: 'GET' });
+      const res = await this.request<any>('/modpacks', { method: 'GET' });
+      if (Array.isArray(res)) return res as ModpackRecord[];
+      if (res && Array.isArray(res.modpacks)) return res.modpacks as ModpackRecord[];
+      if (res && Array.isArray(res.data)) return res.data as ModpackRecord[];
+      return [] as ModpackRecord[];
     },
 
     get: async (id: string) => {
@@ -827,7 +848,11 @@ export class ApiClient {
   public readonly courses = {
     getToday: async (kioskId?: string) => {
       const qs = kioskId ? `?kiosk_id=${encodeURIComponent(kioskId)}` : '';
-      return this.request<TodayCourseItem[]>(`/courses/today${qs}`, { method: 'GET' });
+      const res = await this.request<any>(`/courses/today${qs}`, { method: 'GET' });
+      if (Array.isArray(res)) return res as TodayCourseItem[];
+      if (res && Array.isArray(res.courses)) return res.courses as TodayCourseItem[];
+      if (res && Array.isArray(res.data)) return res.data as TodayCourseItem[];
+      return [] as TodayCourseItem[];
     },
 
     getCalendar: async (params?: { start_date?: string; end_date?: string; pt_id?: string }) => {
@@ -836,9 +861,13 @@ export class ApiClient {
       if (params?.end_date) query.set('end_date', params.end_date);
       if (params?.pt_id) query.set('pt_id', params.pt_id);
       const qs = query.toString() ? `?${query.toString()}` : '';
-      return this.request<CourseRecord[]>(`/courses/calendar${qs}`, {
+      const res = await this.request<any>(`/courses/calendar${qs}`, {
         method: 'GET',
       });
+      if (Array.isArray(res)) return res as CourseRecord[];
+      if (res && Array.isArray(res.courses)) return res.courses as CourseRecord[];
+      if (res && Array.isArray(res.data)) return res.data as CourseRecord[];
+      return [] as CourseRecord[];
     },
 
     create: async (data: {
@@ -878,9 +907,13 @@ export class ApiClient {
   // =========================================================================
   public readonly records = {
     getNotes: async (patientId: string) => {
-      return this.request<MedicalNoteRecord[]>(`/patients/${patientId}/notes`, {
+      const res = await this.request<any>(`/patients/${patientId}/notes`, {
         method: 'GET',
       });
+      if (Array.isArray(res)) return res as MedicalNoteRecord[];
+      if (res && Array.isArray(res.notes)) return res.notes as MedicalNoteRecord[];
+      if (res && Array.isArray(res.data)) return res.data as MedicalNoteRecord[];
+      return [] as MedicalNoteRecord[];
     },
 
     createNote: async (patientId: string, body: string) => {
@@ -891,10 +924,15 @@ export class ApiClient {
     },
 
     getTreatmentResults: async (patientId: string) => {
-      return this.request<TreatmentResultRecord[]>(
+      const res = await this.request<any>(
         `/patients/${patientId}/treatment-results`,
         { method: 'GET' }
       );
+      if (Array.isArray(res)) return res as TreatmentResultRecord[];
+      if (res && Array.isArray(res.results)) return res.results as TreatmentResultRecord[];
+      if (res && Array.isArray(res.treatment_results)) return res.treatment_results as TreatmentResultRecord[];
+      if (res && Array.isArray(res.data)) return res.data as TreatmentResultRecord[];
+      return [] as TreatmentResultRecord[];
     },
 
     createTreatmentResult: async (patientId: string, body: string) => {
@@ -914,7 +952,11 @@ export class ApiClient {
   public readonly security = {
     listBans: async (type?: 'ip' | 'device' | 'account') => {
       const qs = type ? `?type=${type}` : '';
-      return this.request<BanRecord[]>(`/security/bans${qs}`, { method: 'GET' });
+      const res = await this.request<any>(`/security/bans${qs}`, { method: 'GET' });
+      if (Array.isArray(res)) return res as BanRecord[];
+      if (res && Array.isArray(res.bans)) return res.bans as BanRecord[];
+      if (res && Array.isArray(res.data)) return res.data as BanRecord[];
+      return [] as BanRecord[];
     },
 
     createBan: async (data: {
@@ -978,7 +1020,12 @@ export class ApiClient {
       if (params.page) query.set('page', String(params.page));
       if (params.limit) query.set('limit', String(params.limit));
       const qs = query.toString() ? `?${query.toString()}` : '';
-      return this.request<AuditRecord[]>(`/audit${qs}`, { method: 'GET' });
+      const res = await this.request<any>(`/audit${qs}`, { method: 'GET' });
+      if (Array.isArray(res)) return res as AuditRecord[];
+      if (res && Array.isArray(res.logs)) return res.logs as AuditRecord[];
+      if (res && Array.isArray(res.audits)) return res.audits as AuditRecord[];
+      if (res && Array.isArray(res.data)) return res.data as AuditRecord[];
+      return [] as AuditRecord[];
     },
   };
 
@@ -987,7 +1034,11 @@ export class ApiClient {
   // =========================================================================
   public readonly kiosk = {
     listDevices: async () => {
-      return this.request<KioskRecord[]>('/kiosk/devices', { method: 'GET' });
+      const res = await this.request<any>('/kiosk/devices', { method: 'GET' });
+      if (Array.isArray(res)) return res as KioskRecord[];
+      if (res && Array.isArray(res.devices)) return res.devices as KioskRecord[];
+      if (res && Array.isArray(res.data)) return res.data as KioskRecord[];
+      return [] as KioskRecord[];
     },
 
     createDevice: async (data: { name: string; location?: string }) => {
@@ -1008,7 +1059,11 @@ export class ApiClient {
     },
 
     listStaffCalls: async () => {
-      return this.request<StaffCallRecord[]>('/kiosk/staff-calls', { method: 'GET' });
+      const res = await this.request<any>('/kiosk/staff-calls', { method: 'GET' });
+      if (Array.isArray(res)) return res as StaffCallRecord[];
+      if (res && Array.isArray(res.calls)) return res.calls as StaffCallRecord[];
+      if (res && Array.isArray(res.data)) return res.data as StaffCallRecord[];
+      return [] as StaffCallRecord[];
     },
 
     handleStaffCall: async (id: string) => {
@@ -1217,9 +1272,13 @@ export class ApiClient {
     },
 
     listPending: async () => {
-      return this.request<any[]>('/smart-onboarding/pending-patients', {
+      const res = await this.request<any>('/smart-onboarding/pending-patients', {
         method: 'GET',
       });
+      if (Array.isArray(res)) return res;
+      if (res && Array.isArray(res.patients)) return res.patients;
+      if (res && Array.isArray(res.data)) return res.data;
+      return [];
     },
 
     saveSchedule: async (payload: { patient_id: string; schedule: any }) => {
@@ -1268,22 +1327,21 @@ export class ApiClient {
     },
 
     listDossiers: async () => {
-      return this.request<Array<{
-        patient_id: string;
-        first_name: string;
-        last_name: string;
-        hn: string;
-        profile_face_url: string;
-        schedule: any;
-        rehab_scores: any[];
-        clinical?: any;
-      }>>('/smart-onboarding/dossiers', {
+      const res = await this.request<any>('/smart-onboarding/dossiers', {
         method: 'GET',
       });
+      if (Array.isArray(res)) return res;
+      if (res && Array.isArray(res.dossiers)) return res.dossiers;
+      if (res && Array.isArray(res.data)) return res.data;
+      return [];
     },
 
     getExercises: async () => {
-      return this.request<any[]>('/smart-onboarding/exercises', { method: 'GET' });
+      const res = await this.request<any>('/smart-onboarding/exercises', { method: 'GET' });
+      if (Array.isArray(res)) return res;
+      if (res && Array.isArray(res.exercises)) return res.exercises;
+      if (res && Array.isArray(res.data)) return res.data;
+      return [];
     },
 
     saveExercise: async (exercise: any) => {
@@ -1294,7 +1352,11 @@ export class ApiClient {
     },
 
     getModpacks: async () => {
-      return this.request<any[]>('/smart-onboarding/modpacks', { method: 'GET' });
+      const res = await this.request<any>('/smart-onboarding/modpacks', { method: 'GET' });
+      if (Array.isArray(res)) return res;
+      if (res && Array.isArray(res.modpacks)) return res.modpacks;
+      if (res && Array.isArray(res.data)) return res.data;
+      return [];
     },
 
     saveModpack: async (modpack: any) => {

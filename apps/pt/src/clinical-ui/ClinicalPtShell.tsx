@@ -10,6 +10,7 @@ import {
   ClinicalMenuId,
   ClinicalTopHeader,
   NewPatientRegistrationModal,
+  ErrorBoundary,
 } from '../../../admin/src/clinical-ui/index.js';
 
 // Master Prompt v3 Spec 8.2: 6 PT Views
@@ -202,41 +203,57 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
           className="flex-1 overflow-y-auto"
         >
           {/* Master Prompt v3 Spec 8.2: 5 Windows + Reception */}
-          {activeTab === 'reception' && (
-            <ReceptionView
-              staffCalls={staffCalls}
-              onStaffCallHandled={onStaffCallHandled || fetchCalls}
-              currentUserId={currentUserId}
-            />
-          )}
-          {activeTab === 'patients' && (
-            <MyPatientsView
-              currentUserId={currentUserId}
-              onOpenRecords={(p: PatientRecord) => {
-                setActiveRecordsPatientId(p.id);
-                setActiveTab('records');
-              }}
-            />
-          )}
-          {activeTab === 'records' && (
-            <ClinicalRecordsView initialPatientId={activeRecordsPatientId} />
-          )}
-          {activeTab === 'schedule' && (
-            <PtScheduleView currentUserId={currentUserId} />
-          )}
-          {activeTab === 'exercises' && (
-            <ExerciseCatalogView currentUserId={currentUserId} />
-          )}
-          {activeTab === 'profile' && currentUser && (
-            <ProfileView
-              currentUser={currentUser}
-              onProfileUpdated={onProfileUpdated || (() => {})}
-              onNavigateToTab={(tab, patientId) => {
-                if (patientId) setActiveRecordsPatientId(patientId);
-                setActiveTab(tab);
-              }}
-            />
-          )}
+          <ErrorBoundary key={activeTab} moduleName={pageMeta.title}>
+            {activeTab === 'reception' && (
+              <ReceptionView
+                staffCalls={staffCalls}
+                onStaffCallHandled={onStaffCallHandled || fetchCalls}
+                currentUserId={currentUserId}
+              />
+            )}
+            {activeTab === 'patients' && (
+              <MyPatientsView
+                currentUserId={currentUserId}
+                onOpenRecords={(p: PatientRecord) => {
+                  setActiveRecordsPatientId(p.id);
+                  setActiveTab('records');
+                }}
+              />
+            )}
+            {activeTab === 'records' && (
+              <ClinicalRecordsView initialPatientId={activeRecordsPatientId} />
+            )}
+            {activeTab === 'schedule' && (
+              <PtScheduleView currentUserId={currentUserId} />
+            )}
+            {activeTab === 'exercises' && (
+              <ExerciseCatalogView currentUserId={currentUserId} />
+            )}
+            {activeTab === 'profile' && (
+              <ProfileView
+                currentUser={
+                  currentUser || {
+                    id: currentUserId,
+                    username: 'pt_somchai',
+                    full_name: 'กภ.สมชาย กายภาพดี',
+                    role: 'pt',
+                    is_active: true,
+                    created_at: new Date().toISOString(),
+                    pt_details: {
+                      license_no: 'วภ. 9876',
+                      specialty: 'เวชศาสตร์ฟื้นฟูกระดูกและระบบประสาท',
+                      workload_status: 'available',
+                    },
+                  }
+                }
+                onProfileUpdated={onProfileUpdated || (() => {})}
+                onNavigateToTab={(tab, patientId) => {
+                  if (patientId) setActiveRecordsPatientId(patientId);
+                  setActiveTab(tab);
+                }}
+              />
+            )}
+          </ErrorBoundary>
         </main>
       </div>
 

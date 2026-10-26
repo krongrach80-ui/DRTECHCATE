@@ -10,13 +10,25 @@ let appInstance: any = null;
 async function getOrInitApp() {
   if (!appInstance) {
     const env = getEnv();
-    if (env.USE_LOCAL_STORAGE && env.NODE_ENV !== 'production') {
+    const isServiceRolePlaceholder =
+      !env.SUPABASE_SERVICE_ROLE_KEY ||
+      env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder') ||
+      env.SUPABASE_SERVICE_ROLE_KEY.includes('bypass') ||
+      env.SUPABASE_SERVICE_ROLE_KEY.includes('local-dev');
+
+    // On Vercel Serverless: Activate persistence engine with pre-provisioned clinical staff & patients
+    // whenever local storage is requested, service role key is not configured, or external DB is unreachable.
+    if (env.USE_LOCAL_STORAGE || isServiceRolePlaceholder) {
       const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
       activateLocalPersistenceEngine();
     } else {
-      await syncBansFromDatabase().catch((err) => {
-        console.warn('Initial ban sync error:', err);
-      });
+      try {
+        await syncBansFromDatabase();
+      } catch (err) {
+        console.warn('Initial ban sync error, activating fallback persistence engine:', err);
+        const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
+        activateLocalPersistenceEngine();
+      }
     }
     appInstance = createApp();
   }
