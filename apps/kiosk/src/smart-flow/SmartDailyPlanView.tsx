@@ -204,7 +204,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             </div>
             <div>
               <div className="text-base font-bold text-white">
-                คุณ {patient.first_name} {patient.last_name}
+                คุณ {patient.first_name}{patient.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
               </div>
               <div className="text-xs text-slate-400">HN: {patient.patient_id}</div>
             </div>
@@ -360,7 +360,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           </div>
           <div>
             <div className="text-lg font-bold text-white">
-              โปรแกรมกายภาพบำบัด: คุณ {patient.first_name} {patient.last_name}
+              โปรแกรมกายภาพบำบัด: คุณ {patient.first_name}{patient.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
             </div>
             <div className="text-xs text-slate-400 flex items-center gap-2">
               <span>HN: {patient.patient_id}</span>

@@ -129,7 +129,7 @@ describe('[MASTER PROMPT v4] Smart Onboarding, Dual-Sync & Dynamic Rehab Engine'
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
       expect(res.body.matched).toBe(false);
-      expect(res.body.message).toContain('ไม่พบบัญชีในระบบ กรุณาติดต่อแอดมิน หรือกดปุ่ม "ยังไม่มีบัญชี');
+      expect(res.body.message).toContain('ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%)');
     });
 
     it('should successfully match when patient vault has matching biometric vector', async () => {

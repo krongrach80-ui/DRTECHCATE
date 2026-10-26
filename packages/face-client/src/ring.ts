@@ -188,8 +188,10 @@ export const EnrollmentProgressRing: React.FC<EnrollmentRingProps> = ({
   );
 };
 
+export type LivenessBadgeState = 'checking' | 'live_verified' | 'spoof_blocked' | 'face_not_in_circle';
+
 export interface LivenessTelemetryBadgeProps {
-  state?: 'checking' | 'live_verified' | 'spoof_blocked';
+  state?: LivenessBadgeState;
   statusMessageThai?: string;
   depthScore?: number;
   ear?: number;
@@ -209,7 +211,11 @@ export const LivenessTelemetryBadge: React.FC<LivenessTelemetryBadgeProps> = ({
   let dotColor = 'bg-amber-400 animate-pulse';
   let defaultLabel = '🟡 กำลังตรวจสอบความมีชีวิต (Checking Liveness...)';
 
-  if (state === 'live_verified') {
+  if (state === 'face_not_in_circle') {
+    badgeColor = 'bg-amber-500/25 text-amber-300 border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.30)]';
+    dotColor = 'bg-amber-400 animate-pulse';
+    defaultLabel = '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)';
+  } else if (state === 'live_verified') {
     badgeColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.35)]';
     dotColor = 'bg-emerald-400';
     defaultLabel = '🟢 Liveness: บุคคลจริง (Live Verified)';

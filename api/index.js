@@ -11616,9 +11616,10 @@ init_routes();
 
 // packages/smart-biometric-core/src/vectorMath.ts
 var ACCEPTANCE_THRESHOLDS = {
-  MIN_COSINE_SIMILARITY: 0.48,
-  MAX_EUCLIDEAN_DISTANCE: 1.02,
-  MIN_MARGIN_DELTA: 0.05
+  MIN_COSINE_SIMILARITY: 0.8,
+  MAX_EUCLIDEAN_DISTANCE: 0.42,
+  MIN_MARGIN_DELTA: 0.05,
+  MIN_SIMILARITY_PERCENTAGE: 80
 };
 function l2Normalize(vector) {
   let sumSq = 0;
@@ -11671,8 +11672,9 @@ function evaluateBiometricMatch(probeVector, referenceVector, options) {
   const eucDist = euclideanDistance(normProbe, normRef);
   const minCos = options?.minCosine ?? ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY;
   const maxDist = options?.maxEuclidean ?? ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE;
-  const isMatch = cosSim >= minCos || eucDist <= maxDist;
+  const minPercent = options?.minSimilarityPercentage ?? ACCEPTANCE_THRESHOLDS.MIN_SIMILARITY_PERCENTAGE;
   const similarityPercentage = computeSimilarityPercentage(eucDist, cosSim);
+  const isMatch = cosSim >= minCos && eucDist <= maxDist && similarityPercentage >= minPercent;
   return {
     isMatch,
     cosineSimilarity: Number(cosSim.toFixed(4)),
@@ -12050,7 +12052,7 @@ var SmartOnboardingService = class {
             dist: result.euclideanDistance
           };
         }
-        if (result.isMatch) {
+        if (result.isMatch && result.similarityPercentage >= 80 && result.euclideanDistance <= 0.42) {
           if (!bestMatch || result.cosineSimilarity > bestMatch.similarity) {
             bestMatch = {
               record,
@@ -12067,7 +12069,7 @@ var SmartOnboardingService = class {
         `[FACE-AUTH-EVAL] Nearest: ${nearestCandidate.name} (${nearestCandidate.hn}) | Similarity: ${nearestCandidate.sim} | Distance: ${nearestCandidate.dist} | IsMatch: ${Boolean(bestMatch)}`
       );
     }
-    if (bestMatch) {
+    if (bestMatch && bestMatch.percent >= 80 && bestMatch.distance <= 0.42) {
       const patient = bestMatch.record;
       logger.info(
         `[FACE-AUTH] Success: ${patient.first_name} (${patient.hn}) | Similarity: ${bestMatch.percent}% | Distance: ${bestMatch.distance}`
@@ -12089,9 +12091,12 @@ var SmartOnboardingService = class {
         similarityPercentage: bestMatch.percent
       };
     }
+    logger.warn(
+      `[FACE-AUTH] Rejected: Candidate below 80% threshold (Nearest: ${nearestCandidate?.name || "none"}, Similarity: ${nearestCandidate?.sim || 0}, Distance: ${nearestCandidate?.dist || 2})`
+    );
     return {
       matched: false,
-      message: '\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E41\u0E2D\u0E14\u0E21\u0E34\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E01\u0E14\u0E1B\u0E38\u0E48\u0E21 "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1A\u0E31\u0E0D\u0E0A\u0E35 (\u0E2A\u0E21\u0E31\u0E04\u0E23\u0E43\u0E2B\u0E21\u0E48\u0E14\u0E49\u0E27\u0E22\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32)"'
+      message: "\u26A0\uFE0F \u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A (\u0E04\u0E27\u0E32\u0E21\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33\u0E44\u0E21\u0E48\u0E16\u0E36\u0E07\u0E40\u0E01\u0E13\u0E11\u0E4C 80%) \u0E01\u0E23\u0E38\u0E13\u0E32\u0E27\u0E32\u0E07\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E43\u0E2B\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E41\u0E25\u0E49\u0E27\u0E25\u0E2D\u0E07\u0E2A\u0E41\u0E01\u0E19\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E04\u0E19\u0E44\u0E02\u0E49\u0E43\u0E2B\u0E21\u0E48"
     };
   }
   /**
@@ -12643,7 +12648,7 @@ var SmartOnboardingController = class {
         next(err);
       }
     };
-    this.pinLogin = async (req, res, next) => {
+    this.pinLogin = async (req, res, _next) => {
       try {
         const { pin, hn } = req.body;
         if (!pin) {
@@ -12660,7 +12665,7 @@ var SmartOnboardingController = class {
         res.status(500).json({ ok: false, error: { code: "INTERNAL_ERROR", message: errMsg } });
       }
     };
-    this.scanLogin = async (req, res, next) => {
+    this.scanLogin = async (req, res, _next) => {
       try {
         const { probe, snapshot } = req.body;
         if (!probe || !Array.isArray(probe) || probe.length === 0) {

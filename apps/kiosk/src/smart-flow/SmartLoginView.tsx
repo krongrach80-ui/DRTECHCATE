@@ -11,6 +11,7 @@ import {
   FastLoginLivenessVerifier,
   LivenessTelemetryBadge,
   LivenessVerificationResult,
+  checkFaceROIInCircle,
 } from '../../../../packages/face-client/src/index.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import { getFaceClientServices } from '../services/faceClientService';
@@ -47,6 +48,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   isPaused = false,
 }) => {
   const [presenceDetected, setPresenceDetected] = useState<boolean>(false);
+  const [faceInCircle, setFaceInCircle] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(5);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [cameraReady, setCameraReady] = useState<boolean>(false);
@@ -135,12 +137,28 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         // Ignore snapshot generation failure
       }
 
-      // 2. Real Face Detection & Active Liveness Gate
+      // 2. Real Face Detection & Strict ROI Circle Gate
       const detection = await detector.detect(rawFrame);
       if (!detection.hasFace) {
-        setStatusText('ยังตรวจไม่พบใบหน้า กรุณาจัดตำแหน่งใบหน้าให้อยู่ในกรอบวงกลม');
+        setStatusText('กรุณาขยับใบหน้าให้ตรงกรอบวงกลม');
+        setUnrecognizedAlert('⚠️ ไม่พบใบหน้าในกรอบวงกลม กรุณาจัดตำแหน่งใบหน้าให้อยู่ตรงกลางกรอบวงกลม');
         hasTriggeredScanRef.current = false;
-        setCountdown(3);
+        setCountdown(5);
+        setIsScanning(false);
+        return;
+      }
+
+      // 2.0 Strict ROI in Circle Check (Rule 1)
+      const roi = checkFaceROIInCircle(detection, rawFrame.width, rawFrame.height);
+      if (!roi.inCircle) {
+        setFaceInCircle(false);
+        const warningMsg = 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม';
+        setStatusText(warningMsg);
+        setUnrecognizedAlert(
+          '⚠️ ใบหน้าไม่อยู่ในกรอบวงกลม หรือเห็นใบหน้าไม่ครบทั้งหน้า กรุณาจัดตำแหน่งใบหน้าให้อยู่ตรงกลางกรอบวงกลม และมองตรงที่กล้อง'
+        );
+        hasTriggeredScanRef.current = false;
+        setCountdown(5);
         setIsScanning(false);
         return;
       }
@@ -229,10 +247,21 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       if (!isMountedRef.current || isScanningPaused) return;
 
-      if (res && res.matched && (res as any).patient) {
+      if (res && res.matched && (res as any).patient && (res.similarityPercentage ?? 0) >= 80) {
         const patient = (res as any).patient;
         const distance = typeof res.distance === 'number' ? res.distance : 0.20;
-        const similarityPercent = Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
+        const similarityPercent = typeof res.similarityPercentage === 'number'
+          ? res.similarityPercentage
+          : Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
+
+        if (similarityPercent < 80) {
+          const failMsg =
+            '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในวงกลมแล้วลองสแกนใหม่อีกครั้ง หรือลงทะเบียนคนไข้ใหม่';
+          setUnrecognizedAlert(failMsg);
+          setStatusText(failMsg);
+          return;
+        }
+
         console.log(
           `[Liveness Status: PASSED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Blink/Motion Verified: ${liv.blinkVerified || liv.motionVerified}] [Calculated Distance: ${distance.toFixed(3)}] [Matched Patient Name: ${patient.first_name} ${patient.last_name}] [Similarity %: ${similarityPercent}%]`
         );
@@ -243,13 +272,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         });
         setStatusText(`ยืนยันตัวตนสำเร็จ: คุณ ${patient.first_name} (${similarityPercent}%)`);
       } else {
+        const failMsg =
+          res?.message ||
+          '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในวงกลมแล้วลองสแกนใหม่อีกครั้ง หรือลงทะเบียนคนไข้ใหม่';
         console.log(
-          `[Liveness Status: PASSED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Blink/Motion Verified: ${liv.blinkVerified || liv.motionVerified}] [Calculated Distance: N/A] [Matched Patient Name: None] [Similarity %: 0%]`
+          `[Liveness Status: REJECTED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Calculated Distance: ${res?.distance ?? 'N/A'}] [Similarity %: ${res?.similarityPercentage ?? 0}%]`
         );
-        setUnrecognizedAlert(
-          res?.message || 'ไม่พบบัญชีที่ตรงกับใบหน้านี้ในระบบ กรุณาลองสแกนใหม่อีกครั้ง หรือเข้าสู่ระบบด้วยรหัส PIN / HN'
-        );
-        setStatusText('ไม่พบบัญชีในระบบ');
+        setUnrecognizedAlert(failMsg);
+        setStatusText(failMsg);
       }
     } catch (err: unknown) {
       if (!isMountedRef.current) return;
@@ -340,13 +370,43 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       if (!isMountedRef.current || isScanningPaused) return;
       if (videoRef.current && videoRef.current.readyState >= 2) {
         try {
+          const vw = videoRef.current.videoWidth || 640;
+          const vh = videoRef.current.videoHeight || 480;
           const res = await detector.detect(videoRef.current);
           if (res.hasFace && res.box) {
-            const liv = fastLivenessVerifierRef.current.evaluate(res);
-            setLivenessResult(liv);
-            if (!presenceDetected) {
-              const vw = videoRef.current.videoWidth || 640;
-              const vh = videoRef.current.videoHeight || 480;
+            const roi = checkFaceROIInCircle(res, vw, vh);
+            if (!roi.inCircle) {
+              setFaceInCircle(false);
+              setPresenceDetected(false);
+              fastLivenessVerifierRef.current.start();
+              setLivenessResult({
+                isLive: false,
+                depthScore: res.liveness?.depthScore ?? 0,
+                motionScore: 0,
+                ear: res.eyes?.ear ?? 0.3,
+                blinkVerified: false,
+                motionVerified: false,
+                state: 'face_not_in_circle',
+                statusMessageThai: '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)',
+              });
+              setStatusText('กรุณาขยับใบหน้าให้ตรงกรอบวงกลม');
+              setCountdown(5);
+              inputManager.processFaceDetection(null, performance.now());
+            } else {
+              setFaceInCircle(true);
+              const liv = fastLivenessVerifierRef.current.evaluate(res);
+              setLivenessResult(liv);
+              if (liv.state === 'live_verified') {
+                setPresenceDetected(true);
+                setStatusText('ตรวจพบใบหน้าจริงในวงกลม (เริ่มสแกนอัตโนมัติ)');
+              } else if (liv.state === 'spoof_blocked') {
+                setPresenceDetected(false);
+                setStatusText('⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง');
+                setCountdown(5);
+              } else {
+                setPresenceDetected(false);
+                setStatusText('🟡 กำลังตรวจสอบความมีชีวิต...');
+              }
               inputManager.processFaceDetection(
                 {
                   x: res.box.x / vw,
@@ -358,10 +418,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               );
             }
           } else {
-            setLivenessResult(null);
-            if (!presenceDetected) {
-              inputManager.processFaceDetection(null, performance.now());
-            }
+            setFaceInCircle(false);
+            setPresenceDetected(false);
+            fastLivenessVerifierRef.current.start();
+            setLivenessResult({
+              isLive: false,
+              depthScore: 0,
+              motionScore: 0,
+              ear: 0,
+              blinkVerified: false,
+              motionVerified: false,
+              state: 'face_not_in_circle',
+              statusMessageThai: '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)',
+            });
+            setStatusText('กรุณาขยับใบหน้าให้ตรงกรอบวงกลม');
+            setCountdown(5);
+            inputManager.processFaceDetection(null, performance.now());
           }
         } catch {
           // ignore detection pass
@@ -382,12 +454,24 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     };
   }, [customDetector, presenceDetected, startCamera, isScanningPaused, stopCamera]);
 
-  // Active Countdown Logic: ticks down when camera is active and ready
+  // Active Countdown Logic: ticks down ONLY when face is strictly in circle and passed liveness
   useEffect(() => {
-    if (isScanningPaused || !cameraReady || isScanning || matchedPatient || unrecognizedAlert) {
+    if (
+      isScanningPaused ||
+      !cameraReady ||
+      isScanning ||
+      matchedPatient ||
+      unrecognizedAlert ||
+      !faceInCircle ||
+      !presenceDetected ||
+      livenessResult?.state !== 'live_verified'
+    ) {
       if (countdownTimerRef.current) {
         clearInterval(countdownTimerRef.current);
         countdownTimerRef.current = null;
+      }
+      if (!faceInCircle || !presenceDetected) {
+        setCountdown(5);
       }
       return;
     }
@@ -414,7 +498,17 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         }
       };
     }
-  }, [cameraReady, isScanningPaused, isScanning, matchedPatient, unrecognizedAlert, executeScanLogin]);
+  }, [
+    cameraReady,
+    isScanningPaused,
+    isScanning,
+    matchedPatient,
+    unrecognizedAlert,
+    faceInCircle,
+    presenceDetected,
+    livenessResult?.state,
+    executeScanLogin,
+  ]);
 
   const handleResetScan = () => {
     setUnrecognizedAlert(null);
@@ -570,19 +664,33 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               {/* Reticle / Face scan guide */}
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
                 <div className={`w-28 h-36 rounded-full border-2 border-dashed ${
-                  livenessResult?.state === 'live_verified'
+                  !faceInCircle
+                    ? 'border-amber-400/90 shadow-[0_0_20px_rgba(245,158,11,0.45)]'
+                    : livenessResult?.state === 'live_verified'
                     ? 'border-emerald-400 shadow-[0_0_22px_rgba(16,185,129,0.55)]'
                     : livenessResult?.state === 'spoof_blocked'
                     ? 'border-rose-400 shadow-[0_0_22px_rgba(244,63,94,0.55)]'
                     : 'border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.35)]'
-                } relative animate-pulse group-hover:scale-105 transition-transform`}>
-                  <div className="absolute left-[10%] w-[80%] h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent top-1/2 animate-bounce" />
+                } relative transition-all duration-300`}>
+                  <div className={`absolute left-[10%] w-[80%] h-0.5 ${
+                    !faceInCircle
+                      ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent'
+                      : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-bounce'
+                  } top-1/2`} />
                 </div>
                 <div className="absolute bottom-2 px-3 py-1 rounded-full bg-[#042924]/85 backdrop-blur-md border border-emerald-500/40 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5 shadow-md">
                   {isScanning ? (
                     <>
                       <RefreshCw className="w-3 h-3 animate-spin text-cyan-300" />
                       <span>กำลังสแกนใบหน้าและตรวจสอบความมีชีวิต...</span>
+                    </>
+                  ) : !faceInCircle ? (
+                    <>
+                      <span className="text-amber-300 font-semibold">🟡 กรุณาขยับใบหน้าให้ตรงกรอบวงกลม</span>
+                    </>
+                  ) : livenessResult?.state !== 'live_verified' ? (
+                    <>
+                      <span>🟡 กำลังตรวจสอบความมีชีวิต...</span>
                     </>
                   ) : countdown > 0 ? (
                     <>
@@ -898,7 +1006,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               <span>ความแม่นยำชีวมาตร {similarityInfo?.percent}% (ผ่านเกณฑ์)</span>
             </div>
             <h2 className="text-2xl font-extrabold text-slate-900">
-              คุณ {matchedPatient.first_name} {matchedPatient.last_name}
+              คุณ {matchedPatient.first_name}{matchedPatient.last_name && matchedPatient.last_name !== '-' ? ` ${matchedPatient.last_name}` : ''}
             </h2>
             <p className="text-xs text-slate-500 mt-1">
               HN: <span className="font-mono text-blue-600">{matchedPatient.hn}</span> • อายุ: {matchedPatient.age} ปี

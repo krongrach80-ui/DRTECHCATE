@@ -357,3 +357,13 @@ export class OnnxEmbeddingModel implements EmbeddingModel {
   }
 }
 
+let sharedEmbeddingModelInstance: EmbeddingModel | null = null;
+
+export function getSharedEmbeddingModel(): EmbeddingModel {
+  if (!sharedEmbeddingModelInstance) {
+    sharedEmbeddingModelInstance = new OnnxEmbeddingModel('/models/w600k_r50.onnx', true);
+  }
+  return sharedEmbeddingModelInstance;
+}
+
+

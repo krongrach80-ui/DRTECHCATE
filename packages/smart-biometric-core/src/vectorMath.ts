@@ -7,9 +7,10 @@
 import { BiometricMatchResult } from './types.js';
 
 export const ACCEPTANCE_THRESHOLDS = {
-  MIN_COSINE_SIMILARITY: 0.48,
-  MAX_EUCLIDEAN_DISTANCE: 1.02,
+  MIN_COSINE_SIMILARITY: 0.80,
+  MAX_EUCLIDEAN_DISTANCE: 0.42,
   MIN_MARGIN_DELTA: 0.05,
+  MIN_SIMILARITY_PERCENTAGE: 80,
 };
 
 /**
@@ -85,8 +86,9 @@ export function computePercentageFromDistance(distance: number): number {
 }
 
 /**
- * Evaluates whether live probe matches reference face vector
- * Guaranteed consistent with no contradictory text.
+ * Evaluates whether live probe matches reference face vector.
+ * Hard Rejection Rule: Strictly requires Cosine >= 0.80, Euclidean <= 0.42, and Similarity >= 80%.
+ * Guaranteed zero fallback match.
  */
 export function evaluateBiometricMatch(
   probeVector: number[],
@@ -94,6 +96,7 @@ export function evaluateBiometricMatch(
   options?: {
     minCosine?: number;
     maxEuclidean?: number;
+    minSimilarityPercentage?: number;
   }
 ): BiometricMatchResult {
   const normProbe = l2Normalize(probeVector);
@@ -104,10 +107,12 @@ export function evaluateBiometricMatch(
 
   const minCos = options?.minCosine ?? ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY;
   const maxDist = options?.maxEuclidean ?? ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE;
+  const minPercent = options?.minSimilarityPercentage ?? ACCEPTANCE_THRESHOLDS.MIN_SIMILARITY_PERCENTAGE;
 
-  // Real-world medical biometric match: Cosine >= 0.48 or Euclidean <= 1.02
-  const isMatch = cosSim >= minCos || eucDist <= maxDist;
   const similarityPercentage = computeSimilarityPercentage(eucDist, cosSim);
+
+  // Strict Hard Rejection Rule: All criteria must be satisfied simultaneously
+  const isMatch = cosSim >= minCos && eucDist <= maxDist && similarityPercentage >= minPercent;
 
   return {
     isMatch,

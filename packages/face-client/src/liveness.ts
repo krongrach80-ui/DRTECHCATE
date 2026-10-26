@@ -52,7 +52,7 @@ export interface LivenessVerificationResult {
   ear: number;
   blinkVerified: boolean;
   motionVerified: boolean;
-  state: 'checking' | 'live_verified' | 'spoof_blocked';
+  state: 'checking' | 'live_verified' | 'spoof_blocked' | 'face_not_in_circle';
   statusMessageThai: string;
   errorMessage?: string;
 }

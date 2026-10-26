@@ -35,7 +35,8 @@ import { defaultApiClient, PtDirectoryRecord } from '../../../../packages/api-cl
 import {
   MediaPipeFaceDetector,
   FaceAligner,
-  GeometricLandmarkEmbeddingModel,
+  EmbeddingModel,
+  getSharedEmbeddingModel,
   l2Normalize,
   ActiveLivenessTracker,
   LivenessTelemetryBadge,
@@ -147,7 +148,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
   const detectorRef = useRef<MediaPipeFaceDetector | null>(null);
   const alignerRef = useRef<FaceAligner | null>(null);
-  const embeddingModelRef = useRef<GeometricLandmarkEmbeddingModel | null>(null);
+  const embeddingModelRef = useRef<EmbeddingModel | null>(null);
 
   const getFaceServices = () => {
     if (!detectorRef.current) {
@@ -160,7 +161,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       alignerRef.current = new FaceAligner();
     }
     if (!embeddingModelRef.current) {
-      embeddingModelRef.current = new GeometricLandmarkEmbeddingModel();
+      embeddingModelRef.current = getSharedEmbeddingModel();
     }
     return {
       detector: detectorRef.current,

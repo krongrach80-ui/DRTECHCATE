@@ -11,7 +11,7 @@ import {
   FaceAligner,
   FaceQualityChecker,
   EmbeddingModel,
-  OnnxEmbeddingModel,
+  getSharedEmbeddingModel,
   FaceDetectionResult,
 } from '../../../../packages/face-client/src/index.js';
 import {
@@ -153,7 +153,7 @@ function createFreshServices(
   });
 
   const embeddingModel =
-    overrides?.customEmbeddingModel || new OnnxEmbeddingModel('/models/w600k_r50.onnx');
+    overrides?.customEmbeddingModel || getSharedEmbeddingModel();
 
   const inputManager = new KioskInputManager({
     ...DEFAULT_KIOSK_INPUT_CONFIG,

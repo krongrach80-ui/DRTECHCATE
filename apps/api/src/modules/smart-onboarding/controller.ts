@@ -27,7 +27,7 @@ export class SmartOnboardingController {
     }
   };
 
-  pinLogin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  pinLogin = async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
     try {
       const { pin, hn } = req.body;
       if (!pin) {
@@ -45,7 +45,7 @@ export class SmartOnboardingController {
     }
   };
 
-  scanLogin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  scanLogin = async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
     try {
       const { probe, snapshot } = req.body;
       if (!probe || !Array.isArray(probe) || probe.length === 0) {

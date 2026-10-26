@@ -55,8 +55,153 @@ export interface LivenessTelemetry {
   isBlinking: boolean;
   microMotionScore: number; // variance of motion across consecutive frames
   isLiveVerified: boolean;
-  state: 'checking' | 'live_verified' | 'spoof_blocked';
+  state: 'checking' | 'live_verified' | 'spoof_blocked' | 'face_not_in_circle';
   statusMessageThai: string;
+}
+
+export interface FaceROIValidationResult {
+  inCircle: boolean;
+  reason?: string;
+  centerDistance: number;
+  faceWidthRatio: number;
+  isFullFaceVisible: boolean;
+  statusMessageThai: string;
+}
+
+/**
+ * Strict Face ROI / Circle Center & Full-Face Bounding Check (Rule 1)
+ * Enforces:
+ * 1. Nose Tip (or face center) distance to guide circle center (cx = 0.5, cy = 0.5):
+ *    sqrt((x_nose - 0.5)^2 + (y_nose - 0.5)^2) <= 0.18
+ * 2. Full face boundaries (Forehead Landmark 10, Chin Landmark 152, Left Cheek 234, Right Cheek 454
+ *    or bounding box bounds) must stay strictly within 0.15 <= x, y <= 0.85
+ * 3. Face Width Ratio (face width / frame width) >= 0.22 (not too far or small)
+ */
+export function checkFaceROIInCircle(
+  detection: FaceDetectionResult,
+  frameWidth: number = 640,
+  frameHeight: number = 480
+): FaceROIValidationResult {
+  if (!detection || !detection.hasFace) {
+    return {
+      inCircle: false,
+      reason: 'NO_FACE',
+      centerDistance: 1.0,
+      faceWidthRatio: 0,
+      isFullFaceVisible: false,
+      statusMessageThai: 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม',
+    };
+  }
+
+  const fw = frameWidth > 0 ? frameWidth : 640;
+  const fh = frameHeight > 0 ? frameHeight : 480;
+
+  // 1. Calculate normalized nose center coordinate
+  let normNoseX = 0.5;
+  let normNoseY = 0.5;
+  let hasNose = false;
+
+  if (detection.landmarks?.noseTip) {
+    normNoseX = detection.landmarks.noseTip.x / fw;
+    normNoseY = detection.landmarks.noseTip.y / fh;
+    hasNose = true;
+  } else if (detection.box) {
+    normNoseX = (detection.box.x + detection.box.width / 2) / fw;
+    normNoseY = (detection.box.y + detection.box.height / 2) / fh;
+    hasNose = true;
+  }
+
+  if (!hasNose) {
+    return {
+      inCircle: false,
+      reason: 'NO_LANDMARKS',
+      centerDistance: 1.0,
+      faceWidthRatio: 0,
+      isFullFaceVisible: false,
+      statusMessageThai: 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม',
+    };
+  }
+
+  const dx = normNoseX - 0.5;
+  const dy = normNoseY - 0.5;
+  const centerDistance = Math.sqrt(dx * dx + dy * dy);
+
+  // 2. Face Width Ratio
+  let faceWidthRatio = 0;
+  if (detection.box) {
+    faceWidthRatio = detection.box.width / fw;
+  } else if (detection.landmarks?.leftEye && detection.landmarks?.rightEye) {
+    const eyeDist = Math.abs(detection.landmarks.rightEye.x - detection.landmarks.leftEye.x) / fw;
+    faceWidthRatio = eyeDist * 2.5;
+  }
+
+  // 3. Full Face Bounding Check (0.15 <= x, y <= 0.85)
+  let isFullFaceVisible = true;
+  const rawLandmarks = detection.landmarks?.rawLandmarks3D || (detection.landmarks as any)?.allPoints;
+
+  if (rawLandmarks && rawLandmarks.length >= 455) {
+    // Landmark 10: Forehead, 152: Chin, 234: Left Cheek, 454: Right Cheek
+    const pts = [rawLandmarks[10], rawLandmarks[152], rawLandmarks[234], rawLandmarks[454]];
+    for (const p of pts) {
+      if (p) {
+        const nx = p.x / fw;
+        const ny = p.y / fh;
+        if (nx < 0.15 || nx > 0.85 || ny < 0.15 || ny > 0.85) {
+          isFullFaceVisible = false;
+          break;
+        }
+      }
+    }
+  } else if (detection.box) {
+    const minX = detection.box.x / fw;
+    const minY = detection.box.y / fh;
+    const maxX = (detection.box.x + detection.box.width) / fw;
+    const maxY = (detection.box.y + detection.box.height) / fh;
+    if (minX < 0.15 || maxX > 0.85 || minY < 0.15 || maxY > 0.85) {
+      isFullFaceVisible = false;
+    }
+  }
+
+  if (centerDistance > 0.18) {
+    return {
+      inCircle: false,
+      reason: 'CENTER_OFFSET_TOO_LARGE',
+      centerDistance: Number(centerDistance.toFixed(3)),
+      faceWidthRatio: Number(faceWidthRatio.toFixed(3)),
+      isFullFaceVisible,
+      statusMessageThai: 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม',
+    };
+  }
+
+  if (!isFullFaceVisible) {
+    return {
+      inCircle: false,
+      reason: 'FACE_BORDER_CLIPPED',
+      centerDistance: Number(centerDistance.toFixed(3)),
+      faceWidthRatio: Number(faceWidthRatio.toFixed(3)),
+      isFullFaceVisible: false,
+      statusMessageThai: 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม',
+    };
+  }
+
+  if (faceWidthRatio < 0.22) {
+    return {
+      inCircle: false,
+      reason: 'FACE_TOO_FAR_OR_SMALL',
+      centerDistance: Number(centerDistance.toFixed(3)),
+      faceWidthRatio: Number(faceWidthRatio.toFixed(3)),
+      isFullFaceVisible,
+      statusMessageThai: 'กรุณาขยับใบหน้าเข้ามาใกล้ขึ้นให้อยู่ในกรอบวงกลม',
+    };
+  }
+
+  return {
+    inCircle: true,
+    centerDistance: Number(centerDistance.toFixed(3)),
+    faceWidthRatio: Number(faceWidthRatio.toFixed(3)),
+    isFullFaceVisible: true,
+    statusMessageThai: 'ใบหน้าอยู่ในกรอบวงกลมถูกต้อง',
+  };
 }
 
 export interface FaceDetectionResult {

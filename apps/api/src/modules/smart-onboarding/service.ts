@@ -529,7 +529,7 @@ export class SmartOnboardingService {
             dist: result.euclideanDistance,
           };
         }
-        if (result.isMatch) {
+        if (result.isMatch && result.similarityPercentage >= 80 && result.euclideanDistance <= 0.42) {
           if (!bestMatch || result.cosineSimilarity > bestMatch.similarity) {
             bestMatch = {
               record,
@@ -548,7 +548,7 @@ export class SmartOnboardingService {
       );
     }
 
-    if (bestMatch) {
+    if (bestMatch && bestMatch.percent >= 80 && bestMatch.distance <= 0.42) {
       const patient = bestMatch.record;
       logger.info(
         `[FACE-AUTH] Success: ${patient.first_name} (${patient.hn}) | Similarity: ${bestMatch.percent}% | Distance: ${bestMatch.distance}`
@@ -574,10 +574,13 @@ export class SmartOnboardingService {
       };
     }
 
-    // No match found
+    // No match found or low similarity (< 80%)
+    logger.warn(
+      `[FACE-AUTH] Rejected: Candidate below 80% threshold (Nearest: ${nearestCandidate?.name || 'none'}, Similarity: ${nearestCandidate?.sim || 0}, Distance: ${nearestCandidate?.dist || 2.0})`
+    );
     return {
       matched: false,
-      message: 'ไม่พบบัญชีในระบบ กรุณาติดต่อแอดมิน หรือกดปุ่ม "ยังไม่มีบัญชี (สมัครใหม่ด้วยใบหน้า)"',
+      message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในวงกลมแล้วลองสแกนใหม่อีกครั้ง หรือลงทะเบียนคนไข้ใหม่',
     };
   }
 
