@@ -28,6 +28,9 @@ for (const app of apps) {
   const src = path.join(root, 'dist', 'apps', app);
   const dest = path.join(root, 'public', app);
   console.log(`Copying ${src} -> ${dest}`);
+  if (fs.existsSync(dest)) {
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
   copyDirSync(src, dest);
 }
 

@@ -85,7 +85,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       }
       setCameraActive(true);
     } catch {
-      setCameraError('ไม่พบกล้องเว็บแคม หรือยังไม่ได้รับสิทธิ์เข้าถึงกล้อง (สามารถอัปโหลดรูปหรือใช้ระบบจำลองได้)');
+      setCameraError('ไม่พบกล้องเว็บแคม หรือยังไม่ได้รับสิทธิ์เข้าถึงกล้อง (สามารถอัปโหลดภาพถ่ายแทนได้)');
       setCameraActive(false);
     }
   };
@@ -615,7 +615,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                 สแกนใบหน้าคนไข้เพื่อสร้างแม่แบบชีวมิติ 512 มิติ
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 mb-4 leading-relaxed">
-                ให้คนไข้มองตรงมาที่กล้อง หรือเลือกอัปโหลดภาพถ่าย/ใช้แม่แบบชีวมิติจำลอง
+                ให้คนไข้มองตรงมาที่กล้อง หรือเลือกอัปโหลดภาพถ่ายแม่แบบชีวมิติ
               </p>
 
               <div className="flex flex-col gap-2.5">
@@ -647,7 +647,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                     className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-semibold transition"
                   >
                     <Zap className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>ใช้แม่แบบจำลอง AI</span>
+                    <span>สร้างเวกเตอร์มาตรฐาน AI</span>
                   </button>
                 </div>
 
