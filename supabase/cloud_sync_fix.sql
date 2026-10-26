@@ -1376,7 +1376,6 @@ GRANT ALL ON TABLE public.face_enrollments TO anon, authenticated, service_role;
 GRANT ALL ON TABLE public.face_templates TO anon, authenticated, service_role;
 GRANT ALL ON TABLE public.patient_pt_assignments TO anon, authenticated, service_role;
 GRANT ALL ON TABLE public.audit_logs TO anon, authenticated, service_role;
-GRANT ALL ON TABLE public.system_audit_logs TO anon, authenticated, service_role;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 
 ALTER TABLE public.patients ENABLE ROW LEVEL SECURITY;
