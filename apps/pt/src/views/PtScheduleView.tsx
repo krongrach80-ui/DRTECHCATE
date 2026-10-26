@@ -32,73 +32,8 @@ interface PtScheduleViewProps {
   currentUserId: string;
 }
 
-const DEMO_PATIENTS: PatientRecord[] = [
-  {
-    id: 'P-1001',
-    hn: 'P-1001',
-    first_name: 'ทองดี',
-    last_name: 'มีสุข',
-    age: 52,
-    sex: 'male',
-    phone: '081-111-2222',
-    injury: 'ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)',
-    history: {},
-    registered_via: 'reception',
-    responsible_pt_id: 'pt-01',
-    registration_status: 'active',
-    pending_expires_at: null,
-    started_at: '2026-10-26T08:00:00.000Z',
-    version: 1,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-  {
-    id: 'P-1002',
-    hn: 'P-1002',
-    first_name: 'สมศรี',
-    last_name: 'รักดี',
-    age: 48,
-    sex: 'female',
-    phone: '089-222-3333',
-    injury: 'หมอนรองกระดูกทับเส้นประสาท (LBP)',
-    history: {},
-    registered_via: 'reception',
-    responsible_pt_id: 'pt-01',
-    registration_status: 'active',
-    pending_expires_at: null,
-    started_at: '2026-10-26T08:00:00.000Z',
-    version: 1,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-];
-
-const DEMO_TODAY_COURSES: TodayCourseItem[] = [
-  {
-    id: 'course-today-01',
-    course_id: 'c-01',
-    patient_id: 'P-1001',
-    patient: DEMO_PATIENTS[0],
-    start_time: '09:00 - 10:00',
-    kiosk_id: 'kiosk-01',
-    kiosk_name: 'ตู้ Kiosk 01 (Main Hall)',
-    modpack_id: 'mp-frozen-shoulder-01',
-    modpack_title: 'ชุดท่าฟื้นฟูข้อไหล่ติดระยะที่ 1 (Adhesive Capsulitis)',
-    include_minigame: true,
-    mission_status: 'in_progress',
-  },
-  {
-    id: 'course-today-02',
-    course_id: 'c-02',
-    patient_id: 'P-1002',
-    patient: DEMO_PATIENTS[1],
-    start_time: '10:30 - 11:30',
-    kiosk_id: 'kiosk-02',
-    kiosk_name: 'ตู้ Kiosk 02 (Smart Room)',
-    modpack_id: 'mp-lbp-01',
-    modpack_title: 'ชุดท่าบริหารแกนกลางลำตัวลดอาการปวดหลัง (Core Stability)',
-    include_minigame: false,
-    mission_status: 'not_started',
-  },
-];
+const DEMO_PATIENTS: PatientRecord[] = [];
+const DEMO_TODAY_COURSES: TodayCourseItem[] = [];
 
 export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
   currentUserId: _currentUserId,

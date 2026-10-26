@@ -216,48 +216,6 @@ export function ensurePrimaryStaffAndPatients(): void {
     });
   }
 
-  const patList = Array.from(currentFakePatientRepo.inMemoryPatients.values());
-  if (patList.length === 0) {
-    currentFakePatientRepo.inMemoryPatients.set('P-1001', {
-      id: 'P-1001',
-      hn: 'P-1001',
-      first_name: 'ทองดี',
-      last_name: 'มีสุข',
-      age: 52,
-      sex: 'male',
-      phone: '081-111-2222',
-      injury: 'ข้อไหล่ติดระยะฟื้นฟู',
-      history: {},
-      registered_via: 'reception',
-      responsible_pt_id: 'pt-somchai-uuid',
-      registration_status: 'active',
-      pending_expires_at: null,
-      started_at: now,
-      version: 1,
-      created_at: now,
-      updated_at: now,
-    });
-
-    currentFakePatientRepo.inMemoryPatients.set('P-1002', {
-      id: 'P-1002',
-      hn: 'P-1002',
-      first_name: 'สมศรี',
-      last_name: 'รักดี',
-      age: 48,
-      sex: 'female',
-      phone: '089-222-3333',
-      injury: 'หมอนรองกระดูกทับเส้นประสาท (LBP)',
-      history: {},
-      registered_via: 'reception',
-      responsible_pt_id: 'pt-somchai-uuid',
-      registration_status: 'active',
-      pending_expires_at: null,
-      started_at: now,
-      version: 1,
-      created_at: now,
-      updated_at: now,
-    });
-  }
 }
 
 export function seedDefaultLocalData(): void {
@@ -337,53 +295,7 @@ export function seedDefaultLocalData(): void {
   };
   currentFakeKioskRepo.inMemoryDevices.set(kioskId, kiosk);
 
-  // 3. Seed Sample Patients
-  const patient1Id = 'P-1001';
-  const patient2Id = 'P-1002';
-
-  const patient1: PatientRecord = {
-    id: patient1Id,
-    hn: 'P-1001',
-    first_name: 'ทองดี',
-    last_name: 'มีสุข',
-    age: 52,
-    sex: 'male',
-    phone: '081-111-2222',
-    injury: 'ข้อไหล่ติดระยะฟื้นฟู',
-    history: {},
-    registered_via: 'reception',
-    responsible_pt_id: ptId,
-    registration_status: 'active',
-    pending_expires_at: null,
-    started_at: now,
-    version: 1,
-    created_at: now,
-    updated_at: now,
-  };
-  currentFakePatientRepo.inMemoryPatients.set(patient1Id, patient1);
-
-  const patient2: PatientRecord = {
-    id: patient2Id,
-    hn: 'P-1002',
-    first_name: 'สมศรี',
-    last_name: 'รักดี',
-    age: 48,
-    sex: 'female',
-    phone: '089-222-3333',
-    injury: 'หมอนรองกระดูกทับเส้นประสาท (LBP)',
-    history: {},
-    registered_via: 'reception',
-    responsible_pt_id: ptId,
-    registration_status: 'active',
-    pending_expires_at: null,
-    started_at: now,
-    version: 1,
-    created_at: now,
-    updated_at: now,
-  };
-  currentFakePatientRepo.inMemoryPatients.set(patient2Id, patient2);
-
-  // 4. Seed Standard Clinical Exercises
+  // 3. Seed Standard Clinical Exercises
   const exercises: ExerciseRecord[] = [
     {
       id: 'ex-001',
@@ -454,22 +366,6 @@ export function seedDefaultLocalData(): void {
   };
   currentFakeDirectoryRepo.inMemoryModpacks.set(modpack.id, modpack);
 
-  // 6. Seed Prescribed Course for Patient 1
-  currentFakeCourseRepo.createCourse(
-    {
-      patient_id: patient1Id,
-      start_date: '2026-10-01',
-      end_date: '2026-11-30',
-      weekdays: [1, 2, 3, 4, 5, 6, 0],
-      start_time: '09:00',
-      include_minigame: true,
-    },
-    ptId,
-    [
-      { exercise_id: 'ex-001', sets: 3, reps: 15, position: 1 },
-      { exercise_id: 'ex-002', sets: 3, reps: 12, position: 2 },
-    ]
-  ).catch(() => {});
 }
 
 /**

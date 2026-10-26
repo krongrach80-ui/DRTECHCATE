@@ -65,7 +65,7 @@ function parseEnv(rawEnv = process.env) {
     APP_URL: isVercel ? rawEnv.APP_URL && !String(rawEnv.APP_URL).includes("localhost") ? rawEnv.APP_URL : "https://drtechcarev2.vercel.app" : rawEnv.APP_URL || void 0,
     TRUST_PROXY_HOPS: rawEnv.TRUST_PROXY_HOPS !== void 0 ? rawEnv.TRUST_PROXY_HOPS : isVercel ? 1 : void 0,
     PAD_MODE: rawEnv.PAD_MODE || (isVercel ? "active_only" : void 0),
-    USE_LOCAL_STORAGE: rawEnv.USE_LOCAL_STORAGE !== void 0 ? rawEnv.USE_LOCAL_STORAGE : isVercel ? "true" : void 0,
+    USE_LOCAL_STORAGE: rawEnv.USE_LOCAL_STORAGE !== void 0 ? String(rawEnv.USE_LOCAL_STORAGE) === "true" : false,
     ALLOW_INSECURE_COOKIES: isVercel ? false : rawEnv.ALLOW_INSECURE_COOKIES !== void 0 ? rawEnv.ALLOW_INSECURE_COOKIES : void 0,
     ALLOW_BEARER_IN_PROD: rawEnv.ALLOW_BEARER_IN_PROD !== void 0 ? rawEnv.ALLOW_BEARER_IN_PROD : isVercel ? "true" : void 0,
     SUPABASE_URL: rawEnv.SUPABASE_URL || rawEnv.NEXT_PUBLIC_SUPABASE_URL || (isVercel ? "https://mctegvnrvmglbibuuczi.supabase.co" : void 0),
@@ -7568,47 +7568,6 @@ function ensurePrimaryStaffAndPatients() {
       }
     });
   }
-  const patList = Array.from(currentFakePatientRepo.inMemoryPatients.values());
-  if (patList.length === 0) {
-    currentFakePatientRepo.inMemoryPatients.set("P-1001", {
-      id: "P-1001",
-      hn: "P-1001",
-      first_name: "\u0E17\u0E2D\u0E07\u0E14\u0E35",
-      last_name: "\u0E21\u0E35\u0E2A\u0E38\u0E02",
-      age: 52,
-      sex: "male",
-      phone: "081-111-2222",
-      injury: "\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E15\u0E34\u0E14\u0E23\u0E30\u0E22\u0E30\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39",
-      history: {},
-      registered_via: "reception",
-      responsible_pt_id: "pt-somchai-uuid",
-      registration_status: "active",
-      pending_expires_at: null,
-      started_at: now,
-      version: 1,
-      created_at: now,
-      updated_at: now
-    });
-    currentFakePatientRepo.inMemoryPatients.set("P-1002", {
-      id: "P-1002",
-      hn: "P-1002",
-      first_name: "\u0E2A\u0E21\u0E28\u0E23\u0E35",
-      last_name: "\u0E23\u0E31\u0E01\u0E14\u0E35",
-      age: 48,
-      sex: "female",
-      phone: "089-222-3333",
-      injury: "\u0E2B\u0E21\u0E2D\u0E19\u0E23\u0E2D\u0E07\u0E01\u0E23\u0E30\u0E14\u0E39\u0E01\u0E17\u0E31\u0E1A\u0E40\u0E2A\u0E49\u0E19\u0E1B\u0E23\u0E30\u0E2A\u0E32\u0E17 (LBP)",
-      history: {},
-      registered_via: "reception",
-      responsible_pt_id: "pt-somchai-uuid",
-      registration_status: "active",
-      pending_expires_at: null,
-      started_at: now,
-      version: 1,
-      created_at: now,
-      updated_at: now
-    });
-  }
 }
 function seedDefaultLocalData() {
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -7679,48 +7638,6 @@ function seedDefaultLocalData() {
     is_active: true
   };
   currentFakeKioskRepo.inMemoryDevices.set(kioskId, kiosk);
-  const patient1Id = "P-1001";
-  const patient2Id = "P-1002";
-  const patient1 = {
-    id: patient1Id,
-    hn: "P-1001",
-    first_name: "\u0E17\u0E2D\u0E07\u0E14\u0E35",
-    last_name: "\u0E21\u0E35\u0E2A\u0E38\u0E02",
-    age: 52,
-    sex: "male",
-    phone: "081-111-2222",
-    injury: "\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E15\u0E34\u0E14\u0E23\u0E30\u0E22\u0E30\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39",
-    history: {},
-    registered_via: "reception",
-    responsible_pt_id: ptId,
-    registration_status: "active",
-    pending_expires_at: null,
-    started_at: now,
-    version: 1,
-    created_at: now,
-    updated_at: now
-  };
-  currentFakePatientRepo.inMemoryPatients.set(patient1Id, patient1);
-  const patient2 = {
-    id: patient2Id,
-    hn: "P-1002",
-    first_name: "\u0E2A\u0E21\u0E28\u0E23\u0E35",
-    last_name: "\u0E23\u0E31\u0E01\u0E14\u0E35",
-    age: 48,
-    sex: "female",
-    phone: "089-222-3333",
-    injury: "\u0E2B\u0E21\u0E2D\u0E19\u0E23\u0E2D\u0E07\u0E01\u0E23\u0E30\u0E14\u0E39\u0E01\u0E17\u0E31\u0E1A\u0E40\u0E2A\u0E49\u0E19\u0E1B\u0E23\u0E30\u0E2A\u0E32\u0E17 (LBP)",
-    history: {},
-    registered_via: "reception",
-    responsible_pt_id: ptId,
-    registration_status: "active",
-    pending_expires_at: null,
-    started_at: now,
-    version: 1,
-    created_at: now,
-    updated_at: now
-  };
-  currentFakePatientRepo.inMemoryPatients.set(patient2Id, patient2);
   const exercises = [
     {
       id: "ex-001",
@@ -7787,22 +7704,6 @@ function seedDefaultLocalData() {
     ]
   };
   currentFakeDirectoryRepo.inMemoryModpacks.set(modpack.id, modpack);
-  currentFakeCourseRepo.createCourse(
-    {
-      patient_id: patient1Id,
-      start_date: "2026-10-01",
-      end_date: "2026-11-30",
-      weekdays: [1, 2, 3, 4, 5, 6, 0],
-      start_time: "09:00",
-      include_minigame: true
-    },
-    ptId,
-    [
-      { exercise_id: "ex-001", sets: 3, reps: 15, position: 1 },
-      { exercise_id: "ex-002", sets: 3, reps: 12, position: 2 }
-    ]
-  ).catch(() => {
-  });
 }
 function activateLocalPersistenceEngine() {
   if (isEngineActive) return;

@@ -23,44 +23,7 @@ import {
 } from '../../../../packages/api-client/src/index.js';
 import { SmartPendingPatientsBanner } from '../smart-portal/index.js';
 
-const DEMO_PATIENTS: PatientRecord[] = [
-  {
-    id: 'P-1001',
-    hn: 'P-1001',
-    first_name: 'ทองดี',
-    last_name: 'มีสุข',
-    age: 52,
-    sex: 'male',
-    phone: '081-111-2222',
-    injury: 'ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)',
-    history: {},
-    registered_via: 'reception',
-    responsible_pt_id: 'pt-somchai-uuid',
-    registration_status: 'active',
-    pending_expires_at: null,
-    started_at: '2026-10-26T08:00:00.000Z',
-    version: 1,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-  {
-    id: 'P-1002',
-    hn: 'P-1002',
-    first_name: 'สมศรี',
-    last_name: 'รักดี',
-    age: 48,
-    sex: 'female',
-    phone: '089-222-3333',
-    injury: 'หมอนรองกระดูกทับเส้นประสาท (LBP)',
-    history: {},
-    registered_via: 'reception',
-    responsible_pt_id: 'pt-somchai-uuid',
-    registration_status: 'active',
-    pending_expires_at: null,
-    started_at: '2026-10-26T08:00:00.000Z',
-    version: 1,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-];
+const DEMO_PATIENTS: PatientRecord[] = [];
 
 export const PatientsView: React.FC = () => {
   const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
