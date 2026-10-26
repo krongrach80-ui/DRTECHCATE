@@ -16,18 +16,16 @@ async function getOrInitApp() {
       env.SUPABASE_SERVICE_ROLE_KEY.includes('bypass') ||
       env.SUPABASE_SERVICE_ROLE_KEY.includes('local-dev');
 
-    // On Vercel Serverless: Activate persistence engine with pre-provisioned clinical staff & patients
-    // whenever local storage is requested, service role key is not configured, or external DB is unreachable.
     if (env.USE_LOCAL_STORAGE || isServiceRolePlaceholder) {
+      console.warn('[Serverless API] Local persistence engine active (USE_LOCAL_STORAGE is true or SUPABASE_SERVICE_ROLE_KEY is placeholder). To connect directly to Supabase Cloud, provide the real SUPABASE_SERVICE_ROLE_KEY in Vercel Environment Variables.');
       const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
       activateLocalPersistenceEngine();
     } else {
+      console.log(`[Serverless API] Connected to Supabase Cloud live instance: ${env.SUPABASE_URL}`);
       try {
         await syncBansFromDatabase();
       } catch (err) {
-        console.warn('Initial ban sync error, activating fallback persistence engine:', err);
-        const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
-        activateLocalPersistenceEngine();
+        console.warn('[Serverless API] Non-critical warning during startup ban cache sync; Supabase Cloud live database remains active:', err);
       }
     }
     appInstance = createApp();

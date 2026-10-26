@@ -396,6 +396,29 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- STEP 4.1: NON-BREAKING COLUMN MIGRATIONS (Aligning schemas with application repository layer)
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS target_joint TEXT;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS suitable_for TEXT;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS warnings TEXT;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS image_path TEXT;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE public.exercises ALTER COLUMN category DROP NOT NULL;
+ALTER TABLE public.exercises ALTER COLUMN category SET DEFAULT 'general';
+
+ALTER TABLE public.minigames ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.minigames ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE public.minigames ALTER COLUMN category DROP NOT NULL;
+
+ALTER TABLE public.minigame_questions ADD COLUMN IF NOT EXISTS choices JSONB;
+ALTER TABLE public.minigame_questions ADD COLUMN IF NOT EXISTS answer TEXT;
+ALTER TABLE public.minigame_questions ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES public.profiles(id);
+ALTER TABLE public.minigame_questions ALTER COLUMN options DROP NOT NULL;
+ALTER TABLE public.minigame_questions ALTER COLUMN correct_index DROP NOT NULL;
+
+ALTER TABLE public.modpacks ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.modpacks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
 -- STEP 5: CORE RPC FUNCTIONS (Functions per Master Architecture)
 
 -- Function A: Get current user role from profiles
@@ -779,6 +802,10 @@ GRANT ALL ON ALL ROUTINES IN SCHEMA public TO service_role;
 GRANT SELECT ON public.profiles TO anon;
 GRANT SELECT ON public.pts TO anon;
 GRANT SELECT ON public.exercises TO anon;
+GRANT SELECT ON public.minigames TO anon;
+GRANT SELECT ON public.minigame_questions TO anon;
+GRANT SELECT ON public.modpacks TO anon;
+GRANT SELECT ON public.modpack_items TO anon;
 GRANT SELECT ON public.kiosk_devices TO anon;
 GRANT SELECT ON public.patients TO anon;
 GRANT SELECT ON public.staff_calls TO anon;
@@ -791,6 +818,30 @@ CREATE POLICY "profiles_select_anon" ON public.profiles
 DROP POLICY IF EXISTS "pts_select_anon" ON public.pts;
 CREATE POLICY "pts_select_anon" ON public.pts
   FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "exercises_select_anon" ON public.exercises;
+CREATE POLICY "exercises_select_anon" ON public.exercises
+  FOR SELECT TO anon USING (is_active = true);
+
+DROP POLICY IF EXISTS "minigames_select_anon" ON public.minigames;
+CREATE POLICY "minigames_select_anon" ON public.minigames
+  FOR SELECT TO anon USING (is_active = true);
+
+DROP POLICY IF EXISTS "minigame_questions_select_anon" ON public.minigame_questions;
+CREATE POLICY "minigame_questions_select_anon" ON public.minigame_questions
+  FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "modpacks_select_anon" ON public.modpacks;
+CREATE POLICY "modpacks_select_anon" ON public.modpacks
+  FOR SELECT TO anon USING (is_active = true);
+
+DROP POLICY IF EXISTS "modpack_items_select_anon" ON public.modpack_items;
+CREATE POLICY "modpack_items_select_anon" ON public.modpack_items
+  FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "kiosk_devices_select_anon" ON public.kiosk_devices;
+CREATE POLICY "kiosk_devices_select_anon" ON public.kiosk_devices
+  FOR SELECT TO anon USING (is_active = true);
 
 DROP POLICY IF EXISTS "patients_select_anon" ON public.patients;
 CREATE POLICY "patients_select_anon" ON public.patients
@@ -949,12 +1000,124 @@ BEGIN
     name = EXCLUDED.name, is_active = EXCLUDED.is_active;
 
   -- 5. Standard Exercises
-  INSERT INTO public.exercises (id, title, category, difficulty, target_muscle, description, default_sets, default_reps)
+  INSERT INTO public.exercises (
+    id, title, category, difficulty, target_joint, target_muscle,
+    default_sets, default_reps, description, suitable_for, is_active, created_by
+  ) VALUES
+    (
+      'e1000000-0000-0000-0000-000000000001',
+      'Shoulder Pendulum (แกว่งแขนวงกลมผ่อนคลายหัวไหล่)',
+      'ข้อไหล่และแขน', 'beginner', 'shoulder', 'Deltoid & Rotator Cuff',
+      3, 15, 'โน้มตัวไปข้างหน้าแล้วปล่อยแขนแกว่งตามแรงโน้มถ่วงเป็นวงกลมเบาๆ เพื่อคลายข้อต่อ',
+      'ข้อไหล่ติด, ผู้ป่วยหลังผ่าตัดไหล่', true, v_pt_id
+    ),
+    (
+      'e1000000-0000-0000-0000-000000000002',
+      'Shoulder External Rotation (หมุนข้อไหล่ออกด้านนอก)',
+      'ข้อไหล่และแขน', 'intermediate', 'shoulder', 'Infraspinatus & Teres Minor',
+      3, 12, 'งอข้อศอก 90 องศา แนบข้างลำตัวแล้วหมุนแขนออกด้านนอกช้าๆ',
+      'กล้ามเนื้อสะบักอ่อนแรง, เพิ่มมุมการหมุนไหล่', true, v_pt_id
+    ),
+    (
+      'e1000000-0000-0000-0000-000000000003',
+      'Cervical Retraction (เก็บคาง ยืดกระดูกต้นคอ)',
+      'ต้นคอและสะบัก', 'beginner', 'neck', 'Deep Cervical Flexors',
+      3, 10, 'มองตรงไปข้างหน้า ดึงคางและศีรษะถอยหลังตรงๆ ค้างไว้ 5 วินาที แล้วคลายออก',
+      'ออฟฟิศซินโดรม, ปวดคอบ่าเรื้อรัง', true, v_pt_id
+    ),
+    (
+      'e1000000-0000-0000-0000-000000000004',
+      'ท่ายกเข่าสูงทรงตัว (High Knee Lift)',
+      'ขาและข้อเข่า', 'beginner', 'knee', 'Quadriceps & Hip Flexors',
+      3, 10, 'ยืนตรง ยกเข่าขึ้นตั้งฉากกับลำตัวช้าๆ สลับซ้ายขวา',
+      'ข้อเข่าเสื่อม, ฝึกความแข็งแรงขา', true, v_pt_id
+    )
+  ON CONFLICT (id) DO UPDATE SET
+    title = EXCLUDED.title,
+    category = EXCLUDED.category,
+    target_joint = EXCLUDED.target_joint,
+    description = EXCLUDED.description;
+
+  -- 6. Minigames & Questions
+  INSERT INTO public.minigames (id, title, category, description, difficulty, is_active, created_by)
+  VALUES (
+    'm1000000-0000-0000-0000-000000000001',
+    'เกมทดสอบความจำและการรับรู้ (Cognitive Recovery)',
+    'ความจำและการรู้คิด',
+    'ฝึกการตอบสนองสมองและความจำระยะสั้นควบคู่การฟื้นฟูร่างกาย',
+    'medium', true, v_pt_id
+  ) ON CONFLICT (id) DO UPDATE SET
+    title = EXCLUDED.title, description = EXCLUDED.description;
+
+  INSERT INTO public.minigame_questions (id, minigame_id, prompt, choices, answer, options, correct_index, created_by)
   VALUES
-    ('e1000000-0000-0000-0000-000000000001', 'ท่ายกเข่าสูง (High Knee Lift)', 'ขาและข้อเข่า', 'ง่าย', 'Quadriceps & Hip Flexors', 'ยืนตรง ยกเข่าขึ้นตั้งฉากกับลำตัวช้าๆ สลับซ้ายขวา', 3, 10),
-    ('e1000000-0000-0000-0000-000000000002', 'ท่ายืนทรงตัวขาเดียว (Single-Leg Stance)', 'การทรงตัว', 'ปานกลาง', 'Core & Ankle Stabilizers', 'ยืนกางแขน ยกเท้าข้างหนึ่งลอยจากพื้น ค้างไว้ 10-15 วินาที', 3, 5),
-    ('e1000000-0000-0000-0000-000000000003', 'ท่าสะพานโค้งกระชับสะโพก (Glute Bridge)', 'สะโพกและหลังล่าง', 'ง่าย', 'Gluteus Maximus & Hamstrings', 'นอนหงาย ชันเข่าขึ้น ยกสะโพกลอยขึ้นเป็นแนวตรงกับลำตัว', 3, 12)
-  ON CONFLICT (id) DO NOTHING;
+    (
+      'q1000000-0000-0000-0000-000000000001',
+      'm1000000-0000-0000-0000-000000000001',
+      'เมื่อมีอาการปวดไหล่เฉียบพลันหลังออกกำลังกาย ควรปฏิบัติอย่างไรใน 24 ชั่วโมงแรก?',
+      '["ประคบเย็น 15-20 นาที", "ประคบร้อนทันที", "นวดกดจุดแรงๆ", "ดัดดึงแขนอย่างรวดเร็ว"]'::jsonb,
+      'ประคบเย็น 15-20 นาที',
+      '["ประคบเย็น 15-20 นาที", "ประคบร้อนทันที", "นวดกดจุดแรงๆ", "ดัดดึงแขนอย่างรวดเร็ว"]'::jsonb,
+      0, v_pt_id
+    ),
+    (
+      'q1000000-0000-0000-0000-000000000002',
+      'm1000000-0000-0000-0000-000000000001',
+      'การนั่งทำงานหน้าคอมพิวเตอร์ที่ถูกต้อง หน้าจอควรอยู่ในระดับใด?',
+      '["ระดับสายตาหรือต่ำกว่าเล็กน้อย 10-15 องศา", "สูงกว่าศีรษะ 30 องศา", "ต่ำกว่าอก", "วางไว้ข้างลำตัว"]'::jsonb,
+      'ระดับสายตาหรือต่ำกว่าเล็กน้อย 10-15 องศา',
+      '["ระดับสายตาหรือต่ำกว่าเล็กน้อย 10-15 องศา", "สูงกว่าศีรษะ 30 องศา", "ต่ำกว่าอก", "วางไว้ข้างลำตัว"]'::jsonb,
+      0, v_pt_id
+    )
+  ON CONFLICT (id) DO UPDATE SET
+    prompt = EXCLUDED.prompt, answer = EXCLUDED.answer;
+
+  -- 7. Modpacks & Modpack Items
+  INSERT INTO public.modpacks (id, name, description, is_active, created_by)
+  VALUES (
+    'p1000000-0000-0000-0000-000000000001',
+    'ชุดฟื้นฟูข้อไหล่ติดระยะเริ่มต้น (Frozen Shoulder Phase 1)',
+    'โปรแกรม 3 ท่าฟื้นฟูการเคลื่อนไหวข้อต่อและลดพังผืดไหล่',
+    true, v_pt_id
+  ) ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, description = EXCLUDED.description;
+
+  INSERT INTO public.modpack_items (id, modpack_id, exercise_id, sets, reps, position)
+  VALUES
+    ('i1000000-0000-0000-0000-000000000001', 'p1000000-0000-0000-0000-000000000001', 'e1000000-0000-0000-0000-000000000001', 3, 15, 1),
+    ('i1000000-0000-0000-0000-000000000002', 'p1000000-0000-0000-0000-000000000001', 'e1000000-0000-0000-0000-000000000002', 3, 12, 2)
+  ON CONFLICT (id) DO UPDATE SET
+    sets = EXCLUDED.sets, reps = EXCLUDED.reps, position = EXCLUDED.position;
+
+  -- 8. Initial Clinical Patients
+  INSERT INTO public.patients (
+    id, hn, first_name, last_name, age, sex, phone, injury,
+    responsible_pt_id, registration_status, registered_via, version
+  ) VALUES
+    (
+      'c1000000-0000-0000-0000-000000000001', 'HN00100001',
+      'ทองดี', 'มีสุข', 52, 'male', '081-111-2222',
+      'ข้อไหล่ติดระยะฟื้นฟู (Frozen Shoulder)',
+      v_pt_id, 'active', 'reception', 1
+    ),
+    (
+      'c1000000-0000-0000-0000-000000000002', 'HN00100002',
+      'สมศรี', 'รักดี', 48, 'female', '089-222-3333',
+      'หมอนรองกระดูกทับเส้นประสาท (LBP)',
+      v_pt_id, 'active', 'reception', 1
+    )
+  ON CONFLICT (id) DO UPDATE SET
+    first_name = EXCLUDED.first_name,
+    last_name = EXCLUDED.last_name,
+    injury = EXCLUDED.injury;
+
+  -- 9. Patient PT Assignments
+  INSERT INTO public.patient_pt_assignments (patient_id, pt_id, is_primary)
+  VALUES
+    ('c1000000-0000-0000-0000-000000000001', v_pt_id, true),
+    ('c1000000-0000-0000-0000-000000000002', v_pt_id, true)
+  ON CONFLICT (patient_id, pt_id) DO UPDATE SET
+    is_primary = EXCLUDED.is_primary;
 
 END $$;
 
@@ -963,5 +1126,8 @@ SELECT
   '✓ SUCCESS: Cloud schema synchronization completed with 0 errors.' AS status,
   (SELECT COUNT(*) FROM public.profiles) AS total_profiles,
   (SELECT COUNT(*) FROM public.pts) AS total_pts,
-  (SELECT COUNT(*) FROM public.kiosk_devices) AS total_kiosks,
-  (SELECT COUNT(*) FROM public.exercises) AS total_exercises;
+  (SELECT COUNT(*) FROM public.patients) AS total_patients,
+  (SELECT COUNT(*) FROM public.exercises) AS total_exercises,
+  (SELECT COUNT(*) FROM public.minigames) AS total_minigames,
+  (SELECT COUNT(*) FROM public.modpacks) AS total_modpacks,
+  (SELECT COUNT(*) FROM public.kiosk_devices) AS total_kiosks;

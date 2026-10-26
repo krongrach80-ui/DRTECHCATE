@@ -11951,15 +11951,15 @@ async function getOrInitApp() {
     const env = getEnv();
     const isServiceRolePlaceholder = !env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY.includes("placeholder") || env.SUPABASE_SERVICE_ROLE_KEY.includes("bypass") || env.SUPABASE_SERVICE_ROLE_KEY.includes("local-dev");
     if (env.USE_LOCAL_STORAGE || isServiceRolePlaceholder) {
+      console.warn("[Serverless API] Local persistence engine active (USE_LOCAL_STORAGE is true or SUPABASE_SERVICE_ROLE_KEY is placeholder). To connect directly to Supabase Cloud, provide the real SUPABASE_SERVICE_ROLE_KEY in Vercel Environment Variables.");
       const { activateLocalPersistenceEngine: activateLocalPersistenceEngine2 } = await Promise.resolve().then(() => (init_localPersistenceEngine(), localPersistenceEngine_exports));
       activateLocalPersistenceEngine2();
     } else {
+      console.log(`[Serverless API] Connected to Supabase Cloud live instance: ${env.SUPABASE_URL}`);
       try {
         await syncBansFromDatabase();
       } catch (err) {
-        console.warn("Initial ban sync error, activating fallback persistence engine:", err);
-        const { activateLocalPersistenceEngine: activateLocalPersistenceEngine2 } = await Promise.resolve().then(() => (init_localPersistenceEngine(), localPersistenceEngine_exports));
-        activateLocalPersistenceEngine2();
+        console.warn("[Serverless API] Non-critical warning during startup ban cache sync; Supabase Cloud live database remains active:", err);
       }
     }
     appInstance = createApp();

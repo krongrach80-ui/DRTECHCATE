@@ -13,6 +13,7 @@
     "test:rls": "tsx scripts/test-rls.ts",
     "admin:create": "tsx scripts/create-admin.ts",
     "db:migrate": "tsx scripts/run-migration.ts",
+    "db:seed": "tsx scripts/seed-cloud-db.ts",
     "ci:bundle": "tsx scripts/check-bundle.ts",
     "dev:api": "tsx apps/api/src/server.ts",
     "dev:admin": "vite --config apps/admin/vite.config.ts --port 5173",
