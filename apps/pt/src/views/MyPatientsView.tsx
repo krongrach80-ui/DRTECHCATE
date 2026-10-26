@@ -67,11 +67,11 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
       setLoading(true);
       setErrorMsg(null);
       const [pts, transfers, directory] = await Promise.all([
-        defaultApiClient.patients.list({ q: search.trim() || undefined, limit: 100 }),
+        defaultApiClient.patients.list({ q: search.trim() || undefined, limit: 100 }).catch(() => []),
         defaultApiClient.caseTransfers.list().catch(() => []),
         defaultApiClient.directory.listPts().catch(() => []),
       ]);
-      const rawList = Array.isArray(pts) ? pts : [];
+      const rawList = Array.isArray(pts) ? pts : ((pts as any)?.patients || []);
       if (rawList.length > 0) {
         setPatients(rawList);
       } else if (!search.trim()) {

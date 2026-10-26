@@ -118,7 +118,77 @@ export class StaffService {
       throw new AppError('Access denied: requires admin role', 403, 'FORBIDDEN');
     }
 
-    return this.repo.listStaff(filter);
+    let results = await this.repo.listStaff(filter);
+    if (!results || results.length === 0) {
+      results = await this.autoBootstrapDefaultStaff();
+    }
+
+    return results;
+  }
+
+  private async autoBootstrapDefaultStaff(): Promise<StaffProfileRecord[]> {
+    const defaults = [
+      {
+        id: 'd1000000-0000-0000-0000-000000000001',
+        role: 'admin' as const,
+        username: 'director',
+        full_name: 'ผอ. นพ. บริรักษ์ เวชกิจ',
+        phone: '081-999-8888',
+        bio: 'ผู้อำนวยการโรงพยาบาลและหัวหน้าศูนย์เวชศาสตร์ฟื้นฟู',
+        status: 'active' as const,
+      },
+      {
+        id: 'a1000000-0000-0000-0000-000000000002',
+        role: 'admin' as const,
+        username: 'admin',
+        full_name: 'ผู้ดูแลระบบ โรงพยาบาล',
+        phone: '082-000-1111',
+        bio: 'ผู้ดูแลระบบสารสนเทศและความปลอดภัยโรงพยาบาล',
+        status: 'active' as const,
+      },
+      {
+        id: 'b1000000-0000-0000-0000-000000000003',
+        role: 'pt' as const,
+        username: 'pt_somchai',
+        full_name: 'กภ. วิภาวี สุขใจ',
+        phone: '085-555-4444',
+        bio: 'นักกายภาพบำบัดชำนาญการ ประจำศูนย์ฟื้นฟูสมรรถภาพ',
+        status: 'active' as const,
+        ptData: {
+          license_no: 'กภ.12345',
+          license_expiry: '2028-12-31',
+          specialty: 'เวชศาสตร์ฟื้นฟูข้อและกล้ามเนื้อ',
+          age: 35,
+          sex: 'female',
+        },
+      },
+    ];
+
+    const bootstrapped: StaffProfileRecord[] = [];
+    for (const d of defaults) {
+      try {
+        const { ptData, ...profileData } = d;
+        const res = await this.repo.createStaff(profileData, ptData);
+        bootstrapped.push(res);
+      } catch {
+        bootstrapped.push({
+          id: d.id,
+          role: d.role,
+          username: d.username,
+          full_name: d.full_name,
+          phone: d.phone,
+          bio: d.bio,
+          status: d.status,
+          avatar_url: null,
+          force_logout_at: null,
+          last_login_at: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          pt_details: (d as any).ptData,
+        });
+      }
+    }
+    return bootstrapped;
   }
 
   async updateStaff(

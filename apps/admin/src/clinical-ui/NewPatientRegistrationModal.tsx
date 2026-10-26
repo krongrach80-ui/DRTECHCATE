@@ -117,6 +117,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   const [currentFrameIdx, setCurrentFrameIdx] = useState<number>(0);
   const [isAutoScanning, setIsAutoScanning] = useState<boolean>(false);
   const [scanPulse, setScanPulse] = useState<boolean>(false);
+  const [poseCountdown, setPoseCountdown] = useState<number | null>(null);
+  const [poseBanner, setPoseBanner] = useState<string>('');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -292,19 +294,10 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Cannot get 2D rendering context');
 
-    ctx.save();
-    // Micro-pose transforms: Left skewed slightly left, Right skewed slightly right, Nod tilted slightly down
-    if (pose === 'left') {
-      ctx.translate(-4, 0);
-    } else if (pose === 'right') {
-      ctx.translate(4, 0);
-    } else if (pose === 'nod') {
-      ctx.translate(0, 4);
-    }
-
     if (customSource) {
       ctx.drawImage(customSource, 0, 0, 112, 112);
     } else if (videoRef.current && videoRef.current.videoWidth > 0) {
+      // Draw real video frame directly without artificial translations
       ctx.drawImage(videoRef.current, 0, 0, 112, 112);
     } else {
       // Clinical geometric fallback canvas if camera has no frame
@@ -316,7 +309,6 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       ctx.arc(56, 56, 36, 0, Math.PI * 2);
       ctx.stroke();
     }
-    ctx.restore();
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
     const jpegBase64 = dataUrl.split(',')[1] || '';
@@ -371,27 +363,27 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
         );
       }
 
-      // 1. Submit strictly 10 frames to face.enroll
-      await defaultApiClient.face.enroll({
-        patient_id: targetPatientId,
-        frames: framesToSubmit.map((f) => ({
-          pose: f.pose,
-          embedding: f.embedding,
-          jpeg_base64: f.jpegBase64 || undefined,
-        })),
-        model_version: 'w600k_r50',
-      }).catch((enrollErr) => {
-        console.warn('Face enrollment non-fatal fallback:', enrollErr);
-      });
+      const splitNames = name.trim().split(' ');
+      const firstName = splitNames[0] || 'ผู้ป่วย';
+      const lastName = splitNames.slice(1).join(' ') || '';
 
-      // 2. Dual-Sync with Sovereign Smart Onboarding Vault (Kiosk Face Match ready)
+      // 1. Dual-Sync with Sovereign Smart Onboarding Vault (Kiosk Face Match ready)
+      let smartPatientId = targetPatientId;
       try {
-        const splitNames = name.trim().split(' ');
-        const firstName = splitNames[0] || 'ผู้ป่วย';
-        const lastName = splitNames.slice(1).join(' ') || '';
+        const pendingRes = await defaultApiClient.smartOnboarding.createPending({
+          frames: framesToSubmit.map((f) => ({
+            pose: f.pose,
+            embedding: f.embedding,
+            jpeg_base64: f.jpegBase64 || undefined,
+          })),
+          model_version: 'w600k_r50',
+        });
+        if (pendingRes?.patient_id) {
+          smartPatientId = pendingRes.patient_id;
+        }
 
         await defaultApiClient.smartOnboarding.completeInfo({
-          patient_id: targetPatientId,
+          patient_id: smartPatientId,
           first_name: firstName,
           last_name: lastName,
           age: Number(age) || 45,
@@ -400,7 +392,22 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
           initial_symptoms: diagnosis.trim() || undefined,
         });
       } catch (syncErr) {
-        console.warn('Smart onboarding completeInfo non-fatal warning:', syncErr);
+        console.warn('Smart onboarding dual-sync warning:', syncErr);
+      }
+
+      // 2. Submit strictly 10 frames to face.enroll
+      try {
+        await defaultApiClient.face.enroll({
+          patient_id: targetPatientId,
+          frames: framesToSubmit.map((f) => ({
+            pose: f.pose,
+            embedding: f.embedding,
+            jpeg_base64: f.jpegBase64 || undefined,
+          })),
+          model_version: 'w600k_r50',
+        });
+      } catch (enrollErr) {
+        console.warn('Face enrollment non-fatal fallback:', enrollErr);
       }
 
       playFaceIdBeep(1200, 0.2);
@@ -413,7 +420,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     }
   };
 
-  // Automated iPhone Face ID Burst Scan (Cycles through all 10 poses with audio-visual guidance)
+  // Automated iPhone Face ID Burst Scan (Interactive step-by-step guidance for Front, Left, Right, Nod)
   const handleStartAutoScan = async () => {
     if (isAutoScanning) return;
     autoScanCancelRef.current = false;
@@ -421,37 +428,118 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     setErrorMsg(null);
 
     const collected: CapturedBiometricFrame[] = [];
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    for (let i = 0; i < REQUIRED_ENROLLMENT_POSES.length; i++) {
-      if (autoScanCancelRef.current) break;
+    const runCountdown = async (seconds: number, bannerText: string) => {
+      setPoseBanner(bannerText);
+      for (let s = seconds; s >= 1; s--) {
+        if (autoScanCancelRef.current) return false;
+        setPoseCountdown(s);
+        playFaceIdBeep(440 + s * 110, 0.07);
+        await sleep(900);
+      }
+      setPoseCountdown(null);
+      return true;
+    };
 
-      const spec = REQUIRED_ENROLLMENT_POSES[i];
-      setCurrentFrameIdx(i);
-      setScanPulse(true);
+    try {
+      // --- Phase 1: 4 Frontal Frames (0, 1, 2, 3) ---
+      setPoseBanner('👀 มองตรงที่กล้อง นิ่งไว้สักครู่ (หน้าตรง 4 ช็อต)');
+      await sleep(600);
 
-      // Gentle Face ID chime on each shot
-      playFaceIdBeep(700 + i * 50, 0.08);
+      for (let i = 0; i < 4; i++) {
+        if (autoScanCancelRef.current) break;
+        setCurrentFrameIdx(i);
+        setScanPulse(true);
+        playFaceIdBeep(700 + i * 50, 0.08);
 
-      try {
-        const frame = await captureSingleFrame(i, spec.pose);
+        const frame = await captureSingleFrame(i, 'front');
         collected.push(frame);
         setCapturedFrames([...collected]);
-      } catch (captureErr) {
-        console.warn('Single frame capture error:', captureErr);
+
+        setTimeout(() => setScanPulse(false), 150);
+        await sleep(400);
       }
 
-      setTimeout(() => setScanPulse(false), 150);
+      // --- Phase 2: 2 Left Turn Frames (4, 5) ---
+      if (!autoScanCancelRef.current) {
+        setCurrentFrameIdx(4);
+        const ok = await runCountdown(3, '⬅️ กรุณาค่อยๆ หันศีรษะไปทางซ้าย');
+        if (ok && !autoScanCancelRef.current) {
+          setPoseBanner('หันซ้ายค้างไว้สักครู่...');
+          for (let i = 4; i < 6; i++) {
+            if (autoScanCancelRef.current) break;
+            setCurrentFrameIdx(i);
+            setScanPulse(true);
+            playFaceIdBeep(850 + (i - 4) * 60, 0.08);
 
-      // Interval between shots (slightly longer when changing pose)
-      const isPoseTransition = i === 3 || i === 5 || i === 7;
-      const delayMs = isPoseTransition ? 550 : 350;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
+            const frame = await captureSingleFrame(i, 'left');
+            collected.push(frame);
+            setCapturedFrames([...collected]);
 
-    setIsAutoScanning(false);
+            setTimeout(() => setScanPulse(false), 150);
+            await sleep(450);
+          }
+        }
+      }
 
-    if (collected.length === 10 && !autoScanCancelRef.current) {
-      await submit10Frames(collected);
+      // --- Phase 3: 2 Right Turn Frames (6, 7) ---
+      if (!autoScanCancelRef.current) {
+        setCurrentFrameIdx(6);
+        const ok = await runCountdown(3, '➡️ กรุณาค่อยๆ หันศีรษะไปทางขวา');
+        if (ok && !autoScanCancelRef.current) {
+          setPoseBanner('หันขวาค้างไว้สักครู่...');
+          for (let i = 6; i < 8; i++) {
+            if (autoScanCancelRef.current) break;
+            setCurrentFrameIdx(i);
+            setScanPulse(true);
+            playFaceIdBeep(950 + (i - 6) * 60, 0.08);
+
+            const frame = await captureSingleFrame(i, 'right');
+            collected.push(frame);
+            setCapturedFrames([...collected]);
+
+            setTimeout(() => setScanPulse(false), 150);
+            await sleep(450);
+          }
+        }
+      }
+
+      // --- Phase 4: 2 Nod Frames (8, 9) ---
+      if (!autoScanCancelRef.current) {
+        setCurrentFrameIdx(8);
+        const ok = await runCountdown(3, '⬇️ กรุณาก้มหน้าหรือพยักหน้าลงเล็กน้อย');
+        if (ok && !autoScanCancelRef.current) {
+          setPoseBanner('ก้มหน้าค้างไว้สักครู่...');
+          for (let i = 8; i < 10; i++) {
+            if (autoScanCancelRef.current) break;
+            setCurrentFrameIdx(i);
+            setScanPulse(true);
+            playFaceIdBeep(1050 + (i - 8) * 60, 0.08);
+
+            const frame = await captureSingleFrame(i, 'nod');
+            collected.push(frame);
+            setCapturedFrames([...collected]);
+
+            setTimeout(() => setScanPulse(false), 150);
+            await sleep(450);
+          }
+        }
+      }
+
+      setPoseCountdown(null);
+      setPoseBanner('');
+      setIsAutoScanning(false);
+
+      if (collected.length === 10 && !autoScanCancelRef.current) {
+        playFaceIdBeep(1200, 0.2);
+        await submit10Frames(collected);
+      }
+    } catch (err: unknown) {
+      setIsAutoScanning(false);
+      setPoseCountdown(null);
+      setPoseBanner('');
+      setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการสแกนอัตโนมัติ');
     }
   };
 
@@ -918,6 +1006,19 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                   <div className="absolute inset-0 bg-emerald-400/25 animate-out fade-out duration-150 pointer-events-none" />
                 )}
 
+                {/* Interactive Pose Countdown Overlay */}
+                {poseCountdown !== null && (
+                  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-xs text-white p-4 text-center select-none animate-in fade-in duration-200">
+                    <div className="text-xs font-extrabold text-emerald-300 mb-2 leading-tight drop-shadow-md">
+                      {poseBanner}
+                    </div>
+                    <div className="w-16 h-16 rounded-full bg-emerald-500/30 border-2 border-emerald-400 flex items-center justify-center text-3xl font-black text-white shadow-[0_0_20px_#10B981] animate-bounce">
+                      {poseCountdown}
+                    </div>
+                    <div className="text-[10px] text-slate-300 mt-2 font-medium">กรุณาจัดท่าทางและนิ่งไว้...</div>
+                  </div>
+                )}
+
                 {/* Live Count Pill */}
                 {isAutoScanning && (
                   <div className="absolute bottom-2.5 inset-x-0 mx-auto w-fit bg-emerald-500/95 text-slate-950 px-3 py-0.5 rounded-full text-[11px] font-bold shadow-lg animate-pulse select-none">
@@ -939,7 +1040,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                 </span>
               </div>
               <div className="text-sm sm:text-base font-bold text-emerald-950">
-                {currentPoseSpec.label}
+                {poseBanner || currentPoseSpec.label}
               </div>
               <div className="text-xs text-slate-500 mt-0.5">
                 {currentPoseSpec.sublabel}

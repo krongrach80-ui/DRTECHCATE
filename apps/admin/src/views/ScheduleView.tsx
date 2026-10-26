@@ -64,14 +64,14 @@ export const ScheduleView: React.FC = () => {
       setErrorMsg(null);
       const [today, pats, mpacks, exs] = await Promise.all([
         defaultApiClient.courses.getToday().catch(() => []),
-        defaultApiClient.patients.list(),
+        defaultApiClient.patients.list().catch(() => []),
         defaultApiClient.modpacks.list().catch(() => []),
         defaultApiClient.exercises.list().catch(() => []),
       ]);
-      setTodayCourses(today);
-      setPatients(pats);
-      setModpacks(mpacks);
-      setExercises(exs);
+      setTodayCourses(Array.isArray(today) ? today : []);
+      setPatients(Array.isArray(pats) ? pats : ((pats as any)?.patients || []));
+      setModpacks(Array.isArray(mpacks) ? mpacks : []);
+      setExercises(Array.isArray(exs) ? exs : []);
 
       // Also fetch calendar for current month
       const now = new Date();

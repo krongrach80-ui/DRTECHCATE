@@ -9,13 +9,18 @@ import {
   EnrollmentTicketRecord,
   CheckinRecord,
   normalizePhone,
+  PatientRegistrationStatus,
 } from './schema';
 
 export interface IPatientRepository {
   isPatientAccessibleByPt(patientId: string, ptId: string): Promise<boolean>;
   getAccessiblePatientIdsForPt(ptId: string): Promise<string[]>;
   createPatient(
-    input: Partial<CreatePatientInput> & { first_name: string; last_name: string },
+    input: Partial<CreatePatientInput> & {
+      first_name: string;
+      last_name: string;
+      registration_status?: PatientRegistrationStatus;
+    },
     createdBy: string,
     responsiblePtId?: string | null
   ): Promise<PatientRecord>;
@@ -141,7 +146,11 @@ export class PatientRepository implements IPatientRepository {
   // 2. PATIENT CRUD (HN from PostgreSQL Sequence patient_hn_seq)
   // =========================================================================
   async createPatient(
-    input: Partial<CreatePatientInput> & { first_name: string; last_name: string },
+    input: Partial<CreatePatientInput> & {
+      first_name: string;
+      last_name: string;
+      registration_status?: PatientRegistrationStatus;
+    },
     _createdBy: string,
     responsiblePtId?: string | null
   ): Promise<PatientRecord> {
@@ -151,18 +160,49 @@ export class PatientRepository implements IPatientRepository {
     try {
       const adminClient = getAdminClient();
       // Omit hn so Postgres DEFAULT ('HN' || lpad(nextval('patient_hn_seq')::text, 6, '0')) triggers
+      const cleanHistory: Record<string, unknown> = { ...(input.history || {}) };
+      if (!cleanHistory.chronic_diseases) cleanHistory.chronic_diseases = '-';
+      if (!cleanHistory.allergies) cleanHistory.allergies = '-';
+      if (!cleanHistory.notes) cleanHistory.notes = '-';
+
+      let validPtId: string | null = null;
+      if (ptId) {
+        try {
+          const { data: ptProfile } = await adminClient
+            .from('profiles')
+            .select('id')
+            .eq('id', ptId)
+            .maybeSingle();
+          if (ptProfile) {
+            validPtId = ptProfile.id;
+          } else {
+            const { data: anyPt } = await adminClient
+              .from('profiles')
+              .select('id')
+              .eq('role', 'pt')
+              .eq('status', 'active')
+              .limit(1)
+              .maybeSingle();
+            if (anyPt) validPtId = anyPt.id;
+          }
+        } catch {
+          // If query fails, don't set invalid ptId
+          validPtId = null;
+        }
+      }
+
       const { data, error } = await adminClient
         .from('patients')
         .insert({
           first_name: input.first_name.trim(),
           last_name: input.last_name.trim(),
-          age: input.age ?? null,
-          sex: input.sex ?? null,
-          phone: normalizePhone(input.phone),
-          history: input.history || {},
-          injury: input.injury || null,
-          responsible_pt_id: ptId,
-          registration_status: 'awaiting_face',
+          age: typeof input.age === 'number' && !isNaN(input.age) ? input.age : 30,
+          sex: input.sex || 'unspecified',
+          phone: normalizePhone(input.phone) || '-',
+          history: cleanHistory,
+          injury: input.injury?.trim() || '-',
+          responsible_pt_id: validPtId,
+          registration_status: input.registration_status || 'active',
           registered_via: input.registered_via || 'reception',
           pending_expires_at: expiresAt,
           version: 1,
@@ -175,17 +215,16 @@ export class PatientRepository implements IPatientRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      if (ptId) {
-        const { error: assignError } = await adminClient
-          .from('patient_pt_assignments')
-          .upsert(
-            { patient_id: data.id, pt_id: ptId, is_primary: true },
-            { onConflict: 'patient_id,pt_id' }
-          );
-
-        if (assignError) {
-          logger.error({ assignError, patientId: data.id, ptId }, 'Failed to upsert patient_pt_assignments in Supabase');
-          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      if (validPtId) {
+        try {
+          await adminClient
+            .from('patient_pt_assignments')
+            .upsert(
+              { patient_id: data.id, pt_id: validPtId, is_primary: true },
+              { onConflict: 'patient_id,pt_id' }
+            );
+        } catch (assignError) {
+          logger.warn({ assignError, patientId: data.id, ptId: validPtId }, 'Non-fatal warning upserting patient_pt_assignments');
         }
       }
 

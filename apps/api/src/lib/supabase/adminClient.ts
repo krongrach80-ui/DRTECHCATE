@@ -10,7 +10,13 @@ let adminClientInstance: SupabaseClient | null = null;
 export function getAdminClient(): SupabaseClient {
   if (!adminClientInstance) {
     const env = getEnv();
-    adminClientInstance = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    const isPlaceholder =
+      !env.SUPABASE_SERVICE_ROLE_KEY ||
+      env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder') ||
+      env.SUPABASE_SERVICE_ROLE_KEY.includes('bypass') ||
+      env.SUPABASE_SERVICE_ROLE_KEY.includes('local-dev');
+    const keyToUse = isPlaceholder ? env.SUPABASE_ANON_KEY : env.SUPABASE_SERVICE_ROLE_KEY;
+    adminClientInstance = createClient(env.SUPABASE_URL, keyToUse, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,

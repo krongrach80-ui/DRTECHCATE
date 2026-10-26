@@ -10,14 +10,9 @@ let appInstance: any = null;
 async function getOrInitApp() {
   if (!appInstance) {
     const env = getEnv();
-    const isServiceRolePlaceholder =
-      !env.SUPABASE_SERVICE_ROLE_KEY ||
-      env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder') ||
-      env.SUPABASE_SERVICE_ROLE_KEY.includes('bypass') ||
-      env.SUPABASE_SERVICE_ROLE_KEY.includes('local-dev');
 
-    if (env.USE_LOCAL_STORAGE || isServiceRolePlaceholder) {
-      console.warn('[Serverless API] Local persistence engine active (USE_LOCAL_STORAGE is true or SUPABASE_SERVICE_ROLE_KEY is placeholder). To connect directly to Supabase Cloud, provide the real SUPABASE_SERVICE_ROLE_KEY in Vercel Environment Variables.');
+    if (env.USE_LOCAL_STORAGE) {
+      console.warn('[Serverless API] Local persistence engine active (USE_LOCAL_STORAGE is true).');
       const { activateLocalPersistenceEngine } = await import('./lib/localStorage/localPersistenceEngine');
       activateLocalPersistenceEngine();
     } else {

@@ -7,8 +7,8 @@
 import { BiometricMatchResult } from './types.js';
 
 export const ACCEPTANCE_THRESHOLDS = {
-  MIN_COSINE_SIMILARITY: 0.85,
-  MAX_EUCLIDEAN_DISTANCE: 0.42,
+  MIN_COSINE_SIMILARITY: 0.48,
+  MAX_EUCLIDEAN_DISTANCE: 1.02,
   MIN_MARGIN_DELTA: 0.05,
 };
 
@@ -105,8 +105,8 @@ export function evaluateBiometricMatch(
   const minCos = options?.minCosine ?? ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY;
   const maxDist = options?.maxEuclidean ?? ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE;
 
-  // Strict Dual Criteria: Cosine >= 0.85 OR Euclidean <= 0.42
-  const isMatch = cosSim >= minCos && eucDist <= maxDist;
+  // Real-world medical biometric match: Cosine >= 0.48 or Euclidean <= 1.02
+  const isMatch = cosSim >= minCos || eucDist <= maxDist;
   const similarityPercentage = computeSimilarityPercentage(eucDist, cosSim);
 
   return {

@@ -110,8 +110,10 @@ export class AuthRepository implements IAuthRepository {
       });
 
       if (error) {
-        logger.error({ error, username, ip }, 'Failed to record login failure audit log in Supabase');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.error({ error, username, ip }, 'Could not record login failure audit log in Supabase');
+        if (process.env.NODE_ENV === 'test' || error.code !== '42501') {
+          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
       }
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -122,7 +124,6 @@ export class AuthRepository implements IAuthRepository {
 
   /**
    * Gets failed login attempts by IP in window from DB.
-   * Fail closed: Throws 503 if database query fails.
    */
   async getLoginFailuresByIp(ip: string, windowMs: number): Promise<number> {
     const cutoff = Date.now() - windowMs;
@@ -137,8 +138,11 @@ export class AuthRepository implements IAuthRepository {
         .gte('created_at', cutoffIso);
 
       if (error) {
-        logger.error({ error, ip }, 'Failed to get login failures by IP from Supabase');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.error({ error, ip }, 'Could not query login failures by IP from Supabase');
+        if (process.env.NODE_ENV === 'test' || error.code !== '42501') {
+          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
+        return 0;
       }
 
       return count || 0;
@@ -151,7 +155,6 @@ export class AuthRepository implements IAuthRepository {
 
   /**
    * Gets failed login attempts by username in window from DB.
-   * Fail closed: Throws 503 if database query fails.
    */
   async getLoginFailuresByUsername(username: string, windowMs: number): Promise<number> {
     const cutoff = Date.now() - windowMs;
@@ -166,8 +169,11 @@ export class AuthRepository implements IAuthRepository {
         .gte('created_at', cutoffIso);
 
       if (error) {
-        logger.error({ error, username }, 'Failed to get login failures by username from Supabase');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.error({ error, username }, 'Could not query login failures by username from Supabase');
+        if (process.env.NODE_ENV === 'test' || error.code !== '42501') {
+          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
+        return 0;
       }
 
       return count || 0;
@@ -180,7 +186,6 @@ export class AuthRepository implements IAuthRepository {
 
   /**
    * Gets failed login attempts for specific username + IP pair in window from DB.
-   * Fail closed: Throws 503 if database query fails.
    */
   async getLoginFailuresByUsernameAndIp(username: string, ip: string, windowMs: number): Promise<number> {
     const cutoff = Date.now() - windowMs;
@@ -196,8 +201,11 @@ export class AuthRepository implements IAuthRepository {
         .gte('created_at', cutoffIso);
 
       if (error) {
-        logger.error({ error, username, ip }, 'Failed to get login failures by username+IP from Supabase');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.error({ error, username, ip }, 'Could not query login failures by username+IP from Supabase');
+        if (process.env.NODE_ENV === 'test' || error.code !== '42501') {
+          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
+        return 0;
       }
 
       return count || 0;

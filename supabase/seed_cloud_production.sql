@@ -388,7 +388,7 @@ BEGIN
     extensions.crypt('Admin12345678!', extensions.gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
-    '{"role":"admin","username":"director","full_name":"ผอ. นพ. วิจัย สุขเกษม"}'::jsonb,
+    '{"role":"admin","username":"director","full_name":"ผอ. นพ. บริรักษ์ เวชกิจ"}'::jsonb,
     now(),
     now()
   ) ON CONFLICT (id) DO UPDATE SET
@@ -408,7 +408,7 @@ BEGIN
     extensions.crypt('Admin12345678!', extensions.gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
-    '{"role":"admin","username":"admin","full_name":"ผู้ดูแลระบบโรงพยาบาล (Admin)"}'::jsonb,
+    '{"role":"admin","username":"admin","full_name":"ผู้ดูแลระบบ โรงพยาบาล"}'::jsonb,
     now(),
     now()
   ) ON CONFLICT (id) DO UPDATE SET
@@ -428,7 +428,7 @@ BEGIN
     extensions.crypt('CorrectPassword123!', extensions.gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
-    '{"role":"pt","username":"pt_somchai","full_name":"กภ. ภัทรพล เจริญสุข"}'::jsonb,
+    '{"role":"pt","username":"pt_somchai","full_name":"กภ. วิภาวี สุขใจ"}'::jsonb,
     now(),
     now()
   ) ON CONFLICT (id) DO UPDATE SET
@@ -437,9 +437,9 @@ BEGIN
 
   -- 4.2 Upsert public.profiles
   INSERT INTO public.profiles (id, username, full_name, role, status, phone, bio) VALUES
-    (v_director_id, 'director', 'ผอ. นพ. วิจัย สุขเกษม', 'admin', 'active', '081-999-8888', 'ผู้อำนวยการโรงพยาบาลและหัวหน้าศูนย์เวชศาสตร์ฟื้นฟู'),
-    (v_admin_id, 'admin', 'ผู้ดูแลระบบโรงพยาบาล (Admin)', 'admin', 'active', '082-000-1111', 'ผู้ดูแลระบบสารสนเทศโรงพยาบาล'),
-    (v_pt_id, 'pt_somchai', 'กภ. ภัทรพล เจริญสุข', 'pt', 'active', '085-555-4444', 'นักกายภาพบำบัดชำนาญการ ประจำศูนย์ฟื้นฟูสมรรถภาพ')
+    (v_director_id, 'director', 'ผอ. นพ. บริรักษ์ เวชกิจ', 'admin', 'active', '081-999-8888', 'ผู้อำนวยการโรงพยาบาลและหัวหน้าศูนย์เวชศาสตร์ฟื้นฟู'),
+    (v_admin_id, 'admin', 'ผู้ดูแลระบบ โรงพยาบาล', 'admin', 'active', '082-000-1111', 'ผู้ดูแลระบบสารสนเทศโรงพยาบาล'),
+    (v_pt_id, 'pt_somchai', 'กภ. วิภาวี สุขใจ', 'pt', 'active', '085-555-4444', 'นักกายภาพบำบัดชำนาญการ ประจำศูนย์ฟื้นฟูสมรรถภาพ')
   ON CONFLICT (id) DO UPDATE SET
     role = EXCLUDED.role,
     status = EXCLUDED.status,
@@ -448,7 +448,7 @@ BEGIN
 
   -- 4.3 Upsert public.pts
   INSERT INTO public.pts (user_id, license_no, license_expiry, specialty, age, sex) VALUES
-    (v_pt_id, 'กภ.12345', '2028-12-31', 'เวชศาสตร์ฟื้นฟูข้อและกล้ามเนื้อ', 35, 'male')
+    (v_pt_id, 'กภ.12345', '2028-12-31', 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด', 32, 'female')
   ON CONFLICT (user_id) DO UPDATE SET
     license_no = EXCLUDED.license_no,
     specialty = EXCLUDED.specialty;

@@ -157,11 +157,25 @@ export class FaceFlowManager {
   public static async executeEnrollment(config: EnrollFlowConfig): Promise<EnrollFlowResult> {
     const collectedFrames: FaceEnrollmentFrame[] = [];
     const totalFrames = REQUIRED_ENROLL_POSES.length; // 10
-    const maxAttempts = config.maxAttemptsPerPose || 40;
+    const maxAttempts = config.maxAttemptsPerPose || 120;
 
     for (let i = 0; i < totalFrames; i++) {
       const targetPose = REQUIRED_ENROLL_POSES[i];
       const thaiInstruction = getThaiPoseInstruction(targetPose);
+
+      // Give user time to transition pose when moving to a new pose group
+      if (i > 0 && REQUIRED_ENROLL_POSES[i] !== REQUIRED_ENROLL_POSES[i - 1]) {
+        config.onProgress?.({
+          frameIndex: collectedFrames.length,
+          totalFrames,
+          currentPose: targetPose,
+          thaiInstruction: `กรุณาปรับท่าทาง: ${thaiInstruction}`,
+          qualityPassed: false,
+          issues: ['POSE_TRANSITION'],
+        });
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+
       config.qualityChecker.resetStability();
 
       let attempts = 0;

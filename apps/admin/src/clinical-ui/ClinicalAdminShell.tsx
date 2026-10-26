@@ -183,10 +183,10 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           subtitleEn={pageMeta.subtitle}
           userName={
             currentUser?.full_name?.trim() ||
-            (currentUser?.username === 'director' ? 'ผู้อำนวยการโรงพยาบาล' : undefined) ||
-            (currentUser?.username === 'admin' ? 'ผู้ดูแลระบบโรงพยาบาล (Admin)' : undefined) ||
+            (currentUser?.username === 'director' ? 'ผอ. นพ. บริรักษ์ เวชกิจ' : undefined) ||
+            (currentUser?.username === 'admin' ? 'ผู้ดูแลระบบ โรงพยาบาล' : undefined) ||
             currentUser?.username ||
-            'ผู้ดูแลระบบ'
+            'ผอ. นพ. บริรักษ์ เวชกิจ'
           }
           userRoleTitle={
             currentUser?.username === 'director'

@@ -78,6 +78,61 @@ export class SmartOnboardingService {
     message?: string;
   }> {
     const records = this.vaultService.listAllPatientRecords();
+
+    // Augment with Supabase patients database (essential for Cloud & Serverless persistence)
+    if (process.env.NODE_ENV !== 'test') {
+      try {
+        const supabase = getAdminClient();
+        const timeoutPromise = new Promise<{ data: null }>((resolve) =>
+          setTimeout(() => resolve({ data: null }), 1500)
+        );
+        const queryPromise = supabase.from('patients').select('*');
+        const res = await Promise.race([queryPromise, timeoutPromise]);
+        const dbPatients = res && 'data' in res ? res.data : null;
+
+        if (dbPatients && Array.isArray(dbPatients)) {
+          for (const p of dbPatients) {
+            const pRecord: PatientRecordFile | undefined = p.history?.patient_record;
+            const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
+            if (pVector && Array.isArray(pVector) && pVector.length === 512) {
+              const exists = records.some((r) => r.patient_id === p.id || r.hn === p.hn);
+              if (!exists) {
+                records.push(
+                  pRecord || {
+                    patient_id: p.id,
+                    hn: p.hn,
+                    first_name: p.first_name,
+                    last_name: p.last_name,
+                    age: p.age || 0,
+                    gender: p.sex === 'M' ? 'male' : p.sex === 'F' ? 'female' : 'unspecified',
+                    phone: p.phone || '',
+                    initial_symptoms: p.injury || '',
+                    registration_status: p.registration_status,
+                    registered_via: p.registered_via || 'kiosk',
+                    created_at: p.created_at || new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    biometrics: {
+                      face_vector: pVector,
+                      registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
+                      confidence_score: 0.95,
+                      model_version: 'w600k_r50',
+                      enrolled_at: p.created_at || new Date().toISOString(),
+                    },
+                    schedule: p.history?.schedule || null,
+                    daily_checklists: p.history?.daily_checklists || {},
+                    rehab_scores: p.history?.rehab_scores || [],
+                    clinical: { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] },
+                  }
+                );
+              }
+            }
+          }
+        }
+      } catch (dbErr) {
+        logger.warn({ dbErr }, 'Supabase database query in scanLogin bypassed');
+      }
+    }
+
     let bestMatch: {
       record: PatientRecordFile;
       similarity: number;
@@ -213,8 +268,12 @@ export class SmartOnboardingService {
         age: 0,
         sex: 'OTHER',
         injury: 'รอลงข้อมูล',
-        registration_status: 'awaiting_face',
+        registration_status: 'face_registered_pending_info',
         registered_via: 'kiosk',
+        history: {
+          patient_record: newRecord,
+          face_vector: avgVector,
+        },
       });
     } catch (dbErr) {
       logger.warn({ dbErr }, 'Supabase database sync bypassed (using file vault)');
@@ -256,9 +315,87 @@ export class SmartOnboardingService {
       initial_symptoms?: string;
     }
   ): Promise<PatientRecordFile> {
-    const existing = this.vaultService.getPatientRecord(patientId);
+    let existing = this.vaultService.getPatientRecord(patientId);
+
+    // If not found in local vault (e.g. serverless cold start), attempt loading from Supabase
     if (!existing) {
-      throw new Error(`Patient vault for ${patientId} not found`);
+      try {
+        const supabase = getAdminClient();
+        const { data: pData } = await supabase
+          .from('patients')
+          .select('*')
+          .or(`id.eq.${patientId},hn.eq.${patientId}`)
+          .maybeSingle();
+
+        if (pData?.history?.patient_record) {
+          existing = pData.history.patient_record;
+        } else if (pData) {
+          existing = {
+            patient_id: pData.id,
+            hn: pData.hn,
+            first_name: pData.first_name,
+            last_name: pData.last_name,
+            age: pData.age || 0,
+            gender: pData.sex === 'M' ? 'male' : pData.sex === 'F' ? 'female' : 'unspecified',
+            phone: pData.phone || '',
+            initial_symptoms: pData.injury || '',
+            registration_status: pData.registration_status,
+            registered_via: pData.registered_via || 'kiosk',
+            created_at: pData.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            biometrics: pData.history?.biometrics || {
+              face_vector: pData.history?.face_vector || [],
+              registered_face_url: `/uploads/patients/${patientId}/profile_face.jpg`,
+              confidence_score: 0.95,
+              model_version: 'w600k_r50',
+              enrolled_at: new Date().toISOString(),
+            },
+            schedule: pData.history?.schedule || null,
+            daily_checklists: pData.history?.daily_checklists || {},
+            rehab_scores: pData.history?.rehab_scores || [],
+            clinical: {
+              diagnosis: pData.injury || '',
+              treatment_plan: '',
+              progress_notes: [],
+            },
+          };
+        }
+      } catch (dbErr) {
+        logger.warn({ dbErr }, 'Supabase fetch failed in completePatientInfo');
+      }
+    }
+
+    if (!existing) {
+      // Create fallback baseline record
+      existing = {
+        patient_id: patientId,
+        hn: patientId,
+        first_name: info.first_name,
+        last_name: info.last_name,
+        age: Number(info.age),
+        gender: info.gender,
+        phone: info.phone || '',
+        initial_symptoms: info.initial_symptoms || '',
+        registration_status: 'active',
+        registered_via: 'smart_onboarding',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        biometrics: {
+          face_vector: [],
+          registered_face_url: `/uploads/patients/${patientId}/profile_face.jpg`,
+          confidence_score: 0.95,
+          model_version: 'w600k_r50',
+          enrolled_at: new Date().toISOString(),
+        },
+        schedule: null,
+        daily_checklists: {},
+        rehab_scores: [],
+        clinical: {
+          diagnosis: info.initial_symptoms || '',
+          treatment_plan: '',
+          progress_notes: [],
+        },
+      };
     }
 
     const updatedRecord: PatientRecordFile = {
@@ -289,6 +426,10 @@ export class SmartOnboardingService {
           phone: info.phone,
           injury: info.initial_symptoms || 'กายภาพทั่วไป',
           registration_status: 'active',
+          history: {
+            patient_record: updatedRecord,
+            face_vector: updatedRecord.biometrics?.face_vector,
+          },
         })
         .or(`hn.eq.${existing.hn},id.eq.${patientId}`);
     } catch (dbErr) {

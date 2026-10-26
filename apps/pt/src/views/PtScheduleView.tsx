@@ -85,7 +85,8 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
         defaultApiClient.kiosk.listDevices().catch(() => []),
       ]);
       const safeToday = Array.isArray(today) && today.length > 0 ? today : DEMO_TODAY_COURSES;
-      const safePatients = Array.isArray(pts) && pts.length > 0 ? pts : DEMO_PATIENTS;
+      const rawPatients = Array.isArray(pts) ? pts : ((pts as any)?.patients || []);
+      const safePatients = rawPatients.length > 0 ? rawPatients : DEMO_PATIENTS;
       setTodayCourses(safeToday);
       setCalendarCourses(Array.isArray(cal) ? cal : []);
       setPatients(safePatients);

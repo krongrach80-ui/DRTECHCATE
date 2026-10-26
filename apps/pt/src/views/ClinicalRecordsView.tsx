@@ -54,7 +54,8 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
     const loadPatients = async () => {
       try {
         const list = await defaultApiClient.patients.list({ limit: 100 }).catch(() => []);
-        const safe = Array.isArray(list) && list.length > 0 ? list : DEMO_PATIENTS;
+        const rawPatients = Array.isArray(list) ? list : ((list as any)?.patients || []);
+        const safe = rawPatients.length > 0 ? rawPatients : DEMO_PATIENTS;
         setPatients(safe);
         if (!selectedPatientId && safe.length > 0) {
           setSelectedPatientId(safe[0].id);

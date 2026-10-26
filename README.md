@@ -76,7 +76,7 @@ npm install
 npx supabase db push
 
 # 3. Create the initial Hospital Director (Super Admin) account
-npx tsx scripts/create-admin.ts --username director --email admin@drtech.care --fullname "ผอ. นพ. วิจัย สุขเกษม"
+npx tsx scripts/create-admin.ts --username director --email admin@drtech.care --fullname "ผอ. นพ. บริรักษ์ เวชกิจ"
 ```
 
 To recover or reset an administrative password in emergencies:

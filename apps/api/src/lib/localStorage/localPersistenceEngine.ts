@@ -68,6 +68,10 @@ export function registerLocalUserPassword(usernameOrEmail: string, password: str
   localPasswords.set(usernameOrEmail.trim().toLowerCase(), password);
 }
 
+export function getRegisteredPassword(usernameOrEmail: string): string | undefined {
+  return localPasswords.get(usernameOrEmail.trim().toLowerCase());
+}
+
 export async function saveLocalDatabase(): Promise<void> {
   try {
     const dir = path.dirname(DB_FILE_PATH);
@@ -161,7 +165,7 @@ export function ensurePrimaryStaffAndPatients(): void {
     currentFakeStaffRepo.inMemoryStaff.set('director-uuid', {
       id: 'director-uuid',
       username: 'director',
-      full_name: 'ผอ. นพ. วิจัย สุขเกษม',
+      full_name: 'ผอ. นพ. บริรักษ์ เวชกิจ',
       role: 'admin',
       status: 'active',
       phone: '081-999-8888',
@@ -178,7 +182,7 @@ export function ensurePrimaryStaffAndPatients(): void {
     currentFakeStaffRepo.inMemoryStaff.set('admin-super-uuid', {
       id: 'admin-super-uuid',
       username: 'admin',
-      full_name: 'ผู้ดูแลระบบโรงพยาบาล (Admin)',
+      full_name: 'ผู้ดูแลระบบ โรงพยาบาล',
       role: 'admin',
       status: 'active',
       phone: '082-000-1111',
@@ -195,7 +199,7 @@ export function ensurePrimaryStaffAndPatients(): void {
     currentFakeStaffRepo.inMemoryStaff.set('pt-somchai-uuid', {
       id: 'pt-somchai-uuid',
       username: 'pt_somchai',
-      full_name: 'กภ. ภัทรพล เจริญสุข',
+      full_name: 'กภ. วิภาวี สุขใจ',
       role: 'pt',
       status: 'active',
       phone: '085-555-4444',
@@ -208,9 +212,9 @@ export function ensurePrimaryStaffAndPatients(): void {
       pt_details: {
         license_no: 'กภ.12345',
         license_expiry: '2028-12-31',
-        specialty: 'เวชศาสตร์ฟื้นฟูข้อและกล้ามเนื้อ',
-        age: 35,
-        sex: 'male',
+        specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+        age: 32,
+        sex: 'female',
       },
     });
   }
@@ -229,7 +233,7 @@ export function seedDefaultLocalData(): void {
   const director: StaffProfileRecord = {
     id: directorId,
     username: 'director',
-    full_name: 'ผอ. นพ. วิจัย สุขเกษม',
+    full_name: 'ผอ. นพ. บริรักษ์ เวชกิจ',
     role: 'admin',
     status: 'active',
     phone: '081-999-8888',
@@ -245,7 +249,7 @@ export function seedDefaultLocalData(): void {
   const admin: StaffProfileRecord = {
     id: adminId,
     username: 'admin',
-    full_name: 'ผู้ดูแลระบบโรงพยาบาล (Admin)',
+    full_name: 'ผู้ดูแลระบบ โรงพยาบาล',
     role: 'admin',
     status: 'active',
     phone: null,
@@ -261,7 +265,7 @@ export function seedDefaultLocalData(): void {
   const pt: StaffProfileRecord = {
     id: ptId,
     username: 'pt_somchai',
-    full_name: 'กภ. ภัทรพล เจริญสุข',
+    full_name: 'กภ. วิภาวี สุขใจ',
     role: 'pt',
     status: 'active',
     phone: '085-555-4444',

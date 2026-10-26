@@ -20,7 +20,7 @@ const DEMO_STAFF: UserProfile[] = [
     id: 'staff-director-01',
     username: 'director',
     role: 'admin',
-    full_name: 'ผอ. นพ. วิจัย สุขเกษม (Hospital Director)',
+    full_name: 'ผอ. นพ. บริรักษ์ เวชกิจ',
     phone: '081-999-8888',
     status: 'active',
     bio: 'ผู้อำนวยการโรงพยาบาลและหัวหน้าศูนย์เวชศาสตร์ฟื้นฟู',
@@ -30,7 +30,7 @@ const DEMO_STAFF: UserProfile[] = [
     id: 'staff-admin-01',
     username: 'admin',
     role: 'admin',
-    full_name: 'ผู้ดูแลระบบโรงพยาบาล (Hospital Administrator)',
+    full_name: 'ผู้ดูแลระบบ โรงพยาบาล',
     phone: '082-000-1111',
     status: 'active',
     bio: 'ผู้ดูแลระบบสารสนเทศและความปลอดภัยโรงพยาบาล',
@@ -40,14 +40,14 @@ const DEMO_STAFF: UserProfile[] = [
     id: 'pt-somchai-uuid',
     username: 'pt_somchai',
     role: 'pt',
-    full_name: 'กภ. ภัทรพล เจริญสุข (นักกายภาพบำบัดชำนาญการ)',
+    full_name: 'กภ. วิภาวี สุขใจ',
     phone: '085-555-4444',
     status: 'active',
     bio: 'ผู้เชี่ยวชาญด้านเวชศาสตร์ฟื้นฟูข้อต่อและกระดูกสันหลัง',
     pt_details: {
       license_no: 'กภ.12345',
       license_expiry: '2028-12-31',
-      specialty: 'เวชศาสตร์ฟื้นฟูข้อและกล้ามเนื้อ',
+      specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
     },
     last_login_at: '2026-10-26T08:30:00.000Z',
   },
@@ -57,7 +57,7 @@ export const StaffView: React.FC = () => {
   const [staffList, setStaffList] = useState<UserProfile[]>(DEMO_STAFF);
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'pt'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'pt' | 'patient'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
 
   // Wizard modal state
@@ -66,13 +66,16 @@ export const StaffView: React.FC = () => {
   const [formData, setFormData] = useState({
     username: '',
     password: '',
-    role: 'pt' as 'admin' | 'pt',
+    role: 'pt' as 'admin' | 'pt' | 'patient',
     full_name: '',
     phone: '',
     bio: '',
     license_no: '',
     license_expiry: '',
     specialty: '',
+    age: 45,
+    sex: 'male' as 'male' | 'female' | 'other',
+    injury: '',
   });
 
   // Reset password modal state
@@ -89,9 +92,25 @@ export const StaffView: React.FC = () => {
     try {
       setLoading(true);
       setErrorMsg(null);
-      const data = await defaultApiClient.staff.list().catch(() => []);
-      const safe = Array.isArray(data) && data.length > 0 ? data : DEMO_STAFF;
-      setStaffList(safe);
+      const [staffData, patientRes] = await Promise.all([
+        defaultApiClient.staff.list().catch(() => []),
+        defaultApiClient.patients.list({ page: 1, limit: 100 }).catch(() => []),
+      ]);
+
+      const staffListRaw: UserProfile[] = Array.isArray(staffData) && staffData.length > 0 ? staffData : DEMO_STAFF;
+      const rawPatients = Array.isArray(patientRes) ? patientRes : ((patientRes as any)?.patients || []);
+      const patientListMapped: UserProfile[] = rawPatients.map((p: any) => ({
+        id: p.id,
+        username: p.hn || `HN-${p.id.slice(0, 6)}`,
+        full_name: `${p.first_name} ${p.last_name}`,
+        role: 'patient' as any,
+        phone: p.phone || '-',
+        bio: p.injury || 'ผู้ป่วยรับการรักษา',
+        status: p.registration_status === 'archived' ? 'suspended' : 'active',
+        last_login_at: p.created_at || null,
+      }));
+
+      setStaffList([...staffListRaw, ...patientListMapped]);
     } catch {
       setStaffList(DEMO_STAFF);
     } finally {
@@ -101,11 +120,22 @@ export const StaffView: React.FC = () => {
 
   useEffect(() => {
     fetchStaff();
+
+    const handleDataChange = () => {
+      fetchStaff();
+    };
+    window.addEventListener('patient-created', handleDataChange);
+    window.addEventListener('staff-updated', handleDataChange);
+    return () => {
+      window.removeEventListener('patient-created', handleDataChange);
+      window.removeEventListener('staff-updated', handleDataChange);
+    };
   }, []);
 
   const handleCreateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (wizardStep < (formData.role === 'pt' ? 3 : 2)) {
+    const maxSteps = formData.role === 'pt' ? 3 : (formData.role === 'patient' ? 3 : 2);
+    if (wizardStep < maxSteps) {
       setWizardStep((prev) => prev + 1);
       return;
     }
@@ -113,8 +143,35 @@ export const StaffView: React.FC = () => {
     try {
       setActionLoading(true);
       setErrorMsg(null);
-      await defaultApiClient.staff.create(formData);
-      setSuccessMsg(`สร้างผู้ใช้ ${formData.username} สำเร็จเรียบร้อย`);
+      if (formData.role === 'patient') {
+        const parts = formData.full_name.trim().split(' ');
+        const firstName = parts[0] || 'ผู้ป่วย';
+        const lastName = parts.slice(1).join(' ') || 'ใหม่';
+        await defaultApiClient.patients.create({
+          first_name: firstName,
+          last_name: lastName,
+          age: Number(formData.age) || 45,
+          sex: formData.sex,
+          phone: formData.phone || '-',
+          injury: formData.injury || formData.bio || 'กายภาพบำบัดฟื้นฟูทั่วไป',
+        });
+        window.dispatchEvent(new CustomEvent('patient-created'));
+        setSuccessMsg(`สร้างบัญชีคนไข้ ${formData.full_name} สำเร็จเรียบร้อย`);
+      } else {
+        await defaultApiClient.staff.create({
+          username: formData.username,
+          password: formData.password,
+          role: formData.role,
+          full_name: formData.full_name,
+          phone: formData.phone || undefined,
+          bio: formData.bio || undefined,
+          license_no: formData.license_no || undefined,
+          license_expiry: formData.license_expiry || undefined,
+          specialty: formData.specialty || undefined,
+        });
+        window.dispatchEvent(new CustomEvent('staff-updated'));
+        setSuccessMsg(`สร้างผู้ใช้ ${formData.username} สำเร็จเรียบร้อย`);
+      }
       setIsWizardOpen(false);
       setWizardStep(1);
       setFormData({
@@ -127,10 +184,13 @@ export const StaffView: React.FC = () => {
         license_no: '',
         license_expiry: '',
         specialty: '',
+        age: 45,
+        sex: 'male',
+        injury: '',
       });
       await fetchStaff();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการสร้างเจ้าหน้าที่');
+      setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการสร้างผู้ใช้');
     } finally {
       setActionLoading(false);
     }
@@ -272,12 +332,13 @@ export const StaffView: React.FC = () => {
         <div className="flex items-center gap-3 w-full md:w-auto">
           <select
             value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value as 'all' | 'admin' | 'pt')}
+            onChange={(e) => setRoleFilter(e.target.value as 'all' | 'admin' | 'pt' | 'patient')}
             className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-300 focus:outline-none focus:border-teal-500"
           >
-            <option value="all">ทุกตำแหน่ง (All Roles)</option>
+            <option value="all">ทุกบทบาท (All Roles)</option>
             <option value="admin">ผู้อำนวยการ (Admin)</option>
             <option value="pt">นักกายภาพบำบัด (PT)</option>
+            <option value="patient">คนไข้ (Patient)</option>
           </select>
 
           <select
@@ -298,9 +359,9 @@ export const StaffView: React.FC = () => {
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="bg-slate-950/70 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
               <tr>
-                <th className="px-6 py-4 font-semibold">เจ้าหน้าที่</th>
-                <th className="px-6 py-4 font-semibold">Username</th>
-                <th className="px-6 py-4 font-semibold">ตำแหน่ง</th>
+                <th className="px-6 py-4 font-semibold">ชื่อ-นามสกุล</th>
+                <th className="px-6 py-4 font-semibold">Username / HN</th>
+                <th className="px-6 py-4 font-semibold">บทบาท</th>
                 <th className="px-6 py-4 font-semibold">สถานะ</th>
                 <th className="px-6 py-4 font-semibold">เข้าสู่ระบบล่าสุด</th>
                 <th className="px-6 py-4 font-semibold text-right">การจัดการ</th>
@@ -311,13 +372,13 @@ export const StaffView: React.FC = () => {
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-400" />
-                    <span>กำลังโหลดรายชื่อเจ้าหน้าที่...</span>
+                    <span>กำลังโหลดรายชื่อผู้ใช้...</span>
                   </td>
                 </tr>
               ) : filteredStaff.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                    ไม่พบข้อมูลเจ้าหน้าที่ตรงตามเงื่อนไข
+                    ไม่พบข้อมูลผู้ใช้ที่ตรงตามเงื่อนไข
                   </td>
                 </tr>
               ) : (
@@ -341,10 +402,15 @@ export const StaffView: React.FC = () => {
                           <Shield className="w-3 h-3" />
                           <span>ผู้อำนวยการ (Admin)</span>
                         </span>
-                      ) : (
+                      ) : user.role === 'pt' ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-400 border border-teal-500/30">
                           <UserCheck className="w-3 h-3" />
                           <span>นักกายภาพบำบัด (PT)</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                          <Users className="w-3 h-3" />
+                          <span>คนไข้ (Patient)</span>
                         </span>
                       )}
                     </td>
@@ -368,13 +434,15 @@ export const StaffView: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => setResetModalUser(user)}
-                          title="รีเซ็ตรหัสผ่าน"
-                          className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-amber-400 hover:bg-slate-700 transition"
-                        >
-                          <KeyRound className="w-4 h-4" />
-                        </button>
+                        {(user.role as string) !== 'patient' && (
+                          <button
+                            onClick={() => setResetModalUser(user)}
+                            title="รีเซ็ตรหัสผ่าน"
+                            className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-amber-400 hover:bg-slate-700 transition"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleToggleSuspend(user)}
                           title={user.status === 'suspended' ? 'ยกเลิกระงับ' : 'ระงับการใช้งาน'}
@@ -396,7 +464,7 @@ export const StaffView: React.FC = () => {
         </div>
       </div>
 
-      {/* Multi-step Create Staff Wizard Modal */}
+      {/* Multi-step Create User Wizard Modal */}
       {isWizardOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl">
@@ -405,10 +473,10 @@ export const StaffView: React.FC = () => {
               <div>
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <UserPlus className="w-5 h-5 text-teal-400" />
-                  <span>เพิ่มเจ้าหน้าที่ใหม่ (สร้างผ่านระบบ)</span>
+                  <span>เพิ่มผู้ใช้ใหม่ (Staff / PT / คนไข้)</span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
-                  ขั้นตอนที่ {wizardStep} จาก {formData.role === 'pt' ? 3 : 2}
+                  ขั้นตอนที่ {wizardStep} จาก {formData.role === 'admin' ? 2 : 3}
                 </p>
               </div>
               <button
@@ -433,7 +501,7 @@ export const StaffView: React.FC = () => {
                     <input
                       type="text"
                       required
-                      placeholder="เช่น staff.pt"
+                      placeholder="เช่น pt.somchai หรือ somchai"
                       value={formData.username}
                       onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                       className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
@@ -462,7 +530,7 @@ export const StaffView: React.FC = () => {
                     <input
                       type="text"
                       required
-                      placeholder="เช่น กภ. ธนกฤต จิตมั่น"
+                      placeholder="เช่น กภ. วิภาวี สุขใจ หรือ นายสมชาย ใจดี"
                       value={formData.full_name}
                       onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
                       className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
@@ -487,40 +555,50 @@ export const StaffView: React.FC = () => {
               {wizardStep === 2 && (
                 <div className="space-y-4">
                   <h4 className="text-sm sm:text-base font-bold text-teal-300 tracking-normal">
-                    2. กำหนดตำแหน่งและสิทธิ์การเข้าถึง
+                    2. กำหนดบทบาทและสิทธิ์การใช้งาน
                   </h4>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, role: 'pt' })}
-                      className={`p-4 rounded-2xl border text-left transition ${
+                      className={`p-3.5 rounded-2xl border text-left transition ${
                         formData.role === 'pt'
                           ? 'bg-teal-600/20 border-teal-500 text-teal-300 ring-2 ring-teal-500/30'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
-                      <UserCheck className="w-6 h-6 mb-2 text-teal-400" />
-                      <div className="font-bold text-sm sm:text-base text-white">นักกายภาพบำบัด (PT)</div>
-                      <div className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed">
-                        ดูแลคนไข้ของตนเอง สั่งคอร์ส และลงเวชระเบียน
-                      </div>
+                      <UserCheck className="w-5 h-5 mb-1.5 text-teal-400" />
+                      <div className="font-bold text-xs sm:text-sm text-white">นักกายภาพบำบัด (PT)</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">ดูแลเคส สั่งคอร์ส และลงเวชระเบียน</div>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, role: 'admin' })}
-                      className={`p-4 rounded-2xl border text-left transition ${
+                      className={`p-3.5 rounded-2xl border text-left transition ${
                         formData.role === 'admin'
                           ? 'bg-purple-600/20 border-purple-500 text-purple-300 ring-2 ring-purple-500/30'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
-                      <Shield className="w-6 h-6 mb-2 text-purple-400" />
-                      <div className="font-bold text-sm sm:text-base text-white">ผู้อำนวยการ (Admin)</div>
-                      <div className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed">
-                        สิทธิ์สูงสุด จัดการบุคลากร ความปลอดภัย และตรวจสอบ Audit
-                      </div>
+                      <Shield className="w-5 h-5 mb-1.5 text-purple-400" />
+                      <div className="font-bold text-xs sm:text-sm text-white">ผู้อำนวยการ (Admin)</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">สิทธิ์สูงสุด จัดการระบบและตรวจสอบ</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, role: 'patient' })}
+                      className={`p-3.5 rounded-2xl border text-left transition ${
+                        formData.role === 'patient'
+                          ? 'bg-blue-600/20 border-blue-500 text-blue-300 ring-2 ring-blue-500/30'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <Users className="w-5 h-5 mb-1.5 text-blue-400" />
+                      <div className="font-bold text-xs sm:text-sm text-white">คนไข้ (Patient)</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">ผู้ป่วยรับการฝึกฟื้นฟูกายภาพบำบัด</div>
                     </button>
                   </div>
 
@@ -530,7 +608,7 @@ export const StaffView: React.FC = () => {
                     </label>
                     <textarea
                       rows={3}
-                      placeholder="ระบุประวัติการศึกษา หรือข้อมูลเพิ่มเติม..."
+                      placeholder="ระบุข้อมูลเพิ่มเติม..."
                       value={formData.bio}
                       onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                       className="w-full p-3.5 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition leading-relaxed"
@@ -552,7 +630,7 @@ export const StaffView: React.FC = () => {
                     <input
                       type="text"
                       required
-                      placeholder="เช่น ก.12345"
+                      placeholder="เช่น กภ.12345"
                       value={formData.license_no}
                       onChange={(e) => setFormData({ ...formData, license_no: e.target.value })}
                       className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
@@ -577,10 +655,64 @@ export const StaffView: React.FC = () => {
                     </label>
                     <input
                       type="text"
-                      placeholder="เช่น กายภาพบำบัดระบบกระดูกและกล้ามเนื้อ (MSK)"
+                      placeholder="เช่น เวชศาสตร์ฟื้นฟูกายภาพบำบัด"
                       value={formData.specialty}
                       onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
                       className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {wizardStep === 3 && formData.role === 'patient' && (
+                <div className="space-y-4">
+                  <h4 className="text-sm sm:text-base font-bold text-blue-300 tracking-normal">
+                    3. ข้อมูลผู้ป่วยและอาการเริ่มต้น
+                  </h4>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
+                        อายุ (ปี) *
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        max={120}
+                        value={formData.age}
+                        onChange={(e) => setFormData({ ...formData, age: Number(e.target.value) || 45 })}
+                        className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-teal-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
+                        เพศ *
+                      </label>
+                      <select
+                        value={formData.sex}
+                        onChange={(e) => setFormData({ ...formData, sex: e.target.value as any })}
+                        className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-teal-500"
+                      >
+                        <option value="male">ชาย (Male)</option>
+                        <option value="female">หญิง (Female)</option>
+                        <option value="other">อื่นๆ (Other)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
+                      อาการบาดเจ็บ / วินิจฉัยเบื้องต้น *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="เช่น ข้อไหล่ติด, ปวดหลังส่วนล่าง"
+                      value={formData.injury}
+                      onChange={(e) => setFormData({ ...formData, injury: e.target.value })}
+                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-teal-500"
                     />
                   </div>
                 </div>
