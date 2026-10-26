@@ -11816,7 +11816,7 @@ var SmartOnboardingService = class {
       if (hn) {
         return (r.hn === hn || r.patient_id === hn) && (storedPin === cleanPin || r.hn.endsWith(cleanPin));
       }
-      return storedPin === cleanPin || r.hn === cleanPin || r.hn.endsWith(cleanPin) || r.patient_id === cleanPin || Boolean(r.phone) && (r.phone === cleanPin || r.phone.endsWith(cleanPin));
+      return storedPin === cleanPin || r.hn === cleanPin || r.hn.endsWith(cleanPin) || r.patient_id === cleanPin || Boolean(r.phone) && (r.phone === cleanPin || Boolean(r.phone?.endsWith(cleanPin)));
     });
     if (matched) {
       return {

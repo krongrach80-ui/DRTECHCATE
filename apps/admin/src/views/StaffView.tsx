@@ -197,25 +197,48 @@ export const StaffView: React.FC = () => {
   };
 
   const handleToggleSuspend = async (user: UserProfile) => {
+    const isPatient = (user.role as string) === 'patient';
     const isCurrentlySuspended = user.status === 'suspended';
-    const confirmPrompt = isCurrentlySuspended
-      ? `คุณต้องการยกเลิกระงับการใช้งานของ ${user.full_name} (@${user.username}) ใช่หรือไม่?`
-      : `คุณต้องการระงับการใช้งานของ ${user.full_name} (@${user.username}) ใช่หรือไม่? (ผู้ใช้จะถูกเตะออกจากระบบทันที)`;
+
+    const confirmPrompt = isPatient
+      ? isCurrentlySuspended
+        ? `คุณต้องการเปิดใช้งานประวัติคนไข้ ${user.full_name} (${user.username}) ใช่หรือไม่?`
+        : `คุณต้องการระงับ/ปิดแฟ้มประวัติ (Archive) คนไข้ ${user.full_name} (${user.username}) ใช่หรือไม่?`
+      : isCurrentlySuspended
+        ? `คุณต้องการยกเลิกระงับการใช้งานของ ${user.full_name} (@${user.username}) ใช่หรือไม่?`
+        : `คุณต้องการระงับการใช้งานของ ${user.full_name} (@${user.username}) ใช่หรือไม่? (ผู้ใช้จะถูกเตะออกจากระบบทันที)`;
 
     if (!window.confirm(confirmPrompt)) return;
 
     try {
       setActionLoading(true);
-      if (isCurrentlySuspended) {
-        await defaultApiClient.staff.update(user.id, { status: 'active' });
-        setSuccessMsg(`ยกเลิกระงับการใช้งาน ${user.full_name} สำเร็จ`);
+      setErrorMsg(null);
+      if (isPatient) {
+        if (isCurrentlySuspended) {
+          const p = await defaultApiClient.patients.get(user.id);
+          await defaultApiClient.patients.update(user.id, { registration_status: 'active', version: p?.version || 1 });
+          setSuccessMsg(`เปิดใช้งานประวัติคนไข้ ${user.full_name} สำเร็จ`);
+        } else {
+          await defaultApiClient.patients.archive(user.id);
+          setSuccessMsg(`ระงับและจัดเก็บประวัติคนไข้ ${user.full_name} เรียบร้อยแล้ว`);
+        }
       } else {
-        await defaultApiClient.staff.suspend(user.id, 'ระงับโดยคำสั่งผู้อำนวยการโรงพยาบาล');
-        setSuccessMsg(`ระงับการใช้งาน ${user.full_name} และบังคับตัดเซสชันเรียบร้อย`);
+        if (isCurrentlySuspended) {
+          await defaultApiClient.staff.update(user.id, { status: 'active' });
+          setSuccessMsg(`ยกเลิกระงับการใช้งาน ${user.full_name} สำเร็จ`);
+        } else {
+          await defaultApiClient.staff.suspend(user.id, 'ระงับโดยคำสั่งผู้อำนวยการโรงพยาบาล');
+          setSuccessMsg(`ระงับการใช้งาน ${user.full_name} และบังคับตัดเซสชันเรียบร้อย`);
+        }
       }
       await fetchStaff();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะผู้ใช้');
+      const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะผู้ใช้';
+      if (msg.includes('Forbidden') || msg.includes('insufficient permissions')) {
+        setErrorMsg('สิทธิ์ไม่เพียงพอ: บัญชีปัจจุบันเป็น "นักกายภาพบำบัด (PT)" เฉพาะผู้อำนวยการ (Admin) เท่านั้นที่สามารถจัดการบัญชีเจ้าหน้าที่ได้ กรุณาเข้าสู่ระบบด้วยบัญชี @director');
+      } else {
+        setErrorMsg(msg);
+      }
     } finally {
       setActionLoading(false);
     }

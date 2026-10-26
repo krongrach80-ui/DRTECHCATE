@@ -355,7 +355,7 @@ export class SmartOnboardingService {
         r.hn === cleanPin ||
         r.hn.endsWith(cleanPin) ||
         r.patient_id === cleanPin ||
-        (Boolean(r.phone) && (r.phone === cleanPin || r.phone.endsWith(cleanPin)))
+        (Boolean(r.phone) && (r.phone === cleanPin || Boolean(r.phone?.endsWith(cleanPin))))
       );
     });
 
