@@ -46,11 +46,12 @@ export class RecordsService {
       throw new AppError('Patient not found', 404, 'PATIENT_NOT_FOUND');
     }
 
-    if (user.role === 'admin') {
+    const userRole = (user.role || '').toLowerCase();
+    if (userRole === 'admin' || userRole === 'director' || userRole === 'superadmin') {
       return;
     }
 
-    if (user.role === 'pt') {
+    if (userRole === 'pt') {
       const isAccessible = await this.patientRepo.isPatientAccessibleByPt(patientId, user.id);
       if (!isAccessible) {
         throw new AppError(
@@ -102,7 +103,14 @@ export class RecordsService {
   ): Promise<MedicalNoteRecord> {
     await this.assertPatientAccess(user, patientId);
 
-    const note = await this.recordsRepo.createNote(patientId, user.id, input.body, client);
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timeStr = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const ptTitle = (user.role || '').toLowerCase() === 'pt' ? 'กภ.' : 'เจ้าหน้าที่';
+    const authorHeader = `[${timeStr} - บันทึกโดย ${ptTitle}: ${user.full_name || user.username || 'ผู้ดูแล'}]`;
+    const finalBody = input.body.trim().startsWith('[') ? input.body.trim() : `${authorHeader}\n${input.body.trim()}`;
+
+    const note = await this.recordsRepo.createNote(patientId, user.id, finalBody, client);
 
     await this.auditService.write({
       actor_type: 'staff',

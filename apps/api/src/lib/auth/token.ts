@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import { getEnv } from '../../config/env';
 
 export interface StatelessTokenPayload {
   id: string;
@@ -11,7 +10,7 @@ export interface StatelessTokenPayload {
   exp: number;
 }
 
-export const DEFAULT_AUTH_SECRET = 'drtechcare-production-stateless-jwt-secret-stable-2026';
+export const DEFAULT_AUTH_SECRET = 'drtechcare-enterprise-production-hmac-secret-2026';
 
 export function getAuthSecret(): string {
   return (

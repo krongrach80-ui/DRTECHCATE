@@ -695,7 +695,7 @@ var init_token = __esm({
   "apps/api/src/lib/auth/token.ts"() {
     "use strict";
     import_crypto2 = __toESM(require("crypto"));
-    DEFAULT_AUTH_SECRET = "drtechcare-production-stateless-jwt-secret-stable-2026";
+    DEFAULT_AUTH_SECRET = "drtechcare-enterprise-production-hmac-secret-2026";
   }
 });
 
@@ -728,8 +728,10 @@ async function authenticate(req, _res, next) {
     const allowBearerInProd = env.ALLOW_BEARER_IN_PROD;
     const bearerAllowed = !isProd || allowBearerInProd;
     const authHeader = req.headers.authorization;
-    const bearerToken = bearerAllowed && authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : void 0;
-    const token = bearerToken || req.cookies?.access_token;
+    const xAuthHeader = req.headers["x-auth-token"];
+    let bearerToken = bearerAllowed && authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : typeof xAuthHeader === "string" ? xAuthHeader.trim() : void 0;
+    const cookieToken = req.cookies?.access_token || req.cookies?.session_token || req.cookies?.auth_token;
+    const token = bearerToken || cookieToken;
     if (!token) {
       throw new AppError("Authentication required", 401, "UNAUTHORIZED");
     }
@@ -4417,7 +4419,10 @@ function requireRole(...allowedRoles) {
     if (!req.user) {
       return next(new AppError("Authentication required", 401, "UNAUTHORIZED"));
     }
-    if (!allowedRoles.includes(req.user.role)) {
+    const userRole = (req.user.role || "").toLowerCase();
+    const isDirectorOrAdmin = userRole === "director" || userRole === "superadmin" || userRole === "admin";
+    const hasRole = allowedRoles.includes(userRole) || isDirectorOrAdmin && allowedRoles.includes("admin");
+    if (!hasRole) {
       return next(new AppError("Forbidden: insufficient permissions", 403, "FORBIDDEN"));
     }
     next();
@@ -5365,10 +5370,11 @@ var init_service6 = __esm({
         if (!patient) {
           throw new AppError("Patient not found", 404, "PATIENT_NOT_FOUND");
         }
-        if (user.role === "admin") {
+        const userRole = (user.role || "").toLowerCase();
+        if (userRole === "admin" || userRole === "director" || userRole === "superadmin") {
           return;
         }
-        if (user.role === "pt") {
+        if (userRole === "pt") {
           const isAccessible = await this.patientRepo.isPatientAccessibleByPt(patientId, user.id);
           if (!isAccessible) {
             throw new AppError(
@@ -5402,7 +5408,14 @@ var init_service6 = __esm({
       }
       async createNote(patientId, input, user, client) {
         await this.assertPatientAccess(user, patientId);
-        const note = await this.recordsRepo.createNote(patientId, user.id, input.body, client);
+        const now = /* @__PURE__ */ new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const timeStr = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        const ptTitle = (user.role || "").toLowerCase() === "pt" ? "\u0E01\u0E20." : "\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48";
+        const authorHeader = `[${timeStr} - \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E42\u0E14\u0E22 ${ptTitle}: ${user.full_name || user.username || "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25"}]`;
+        const finalBody = input.body.trim().startsWith("[") ? input.body.trim() : `${authorHeader}
+${input.body.trim()}`;
+        const note = await this.recordsRepo.createNote(patientId, user.id, finalBody, client);
         await this.auditService.write({
           actor_type: "staff",
           actor_id: user.id,
@@ -5468,13 +5481,17 @@ var init_service6 = __esm({
 });
 
 // apps/api/src/modules/directory/service.ts
-var DirectoryService, defaultDirectoryService;
+var isDirectoryAdmin, DirectoryService, defaultDirectoryService;
 var init_service7 = __esm({
   "apps/api/src/modules/directory/service.ts"() {
     "use strict";
     init_errorHandler();
     init_audit();
     init_repository7();
+    isDirectoryAdmin = (role) => {
+      const r = (role || "").toLowerCase();
+      return r === "admin" || r === "director" || r === "superadmin";
+    };
     DirectoryService = class {
       constructor(repo = defaultDirectoryRepository) {
         this.repo = repo;
@@ -5521,7 +5538,7 @@ var init_service7 = __esm({
       }
       async updateExercise(id, input, currentUser, clientIp, clientDeviceId) {
         const existing = await this.getExerciseById(id);
-        if (currentUser.role !== "admin" && existing.created_by !== currentUser.id) {
+        if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
           throw new AppError(
             "Access denied: Physiotherapists can only update exercises they personally created",
             403,
@@ -5546,7 +5563,7 @@ var init_service7 = __esm({
       }
       async deleteExercise(id, currentUser, clientIp, clientDeviceId) {
         const existing = await this.getExerciseById(id);
-        if (currentUser.role !== "admin" && existing.created_by !== currentUser.id) {
+        if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
           throw new AppError(
             "Access denied: Physiotherapists can only delete exercises they personally created",
             403,
@@ -5569,7 +5586,7 @@ var init_service7 = __esm({
       }
       async uploadExerciseMedia(id, fileBuffer, mimeType, extension, currentUser, clientIp, clientDeviceId) {
         const existing = await this.getExerciseById(id);
-        if (currentUser.role !== "admin" && existing.created_by !== currentUser.id) {
+        if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
           throw new AppError(
             "Access denied: Physiotherapists can only update media for exercises they personally created",
             403,
@@ -5594,7 +5611,7 @@ var init_service7 = __esm({
       // 3. Minigames & Questions
       // =========================================================================
       async createMinigame(input, currentUser) {
-        if (currentUser.role !== "admin") {
+        if (!isDirectoryAdmin(currentUser.role)) {
           throw new AppError("Access denied: requires admin role", 403, "FORBIDDEN");
         }
         return this.repo.createMinigame(input, currentUser.id);
@@ -5610,7 +5627,7 @@ var init_service7 = __esm({
         return game;
       }
       async createQuestion(minigameId, input, currentUser) {
-        if (currentUser.role !== "admin") {
+        if (!isDirectoryAdmin(currentUser.role)) {
           throw new AppError("Access denied: requires admin role", 403, "FORBIDDEN");
         }
         await this.getMinigameById(minigameId);
@@ -5621,7 +5638,7 @@ var init_service7 = __esm({
         return this.repo.listQuestionsByMinigame(minigameId);
       }
       async deleteQuestion(minigameId, questionId, currentUser) {
-        if (currentUser.role !== "admin") {
+        if (!isDirectoryAdmin(currentUser.role)) {
           throw new AppError("Access denied: requires admin role", 403, "FORBIDDEN");
         }
         await this.getMinigameById(minigameId);
@@ -5662,7 +5679,7 @@ var init_service7 = __esm({
       }
       async updateModpack(id, input, currentUser, clientIp, clientDeviceId) {
         const existing = await this.getModpackById(id);
-        if (currentUser.role !== "admin" && existing.created_by !== currentUser.id) {
+        if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
           throw new AppError(
             "Access denied: Physiotherapists can only update modpacks they personally created",
             403,
@@ -5691,7 +5708,7 @@ var init_service7 = __esm({
       }
       async deleteModpack(id, currentUser, clientIp, clientDeviceId) {
         const existing = await this.getModpackById(id);
-        if (currentUser.role !== "admin" && existing.created_by !== currentUser.id) {
+        if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
           throw new AppError(
             "Access denied: Physiotherapists can only delete modpacks they personally created",
             403,
@@ -5716,7 +5733,7 @@ var init_service7 = __esm({
       // 5. Case Transfers (ฝากเคสชั่วคราว)
       // =========================================================================
       async createCaseTransfer(input, currentUser, clientIp, clientDeviceId) {
-        const fromPtId = currentUser.role === "admin" && input.from_pt_id ? input.from_pt_id : currentUser.id;
+        const fromPtId = isDirectoryAdmin(currentUser.role) && input.from_pt_id ? input.from_pt_id : currentUser.id;
         if (fromPtId === input.to_pt_id) {
           throw new AppError("Cannot transfer a case to the same physiotherapist", 400, "INVALID_TRANSFER");
         }
@@ -5740,7 +5757,7 @@ var init_service7 = __esm({
         return transfer;
       }
       async listCaseTransfers(currentUser) {
-        if (currentUser.role === "admin") {
+        if (isDirectoryAdmin(currentUser.role)) {
           return this.repo.listCaseTransfers();
         }
         return this.repo.listCaseTransfers(currentUser.id);
@@ -5750,7 +5767,7 @@ var init_service7 = __esm({
         if (!transfer) {
           throw new AppError(`Case transfer ${id} not found`, 404, "NOT_FOUND");
         }
-        if (currentUser.role !== "admin" && transfer.from_pt_id !== currentUser.id) {
+        if (!isDirectoryAdmin(currentUser.role) && transfer.from_pt_id !== currentUser.id) {
           throw new AppError(
             "Access denied: You can only cancel transfers you created",
             403,
@@ -5837,7 +5854,7 @@ var init_service8 = __esm({
             );
           }
           ptId = actor.id;
-        } else if (actor.role === "admin") {
+        } else if (actor.role === "admin" || actor.role === "director" || actor.role === "superadmin") {
           if (!input.pt_id) {
             ptId = patient.responsible_pt_id || actor.id;
           }
@@ -7829,7 +7846,7 @@ var init_localPersistenceEngine = __esm({
 });
 
 // apps/api/src/modules/staff/service.ts
-var StaffService, defaultStaffService;
+var isStaffAdmin, StaffService, defaultStaffService;
 var init_service9 = __esm({
   "apps/api/src/modules/staff/service.ts"() {
     "use strict";
@@ -7838,6 +7855,10 @@ var init_service9 = __esm({
     init_service2();
     init_env();
     init_repository6();
+    isStaffAdmin = (role) => {
+      const r = (role || "").toLowerCase();
+      return r === "admin" || r === "director" || r === "superadmin";
+    };
     StaffService = class {
       constructor(repo = defaultStaffRepository, authService = new AuthService()) {
         this.repo = repo;
@@ -7847,7 +7868,7 @@ var init_service9 = __esm({
         this.repo = repo;
       }
       async createStaff(input, adminUser, clientIp, clientDeviceId) {
-        if (adminUser.role !== "admin") {
+        if (!isStaffAdmin(adminUser.role)) {
           throw new AppError("Access denied: requires admin role to create staff", 403, "FORBIDDEN");
         }
         const cleanUsername = input.username.trim().toLowerCase();
@@ -7901,7 +7922,7 @@ var init_service9 = __esm({
         return created;
       }
       async getStaffById(id, currentUser) {
-        if (currentUser.role !== "admin" && currentUser.id !== id) {
+        if (!isStaffAdmin(currentUser.role) && currentUser.id !== id) {
           throw new AppError("Access denied: You can only view your own staff profile", 403, "FORBIDDEN");
         }
         const profile = await this.repo.getStaffById(id);
@@ -7911,16 +7932,16 @@ var init_service9 = __esm({
         return profile;
       }
       async listStaff(filter, currentUser) {
-        if (currentUser.role !== "admin") {
+        if (!isStaffAdmin(currentUser.role)) {
           throw new AppError("Access denied: requires admin role", 403, "FORBIDDEN");
         }
         return this.repo.listStaff(filter);
       }
       async updateStaff(id, input, currentUser, clientIp, clientDeviceId) {
-        if (currentUser.role !== "admin" && currentUser.id !== id) {
+        if (!isStaffAdmin(currentUser.role) && currentUser.id !== id) {
           throw new AppError("Access denied: You can only update your own profile", 403, "FORBIDDEN");
         }
-        if (currentUser.role !== "admin" && (input.role !== void 0 || input.status !== void 0)) {
+        if (!isStaffAdmin(currentUser.role) && (input.role !== void 0 || input.status !== void 0)) {
           throw new AppError(
             "Access denied: Only administrators can modify roles and account status",
             403,
@@ -7944,8 +7965,8 @@ var init_service9 = __esm({
             full_name: input.full_name,
             phone: input.phone,
             bio: input.bio,
-            role: currentUser.role === "admin" ? input.role : void 0,
-            status: currentUser.role === "admin" ? input.status : void 0
+            role: isStaffAdmin(currentUser.role) ? input.role : void 0,
+            status: isStaffAdmin(currentUser.role) ? input.status : void 0
           },
           existing.role === "pt" ? {
             license_no: input.license_no,
@@ -7970,7 +7991,7 @@ var init_service9 = __esm({
         return updated;
       }
       async suspendStaff(id, adminUser, clientIp, clientDeviceId) {
-        if (adminUser.role !== "admin") {
+        if (!isStaffAdmin(adminUser.role)) {
           throw new AppError("Access denied: requires admin role", 403, "FORBIDDEN");
         }
         if (adminUser.id === id) {
@@ -7996,7 +8017,7 @@ var init_service9 = __esm({
         });
       }
       async resetPassword(id, newPassword, adminUser, clientIp, clientDeviceId) {
-        if (adminUser.role !== "admin") {
+        if (!isStaffAdmin(adminUser.role)) {
           throw new AppError("Access denied: requires admin role", 403, "FORBIDDEN");
         }
         if (newPassword.length < 12) {
@@ -8022,7 +8043,7 @@ var init_service9 = __esm({
         });
       }
       async uploadAvatar(id, fileBuffer, mimeType, extension, currentUser, clientIp, clientDeviceId) {
-        if (currentUser.role !== "admin" && currentUser.id !== id) {
+        if (!isStaffAdmin(currentUser.role) && currentUser.id !== id) {
           throw new AppError("Access denied: You can only update your own avatar", 403, "FORBIDDEN");
         }
         const avatarUrl = await this.repo.uploadAvatar(id, fileBuffer, mimeType, extension);
@@ -8177,10 +8198,14 @@ var AuthController = class {
         res.status(200).json({
           ok: true,
           user: result.user,
-          data: result.user,
           token: result.accessToken,
           accessToken: result.accessToken,
-          access_token: result.accessToken
+          access_token: result.accessToken,
+          data: {
+            user: result.user,
+            token: result.accessToken,
+            accessToken: result.accessToken
+          }
         });
       } catch (err) {
         next(err);

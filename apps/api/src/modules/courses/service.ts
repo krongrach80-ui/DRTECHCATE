@@ -71,7 +71,7 @@ export class CourseService {
       }
 
       ptId = actor.id;
-    } else if (actor.role === 'admin') {
+    } else if (actor.role === 'admin' || actor.role === 'director' || actor.role === 'superadmin') {
       if (!input.pt_id) {
         ptId = patient.responsible_pt_id || actor.id;
       }

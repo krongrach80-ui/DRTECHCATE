@@ -108,6 +108,7 @@ export const IdleView: React.FC<IdleViewProps> = ({
       }
     }
 
+    const videoElement = videoRef.current;
     initIdleTracker();
 
     return () => {
@@ -116,10 +117,10 @@ export const IdleView: React.FC<IdleViewProps> = ({
       if (detectionTimer) clearInterval(detectionTimer);
       unsubscribe();
       camera.stop();
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
+      if (videoElement && videoElement.srcObject) {
+        const stream = videoElement.srcObject as MediaStream;
         stream.getTracks().forEach((track) => track.stop());
-        videoRef.current.srcObject = null;
+        videoElement.srcObject = null;
       }
     };
   }, [onStart, onDetectorReadyChange, customDetector]);

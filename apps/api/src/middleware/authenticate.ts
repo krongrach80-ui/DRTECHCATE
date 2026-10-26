@@ -94,10 +94,13 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     const bearerAllowed = !isProd || allowBearerInProd;
 
     const authHeader = req.headers.authorization;
-    const bearerToken = (bearerAllowed && authHeader?.startsWith('Bearer '))
+    const xAuthHeader = req.headers['x-auth-token'];
+    let bearerToken = (bearerAllowed && authHeader?.startsWith('Bearer '))
       ? authHeader.slice(7).trim()
-      : undefined;
-    const token = bearerToken || req.cookies?.access_token;
+      : (typeof xAuthHeader === 'string' ? xAuthHeader.trim() : undefined);
+
+    const cookieToken = req.cookies?.access_token || req.cookies?.session_token || req.cookies?.auth_token;
+    const token = bearerToken || cookieToken;
 
     if (!token) {
       throw new AppError('Authentication required', 401, 'UNAUTHORIZED');

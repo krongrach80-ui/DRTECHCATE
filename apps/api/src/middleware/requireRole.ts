@@ -12,7 +12,11 @@ export function requireRole(...allowedRoles: string[]) {
       return next(new AppError('Authentication required', 401, 'UNAUTHORIZED'));
     }
 
-    if (!allowedRoles.includes(req.user.role)) {
+    const userRole = (req.user.role || '').toLowerCase();
+    const isDirectorOrAdmin = userRole === 'director' || userRole === 'superadmin' || userRole === 'admin';
+    const hasRole = allowedRoles.includes(userRole) || (isDirectorOrAdmin && allowedRoles.includes('admin'));
+
+    if (!hasRole) {
       return next(new AppError('Forbidden: insufficient permissions', 403, 'FORBIDDEN'));
     }
 

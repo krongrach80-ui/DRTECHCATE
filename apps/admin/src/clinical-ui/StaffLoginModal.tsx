@@ -15,9 +15,6 @@ import {
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
-import {
-  SmoothButton,
-} from '../../../../packages/hospital-ui-kit/src/index.js';
 
 interface StaffLoginModalProps {
   isOpen: boolean;
@@ -115,7 +112,7 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
               Username (ชื่อผู้ใช้) *
             </label>
             <div className="relative flex items-center">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 z-10 flex items-center justify-center w-5 h-5">
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 z-10 flex items-center justify-center w-5 h-5">
                 <User className="w-5 h-5" />
               </div>
               <input
@@ -125,11 +122,11 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
                 type="text"
                 required
                 autoComplete="username"
-                placeholder="เช่น admin หรือ pt_staff"
+                placeholder="เช่น director หรือ pt_somchai"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                style={{ paddingLeft: '3.25rem', paddingRight: '1rem' }}
-                className="w-full h-13 pl-14 pr-4 bg-slate-50 border border-slate-200 rounded-2xl text-base text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition shadow-sm"
+                style={{ paddingLeft: '2.75rem', paddingRight: '1rem' }}
+                className="w-full h-13 pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-base text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition shadow-sm"
               />
             </div>
           </div>
@@ -142,7 +139,7 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
               Password (รหัสผ่าน) *
             </label>
             <div className="relative flex items-center">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 z-10 flex items-center justify-center w-5 h-5">
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 z-10 flex items-center justify-center w-5 h-5">
                 <Lock className="w-5 h-5" />
               </div>
               <input
@@ -155,8 +152,8 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
                 placeholder="••••••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                style={{ paddingLeft: '3.25rem', paddingRight: '1rem' }}
-                className="w-full h-13 pl-14 pr-4 bg-slate-50 border border-slate-200 rounded-2xl text-base text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition shadow-sm"
+                style={{ paddingLeft: '2.75rem', paddingRight: '1rem' }}
+                className="w-full h-13 pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-base text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition shadow-sm"
               />
             </div>
           </div>

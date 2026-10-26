@@ -11,6 +11,11 @@ import {
   StaffQueryFilter,
 } from './schema';
 
+const isStaffAdmin = (role?: string) => {
+  const r = (role || '').toLowerCase();
+  return r === 'admin' || r === 'director' || r === 'superadmin';
+};
+
 export class StaffService {
   constructor(
     private repo: IStaffRepository = defaultStaffRepository,
@@ -27,7 +32,7 @@ export class StaffService {
     clientIp?: string,
     clientDeviceId?: string
   ): Promise<StaffProfileRecord> {
-    if (adminUser.role !== 'admin') {
+    if (!isStaffAdmin(adminUser.role)) {
       throw new AppError('Access denied: requires admin role to create staff', 403, 'FORBIDDEN');
     }
 
@@ -96,7 +101,7 @@ export class StaffService {
   }
 
   async getStaffById(id: string, currentUser: UserSession): Promise<StaffProfileRecord> {
-    if (currentUser.role !== 'admin' && currentUser.id !== id) {
+    if (!isStaffAdmin(currentUser.role) && currentUser.id !== id) {
       throw new AppError('Access denied: You can only view your own staff profile', 403, 'FORBIDDEN');
     }
 
@@ -109,7 +114,7 @@ export class StaffService {
   }
 
   async listStaff(filter: StaffQueryFilter, currentUser: UserSession): Promise<StaffProfileRecord[]> {
-    if (currentUser.role !== 'admin') {
+    if (!isStaffAdmin(currentUser.role)) {
       throw new AppError('Access denied: requires admin role', 403, 'FORBIDDEN');
     }
 
@@ -123,11 +128,11 @@ export class StaffService {
     clientIp?: string,
     clientDeviceId?: string
   ): Promise<StaffProfileRecord> {
-    if (currentUser.role !== 'admin' && currentUser.id !== id) {
+    if (!isStaffAdmin(currentUser.role) && currentUser.id !== id) {
       throw new AppError('Access denied: You can only update your own profile', 403, 'FORBIDDEN');
     }
 
-    if (currentUser.role !== 'admin' && (input.role !== undefined || input.status !== undefined)) {
+    if (!isStaffAdmin(currentUser.role) && (input.role !== undefined || input.status !== undefined)) {
       throw new AppError(
         'Access denied: Only administrators can modify roles and account status',
         403,
@@ -154,8 +159,8 @@ export class StaffService {
         full_name: input.full_name,
         phone: input.phone,
         bio: input.bio,
-        role: currentUser.role === 'admin' ? input.role : undefined,
-        status: currentUser.role === 'admin' ? input.status : undefined,
+        role: isStaffAdmin(currentUser.role) ? input.role : undefined,
+        status: isStaffAdmin(currentUser.role) ? input.status : undefined,
       },
       existing.role === 'pt'
         ? {
@@ -190,7 +195,7 @@ export class StaffService {
     clientIp?: string,
     clientDeviceId?: string
   ): Promise<void> {
-    if (adminUser.role !== 'admin') {
+    if (!isStaffAdmin(adminUser.role)) {
       throw new AppError('Access denied: requires admin role', 403, 'FORBIDDEN');
     }
 
@@ -227,7 +232,7 @@ export class StaffService {
     clientIp?: string,
     clientDeviceId?: string
   ): Promise<void> {
-    if (adminUser.role !== 'admin') {
+    if (!isStaffAdmin(adminUser.role)) {
       throw new AppError('Access denied: requires admin role', 403, 'FORBIDDEN');
     }
 
@@ -269,7 +274,7 @@ export class StaffService {
     clientIp?: string,
     clientDeviceId?: string
   ): Promise<string> {
-    if (currentUser.role !== 'admin' && currentUser.id !== id) {
+    if (!isStaffAdmin(currentUser.role) && currentUser.id !== id) {
       throw new AppError('Access denied: You can only update your own avatar', 403, 'FORBIDDEN');
     }
 

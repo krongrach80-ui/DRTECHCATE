@@ -315,6 +315,36 @@ export class ApiClient {
     return this.authToken;
   }
 
+  public setUserProfile(profile: UserProfile | null): void {
+    if (typeof window !== 'undefined') {
+      try {
+        if (profile) {
+          localStorage.setItem('drtech_user_profile', JSON.stringify(profile));
+          sessionStorage.setItem('drtech_user_profile', JSON.stringify(profile));
+        } else {
+          localStorage.removeItem('drtech_user_profile');
+          sessionStorage.removeItem('drtech_user_profile');
+        }
+      } catch {
+        // Storage disabled or sandboxed
+      }
+    }
+  }
+
+  public getUserProfile(): UserProfile | null {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw =
+          localStorage.getItem('drtech_user_profile') ||
+          sessionStorage.getItem('drtech_user_profile');
+        if (raw) return JSON.parse(raw);
+      } catch {
+        // Storage disabled or sandboxed
+      }
+    }
+    return null;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -324,7 +354,7 @@ export class ApiClient {
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'X-Requested-With': 'XMLHttpRequest', // CSRF guard bypass allowlist
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...(token ? { 'Authorization': `Bearer ${token}`, 'x-auth-token': token } : {}),
       ...(options.headers as Record<string, string>),
     };
 
@@ -363,6 +393,9 @@ export class ApiClient {
     }
 
     if (data && typeof data === 'object' && 'ok' in data) {
+      if (data.token || data.accessToken || data.access_token) {
+        return data as T;
+      }
       return (data.data !== undefined ? data.data : data) as T;
     }
 
@@ -402,6 +435,7 @@ export class ApiClient {
         username: uname,
         role: rawRole,
       };
+      this.setUserProfile(user);
       return { role: rawRole, user, token };
     },
 
@@ -412,6 +446,7 @@ export class ApiClient {
         });
       } finally {
         this.setAuthToken(null);
+        this.setUserProfile(null);
       }
     },
 
@@ -419,15 +454,20 @@ export class ApiClient {
       const res = await this.request<any>('/auth/me', {
         method: 'GET',
       });
+      let profile: UserProfile | null = null;
       if (res && typeof res === 'object') {
         if (res.user && typeof res.user === 'object') {
-          return res.user as UserProfile;
-        }
-        if (res.data && typeof res.data === 'object') {
-          return (res.data.user || res.data) as UserProfile;
+          profile = res.user as UserProfile;
+        } else if (res.data && typeof res.data === 'object') {
+          profile = (res.data.user || res.data) as UserProfile;
+        } else {
+          profile = res as UserProfile;
         }
       }
-      return res as UserProfile;
+      if (profile && profile.id) {
+        this.setUserProfile(profile);
+      }
+      return profile || (res as UserProfile);
     },
 
     refresh: async () => {

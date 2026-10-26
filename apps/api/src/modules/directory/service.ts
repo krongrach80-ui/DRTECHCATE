@@ -19,6 +19,11 @@ import {
   CreateCaseTransferInput,
 } from './schema';
 
+const isDirectoryAdmin = (role?: string) => {
+  const r = (role || '').toLowerCase();
+  return r === 'admin' || r === 'director' || r === 'superadmin';
+};
+
 export class DirectoryService {
   constructor(private repo: IDirectoryRepository = defaultDirectoryRepository) {}
 
@@ -84,7 +89,7 @@ export class DirectoryService {
     const existing = await this.getExerciseById(id);
 
     // SPEC REQUIREMENT: PT can ONLY update exercises they created
-    if (currentUser.role !== 'admin' && existing.created_by !== currentUser.id) {
+    if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
       throw new AppError(
         'Access denied: Physiotherapists can only update exercises they personally created',
         403,
@@ -120,7 +125,7 @@ export class DirectoryService {
     const existing = await this.getExerciseById(id);
 
     // SPEC REQUIREMENT: PT can ONLY delete exercises they created
-    if (currentUser.role !== 'admin' && existing.created_by !== currentUser.id) {
+    if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
       throw new AppError(
         'Access denied: Physiotherapists can only delete exercises they personally created',
         403,
@@ -155,7 +160,7 @@ export class DirectoryService {
   ): Promise<string> {
     const existing = await this.getExerciseById(id);
 
-    if (currentUser.role !== 'admin' && existing.created_by !== currentUser.id) {
+    if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
       throw new AppError(
         'Access denied: Physiotherapists can only update media for exercises they personally created',
         403,
@@ -184,7 +189,7 @@ export class DirectoryService {
   // 3. Minigames & Questions
   // =========================================================================
   async createMinigame(input: CreateMinigameInput, currentUser: UserSession): Promise<MinigameRecord> {
-    if (currentUser.role !== 'admin') {
+    if (!isDirectoryAdmin(currentUser.role)) {
       throw new AppError('Access denied: requires admin role', 403, 'FORBIDDEN');
     }
     return this.repo.createMinigame(input, currentUser.id);
@@ -207,7 +212,7 @@ export class DirectoryService {
     input: CreateMinigameQuestionInput,
     currentUser: UserSession
   ): Promise<MinigameQuestionRecord> {
-    if (currentUser.role !== 'admin') {
+    if (!isDirectoryAdmin(currentUser.role)) {
       throw new AppError('Access denied: requires admin role', 403, 'FORBIDDEN');
     }
     await this.getMinigameById(minigameId);
@@ -220,7 +225,7 @@ export class DirectoryService {
   }
 
   async deleteQuestion(minigameId: string, questionId: string, currentUser: UserSession): Promise<void> {
-    if (currentUser.role !== 'admin') {
+    if (!isDirectoryAdmin(currentUser.role)) {
       throw new AppError('Access denied: requires admin role', 403, 'FORBIDDEN');
     }
     await this.getMinigameById(minigameId);
@@ -281,7 +286,7 @@ export class DirectoryService {
   ): Promise<ModpackRecord> {
     const existing = await this.getModpackById(id);
 
-    if (currentUser.role !== 'admin' && existing.created_by !== currentUser.id) {
+    if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
       throw new AppError(
         'Access denied: Physiotherapists can only update modpacks they personally created',
         403,
@@ -321,7 +326,7 @@ export class DirectoryService {
   ): Promise<void> {
     const existing = await this.getModpackById(id);
 
-    if (currentUser.role !== 'admin' && existing.created_by !== currentUser.id) {
+    if (!isDirectoryAdmin(currentUser.role) && existing.created_by !== currentUser.id) {
       throw new AppError(
         'Access denied: Physiotherapists can only delete modpacks they personally created',
         403,
@@ -354,7 +359,7 @@ export class DirectoryService {
     clientIp?: string,
     clientDeviceId?: string
   ): Promise<CaseTransferRecord> {
-    const fromPtId = currentUser.role === 'admin' && input.from_pt_id ? input.from_pt_id : currentUser.id;
+    const fromPtId = isDirectoryAdmin(currentUser.role) && input.from_pt_id ? input.from_pt_id : currentUser.id;
 
     if (fromPtId === input.to_pt_id) {
       throw new AppError('Cannot transfer a case to the same physiotherapist', 400, 'INVALID_TRANSFER');
@@ -383,7 +388,7 @@ export class DirectoryService {
   }
 
   async listCaseTransfers(currentUser: UserSession): Promise<CaseTransferRecord[]> {
-    if (currentUser.role === 'admin') {
+    if (isDirectoryAdmin(currentUser.role)) {
       return this.repo.listCaseTransfers();
     }
     return this.repo.listCaseTransfers(currentUser.id);
@@ -400,7 +405,7 @@ export class DirectoryService {
       throw new AppError(`Case transfer ${id} not found`, 404, 'NOT_FOUND');
     }
 
-    if (currentUser.role !== 'admin' && transfer.from_pt_id !== currentUser.id) {
+    if (!isDirectoryAdmin(currentUser.role) && transfer.from_pt_id !== currentUser.id) {
       throw new AppError(
         'Access denied: You can only cancel transfers you created',
         403,

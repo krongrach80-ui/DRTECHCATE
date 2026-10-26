@@ -38,9 +38,36 @@ import { ClinicalPtShell } from '../../pt/src/clinical-ui/ClinicalPtShell';
 
 export type RoleMode = 'kiosk' | 'admin' | 'pt';
 
+function getInitialAuthState(): { mode: RoleMode; user: UserProfile | null } {
+  if (typeof window === 'undefined') {
+    return { mode: 'kiosk', user: null };
+  }
+  const path = window.location.pathname.toLowerCase();
+  let storedUser: UserProfile | null = null;
+  try {
+    const raw =
+      localStorage.getItem('drtech_user_profile') ||
+      sessionStorage.getItem('drtech_user_profile');
+    if (raw) {
+      storedUser = JSON.parse(raw);
+    }
+  } catch {
+    // safe
+  }
+
+  if (path.startsWith('/admin')) {
+    return { mode: 'admin', user: storedUser };
+  }
+  if (path.startsWith('/pt')) {
+    return { mode: 'pt', user: storedUser };
+  }
+  return { mode: 'kiosk', user: storedUser };
+}
+
 export const App: React.FC = () => {
-  const [roleMode, setRoleMode] = useState<RoleMode>('kiosk');
-  const [currentStaffUser, setCurrentStaffUser] = useState<UserProfile | null>(null);
+  const initialAuth = useMemo(() => getInitialAuthState(), []);
+  const [roleMode, setRoleMode] = useState<RoleMode>(initialAuth.mode);
+  const [currentStaffUser, setCurrentStaffUser] = useState<UserProfile | null>(initialAuth.user);
   const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>([]);
   const [flowMode, setFlowMode] = useState<'smart' | 'classic'>('smart');
   const [smartStep, setSmartStep] = useState<SmartFlowStep>('login');
@@ -89,11 +116,11 @@ export const App: React.FC = () => {
           }
         }
       } catch {
-        // unauthenticated
+        // unauthenticated or offline
       }
 
       if (isMounted) {
-        if (path.startsWith('/admin') || path.startsWith('/pt')) {
+        if ((path.startsWith('/admin') || path.startsWith('/pt')) && !defaultApiClient.getAuthToken()) {
           setIsStaffLoginModalOpen(true);
         }
       }

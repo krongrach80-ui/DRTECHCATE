@@ -99,6 +99,7 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
       }
     }
 
+    const videoElement = videoRef.current;
     initHeadNodTracker();
 
     return () => {
@@ -107,10 +108,10 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
       if (nodInterval) clearInterval(nodInterval);
       unsubscribe();
       camera.stop();
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
+      if (videoElement && videoElement.srcObject) {
+        const stream = videoElement.srcObject as MediaStream;
         stream.getTracks().forEach((track) => track.stop());
-        videoRef.current.srcObject = null;
+        videoElement.srcObject = null;
       }
     };
   }, [handleConfirm]);
