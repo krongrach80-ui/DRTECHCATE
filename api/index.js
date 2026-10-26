@@ -125,7 +125,7 @@ var init_env = __esm({
       // Application Domain & URLs
       INTERNAL_EMAIL_DOMAIN: import_zod.z.string().min(1).default("clinic.internal"),
       APP_URL: import_zod.z.string().url().default("http://localhost:3000"),
-      CORS_ORIGINS: import_zod.z.string().default("http://localhost:3000,http://localhost:5173"),
+      CORS_ORIGINS: import_zod.z.string().default("http://localhost:3000,http://localhost:5173,https://drtechcarev2.vercel.app"),
       KIOSK_PAIRING_SECRET: import_zod.z.string().min(16, "KIOSK_PAIRING_SECRET must be at least 16 characters"),
       TRUST_PROXY_HOPS: import_zod.z.coerce.number().int().min(0),
       HOSPITAL_IPS: import_zod.z.string().default("127.0.0.1,::1,localhost"),
@@ -313,6 +313,51 @@ var init_logger = __esm({
   }
 });
 
+// apps/api/src/lib/originValidator.ts
+function isAllowedOrigin(originStr, allowedOrigins = [], reqHost, forwardedHost) {
+  if (!originStr) return false;
+  const trimmed = originStr.trim();
+  if (!trimmed) return false;
+  if (allowedOrigins.some((allowed) => trimmed === allowed || trimmed.startsWith(allowed + "/"))) {
+    return true;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    const originHost = parsed.host.toLowerCase();
+    const originHostname = parsed.hostname.toLowerCase();
+    if (reqHost) {
+      const cleanHost = reqHost.trim().toLowerCase();
+      if (originHost === cleanHost || originHostname === cleanHost.split(":")[0]) {
+        return true;
+      }
+    }
+    if (forwardedHost) {
+      const cleanFwdHost = forwardedHost.trim().toLowerCase();
+      if (originHost === cleanFwdHost || originHostname === cleanFwdHost.split(":")[0]) {
+        return true;
+      }
+    }
+    if (originHostname.endsWith(".vercel.app")) {
+      const vercelUrl = (process.env.VERCEL_URL || "").toLowerCase();
+      const vercelProdUrl = (process.env.VERCEL_PROJECT_PRODUCTION_URL || "").toLowerCase();
+      if (originHostname.startsWith("drtechcarev2") || originHostname.includes("drtechcarev2") || vercelUrl && (originHostname === vercelUrl || originHostname === vercelUrl.replace(/^https?:\/\//, "")) || vercelProdUrl && (originHostname === vercelProdUrl || originHostname === vercelProdUrl.replace(/^https?:\/\//, ""))) {
+        return true;
+      }
+    }
+    if (originHostname === "localhost" || originHostname === "127.0.0.1" || originHostname === "::1") {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+var init_originValidator = __esm({
+  "apps/api/src/lib/originValidator.ts"() {
+    "use strict";
+  }
+});
+
 // apps/api/src/lib/supabase/adminClient.ts
 var adminClient_exports = {};
 __export(adminClient_exports, {
@@ -493,7 +538,12 @@ function csrfGuard(req, res, next) {
   const env = getEnv();
   const allowedOrigins = (env.CORS_ORIGINS || "").split(",").map((o) => o.trim()).filter(Boolean);
   if (origin) {
-    const isAllowed = allowedOrigins.some((allowed) => origin === allowed || origin.startsWith(allowed + "/"));
+    const isAllowed = isAllowedOrigin(
+      origin,
+      allowedOrigins,
+      req.headers.host,
+      req.headers["x-forwarded-host"]
+    );
     if (!isAllowed) {
       res.status(403).json({
         error: {
@@ -521,6 +571,7 @@ var init_csrfGuard = __esm({
   "apps/api/src/middleware/csrfGuard.ts"() {
     "use strict";
     init_env();
+    init_originValidator();
     SAFE_METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "OPTIONS"]);
   }
 });
@@ -8086,6 +8137,7 @@ init_logger();
 // apps/api/src/middleware/cors.ts
 var import_cors = __toESM(require("cors"));
 init_env();
+init_originValidator();
 function createCorsMiddleware() {
   const env = getEnv();
   const allowedOrigins = (env.CORS_ORIGINS || "").split(",").map((o) => o.trim()).filter(Boolean);
@@ -8094,14 +8146,14 @@ function createCorsMiddleware() {
       if (!origin) {
         return callback(null, true);
       }
-      if (allowedOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin, allowedOrigins)) {
         return callback(null, true);
       }
       return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "x-auth-token"]
   });
 }
 

@@ -48,7 +48,7 @@ export const envSchema = z
     // Application Domain & URLs
     INTERNAL_EMAIL_DOMAIN: z.string().min(1).default('clinic.internal'),
     APP_URL: z.string().url().default('http://localhost:3000'),
-    CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173'),
+    CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173,https://drtechcarev2.vercel.app'),
     KIOSK_PAIRING_SECRET: z
       .string()
       .min(16, 'KIOSK_PAIRING_SECRET must be at least 16 characters'),

@@ -159,11 +159,36 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
           </div>
 
           {/* Automatic Role Detection Notice */}
-          <div className="p-4 rounded-2xl bg-emerald-50/90 border border-emerald-200/70 text-emerald-900 text-xs sm:text-sm flex items-start gap-3">
-            <Info className="w-5 h-5 shrink-0 mt-0.5 text-emerald-600" />
-            <span className="leading-relaxed">
-              ระบบตรวจสอบสิทธิ์อัตโนมัติ: ผอ.รพ. / Super Admin หรือ นักกายภาพบำบัด PT
-            </span>
+          <div className="p-4 rounded-2xl bg-emerald-50/90 border border-emerald-200/70 text-emerald-900 text-xs sm:text-sm flex flex-col gap-2.5">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 shrink-0 mt-0.5 text-emerald-600" />
+              <span className="leading-relaxed">
+                ระบบตรวจสอบสิทธิ์อัตโนมัติ: ผอ.รพ. / Super Admin หรือ นักกายภาพบำบัด PT
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-emerald-200/60">
+              <span className="text-xs font-semibold text-emerald-800">ทางลัดกรอกข้อมูลทดสอบ:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('director');
+                  setPassword('Admin12345678!');
+                }}
+                className="text-xs px-2.5 py-1 rounded-lg bg-emerald-200/70 hover:bg-emerald-200 text-emerald-900 font-bold transition active:scale-95 cursor-pointer"
+              >
+                ⚡ บัญชี ผอ. (director)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('pt_somchai');
+                  setPassword('CorrectPassword123!');
+                }}
+                className="text-xs px-2.5 py-1 rounded-lg bg-emerald-200/70 hover:bg-emerald-200 text-emerald-900 font-bold transition active:scale-95 cursor-pointer"
+              >
+                ⚡ บัญชี นักกายภาพ (pt_somchai)
+              </button>
+            </div>
           </div>
 
           {/* Primary Action Button */}

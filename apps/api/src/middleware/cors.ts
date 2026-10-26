@@ -1,5 +1,6 @@
 import cors from 'cors';
 import { getEnv } from '../config/env';
+import { isAllowedOrigin } from '../lib/originValidator';
 
 export function createCorsMiddleware() {
   const env = getEnv();
@@ -15,7 +16,7 @@ export function createCorsMiddleware() {
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin, allowedOrigins)) {
         return callback(null, true);
       }
 
@@ -24,6 +25,6 @@ export function createCorsMiddleware() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-auth-token'],
   });
 }
