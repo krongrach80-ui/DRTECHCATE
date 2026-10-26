@@ -397,27 +397,93 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 );
 
 -- STEP 4.1: NON-BREAKING COLUMN MIGRATIONS (Aligning schemas with application repository layer)
+
+-- 1. exercises columns
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'general';
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS target_muscle TEXT;
 ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS target_joint TEXT;
 ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS suitable_for TEXT;
 ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS warnings TEXT;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS video_url TEXT;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS calibration_notes TEXT;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS default_sets INTEGER NOT NULL DEFAULT 3;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS default_reps INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS difficulty TEXT NOT NULL DEFAULT 'beginner';
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS rom_threshold_min NUMERIC;
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS rom_threshold_max NUMERIC;
 ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS image_path TEXT;
 ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES public.profiles(id);
+
 ALTER TABLE public.exercises ALTER COLUMN category DROP NOT NULL;
 ALTER TABLE public.exercises ALTER COLUMN category SET DEFAULT 'general';
+ALTER TABLE public.exercises ALTER COLUMN created_by DROP NOT NULL;
 
+-- 2. minigames columns
+ALTER TABLE public.minigames ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'cognitive';
+ALTER TABLE public.minigames ADD COLUMN IF NOT EXISTS difficulty TEXT NOT NULL DEFAULT 'medium';
 ALTER TABLE public.minigames ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE public.minigames ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
-ALTER TABLE public.minigames ALTER COLUMN category DROP NOT NULL;
+ALTER TABLE public.minigames ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES public.profiles(id);
 
+ALTER TABLE public.minigames ALTER COLUMN category DROP NOT NULL;
+ALTER TABLE public.minigames ALTER COLUMN category SET DEFAULT 'cognitive';
+ALTER TABLE public.minigames ALTER COLUMN created_by DROP NOT NULL;
+
+-- 3. minigame_questions columns
+ALTER TABLE public.minigame_questions ADD COLUMN IF NOT EXISTS prompt TEXT;
 ALTER TABLE public.minigame_questions ADD COLUMN IF NOT EXISTS choices JSONB;
 ALTER TABLE public.minigame_questions ADD COLUMN IF NOT EXISTS answer TEXT;
+ALTER TABLE public.minigame_questions ADD COLUMN IF NOT EXISTS options JSONB;
+ALTER TABLE public.minigame_questions ADD COLUMN IF NOT EXISTS correct_index INTEGER;
 ALTER TABLE public.minigame_questions ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES public.profiles(id);
-ALTER TABLE public.minigame_questions ALTER COLUMN options DROP NOT NULL;
-ALTER TABLE public.minigame_questions ALTER COLUMN correct_index DROP NOT NULL;
 
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'minigame_questions' AND column_name = 'options') THEN
+    ALTER TABLE public.minigame_questions ALTER COLUMN options DROP NOT NULL;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'minigame_questions' AND column_name = 'correct_index') THEN
+    ALTER TABLE public.minigame_questions ALTER COLUMN correct_index DROP NOT NULL;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'minigame_questions' AND column_name = 'choices') THEN
+    ALTER TABLE public.minigame_questions ALTER COLUMN choices DROP NOT NULL;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'minigame_questions' AND column_name = 'answer') THEN
+    ALTER TABLE public.minigame_questions ALTER COLUMN answer DROP NOT NULL;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'minigame_questions' AND column_name = 'created_by') THEN
+    ALTER TABLE public.minigame_questions ALTER COLUMN created_by DROP NOT NULL;
+  END IF;
+END $$;
+
+-- 4. modpacks & modpack_items columns
+ALTER TABLE public.modpacks ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE public.modpacks ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE public.modpacks ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE public.modpacks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE public.modpacks ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES public.profiles(id);
+ALTER TABLE public.modpacks ALTER COLUMN created_by DROP NOT NULL;
+
+ALTER TABLE public.modpack_items ADD COLUMN IF NOT EXISTS sets INTEGER NOT NULL DEFAULT 3;
+ALTER TABLE public.modpack_items ADD COLUMN IF NOT EXISTS reps INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE public.modpack_items ADD COLUMN IF NOT EXISTS position INTEGER NOT NULL DEFAULT 1;
+
+-- 5. patients columns
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS injury TEXT;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS responsible_pt_id UUID REFERENCES public.profiles(id);
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS registration_status TEXT DEFAULT 'awaiting_face';
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS registered_via TEXT DEFAULT 'reception';
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS pending_expires_at TIMESTAMPTZ;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
+
+-- 6. profiles columns
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS bio TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS status public.profile_status DEFAULT 'active';
 
 -- STEP 5: CORE RPC FUNCTIONS (Functions per Master Architecture)
 
