@@ -485,6 +485,24 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS bio TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS status public.profile_status DEFAULT 'active';
 
+-- 7. kiosk_devices columns & constraint relaxing
+ALTER TABLE public.kiosk_devices ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE public.kiosk_devices ADD COLUMN IF NOT EXISTS ip_address TEXT;
+ALTER TABLE public.kiosk_devices ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE public.kiosk_devices ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+ALTER TABLE public.kiosk_devices ADD COLUMN IF NOT EXISTS token_hash TEXT DEFAULT 'token-kiosk-01';
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'kiosk_devices' AND column_name = 'token_hash') THEN
+    ALTER TABLE public.kiosk_devices ALTER COLUMN token_hash DROP NOT NULL;
+    ALTER TABLE public.kiosk_devices ALTER COLUMN token_hash SET DEFAULT 'token-kiosk-01';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'kiosk_devices' AND column_name = 'location') THEN
+    ALTER TABLE public.kiosk_devices ALTER COLUMN location DROP NOT NULL;
+  END IF;
+END $$;
+
 -- STEP 5: CORE RPC FUNCTIONS (Functions per Master Architecture)
 
 -- Drop existing functions before recreation to prevent PostgreSQL 42P13 (cannot change return type)
@@ -1010,7 +1028,6 @@ DECLARE
   v_director_id UUID := 'd1000000-0000-0000-0000-000000000001';
   v_admin_id UUID    := 'a1000000-0000-0000-0000-000000000002';
   v_pt_id UUID       := 'b1000000-0000-0000-0000-000000000003';
-  v_kiosk_id TEXT    := 'kiosk-01';
 BEGIN
   -- 1. Director User (Director: ผอ. นพ. วิจัย สุขเกษม / Admin12345678!)
   IF NOT EXISTS (SELECT 1 FROM auth.users WHERE email = 'director@drtech.care') THEN
@@ -1078,12 +1095,39 @@ BEGIN
   ) ON CONFLICT (user_id) DO UPDATE SET
     license_no = EXCLUDED.license_no, specialty = EXCLUDED.specialty;
 
-  -- 4. Kiosk Terminal (kiosk-01)
-  INSERT INTO public.kiosk_devices (id, name, location, is_active, last_seen_at)
-  VALUES (
-    v_kiosk_id, 'Kiosk อาคาร 1 ชั้น 2', 'ศูนย์เวชศาสตร์ฟื้นฟูกายภาพบำบัด', true, now()
-  ) ON CONFLICT (id) DO UPDATE SET
-    name = EXCLUDED.name, is_active = EXCLUDED.is_active;
+  -- 4. Kiosk Terminal (dynamic UUID vs TEXT support)
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+      AND table_name = 'kiosk_devices' 
+      AND column_name = 'id' 
+      AND (udt_name = 'uuid' OR data_type = 'uuid')
+  ) THEN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+        AND table_name = 'kiosk_devices' 
+        AND column_name = 'token_hash'
+    ) THEN
+      EXECUTE '
+        INSERT INTO public.kiosk_devices (id, name, location, token_hash, is_active, last_seen_at)
+        VALUES ($1::uuid, $2, $3, $4, true, now())
+        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_active = EXCLUDED.is_active
+      ' USING 'cc000000-0000-0000-0000-000000000001', 'Kiosk อาคาร 1 ชั้น 2', 'ศูนย์เวชศาสตร์ฟื้นฟูกายภาพบำบัด', 'kiosk-token-hash-01';
+    ELSE
+      EXECUTE '
+        INSERT INTO public.kiosk_devices (id, name, location, is_active, last_seen_at)
+        VALUES ($1::uuid, $2, $3, true, now())
+        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_active = EXCLUDED.is_active
+      ' USING 'cc000000-0000-0000-0000-000000000001', 'Kiosk อาคาร 1 ชั้น 2', 'ศูนย์เวชศาสตร์ฟื้นฟูกายภาพบำบัด';
+    END IF;
+  ELSE
+    EXECUTE '
+      INSERT INTO public.kiosk_devices (id, name, location, is_active, last_seen_at)
+      VALUES ($1, $2, $3, true, now())
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_active = EXCLUDED.is_active
+    ' USING 'kiosk-01', 'Kiosk อาคาร 1 ชั้น 2', 'ศูนย์เวชศาสตร์ฟื้นฟูกายภาพบำบัด';
+  END IF;
 
   -- 5. Standard Exercises
   INSERT INTO public.exercises (
@@ -1124,10 +1168,10 @@ BEGIN
     target_joint = EXCLUDED.target_joint,
     description = EXCLUDED.description;
 
-  -- 6. Minigames & Questions
+  -- 6. Minigames & Questions (using valid hex UUIDs: fa000000... / fb000000...)
   INSERT INTO public.minigames (id, title, category, description, difficulty, is_active, created_by)
   VALUES (
-    'm1000000-0000-0000-0000-000000000001',
+    'fa000000-0000-0000-0000-000000000001',
     'เกมทดสอบความจำและการรับรู้ (Cognitive Recovery)',
     'ความจำและการรู้คิด',
     'ฝึกการตอบสนองสมองและความจำระยะสั้นควบคู่การฟื้นฟูร่างกาย',
@@ -1138,8 +1182,8 @@ BEGIN
   INSERT INTO public.minigame_questions (id, minigame_id, prompt, choices, answer, options, correct_index, created_by)
   VALUES
     (
-      'q1000000-0000-0000-0000-000000000001',
-      'm1000000-0000-0000-0000-000000000001',
+      'fb000000-0000-0000-0000-000000000001',
+      'fa000000-0000-0000-0000-000000000001',
       'เมื่อมีอาการปวดไหล่เฉียบพลันหลังออกกำลังกาย ควรปฏิบัติอย่างไรใน 24 ชั่วโมงแรก?',
       '["ประคบเย็น 15-20 นาที", "ประคบร้อนทันที", "นวดกดจุดแรงๆ", "ดัดดึงแขนอย่างรวดเร็ว"]'::jsonb,
       'ประคบเย็น 15-20 นาที',
@@ -1147,8 +1191,8 @@ BEGIN
       0, v_pt_id
     ),
     (
-      'q1000000-0000-0000-0000-000000000002',
-      'm1000000-0000-0000-0000-000000000001',
+      'fb000000-0000-0000-0000-000000000002',
+      'fa000000-0000-0000-0000-000000000001',
       'การนั่งทำงานหน้าคอมพิวเตอร์ที่ถูกต้อง หน้าจอควรอยู่ในระดับใด?',
       '["ระดับสายตาหรือต่ำกว่าเล็กน้อย 10-15 องศา", "สูงกว่าศีรษะ 30 องศา", "ต่ำกว่าอก", "วางไว้ข้างลำตัว"]'::jsonb,
       'ระดับสายตาหรือต่ำกว่าเล็กน้อย 10-15 องศา',
@@ -1158,10 +1202,10 @@ BEGIN
   ON CONFLICT (id) DO UPDATE SET
     prompt = EXCLUDED.prompt, answer = EXCLUDED.answer;
 
-  -- 7. Modpacks & Modpack Items
+  -- 7. Modpacks & Modpack Items (using valid hex UUIDs: fc000000... / fd000000...)
   INSERT INTO public.modpacks (id, name, description, is_active, created_by)
   VALUES (
-    'p1000000-0000-0000-0000-000000000001',
+    'fc000000-0000-0000-0000-000000000001',
     'ชุดฟื้นฟูข้อไหล่ติดระยะเริ่มต้น (Frozen Shoulder Phase 1)',
     'โปรแกรม 3 ท่าฟื้นฟูการเคลื่อนไหวข้อต่อและลดพังผืดไหล่',
     true, v_pt_id
@@ -1170,8 +1214,8 @@ BEGIN
 
   INSERT INTO public.modpack_items (id, modpack_id, exercise_id, sets, reps, position)
   VALUES
-    ('i1000000-0000-0000-0000-000000000001', 'p1000000-0000-0000-0000-000000000001', 'e1000000-0000-0000-0000-000000000001', 3, 15, 1),
-    ('i1000000-0000-0000-0000-000000000002', 'p1000000-0000-0000-0000-000000000001', 'e1000000-0000-0000-0000-000000000002', 3, 12, 2)
+    ('fd000000-0000-0000-0000-000000000001', 'fc000000-0000-0000-0000-000000000001', 'e1000000-0000-0000-0000-000000000001', 3, 15, 1),
+    ('fd000000-0000-0000-0000-000000000002', 'fc000000-0000-0000-0000-000000000001', 'e1000000-0000-0000-0000-000000000002', 3, 12, 2)
   ON CONFLICT (id) DO UPDATE SET
     sets = EXCLUDED.sets, reps = EXCLUDED.reps, position = EXCLUDED.position;
 
