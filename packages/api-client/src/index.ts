@@ -1227,6 +1227,46 @@ export class ApiClient {
   // 12. SMART ONBOARDING & BIOMETRIC DUAL-SYNC (Master Prompt v4)
   // =========================================================================
   public smartOnboarding = {
+    register: async (payload: {
+      hn?: string;
+      first_name: string;
+      last_name?: string;
+      age?: number;
+      sex?: string;
+      phone?: string;
+      injury?: string;
+      initial_symptoms?: string;
+      pin?: string;
+      responsible_pt_id?: string;
+      frames?: Array<{ pose: string; embedding: number[]; jpeg_base64?: string }>;
+      model_version?: string;
+    }) => {
+      return this.request<{
+        ok: boolean;
+        patient_id: string;
+        hn: string;
+        first_name: string;
+        last_name: string;
+        registration_status: string;
+        profile_face_url?: string;
+        message?: string;
+      }>('/smart-onboarding/register', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    pinLogin: async (payload: { pin: string; hn?: string }) => {
+      return this.request<{
+        matched: boolean;
+        patient?: any;
+        message?: string;
+      }>('/smart-onboarding/pin-login', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
     scanLogin: async (payload: { probe: number[]; snapshot?: string }) => {
       return this.request<{
         matched: boolean;

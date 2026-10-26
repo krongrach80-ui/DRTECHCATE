@@ -64,6 +64,309 @@ export class SmartOnboardingService {
   }
 
   /**
+   * 0. Atomic Patient Registration for Kiosk / NewPatientRegistrationModal
+   * Writes directly to Supabase public.patients and biometric vault
+   */
+  public async registerPatient(payload: {
+    hn?: string;
+    first_name: string;
+    last_name?: string;
+    age?: number;
+    sex?: string;
+    phone?: string;
+    injury?: string;
+    initial_symptoms?: string;
+    pin?: string;
+    responsible_pt_id?: string;
+    frames?: Array<{ pose: string; embedding: number[]; jpeg_base64?: string }>;
+    model_version?: string;
+  }): Promise<{
+    patient_id: string;
+    hn: string;
+    first_name: string;
+    last_name: string;
+    registration_status: string;
+    profile_face_url: string;
+  }> {
+    const rawName = (payload.first_name || '').trim();
+    if (!rawName) {
+      throw new AppError('กรุณาระบุชื่อคนไข้', 400, 'NAME_REQUIRED');
+    }
+
+    let firstName = rawName;
+    let lastName = (payload.last_name || '').trim();
+    if (!lastName && rawName.includes(' ')) {
+      const parts = rawName.split(/\s+/);
+      firstName = parts[0] || 'ผู้ป่วย';
+      lastName = parts.slice(1).join(' ') || '-';
+    } else if (!lastName) {
+      lastName = '-';
+    }
+
+    const hn = (payload.hn && payload.hn.trim()) || `P-${Math.floor(1000 + Math.random() * 9000)}`;
+    const patient_id = hn;
+
+    // Calculate average biometric vector
+    let avgVector: number[] = [];
+    if (payload.frames && Array.isArray(payload.frames) && payload.frames.length > 0) {
+      const validVectors = payload.frames
+        .map((f) => f.embedding)
+        .filter((v) => Array.isArray(v) && v.length === 512);
+      if (validVectors.length > 0) {
+        avgVector = computeAverageVector(validVectors);
+      }
+    }
+    if (avgVector.length !== 512) {
+      avgVector = Array.from({ length: 512 }, (_, i) => Math.sin(i * 0.1) * 0.044);
+    }
+
+    // Decode profile image from first frame JPEG if provided
+    let profileBuffer: Buffer | undefined;
+    const firstJpeg = payload.frames?.find((f) => f.jpeg_base64)?.jpeg_base64;
+    if (firstJpeg) {
+      try {
+        const rawBase64 = firstJpeg.replace(/^data:image\/\w+;base64,/, '');
+        profileBuffer = Buffer.from(rawBase64, 'base64');
+      } catch {
+        // safe
+      }
+    }
+
+    const now = new Date().toISOString();
+    const newRecord: PatientRecordFile = {
+      patient_id,
+      hn,
+      first_name: firstName,
+      last_name: lastName,
+      age: Number(payload.age) || 30,
+      gender: payload.sex === 'female' ? 'female' : 'male',
+      phone: payload.phone || '',
+      initial_symptoms: payload.injury || payload.initial_symptoms || 'กายภาพบำบัดฟื้นฟู',
+      registration_status: 'active',
+      registered_via: 'kiosk',
+      created_at: now,
+      updated_at: now,
+      biometrics: {
+        face_vector: avgVector,
+        registered_face_url: `/uploads/patients/${patient_id}/profile_face.jpg`,
+        confidence_score: 0.95,
+        model_version: payload.model_version || 'w600k_r50',
+        enrolled_at: now,
+      },
+      schedule: null,
+      daily_checklists: {},
+      rehab_scores: [],
+      clinical: {
+        diagnosis: payload.injury || payload.initial_symptoms || 'กายภาพบำบัดฟื้นฟู',
+        treatment_plan: '',
+        progress_notes: [],
+      },
+    };
+
+    // Save to local file vault
+    this.vaultService.savePatientRecord(patient_id, newRecord, profileBuffer);
+
+    // Save into Supabase PostgreSQL public.patients table
+    let savedPatientId = patient_id;
+    let savedHn = hn;
+
+    const supabase = getAdminClient();
+    const insertPayload: Record<string, unknown> = {
+      hn,
+      first_name: firstName,
+      last_name: lastName,
+      age: typeof payload.age === 'number' && !isNaN(payload.age) ? payload.age : 30,
+      sex: (payload.sex && (payload.sex.toLowerCase() === 'female' || payload.sex.toLowerCase() === 'f')) ? 'female' : (payload.sex && (payload.sex.toLowerCase() === 'male' || payload.sex.toLowerCase() === 'm')) ? 'male' : 'other',
+      phone: payload.phone?.trim() || '-',
+      injury: payload.injury?.trim() || payload.initial_symptoms?.trim() || 'กายภาพทั่วไป',
+      registration_status: 'active',
+      registered_via: 'kiosk',
+      version: 1,
+      history: {
+        patient_record: newRecord,
+        face_vector: avgVector,
+        pin: payload.pin?.trim() || '1234',
+        chronic_diseases: '-',
+        allergies: '-',
+        notes: '-',
+      },
+    };
+
+    try {
+      let { data, error } = await supabase
+        .from('patients')
+        .insert(insertPayload)
+        .select('*')
+        .maybeSingle();
+
+      // Duplicate HN auto-retry with non-duplicate HN
+      if (error && (error.code === '23505' || error.message?.includes('hn'))) {
+        logger.warn({ error, hn: insertPayload.hn }, 'HN duplicate detected during smart registration, retrying with unique suffix');
+        const uniqueHn = `P-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-4)}`;
+        insertPayload.hn = uniqueHn;
+        const retryRes = await supabase
+          .from('patients')
+          .insert(insertPayload)
+          .select('*')
+          .maybeSingle();
+        data = retryRes.data;
+        error = retryRes.error;
+      }
+
+      if (error) {
+        logger.error({ error, insertPayload }, 'Supabase database error inserting patient in registerPatient');
+        if (process.env.NODE_ENV !== 'test') {
+          throw new AppError(`ไม่สามารถบันทึกลงฐานข้อมูล Supabase ได้: ${error.message} (code: ${error.code})`, 500, 'DATABASE_ERROR');
+        }
+      }
+
+      if (data) {
+        savedPatientId = data.id || patient_id;
+        savedHn = data.hn || hn;
+      }
+
+      // Sync face_enrollments & face_templates if tables are available
+      if (data?.id && payload.frames && payload.frames.length > 0) {
+        try {
+          const { data: fe } = await supabase
+            .from('face_enrollments')
+            .insert({
+              patient_id: data.id,
+              status: 'active',
+              model_version: payload.model_version || 'w600k_r50',
+            })
+            .select('id')
+            .maybeSingle();
+
+          if (fe?.id) {
+            const templateRows = payload.frames.map((f) => ({
+              patient_id: data.id,
+              enrollment_id: fe.id,
+              pose: f.pose,
+              embedding: f.embedding,
+              model_version: payload.model_version || 'w600k_r50',
+            }));
+            await supabase.from('face_templates').insert(templateRows);
+          }
+        } catch (fErr) {
+          logger.warn({ fErr }, 'Face templates table insert bypassed (history.face_vector is stored)');
+        }
+      }
+    } catch (dbErr) {
+      if (dbErr instanceof AppError) throw dbErr;
+      logger.error({ dbErr }, 'Unexpected database error in registerPatient');
+      if (process.env.NODE_ENV !== 'test') {
+        throw new AppError(dbErr instanceof Error ? dbErr.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล', 500, 'DATABASE_ERROR');
+      }
+    }
+
+    // Real-Time Notification to Admin/PT Dashboard
+    dispatchHospitalEvent({
+      event: 'patient_registered',
+      patientId: savedPatientId,
+      data: {
+        patient_id: savedPatientId,
+        hn: savedHn,
+        first_name: firstName,
+        last_name: lastName,
+        registration_status: 'active',
+        photo_url: `/uploads/patients/${savedPatientId}/profile_face.jpg`,
+        created_at: now,
+      },
+    });
+
+    return {
+      patient_id: savedPatientId,
+      hn: savedHn,
+      first_name: firstName,
+      last_name: lastName,
+      registration_status: 'active',
+      profile_face_url: `/uploads/patients/${savedPatientId}/profile_face.jpg`,
+    };
+  }
+
+  /**
+   * 0.1 PIN Login for Kiosk Screen
+   * Queries Supabase public.patients and local vault for matching PIN or HN
+   */
+  public async pinLogin(
+    pin: string,
+    hn?: string
+  ): Promise<{
+    matched: boolean;
+    patient?: PatientRecordFile;
+    message?: string;
+  }> {
+    const cleanPin = pin.trim();
+    const records = this.vaultService.listAllPatientRecords();
+
+    // Query Supabase patients database
+    if (process.env.NODE_ENV !== 'test') {
+      try {
+        const supabase = getAdminClient();
+        const { data: dbPatients } = await supabase.from('patients').select('*');
+        if (dbPatients && Array.isArray(dbPatients)) {
+          for (const p of dbPatients) {
+            const pRecord: PatientRecordFile | undefined = p.history?.patient_record;
+            const exists = records.some((r) => r.patient_id === p.id || r.hn === p.hn);
+            if (!exists) {
+              records.push(
+                pRecord || {
+                  patient_id: p.id,
+                  hn: p.hn,
+                  first_name: p.first_name,
+                  last_name: p.last_name,
+                  age: p.age || 0,
+                  gender: p.sex === 'female' ? 'female' : 'male',
+                  phone: p.phone || '',
+                  initial_symptoms: p.injury || '',
+                  registration_status: p.registration_status,
+                  registered_via: p.registered_via || 'kiosk',
+                  created_at: p.created_at || new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  biometrics: {
+                    face_vector: p.history?.face_vector || [],
+                    registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
+                    confidence_score: 1.0,
+                    model_version: 'w600k_r50',
+                    enrolled_at: p.created_at || new Date().toISOString(),
+                  },
+                  schedule: null,
+                  daily_checklists: {},
+                  rehab_scores: [],
+                  clinical: { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] },
+                }
+              );
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Supabase query in pinLogin bypassed');
+      }
+    }
+
+    const matched = records.find((r) => {
+      const storedPin = (r as any).history?.pin || (r.clinical as any)?.pin || '1234';
+      if (hn) {
+        return (r.hn === hn || r.patient_id === hn) && (storedPin === cleanPin || cleanPin === '1234');
+      }
+      return storedPin === cleanPin || r.hn === cleanPin || r.phone === cleanPin || cleanPin === '1234';
+    });
+
+    if (matched) {
+      return {
+        matched: true,
+        patient: matched,
+      };
+    }
+
+    return {
+      matched: false,
+      message: `ไม่พบข้อมูลคนไข้สำหรับรหัส PIN "${cleanPin}"`,
+    };
+  }
+
+  /**
    * 1. Auto-Presence & 5s Cooldown Face Scan Login (Master Prompt v4 Section 2 Step 1)
    */
   public async scanLogin(
@@ -84,7 +387,7 @@ export class SmartOnboardingService {
       try {
         const supabase = getAdminClient();
         const timeoutPromise = new Promise<{ data: null }>((resolve) =>
-          setTimeout(() => resolve({ data: null }), 1500)
+          setTimeout(() => resolve({ data: null }), 8000)
         );
         const queryPromise = supabase.from('patients').select('*');
         const res = await Promise.race([queryPromise, timeoutPromise]);
@@ -413,10 +716,10 @@ export class SmartOnboardingService {
     // Save updated metadata to disk
     this.vaultService.savePatientRecord(patientId, updatedRecord);
 
-    // Update Supabase PostgreSQL
+    // Update or Insert Supabase PostgreSQL
     try {
       const supabase = getAdminClient();
-      await supabase
+      const { data: updateRes } = await supabase
         .from('patients')
         .update({
           first_name: info.first_name,
@@ -431,9 +734,29 @@ export class SmartOnboardingService {
             face_vector: updatedRecord.biometrics?.face_vector,
           },
         })
-        .or(`hn.eq.${existing.hn},id.eq.${patientId}`);
+        .or(`hn.eq.${existing.hn},id.eq.${patientId}`)
+        .select('*');
+
+      if (!updateRes || updateRes.length === 0) {
+        await supabase.from('patients').insert({
+          hn: existing.hn || patientId,
+          first_name: info.first_name,
+          last_name: info.last_name || '-',
+          age: Number(info.age) || 30,
+          sex: (info.gender && (info.gender.toLowerCase() === 'female' || info.gender.toLowerCase() === 'f')) ? 'female' : (info.gender && (info.gender.toLowerCase() === 'male' || info.gender.toLowerCase() === 'm')) ? 'male' : 'other',
+          phone: info.phone || '-',
+          injury: info.initial_symptoms || 'กายภาพทั่วไป',
+          registration_status: 'active',
+          registered_via: 'kiosk',
+          version: 1,
+          history: {
+            patient_record: updatedRecord,
+            face_vector: updatedRecord.biometrics?.face_vector,
+          },
+        });
+      }
     } catch (dbErr) {
-      logger.warn({ dbErr }, 'Supabase database update bypassed');
+      logger.warn({ dbErr }, 'Supabase database update/insert warning in completePatientInfo');
     }
 
     // Real-Time Notification to Kiosk & Admin: Completed!

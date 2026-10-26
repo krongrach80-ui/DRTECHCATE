@@ -20,7 +20,6 @@ import {
   RotateCw,
   FlipHorizontal,
   Camera,
-  Sparkles,
 } from 'lucide-react';
 import { PatientRecordFile } from '../../../../packages/smart-biometric-core/src/index.js';
 
@@ -297,36 +296,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     };
   }, [customDetector, presenceDetected, startCamera, isScanningPaused, stopCamera]);
 
-  // Demo Login Helper for Testing and Demonstrations
-  const handleDemoLogin = useCallback(() => {
-    onLoginSuccess({
-      patient_id: `patient-demo-${Date.now()}`,
-      hn: 'P-1001',
-      first_name: 'คุณวิชัย',
-      last_name: 'ใจสู้ (ตัวอย่าง)',
-      age: 52,
-      gender: 'male',
-      registration_status: 'active',
-      registered_via: 'kiosk',
-      biometrics: {
-        face_vector: new Array(512).fill(0),
-        registered_face_url: '',
-        confidence_score: 0.98,
-        model_version: 'w600k_r50',
-        enrolled_at: new Date().toISOString(),
-      },
-      daily_checklists: {},
-      rehab_scores: [],
-      clinical: {
-        diagnosis: 'ข้อเข่าเสื่อมระยะฟื้นฟู (Post-Knee Rehab)',
-        treatment_plan: 'โปรแกรมฝึกฟื้นฟูข้อและกล้ามเนื้อ 3 ท่า พร้อมมินิเกมกระตุ้นการรู้คิด',
-        progress_notes: [],
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-  }, [onLoginSuccess]);
-
   // Active Countdown Logic: ticks down when camera is active and ready
   useEffect(() => {
     if (isScanningPaused || !cameraReady || isScanning || matchedPatient || unrecognizedAlert) {
@@ -369,15 +338,20 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setStatusText('เตรียมสแกนใหม่อีกครั้ง...');
   };
 
-  // Patient login via PIN - queries real patient registry with demo PIN support
+  // Patient login via PIN - queries real patient registry
   const handlePinLoginSuccess = async () => {
     setIsPinModalOpen(false);
     const pin = enteredPin.trim();
+    if (!pin) return;
 
-    // Instant bypass for demo/testing PINs
-    if (pin === '1234' || pin === '0000' || pin === '9999' || pin === '1111') {
-      handleDemoLogin();
-      return;
+    try {
+      const pinRes = await defaultApiClient.smartOnboarding.pinLogin({ pin });
+      if (pinRes?.matched && pinRes.patient) {
+        onLoginSuccess(pinRes.patient);
+        return;
+      }
+    } catch {
+      // Fallback to querying /api/patients
     }
 
     try {
@@ -393,15 +367,15 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             first_name: p.first_name,
             last_name: p.last_name,
             age: p.age,
-            gender: p.sex,
+            gender: p.sex === 'F' || p.sex === 'female' ? 'female' : 'male',
             registration_status: p.registration_status,
             registered_via: p.registered_via || 'kiosk',
             biometrics: {
-              face_vector: new Array(512).fill(0),
-              registered_face_url: '',
+              face_vector: p.history?.face_vector || new Array(512).fill(0),
+              registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
               confidence_score: 1.0,
               model_version: 'w600k_r50',
-              enrolled_at: new Date().toISOString(),
+              enrolled_at: p.created_at || new Date().toISOString(),
             },
             daily_checklists: {},
             rehab_scores: [],
@@ -419,7 +393,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     } catch {
       // Network error
     }
-    setUnrecognizedAlert(`ไม่พบข้อมูลผู้ป่วยสำหรับรหัส PIN "${pin}" (ทดลองใช้ PIN 1234 หรือสมัครบัญชีใหม่)`);
+    setUnrecognizedAlert(`ไม่พบข้อมูลผู้ป่วยสำหรับรหัส "${pin}" (กรุณาตรวจสอบรหัส HN หรือลงทะเบียนคนไข้ใหม่)`);
   };
 
   const handlePinKey = (digit: string) => {
@@ -674,18 +648,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               <span>➕ สมัครคนไข้ใหม่</span>
             </button>
           </div>
-
-          {/* Quick Demo Preview Button */}
-          <button
-            type="button"
-            id="kiosk-demo-login-btn"
-            data-testid="kiosk-demo-login-btn"
-            onClick={handleDemoLogin}
-            className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-            <span>⚡ ทดลองใช้งานตู้ Kiosk (บัญชีตัวอย่าง / Demo) ➔</span>
-          </button>
         </div>
 
         {/* 4. ส่วนท้ายการ์ด (Footer Branding) */}
@@ -808,21 +770,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 ⌫
               </button>
             </div>
-
-            {/* Quick Demo PIN Helper */}
-            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setEnteredPin('1234');
-                  handleDemoLogin();
-                  setIsPinModalOpen(false);
-                }}
-                className="w-full py-2 px-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold hover:bg-amber-100 transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <span>⚡ ทดสอบระบบด้วย PIN ตัวอย่าง: 1234</span>
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -907,32 +854,18 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 <span>➕ สมัครคนไข้ใหม่ (ลงทะเบียนด้วยใบหน้า)</span>
               </button>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUnrecognizedAlert(null);
-                    setEnteredPin('');
-                    setIsPinModalOpen(true);
-                  }}
-                  className="touch-btn py-3 rounded-xl bg-white border border-slate-300 text-slate-800 font-bold text-xs hover:bg-slate-50 transition cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                  <span>ใช้รหัส PIN</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUnrecognizedAlert(null);
-                    handleDemoLogin();
-                  }}
-                  className="touch-btn py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-bold text-xs hover:bg-amber-100 transition cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                  <span>บัญชีตัวอย่าง</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnrecognizedAlert(null);
+                  setEnteredPin('');
+                  setIsPinModalOpen(true);
+                }}
+                className="touch-btn w-full py-3 rounded-xl bg-white border border-slate-300 text-slate-800 font-bold text-xs hover:bg-slate-50 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                <KeyRound className="w-4 h-4 text-amber-600" />
+                <span>🔑 เข้าสู่ระบบด้วยรหัส PIN หรือ HN</span>
+              </button>
 
               <button
                 type="button"

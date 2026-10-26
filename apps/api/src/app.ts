@@ -88,6 +88,7 @@ export function createApp(
   app.use('/api/face/enroll', express.json({ limit: '10mb' }));
   app.use('/api/kiosk/enroll', express.json({ limit: '10mb' }));
   app.use('/api/smart-onboarding/create-pending', express.json({ limit: '10mb' }));
+  app.use('/api/smart-onboarding/register', express.json({ limit: '10mb' }));
   app.use('/api/smart-onboarding/scan-login', express.json({ limit: '10mb' }));
   app.use('/api/smart-onboarding/exercises', express.json({ limit: '10mb' }));
   app.use(express.json({ limit: '100kb' }));

@@ -235,44 +235,10 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       setConsentPdpa(true);
     }
 
-    try {
-      setIsLoading(true);
-      setErrorMsg(null);
-
-      // 1. Parse Name
-      const splitNames = trimmedName.split(' ');
-      const firstName = splitNames[0] || 'ผู้ป่วย';
-      const lastName = splitNames.slice(1).join(' ') || 'ใหม่';
-
-      // 2. Call API to create patient and verify response
-      const res = await defaultApiClient.patients.create({
-        first_name: firstName,
-        last_name: lastName,
-        age: Number(age) || 45,
-        sex,
-        phone: phone.trim() || undefined,
-        injury: diagnosis.trim() || undefined,
-        responsible_pt_id: responsiblePtId || undefined,
-      });
-
-      const newId =
-        (res as { id?: string })?.id ||
-        (res as { data?: { id?: string } })?.data?.id ||
-        (res as { patient?: { id?: string } })?.patient?.id;
-
-      if (!newId) {
-        throw new Error('ไม่สามารถบันทึกข้อมูลคนไข้ลงฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
-      }
-
-      setCreatedPatientId(newId);
-      setCapturedFrames([]);
-      setCurrentFrameIdx(0);
-      setStep(2);
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลงทะเบียนคนไข้ได้');
-    } finally {
-      setIsLoading(false);
-    }
+    setErrorMsg(null);
+    setCapturedFrames([]);
+    setCurrentFrameIdx(0);
+    setStep(2);
   };
 
   // Helper to extract a single frame with geometric alignment & 512-D L2-normalized embedding
@@ -332,9 +298,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   };
 
   // Submit all 10 captured frames to backend & sovereign vault
+  // Submit all 10 captured frames to backend (writes directly to Supabase public.patients)
   const submit10Frames = async (framesToSubmit: CapturedBiometricFrame[]) => {
-    const targetPatientId = createdPatientId || `patient-${Date.now()}`;
-
     try {
       setIsLoading(true);
       setErrorMsg(null);
@@ -358,37 +323,38 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
       const splitNames = name.trim().split(' ');
       const firstName = splitNames[0] || 'ผู้ป่วย';
-      const lastName = splitNames.slice(1).join(' ') || '';
+      const lastName = splitNames.slice(1).join(' ') || '-';
 
-      // 1. Dual-Sync with Sovereign Smart Onboarding Vault (Kiosk Face Match ready)
-      let smartPatientId = targetPatientId;
-      try {
-        const pendingRes = await defaultApiClient.smartOnboarding.createPending({
-          frames: framesToSubmit.map((f) => ({
-            pose: f.pose,
-            embedding: f.embedding,
-            jpeg_base64: f.jpegBase64 || undefined,
-          })),
-          model_version: 'w600k_r50',
-        });
-        if (pendingRes?.patient_id) {
-          smartPatientId = pendingRes.patient_id;
-        }
+      // 1. Submit to /api/smart-onboarding/register (writes directly to Supabase public.patients)
+      const regRes = await defaultApiClient.smartOnboarding.register({
+        hn: hn || undefined,
+        first_name: firstName,
+        last_name: lastName,
+        age: Number(age) || 45,
+        sex,
+        phone: phone.trim() || undefined,
+        injury: diagnosis.trim() || undefined,
+        pin: pin || '1234',
+        responsible_pt_id: responsiblePtId || undefined,
+        frames: framesToSubmit.map((f) => ({
+          pose: f.pose,
+          embedding: f.embedding,
+          jpeg_base64: f.jpegBase64 || undefined,
+        })),
+        model_version: 'w600k_r50',
+      });
 
-        await defaultApiClient.smartOnboarding.completeInfo({
-          patient_id: smartPatientId,
-          first_name: firstName,
-          last_name: lastName,
-          age: Number(age) || 45,
-          gender: sex === 'female' ? 'female' : 'male',
-          phone: phone.trim() || undefined,
-          initial_symptoms: diagnosis.trim() || undefined,
-        });
-      } catch (syncErr) {
-        console.warn('Smart onboarding dual-sync warning:', syncErr);
+      if (!regRes || !regRes.patient_id) {
+        throw new Error(regRes?.message || 'ไม่สามารถบันทึกข้อมูลคนไข้ลงฐานข้อมูล Supabase ได้');
       }
 
-      // 2. Submit strictly 10 frames to face.enroll
+      const targetPatientId = regRes.patient_id;
+      setCreatedPatientId(targetPatientId);
+      if (regRes.hn) {
+        setHn(regRes.hn);
+      }
+
+      // 2. Secondary sync with face.enroll if staff token present
       try {
         await defaultApiClient.face.enroll({
           patient_id: targetPatientId,
@@ -399,15 +365,17 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
           })),
           model_version: 'w600k_r50',
         });
-      } catch (enrollErr) {
-        console.warn('Face enrollment non-fatal fallback:', enrollErr);
+      } catch {
+        // Safe secondary sync fallback
       }
 
       playFaceIdBeep(1200, 0.2);
       stopCamera();
       setStep(3);
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลงทะเบียนใบหน้าชีวมิติ');
+      const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลงทะเบียนใบหน้าชีวมิติ';
+      setErrorMsg(msg);
+      // STAY ON STEP 2 - DO NOT ADVANCE TO STEP 3 IF DATABASE INSERT FAILS!
     } finally {
       setIsLoading(false);
     }
@@ -1179,17 +1147,6 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                   )}
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  stopCamera();
-                  setStep(3);
-                }}
-                className="w-full py-1.5 rounded-xl text-slate-400 hover:text-slate-700 text-xs font-semibold text-center transition hover:bg-slate-50"
-              >
-                ข้ามขั้นตอนนี้ (ไปขั้นตอนที่ 3) ➔
-              </button>
             </div>
           </div>
         )}

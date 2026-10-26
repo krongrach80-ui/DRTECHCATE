@@ -1367,6 +1367,42 @@ BEGIN
 
 END $$;
 
+-- ============================================================================
+-- STEP 8: PERMISSIONS & RLS FOR PATIENTS, FACE ENROLLMENTS, FACE TEMPLATES
+-- Ensures both anon (Kiosk self-registration) and service_role can INSERT/SELECT
+-- ============================================================================
+GRANT ALL ON TABLE public.patients TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.face_enrollments TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.face_templates TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.patient_pt_assignments TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.audit_logs TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.system_audit_logs TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+
+ALTER TABLE public.patients ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and authenticated all on patients" ON public.patients;
+CREATE POLICY "Allow anon and authenticated all on patients"
+  ON public.patients FOR ALL
+  TO anon, authenticated, service_role
+  USING (true)
+  WITH CHECK (true);
+
+ALTER TABLE public.face_enrollments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and authenticated all on face_enrollments" ON public.face_enrollments;
+CREATE POLICY "Allow anon and authenticated all on face_enrollments"
+  ON public.face_enrollments FOR ALL
+  TO anon, authenticated, service_role
+  USING (true)
+  WITH CHECK (true);
+
+ALTER TABLE public.face_templates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and authenticated all on face_templates" ON public.face_templates;
+CREATE POLICY "Allow anon and authenticated all on face_templates"
+  ON public.face_templates FOR ALL
+  TO anon, authenticated, service_role
+  USING (true)
+  WITH CHECK (true);
+
 -- Summary Output
 SELECT
   '✓ SUCCESS: Cloud schema synchronization completed with 0 errors.' AS status,

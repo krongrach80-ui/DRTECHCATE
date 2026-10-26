@@ -15,6 +15,10 @@ export function createSmartOnboardingRouter(
 ): Router {
   const router = Router();
 
+  // 0. Public Self-Registration for Kiosk (Zero Mock - Writes to Supabase public.patients)
+  router.post('/register', controller.register);
+  router.post('/pin-login', controller.pinLogin);
+
   // 1. Biometric Presence Scan & Login
   router.post('/scan-login', controller.scanLogin);
 

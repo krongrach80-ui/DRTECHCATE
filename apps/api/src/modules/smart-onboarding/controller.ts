@@ -13,6 +13,37 @@ import {
 export class SmartOnboardingController {
   constructor(private service: SmartOnboardingService = defaultSmartOnboardingService) {}
 
+  register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = await this.service.registerPatient(req.body);
+      res.status(201).json({
+        ok: true,
+        data,
+        patient_id: data.patient_id,
+        hn: data.hn,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  pinLogin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { pin, hn } = req.body;
+      if (!pin) {
+        res.status(400).json({ ok: false, error: { code: 'BAD_REQUEST', message: 'PIN is required' } });
+        return;
+      }
+      const result = await this.service.pinLogin(pin, hn);
+      res.status(200).json({
+        ok: true,
+        ...result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   scanLogin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { probe, snapshot } = req.body;

@@ -235,13 +235,11 @@ export class PatientRepository implements IPatientRepository {
         if (process.env.NODE_ENV === 'test') {
           throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
         }
-        const { currentFakePatientRepo } = await import('../../__tests__/fixtures/fakeRepositories');
-        const localPat = await currentFakePatientRepo.createPatient(input as any, _createdBy, ptId);
-        try {
-          const { saveLocalDatabase } = await import('../../lib/localStorage/localPersistenceEngine');
-          await saveLocalDatabase();
-        } catch {}
-        return localPat;
+        throw new AppError(
+          `ไม่สามารถบันทึกข้อมูลคนไข้ลงฐานข้อมูล Supabase ได้: ${error?.message || 'Database insert failed'} (code: ${error?.code || 'DATABASE_ERROR'})`,
+          500,
+          'DATABASE_ERROR'
+        );
       }
 
       if (validPtId) {
