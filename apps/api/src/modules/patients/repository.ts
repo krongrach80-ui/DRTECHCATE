@@ -189,6 +189,20 @@ export class PatientRepository implements IPatientRepository {
         }
       }
 
+      // Auto-provision initial consent record for biometric registration
+      try {
+        await adminClient
+          .from('consents')
+          .insert({
+            subject_type: 'patient',
+            subject_id: data.id,
+            type: 'biometrics',
+            text_version: 'v1',
+          });
+      } catch (cErr) {
+        logger.warn({ cErr, patientId: data.id }, 'Initial biometric consent auto-insert non-fatal warning');
+      }
+
       return data as PatientRecord;
     } catch (err) {
       if (err instanceof AppError) throw err;

@@ -13,6 +13,7 @@ import {
   Edit3,
   RefreshCw,
   ShieldAlert,
+  Lock,
 } from 'lucide-react';
 
 interface SmartPendingPatientsBannerProps {
@@ -145,14 +146,25 @@ export const SmartPendingPatientsBanner: React.FC<SmartPendingPatientsBannerProp
                 <span>กรอกข้อมูลคนไข้</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setDeletingId(patient.patient_id)}
-                className="p-2 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 text-red-300 transition"
-                title="ลบข้อมูลถาวร (ลบแถว DB + โฟลเดอร์ดิสก์)"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              {patient.registration_status === 'active' ||
+              (patient.first_name && patient.first_name !== 'รอลงข้อมูล') ? (
+                <div
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-900/90 border border-emerald-500/30 text-emerald-300 flex items-center gap-1.5 text-xs font-semibold select-none shrink-0"
+                  title="เวชระเบียนถาวรตามกฎหมายสถานพยาบาล บันทึกแล้วไม่สามารถลบบัญชีได้"
+                >
+                  <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-[11px]">เวชระเบียนถาวร</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setDeletingId(patient.patient_id)}
+                  className="p-2 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 text-red-300 transition"
+                  title="ลบฉบับร่างที่ยังไม่สมบูรณ์"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         ))}

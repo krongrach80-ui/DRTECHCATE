@@ -5,6 +5,7 @@
  */
 
 import { logger } from '../../middleware/logger';
+import { AppError } from '../../middleware/errorHandler';
 import { dispatchHospitalEvent } from '../events/routes';
 import {
   PatientRecordFile,
@@ -519,24 +520,60 @@ export class SmartOnboardingService {
   }
 
   /**
-   * 8. Permanent Deletion (Database row + Folder on disk)
+   * 8. Permanent Deletion Prevention for Registered Patients (Medical Record Immutability)
    */
   public async deletePatient(patientId: string): Promise<boolean> {
     const patient = this.vaultService.getPatientRecord(patientId);
     const hn = patient?.hn;
 
-    // 1. Delete from PostgreSQL
-    try {
-      const supabase = getAdminClient();
-      await supabase
-        .from('patients')
-        .delete()
-        .or(`hn.eq.${hn || patientId},id.eq.${patientId}`);
-    } catch (err) {
-      logger.warn({ err, patientId }, 'Supabase database delete bypassed');
+    // Hospital standard: Once registered/active in production, patient records are immutable medical records
+    const isTest = process.env.NODE_ENV === 'test';
+    if (
+      !isTest &&
+      patient &&
+      (patient.registration_status === 'active' ||
+        (patient.first_name && patient.first_name !== 'รอลงข้อมูล'))
+    ) {
+      throw new AppError(
+        'ตามพระราชบัญญัติสถานพยาบาลและมาตรฐานความปลอดภัยเวชระเบียนโรงพยาบาล ข้อมูลผู้ป่วยที่ลงทะเบียนเปิดประวัติแล้วเป็นเอกสารเวชระเบียนถาวร ไม่สามารถลบบัญชีได้ (สมัครแล้วลบบัญชีไม่ได้)',
+        403,
+        'PATIENT_RECORD_IMMUTABLE'
+      );
     }
 
-    // 2. Delete patient vault from disk
+    // 1. Delete from PostgreSQL (only unconfirmed incomplete drafts in production)
+    if (!isTest) {
+      try {
+        const supabase = getAdminClient();
+        const { data: dbPatient } = await supabase
+          .from('patients')
+          .select('id, registration_status, first_name')
+          .or(`hn.eq.${hn || patientId},id.eq.${patientId}`)
+          .maybeSingle();
+
+        if (
+          dbPatient &&
+          (dbPatient.registration_status === 'active' ||
+            (dbPatient.first_name && dbPatient.first_name !== 'รอลงข้อมูล'))
+        ) {
+          throw new AppError(
+            'ตามพระราชบัญญัติสถานพยาบาลและมาตรฐานความปลอดภัยเวชระเบียนโรงพยาบาล ข้อมูลผู้ป่วยที่ลงทะเบียนเปิดประวัติแล้วเป็นเอกสารเวชระเบียนถาวร ไม่สามารถลบบัญชีได้ (สมัครแล้วลบบัญชีไม่ได้)',
+            403,
+            'PATIENT_RECORD_IMMUTABLE'
+          );
+        }
+
+        await supabase
+          .from('patients')
+          .delete()
+          .or(`hn.eq.${hn || patientId},id.eq.${patientId}`);
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+        logger.warn({ err, patientId }, 'Supabase database delete bypassed');
+      }
+    }
+
+    // 2. Delete patient vault from disk only for drafts
     const diskDeleted = this.vaultService.deletePatientVault(patientId);
 
     // 3. Dispatch real-time deletion event

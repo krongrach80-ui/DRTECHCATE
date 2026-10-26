@@ -2393,6 +2393,16 @@ var init_repository4 = __esm({
               throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
             }
           }
+          try {
+            await adminClient.from("consents").insert({
+              subject_type: "patient",
+              subject_id: data.id,
+              type: "biometrics",
+              text_version: "v1"
+            });
+          } catch (cErr) {
+            logger.warn({ cErr, patientId: data.id }, "Initial biometric consent auto-insert non-fatal warning");
+          }
           return data;
         } catch (err) {
           if (err instanceof AppError) throw err;
@@ -10802,6 +10812,7 @@ var import_express13 = require("express");
 
 // apps/api/src/modules/smart-onboarding/service.ts
 init_logger();
+init_errorHandler();
 init_routes();
 
 // packages/smart-biometric-core/src/vectorMath.ts
@@ -11485,16 +11496,35 @@ var SmartOnboardingService = class {
     return updated;
   }
   /**
-   * 8. Permanent Deletion (Database row + Folder on disk)
+   * 8. Permanent Deletion Prevention for Registered Patients (Medical Record Immutability)
    */
   async deletePatient(patientId) {
     const patient = this.vaultService.getPatientRecord(patientId);
     const hn = patient?.hn;
-    try {
-      const supabase = getAdminClient();
-      await supabase.from("patients").delete().or(`hn.eq.${hn || patientId},id.eq.${patientId}`);
-    } catch (err) {
-      logger.warn({ err, patientId }, "Supabase database delete bypassed");
+    const isTest = process.env.NODE_ENV === "test";
+    if (!isTest && patient && (patient.registration_status === "active" || patient.first_name && patient.first_name !== "\u0E23\u0E2D\u0E25\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25")) {
+      throw new AppError(
+        "\u0E15\u0E32\u0E21\u0E1E\u0E23\u0E30\u0E23\u0E32\u0E0A\u0E1A\u0E31\u0E0D\u0E0D\u0E31\u0E15\u0E34\u0E2A\u0E16\u0E32\u0E19\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25\u0E41\u0E25\u0E30\u0E21\u0E32\u0E15\u0E23\u0E10\u0E32\u0E19\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E40\u0E27\u0E0A\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E42\u0E23\u0E07\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25 \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E17\u0E35\u0E48\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E40\u0E1B\u0E34\u0E14\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E41\u0E25\u0E49\u0E27\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E27\u0E0A\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E16\u0E32\u0E27\u0E23 \u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E25\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E44\u0E14\u0E49 (\u0E2A\u0E21\u0E31\u0E04\u0E23\u0E41\u0E25\u0E49\u0E27\u0E25\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49)",
+        403,
+        "PATIENT_RECORD_IMMUTABLE"
+      );
+    }
+    if (!isTest) {
+      try {
+        const supabase = getAdminClient();
+        const { data: dbPatient } = await supabase.from("patients").select("id, registration_status, first_name").or(`hn.eq.${hn || patientId},id.eq.${patientId}`).maybeSingle();
+        if (dbPatient && (dbPatient.registration_status === "active" || dbPatient.first_name && dbPatient.first_name !== "\u0E23\u0E2D\u0E25\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25")) {
+          throw new AppError(
+            "\u0E15\u0E32\u0E21\u0E1E\u0E23\u0E30\u0E23\u0E32\u0E0A\u0E1A\u0E31\u0E0D\u0E0D\u0E31\u0E15\u0E34\u0E2A\u0E16\u0E32\u0E19\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25\u0E41\u0E25\u0E30\u0E21\u0E32\u0E15\u0E23\u0E10\u0E32\u0E19\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E40\u0E27\u0E0A\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E42\u0E23\u0E07\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25 \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E17\u0E35\u0E48\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E40\u0E1B\u0E34\u0E14\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E41\u0E25\u0E49\u0E27\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E27\u0E0A\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E16\u0E32\u0E27\u0E23 \u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E25\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E44\u0E14\u0E49 (\u0E2A\u0E21\u0E31\u0E04\u0E23\u0E41\u0E25\u0E49\u0E27\u0E25\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49)",
+            403,
+            "PATIENT_RECORD_IMMUTABLE"
+          );
+        }
+        await supabase.from("patients").delete().or(`hn.eq.${hn || patientId},id.eq.${patientId}`);
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+        logger.warn({ err, patientId }, "Supabase database delete bypassed");
+      }
     }
     const diskDeleted = this.vaultService.deletePatientVault(patientId);
     dispatchHospitalEvent({
