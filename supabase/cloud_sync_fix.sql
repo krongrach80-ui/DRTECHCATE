@@ -421,6 +421,26 @@ ALTER TABLE public.modpacks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT 
 
 -- STEP 5: CORE RPC FUNCTIONS (Functions per Master Architecture)
 
+-- Drop existing functions before recreation to prevent PostgreSQL 42P13 (cannot change return type)
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT proname, oid::regprocedure AS regproc
+    FROM pg_proc
+    WHERE pronamespace = 'public'::regnamespace
+      AND proname IN (
+        'current_user_role',
+        'is_patient_accessible_by_pt',
+        'match_face_candidates',
+        'enroll_face_atomic'
+      )
+  ) LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.regproc || ' CASCADE';
+  END LOOP;
+END $$;
+
 -- Function A: Get current user role from profiles
 CREATE OR REPLACE FUNCTION public.current_user_role()
 RETURNS public.user_role
