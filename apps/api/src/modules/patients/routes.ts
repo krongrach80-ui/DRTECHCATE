@@ -35,6 +35,9 @@ export function createPatientsRouter(controller: PatientController = defaultPati
   // 8. PDPA Biometric Deletion (/api/patients/:id/face)
   router.delete('/:id/face', csrfGuard, controller.deleteBiometrics);
 
+  // 9. Permanent Patient Deletion (/api/patients/:id)
+  router.delete('/:id', csrfGuard, controller.deletePatient);
+
   return router;
 }
 

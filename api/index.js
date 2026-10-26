@@ -919,6 +919,12 @@ var init_authenticate = __esm({
 });
 
 // apps/api/src/modules/events/routes.ts
+var routes_exports = {};
+__export(routes_exports, {
+  dispatchHospitalEvent: () => dispatchHospitalEvent,
+  eventRoutes: () => eventRoutes,
+  hospitalEventBus: () => hospitalEventBus
+});
 function dispatchHospitalEvent(event) {
   hospitalEventBus.emit("hospital_event", {
     ...event,
@@ -1953,6 +1959,31 @@ var init_repository3 = __esm({
         } catch (err) {
           if (err instanceof AppError) throw err;
           logger.error({ err, patientId }, "Unexpected error in deleteBiometrics");
+          throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
+        }
+      }
+      // =========================================================================
+      // 4.5 PERMANENT PATIENT DELETION (DELETE /api/patients/:id)
+      // =========================================================================
+      async deletePatient(patientId) {
+        try {
+          const adminClient = getAdminClient();
+          await adminClient.from("face_templates").delete().eq("patient_id", patientId);
+          await adminClient.from("face_enrollments").delete().eq("patient_id", patientId);
+          const { error } = await adminClient.from("patients").delete().eq("id", patientId);
+          if (error) {
+            logger.error({ error, patientId }, "Database error deleting patient from Supabase");
+            throw new AppError("Database service unavailable: " + error.message, 500, "DATABASE_ERROR");
+          }
+          try {
+            const { currentFakePatientRepo: currentFakePatientRepo2 } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
+            currentFakePatientRepo2.inMemoryPatients.delete(patientId);
+          } catch {
+          }
+          return true;
+        } catch (err) {
+          if (err instanceof AppError) throw err;
+          logger.error({ err, patientId }, "Unexpected error in deletePatient");
           throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
         }
       }
@@ -4272,6 +4303,296 @@ var init_repository9 = __esm({
   }
 });
 
+// apps/api/src/modules/smart-onboarding/vault.service.ts
+var vault_service_exports = {};
+__export(vault_service_exports, {
+  PatientVaultService: () => PatientVaultService,
+  defaultPatientVaultService: () => defaultPatientVaultService
+});
+var import_fs, import_path2, PatientVaultService, defaultPatientVaultService;
+var init_vault_service = __esm({
+  "apps/api/src/modules/smart-onboarding/vault.service.ts"() {
+    "use strict";
+    import_fs = __toESM(require("fs"));
+    import_path2 = __toESM(require("path"));
+    init_logger();
+    PatientVaultService = class {
+      constructor(customUploadDir) {
+        this.inMemoryRecords = /* @__PURE__ */ new Map();
+        this.inMemorySnapshots = /* @__PURE__ */ new Map();
+        this.baseUploadDir = customUploadDir || import_path2.default.resolve(process.cwd(), "public", "uploads", "patients");
+      }
+      getPatientVaultDir(patientId) {
+        return import_path2.default.join(this.baseUploadDir, patientId);
+      }
+      ensurePatientVault(patientId) {
+        const vaultDir = this.getPatientVaultDir(patientId);
+        try {
+          if (!import_fs.default.existsSync(vaultDir)) {
+            import_fs.default.mkdirSync(vaultDir, { recursive: true });
+            console.log(`[STORAGE] Created directory: /public/uploads/patients/${patientId}/`);
+            logger.info(`[STORAGE] Created directory: /public/uploads/patients/${patientId}/`);
+          }
+          const loginHistDir = import_path2.default.join(vaultDir, "login_history");
+          if (!import_fs.default.existsSync(loginHistDir)) {
+            import_fs.default.mkdirSync(loginHistDir, { recursive: true });
+          }
+          const enrollFramesDir = import_path2.default.join(vaultDir, "enrollment_frames");
+          if (!import_fs.default.existsSync(enrollFramesDir)) {
+            import_fs.default.mkdirSync(enrollFramesDir, { recursive: true });
+          }
+        } catch (fsErr) {
+          logger.warn({ fsErr, patientId }, "[STORAGE] Filesystem is read-only (Serverless/Vercel); using in-memory vault");
+        }
+        return vaultDir;
+      }
+      /**
+       * Saves profile_face.jpg and patient_record.json with full schema normalization
+       */
+      savePatientRecord(patientId, record, profileImageBuffer) {
+        const normalizedRecord = {
+          ...record,
+          patient_id: patientId,
+          hn: record.hn || patientId,
+          first_name: record.first_name || "",
+          last_name: record.last_name || "",
+          age: Number(record.age) || 0,
+          gender: record.gender || "unspecified",
+          contact: record.contact || record.phone || "",
+          phone: record.phone || record.contact || "",
+          registration_status: record.registration_status || "active",
+          registered_via: record.registered_via || "smart_onboarding",
+          biometrics: {
+            face_vector: record.biometrics?.face_vector || [],
+            registered_face_url: `/uploads/patients/${patientId}/profile_face.jpg`,
+            confidence_score: record.biometrics?.confidence_score ?? 0.95,
+            model_version: record.biometrics?.model_version || "w600k_r50",
+            enrolled_at: record.biometrics?.enrolled_at || (/* @__PURE__ */ new Date()).toISOString()
+          },
+          daily_checklists: record.daily_checklists || {},
+          rehab_scores: record.rehab_scores || [],
+          clinical: {
+            diagnosis: record.clinical?.diagnosis || record.diagnosis || record.initial_symptoms || "",
+            treatment_plan: record.clinical?.treatment_plan || record.treatment_plan || "",
+            progress_notes: record.clinical?.progress_notes || record.progress_notes || []
+          },
+          created_at: record.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        if (record.schedule) {
+          const s = record.schedule;
+          normalizedRecord.schedule = {
+            ...s,
+            startDate: s.startDate || s.start_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+            start_date: s.start_date || s.startDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+            endDate: s.endDate || s.end_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+            end_date: s.end_date || s.endDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+            daysOfWeek: s.daysOfWeek || s.days_of_week || ["Mon", "Wed", "Fri"],
+            days_of_week: s.days_of_week || s.daysOfWeek || ["Mon", "Wed", "Fri"],
+            timeSlot: s.timeSlot || s.time_slot || "09:00 - 10:00",
+            time_slot: s.time_slot || s.timeSlot || "09:00 - 10:00",
+            kioskId: s.kioskId || s.assigned_kiosk_id || "kiosk-01",
+            assigned_kiosk_id: s.assigned_kiosk_id || s.kioskId || "kiosk-01",
+            include_minigame: Boolean(s.include_minigame),
+            assigned_exercises: s.assigned_exercises || s.prescribed_exercises || [],
+            prescribed_exercises: s.prescribed_exercises || s.assigned_exercises || []
+          };
+        }
+        this.inMemoryRecords.set(patientId, normalizedRecord);
+        try {
+          const vaultDir = this.ensurePatientVault(patientId);
+          if (profileImageBuffer && profileImageBuffer.length > 0) {
+            const profilePath = import_path2.default.join(vaultDir, "profile_face.jpg");
+            import_fs.default.writeFileSync(profilePath, profileImageBuffer);
+          }
+          const recordPath = import_path2.default.join(vaultDir, "patient_record.json");
+          import_fs.default.writeFileSync(recordPath, JSON.stringify(normalizedRecord, null, 2), "utf-8");
+          console.log(`[STORAGE] Saved profile_face.jpg and patient_record.json for ${patientId} successfully.`);
+          logger.info(`[STORAGE] Saved profile_face.jpg and patient_record.json for ${patientId} successfully.`);
+        } catch (fsErr) {
+          logger.warn({ fsErr, patientId }, "[STORAGE] Filesystem write bypassed in serverless environment; persisted in-memory");
+        }
+      }
+      /**
+       * Initializes or updates a patient vault
+       */
+      initPatientVault(patientId, record, profileImageBuffer) {
+        this.savePatientRecord(patientId, record, profileImageBuffer);
+      }
+      /**
+       * Reads patient_record.json from disk or in-memory fallback
+       */
+      getPatientRecord(patientId) {
+        const recordPath = import_path2.default.join(this.getPatientVaultDir(patientId), "patient_record.json");
+        try {
+          if (import_fs.default.existsSync(recordPath)) {
+            const content = import_fs.default.readFileSync(recordPath, "utf-8");
+            const parsed = JSON.parse(content);
+            this.inMemoryRecords.set(patientId, parsed);
+            return parsed;
+          }
+        } catch (err) {
+          logger.warn({ err, patientId }, "Failed to read patient_record.json from disk, checking in-memory cache");
+        }
+        return this.inMemoryRecords.get(patientId) || null;
+      }
+      /**
+       * Lists all patient records across all vaults
+       */
+      listAllPatientRecords() {
+        const recordsMap = /* @__PURE__ */ new Map();
+        for (const [id, rec] of this.inMemoryRecords.entries()) {
+          recordsMap.set(id, rec);
+        }
+        try {
+          if (import_fs.default.existsSync(this.baseUploadDir)) {
+            const entries = import_fs.default.readdirSync(this.baseUploadDir, { withFileTypes: true });
+            for (const entry of entries) {
+              if (entry.isDirectory()) {
+                const record = this.getPatientRecord(entry.name);
+                if (record) {
+                  recordsMap.set(entry.name, record);
+                }
+              }
+            }
+          }
+        } catch (fsErr) {
+          logger.warn({ fsErr }, "Failed reading patient directory from disk, using in-memory list");
+        }
+        return Array.from(recordsMap.values());
+      }
+      /**
+       * Saves snapshot to login_history/ and enforces strict 10-snapshot rolling retention
+       */
+      recordLoginSnapshot(patientId, imageBuffer) {
+        const now = /* @__PURE__ */ new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const tsStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(
+          now.getHours()
+        )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        const filename = `login_${tsStr}.jpg`;
+        const snapshotUrl = `/uploads/patients/${patientId}/login_history/${filename}`;
+        const memorySnaps = this.inMemorySnapshots.get(patientId) || [];
+        memorySnaps.unshift({ name: filename, url: snapshotUrl, time: Date.now() });
+        if (memorySnaps.length > 10) {
+          memorySnaps.splice(10);
+        }
+        this.inMemorySnapshots.set(patientId, memorySnaps);
+        try {
+          const vaultDir = this.ensurePatientVault(patientId);
+          const loginHistDir = import_path2.default.join(vaultDir, "login_history");
+          let finalFilename = filename;
+          let counter = 1;
+          while (import_fs.default.existsSync(import_path2.default.join(loginHistDir, finalFilename))) {
+            finalFilename = `login_${tsStr}_${counter}.jpg`;
+            counter++;
+          }
+          const filePath = import_path2.default.join(loginHistDir, finalFilename);
+          import_fs.default.writeFileSync(filePath, imageBuffer);
+          this.enforceLoginHistoryRetention(loginHistDir, 10);
+          console.log(`[STORAGE] Saved login snapshot and enforced 10-file retention limit for ${patientId}.`);
+          logger.info(`[STORAGE] Saved login snapshot and enforced 10-file retention limit for ${patientId}.`);
+          return `/uploads/patients/${patientId}/login_history/${finalFilename}`;
+        } catch (fsErr) {
+          logger.warn({ fsErr, patientId }, "[STORAGE] Login snapshot disk write bypassed on read-only filesystem");
+        }
+        return snapshotUrl;
+      }
+      enforceLoginHistoryRetention(loginHistDir, maxFiles = 10) {
+        try {
+          const files = import_fs.default.readdirSync(loginHistDir).filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg")).map((f) => ({
+            name: f,
+            fullPath: import_path2.default.join(loginHistDir, f),
+            time: import_fs.default.statSync(import_path2.default.join(loginHistDir, f)).mtimeMs
+          }));
+          if (files.length > maxFiles) {
+            files.sort((a, b) => a.time - b.time);
+            const filesToDeleteCount = files.length - maxFiles;
+            for (let i = 0; i < filesToDeleteCount; i++) {
+              try {
+                import_fs.default.unlinkSync(files[i].fullPath);
+                logger.info(`[STORAGE] Retention policy: deleted old login snapshot ${files[i].name}`);
+              } catch {
+              }
+            }
+          }
+        } catch (err) {
+          logger.warn({ err }, "Failed to enforce login history retention");
+        }
+      }
+      /**
+       * Comprehensive Dossier Fetching (Master Prompt v6 Section 3)
+       * Fetches complete patient dossier including profile, face photo, login history, schedule & rehab scores
+       */
+      getPatientDossier(patientId) {
+        const record = this.getPatientRecord(patientId);
+        if (!record) return null;
+        const vaultDir = this.getPatientVaultDir(patientId);
+        const loginHistDir = import_path2.default.join(vaultDir, "login_history");
+        let snapshots = [];
+        try {
+          if (import_fs.default.existsSync(loginHistDir)) {
+            snapshots = import_fs.default.readdirSync(loginHistDir).filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg")).map((f) => ({
+              name: f,
+              url: `/uploads/patients/${patientId}/login_history/${f}`,
+              time: import_fs.default.statSync(import_path2.default.join(loginHistDir, f)).mtimeMs
+            })).sort((a, b) => b.time - a.time).slice(0, 10).map((s) => s.url);
+          }
+        } catch {
+        }
+        if (snapshots.length === 0) {
+          const memSnaps = this.inMemorySnapshots.get(patientId) || [];
+          snapshots = memSnaps.map((s) => s.url);
+        }
+        return {
+          record,
+          profile_face_url: `/uploads/patients/${patientId}/profile_face.jpg`,
+          login_snapshots: snapshots,
+          schedule: record.schedule || null,
+          rehab_scores: record.rehab_scores || []
+        };
+      }
+      /**
+       * Lists all patient dossiers for dynamic schedule and clinical overview
+       */
+      listAllDossiers() {
+        const records = this.listAllPatientRecords();
+        return records.map((r) => ({
+          patient_id: r.patient_id,
+          first_name: r.first_name,
+          last_name: r.last_name,
+          hn: r.hn,
+          profile_face_url: r.biometrics?.registered_face_url || `/uploads/patients/${r.patient_id}/profile_face.jpg`,
+          schedule: r.schedule || null,
+          rehab_scores: r.rehab_scores || [],
+          clinical: r.clinical
+        }));
+      }
+      /**
+       * Permanent Delete Persistence Fix (Master Prompt v4 Section 5):
+       * Recursively deletes public/uploads/patients/{patient_id}/ from disk
+       */
+      deletePatientVault(patientId) {
+        this.inMemoryRecords.delete(patientId);
+        this.inMemorySnapshots.delete(patientId);
+        const vaultDir = this.getPatientVaultDir(patientId);
+        try {
+          if (import_fs.default.existsSync(vaultDir)) {
+            import_fs.default.rmSync(vaultDir, { recursive: true, force: true });
+            logger.info(`[STORAGE] Permanently deleted patient vault directory: ${vaultDir}`);
+            return true;
+          }
+        } catch (err) {
+          logger.error({ err, vaultDir }, "Failed to delete patient vault directory from disk");
+          return true;
+        }
+        return false;
+      }
+    };
+    defaultPatientVaultService = new PatientVaultService();
+  }
+});
+
 // apps/api/src/modules/patients/service.ts
 var PatientService, defaultPatientService;
 var init_service2 = __esm({
@@ -4507,6 +4828,39 @@ var init_service2 = __esm({
           metadata: {
             hn: patient.hn,
             reason: "PDPA right to erasure request"
+          }
+        });
+      }
+      // =========================================================================
+      // 9. DELETE PATIENT PERMANENTLY (ADMIN / STAFF DELETE)
+      // =========================================================================
+      async deletePatient(patientId, actor, ipAddress) {
+        const patient = await this.getPatientById(patientId, actor, ipAddress);
+        await this.repo.deletePatient(patient.id);
+        try {
+          const { defaultPatientVaultService: defaultPatientVaultService2 } = await Promise.resolve().then(() => (init_vault_service(), vault_service_exports));
+          defaultPatientVaultService2.deletePatientVault(patient.id);
+        } catch {
+        }
+        try {
+          const { dispatchHospitalEvent: dispatchHospitalEvent2 } = await Promise.resolve().then(() => (init_routes(), routes_exports));
+          dispatchHospitalEvent2({
+            event: "patient_deleted",
+            patientId: patient.id,
+            data: { patient_id: patient.id, hn: patient.hn }
+          });
+        } catch {
+        }
+        await this.auditService.write({
+          actor_type: "staff",
+          action: "patient.delete",
+          actor_id: actor.id,
+          entity: "patient",
+          entity_id: patient.id,
+          ip: ipAddress,
+          metadata: {
+            hn: patient.hn,
+            name: `${patient.first_name} ${patient.last_name}`
           }
         });
       }
@@ -6690,6 +7044,10 @@ var init_fakeRepositories = __esm({
           patient.version += 1;
         }
       }
+      async deletePatient(patientId) {
+        this.inMemoryPatients.delete(patientId);
+        return true;
+      }
       async cleanupExpiredPendingPatients() {
         const now = (/* @__PURE__ */ new Date()).toISOString();
         let cleaned = 0;
@@ -7905,9 +8263,9 @@ function getRegisteredPassword(usernameOrEmail) {
 }
 async function saveLocalDatabase() {
   try {
-    const dir = import_path2.default.dirname(DB_FILE_PATH);
-    if (!import_fs.default.existsSync(dir)) {
-      import_fs.default.mkdirSync(dir, { recursive: true });
+    const dir = import_path3.default.dirname(DB_FILE_PATH);
+    if (!import_fs2.default.existsSync(dir)) {
+      import_fs2.default.mkdirSync(dir, { recursive: true });
     }
     const aiSettings = await currentFakeSecurityRepo.getAiSettings();
     const data = {
@@ -7924,15 +8282,15 @@ async function saveLocalDatabase() {
       records: Array.from(currentFakeRecordsRepo.inMemoryTreatmentResults.values()),
       notes: Array.from(currentFakeRecordsRepo.inMemoryNotes.values())
     };
-    import_fs.default.writeFileSync(DB_FILE_PATH, JSON.stringify(data, null, 2), "utf8");
+    import_fs2.default.writeFileSync(DB_FILE_PATH, JSON.stringify(data, null, 2), "utf8");
   } catch (err) {
     logger.warn({ err }, "Could not save local database to disk");
   }
 }
 function loadLocalDatabase() {
   try {
-    if (!import_fs.default.existsSync(DB_FILE_PATH)) return false;
-    const raw = import_fs.default.readFileSync(DB_FILE_PATH, "utf8");
+    if (!import_fs2.default.existsSync(DB_FILE_PATH)) return false;
+    const raw = import_fs2.default.readFileSync(DB_FILE_PATH, "utf8");
     const data = JSON.parse(raw);
     if (data.users && Array.isArray(data.users)) {
       for (const u of data.users) {
@@ -8295,19 +8653,19 @@ function activateLocalPersistenceEngine() {
   console.log("  Kiosk:         kiosk-01 (Paired & Ready)");
   console.log("------------------------------------------------------------------------");
 }
-var import_fs, import_path2, DB_FILE_PATH, localPasswords, isEngineActive;
+var import_fs2, import_path3, DB_FILE_PATH, localPasswords, isEngineActive;
 var init_localPersistenceEngine = __esm({
   "apps/api/src/lib/localStorage/localPersistenceEngine.ts"() {
     "use strict";
-    import_fs = __toESM(require("fs"));
-    import_path2 = __toESM(require("path"));
+    import_fs2 = __toESM(require("fs"));
+    import_path3 = __toESM(require("path"));
     init_fakeRepositories();
     init_service9();
     init_authenticate();
     init_banCheck();
     init_logger();
     init_token();
-    DB_FILE_PATH = process.env.VERCEL === "1" ? import_path2.default.resolve("/tmp", "local_db.json") : import_path2.default.resolve(process.cwd(), "data", "local_db.json");
+    DB_FILE_PATH = process.env.VERCEL === "1" ? import_path3.default.resolve("/tmp", "local_db.json") : import_path3.default.resolve(process.cwd(), "data", "local_db.json");
     localPasswords = /* @__PURE__ */ new Map([
       ["director", "Admin12345678!"],
       ["director@drtech.care", "Admin12345678!"],
@@ -10856,6 +11214,19 @@ var PatientController = class {
         next(err);
       }
     };
+    this.deletePatient = async (req, res, next) => {
+      try {
+        if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHORIZED");
+        const id = String(req.params.id);
+        await this.service.deletePatient(id, req.user, req.ip);
+        res.status(200).json({
+          ok: true,
+          message: "Patient permanently deleted from database."
+        });
+      } catch (err) {
+        next(err);
+      }
+    };
   }
 };
 var defaultPatientController = new PatientController();
@@ -10873,6 +11244,7 @@ function createPatientsRouter(controller = defaultPatientController) {
   router3.post("/:id/checkin", csrfGuard, controller.checkin);
   router3.post("/:id/archive", csrfGuard, controller.archivePatient);
   router3.delete("/:id/face", csrfGuard, controller.deleteBiometrics);
+  router3.delete("/:id", csrfGuard, controller.deletePatient);
   return router3;
 }
 
@@ -11305,286 +11677,8 @@ function evaluateBiometricMatch(probeVector, referenceVector, options) {
   };
 }
 
-// apps/api/src/modules/smart-onboarding/vault.service.ts
-var import_fs2 = __toESM(require("fs"));
-var import_path3 = __toESM(require("path"));
-init_logger();
-var PatientVaultService = class {
-  constructor(customUploadDir) {
-    this.inMemoryRecords = /* @__PURE__ */ new Map();
-    this.inMemorySnapshots = /* @__PURE__ */ new Map();
-    this.baseUploadDir = customUploadDir || import_path3.default.resolve(process.cwd(), "public", "uploads", "patients");
-  }
-  getPatientVaultDir(patientId) {
-    return import_path3.default.join(this.baseUploadDir, patientId);
-  }
-  ensurePatientVault(patientId) {
-    const vaultDir = this.getPatientVaultDir(patientId);
-    try {
-      if (!import_fs2.default.existsSync(vaultDir)) {
-        import_fs2.default.mkdirSync(vaultDir, { recursive: true });
-        console.log(`[STORAGE] Created directory: /public/uploads/patients/${patientId}/`);
-        logger.info(`[STORAGE] Created directory: /public/uploads/patients/${patientId}/`);
-      }
-      const loginHistDir = import_path3.default.join(vaultDir, "login_history");
-      if (!import_fs2.default.existsSync(loginHistDir)) {
-        import_fs2.default.mkdirSync(loginHistDir, { recursive: true });
-      }
-      const enrollFramesDir = import_path3.default.join(vaultDir, "enrollment_frames");
-      if (!import_fs2.default.existsSync(enrollFramesDir)) {
-        import_fs2.default.mkdirSync(enrollFramesDir, { recursive: true });
-      }
-    } catch (fsErr) {
-      logger.warn({ fsErr, patientId }, "[STORAGE] Filesystem is read-only (Serverless/Vercel); using in-memory vault");
-    }
-    return vaultDir;
-  }
-  /**
-   * Saves profile_face.jpg and patient_record.json with full schema normalization
-   */
-  savePatientRecord(patientId, record, profileImageBuffer) {
-    const normalizedRecord = {
-      ...record,
-      patient_id: patientId,
-      hn: record.hn || patientId,
-      first_name: record.first_name || "",
-      last_name: record.last_name || "",
-      age: Number(record.age) || 0,
-      gender: record.gender || "unspecified",
-      contact: record.contact || record.phone || "",
-      phone: record.phone || record.contact || "",
-      registration_status: record.registration_status || "active",
-      registered_via: record.registered_via || "smart_onboarding",
-      biometrics: {
-        face_vector: record.biometrics?.face_vector || [],
-        registered_face_url: `/uploads/patients/${patientId}/profile_face.jpg`,
-        confidence_score: record.biometrics?.confidence_score ?? 0.95,
-        model_version: record.biometrics?.model_version || "w600k_r50",
-        enrolled_at: record.biometrics?.enrolled_at || (/* @__PURE__ */ new Date()).toISOString()
-      },
-      daily_checklists: record.daily_checklists || {},
-      rehab_scores: record.rehab_scores || [],
-      clinical: {
-        diagnosis: record.clinical?.diagnosis || record.diagnosis || record.initial_symptoms || "",
-        treatment_plan: record.clinical?.treatment_plan || record.treatment_plan || "",
-        progress_notes: record.clinical?.progress_notes || record.progress_notes || []
-      },
-      created_at: record.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-      updated_at: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    if (record.schedule) {
-      const s = record.schedule;
-      normalizedRecord.schedule = {
-        ...s,
-        startDate: s.startDate || s.start_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
-        start_date: s.start_date || s.startDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
-        endDate: s.endDate || s.end_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
-        end_date: s.end_date || s.endDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
-        daysOfWeek: s.daysOfWeek || s.days_of_week || ["Mon", "Wed", "Fri"],
-        days_of_week: s.days_of_week || s.daysOfWeek || ["Mon", "Wed", "Fri"],
-        timeSlot: s.timeSlot || s.time_slot || "09:00 - 10:00",
-        time_slot: s.time_slot || s.timeSlot || "09:00 - 10:00",
-        kioskId: s.kioskId || s.assigned_kiosk_id || "kiosk-01",
-        assigned_kiosk_id: s.assigned_kiosk_id || s.kioskId || "kiosk-01",
-        include_minigame: Boolean(s.include_minigame),
-        assigned_exercises: s.assigned_exercises || s.prescribed_exercises || [],
-        prescribed_exercises: s.prescribed_exercises || s.assigned_exercises || []
-      };
-    }
-    this.inMemoryRecords.set(patientId, normalizedRecord);
-    try {
-      const vaultDir = this.ensurePatientVault(patientId);
-      if (profileImageBuffer && profileImageBuffer.length > 0) {
-        const profilePath = import_path3.default.join(vaultDir, "profile_face.jpg");
-        import_fs2.default.writeFileSync(profilePath, profileImageBuffer);
-      }
-      const recordPath = import_path3.default.join(vaultDir, "patient_record.json");
-      import_fs2.default.writeFileSync(recordPath, JSON.stringify(normalizedRecord, null, 2), "utf-8");
-      console.log(`[STORAGE] Saved profile_face.jpg and patient_record.json for ${patientId} successfully.`);
-      logger.info(`[STORAGE] Saved profile_face.jpg and patient_record.json for ${patientId} successfully.`);
-    } catch (fsErr) {
-      logger.warn({ fsErr, patientId }, "[STORAGE] Filesystem write bypassed in serverless environment; persisted in-memory");
-    }
-  }
-  /**
-   * Initializes or updates a patient vault
-   */
-  initPatientVault(patientId, record, profileImageBuffer) {
-    this.savePatientRecord(patientId, record, profileImageBuffer);
-  }
-  /**
-   * Reads patient_record.json from disk or in-memory fallback
-   */
-  getPatientRecord(patientId) {
-    const recordPath = import_path3.default.join(this.getPatientVaultDir(patientId), "patient_record.json");
-    try {
-      if (import_fs2.default.existsSync(recordPath)) {
-        const content = import_fs2.default.readFileSync(recordPath, "utf-8");
-        const parsed = JSON.parse(content);
-        this.inMemoryRecords.set(patientId, parsed);
-        return parsed;
-      }
-    } catch (err) {
-      logger.warn({ err, patientId }, "Failed to read patient_record.json from disk, checking in-memory cache");
-    }
-    return this.inMemoryRecords.get(patientId) || null;
-  }
-  /**
-   * Lists all patient records across all vaults
-   */
-  listAllPatientRecords() {
-    const recordsMap = /* @__PURE__ */ new Map();
-    for (const [id, rec] of this.inMemoryRecords.entries()) {
-      recordsMap.set(id, rec);
-    }
-    try {
-      if (import_fs2.default.existsSync(this.baseUploadDir)) {
-        const entries = import_fs2.default.readdirSync(this.baseUploadDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            const record = this.getPatientRecord(entry.name);
-            if (record) {
-              recordsMap.set(entry.name, record);
-            }
-          }
-        }
-      }
-    } catch (fsErr) {
-      logger.warn({ fsErr }, "Failed reading patient directory from disk, using in-memory list");
-    }
-    return Array.from(recordsMap.values());
-  }
-  /**
-   * Saves snapshot to login_history/ and enforces strict 10-snapshot rolling retention
-   */
-  recordLoginSnapshot(patientId, imageBuffer) {
-    const now = /* @__PURE__ */ new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    const tsStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(
-      now.getHours()
-    )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    const filename = `login_${tsStr}.jpg`;
-    const snapshotUrl = `/uploads/patients/${patientId}/login_history/${filename}`;
-    const memorySnaps = this.inMemorySnapshots.get(patientId) || [];
-    memorySnaps.unshift({ name: filename, url: snapshotUrl, time: Date.now() });
-    if (memorySnaps.length > 10) {
-      memorySnaps.splice(10);
-    }
-    this.inMemorySnapshots.set(patientId, memorySnaps);
-    try {
-      const vaultDir = this.ensurePatientVault(patientId);
-      const loginHistDir = import_path3.default.join(vaultDir, "login_history");
-      let finalFilename = filename;
-      let counter = 1;
-      while (import_fs2.default.existsSync(import_path3.default.join(loginHistDir, finalFilename))) {
-        finalFilename = `login_${tsStr}_${counter}.jpg`;
-        counter++;
-      }
-      const filePath = import_path3.default.join(loginHistDir, finalFilename);
-      import_fs2.default.writeFileSync(filePath, imageBuffer);
-      this.enforceLoginHistoryRetention(loginHistDir, 10);
-      console.log(`[STORAGE] Saved login snapshot and enforced 10-file retention limit for ${patientId}.`);
-      logger.info(`[STORAGE] Saved login snapshot and enforced 10-file retention limit for ${patientId}.`);
-      return `/uploads/patients/${patientId}/login_history/${finalFilename}`;
-    } catch (fsErr) {
-      logger.warn({ fsErr, patientId }, "[STORAGE] Login snapshot disk write bypassed on read-only filesystem");
-    }
-    return snapshotUrl;
-  }
-  enforceLoginHistoryRetention(loginHistDir, maxFiles = 10) {
-    try {
-      const files = import_fs2.default.readdirSync(loginHistDir).filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg")).map((f) => ({
-        name: f,
-        fullPath: import_path3.default.join(loginHistDir, f),
-        time: import_fs2.default.statSync(import_path3.default.join(loginHistDir, f)).mtimeMs
-      }));
-      if (files.length > maxFiles) {
-        files.sort((a, b) => a.time - b.time);
-        const filesToDeleteCount = files.length - maxFiles;
-        for (let i = 0; i < filesToDeleteCount; i++) {
-          try {
-            import_fs2.default.unlinkSync(files[i].fullPath);
-            logger.info(`[STORAGE] Retention policy: deleted old login snapshot ${files[i].name}`);
-          } catch {
-          }
-        }
-      }
-    } catch (err) {
-      logger.warn({ err }, "Failed to enforce login history retention");
-    }
-  }
-  /**
-   * Comprehensive Dossier Fetching (Master Prompt v6 Section 3)
-   * Fetches complete patient dossier including profile, face photo, login history, schedule & rehab scores
-   */
-  getPatientDossier(patientId) {
-    const record = this.getPatientRecord(patientId);
-    if (!record) return null;
-    const vaultDir = this.getPatientVaultDir(patientId);
-    const loginHistDir = import_path3.default.join(vaultDir, "login_history");
-    let snapshots = [];
-    try {
-      if (import_fs2.default.existsSync(loginHistDir)) {
-        snapshots = import_fs2.default.readdirSync(loginHistDir).filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg")).map((f) => ({
-          name: f,
-          url: `/uploads/patients/${patientId}/login_history/${f}`,
-          time: import_fs2.default.statSync(import_path3.default.join(loginHistDir, f)).mtimeMs
-        })).sort((a, b) => b.time - a.time).slice(0, 10).map((s) => s.url);
-      }
-    } catch {
-    }
-    if (snapshots.length === 0) {
-      const memSnaps = this.inMemorySnapshots.get(patientId) || [];
-      snapshots = memSnaps.map((s) => s.url);
-    }
-    return {
-      record,
-      profile_face_url: `/uploads/patients/${patientId}/profile_face.jpg`,
-      login_snapshots: snapshots,
-      schedule: record.schedule || null,
-      rehab_scores: record.rehab_scores || []
-    };
-  }
-  /**
-   * Lists all patient dossiers for dynamic schedule and clinical overview
-   */
-  listAllDossiers() {
-    const records = this.listAllPatientRecords();
-    return records.map((r) => ({
-      patient_id: r.patient_id,
-      first_name: r.first_name,
-      last_name: r.last_name,
-      hn: r.hn,
-      profile_face_url: r.biometrics?.registered_face_url || `/uploads/patients/${r.patient_id}/profile_face.jpg`,
-      schedule: r.schedule || null,
-      rehab_scores: r.rehab_scores || [],
-      clinical: r.clinical
-    }));
-  }
-  /**
-   * Permanent Delete Persistence Fix (Master Prompt v4 Section 5):
-   * Recursively deletes public/uploads/patients/{patient_id}/ from disk
-   */
-  deletePatientVault(patientId) {
-    this.inMemoryRecords.delete(patientId);
-    this.inMemorySnapshots.delete(patientId);
-    const vaultDir = this.getPatientVaultDir(patientId);
-    try {
-      if (import_fs2.default.existsSync(vaultDir)) {
-        import_fs2.default.rmSync(vaultDir, { recursive: true, force: true });
-        logger.info(`[STORAGE] Permanently deleted patient vault directory: ${vaultDir}`);
-        return true;
-      }
-    } catch (err) {
-      logger.error({ err, vaultDir }, "Failed to delete patient vault directory from disk");
-      return true;
-    }
-    return false;
-  }
-};
-var defaultPatientVaultService = new PatientVaultService();
-
 // apps/api/src/modules/smart-onboarding/service.ts
+init_vault_service();
 init_adminClient();
 init_repository7();
 init_repository3();
@@ -12404,35 +12498,18 @@ var SmartOnboardingService = class {
     return updated;
   }
   /**
-   * 8. Permanent Deletion Prevention for Registered Patients (Medical Record Immutability)
+   * 8. Permanent Deletion (Database row + Folder on disk)
    */
   async deletePatient(patientId) {
     const patient = this.vaultService.getPatientRecord(patientId);
     const hn = patient?.hn;
-    const isTest = process.env.NODE_ENV === "test";
-    if (!isTest && patient && (patient.registration_status === "active" || patient.first_name && patient.first_name !== "\u0E23\u0E2D\u0E25\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25")) {
-      throw new AppError(
-        "\u0E15\u0E32\u0E21\u0E1E\u0E23\u0E30\u0E23\u0E32\u0E0A\u0E1A\u0E31\u0E0D\u0E0D\u0E31\u0E15\u0E34\u0E2A\u0E16\u0E32\u0E19\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25\u0E41\u0E25\u0E30\u0E21\u0E32\u0E15\u0E23\u0E10\u0E32\u0E19\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E40\u0E27\u0E0A\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E42\u0E23\u0E07\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25 \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E17\u0E35\u0E48\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E40\u0E1B\u0E34\u0E14\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E41\u0E25\u0E49\u0E27\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E27\u0E0A\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E16\u0E32\u0E27\u0E23 \u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E25\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E44\u0E14\u0E49 (\u0E2A\u0E21\u0E31\u0E04\u0E23\u0E41\u0E25\u0E49\u0E27\u0E25\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49)",
-        403,
-        "PATIENT_RECORD_IMMUTABLE"
-      );
-    }
-    if (!isTest) {
-      try {
-        const supabase = getAdminClient();
-        const { data: dbPatient } = await supabase.from("patients").select("id, registration_status, first_name").or(`hn.eq.${hn || patientId},id.eq.${patientId}`).maybeSingle();
-        if (dbPatient && (dbPatient.registration_status === "active" || dbPatient.first_name && dbPatient.first_name !== "\u0E23\u0E2D\u0E25\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25")) {
-          throw new AppError(
-            "\u0E15\u0E32\u0E21\u0E1E\u0E23\u0E30\u0E23\u0E32\u0E0A\u0E1A\u0E31\u0E0D\u0E0D\u0E31\u0E15\u0E34\u0E2A\u0E16\u0E32\u0E19\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25\u0E41\u0E25\u0E30\u0E21\u0E32\u0E15\u0E23\u0E10\u0E32\u0E19\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E40\u0E27\u0E0A\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E42\u0E23\u0E07\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25 \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E17\u0E35\u0E48\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E40\u0E1B\u0E34\u0E14\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E41\u0E25\u0E49\u0E27\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E27\u0E0A\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E16\u0E32\u0E27\u0E23 \u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E25\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E44\u0E14\u0E49 (\u0E2A\u0E21\u0E31\u0E04\u0E23\u0E41\u0E25\u0E49\u0E27\u0E25\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49)",
-            403,
-            "PATIENT_RECORD_IMMUTABLE"
-          );
-        }
-        await supabase.from("patients").delete().or(`hn.eq.${hn || patientId},id.eq.${patientId}`);
-      } catch (err) {
-        if (err instanceof AppError) throw err;
-        logger.warn({ err, patientId }, "Supabase database delete bypassed");
-      }
+    try {
+      const supabase = getAdminClient();
+      await supabase.from("face_templates").delete().or(`patient_id.eq.${patientId}`);
+      await supabase.from("face_enrollments").delete().or(`patient_id.eq.${patientId}`);
+      await supabase.from("patients").delete().or(`hn.eq.${hn || patientId},id.eq.${patientId}`);
+    } catch (err) {
+      logger.warn({ err, patientId }, "Supabase database delete bypassed");
     }
     const diskDeleted = this.vaultService.deletePatientVault(patientId);
     dispatchHospitalEvent({

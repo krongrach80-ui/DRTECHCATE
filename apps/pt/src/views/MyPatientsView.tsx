@@ -12,7 +12,8 @@ import {
   X,
   RefreshCw,
   Clock,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import {
   PatientRecord,
@@ -146,6 +147,23 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
       await fetchPatients();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถยุติการดูแลคนไข้ได้');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Hard Delete Patient
+  const handleDeletePatient = async (p: PatientRecord) => {
+    if (!window.confirm(`ยืนยันการลบคนไข้ ${p.first_name} ${p.last_name} (HN: ${p.hn}) ออกจากระบบอย่างถาวร?\n\nคำเตือน: ข้อมูลประวัติคนไข้ รูปหน้า สแกนใบหน้า และบันทึกเวชระเบียนทั้งหมดจะถูกลบออกจากฐานข้อมูล Supabase อย่างถาวร`))
+      return;
+    try {
+      setActionLoading(true);
+      await defaultApiClient.patients.delete(p.id);
+      setSuccessMsg(`ลบคนไข้ ${p.first_name} (HN: ${p.hn}) ออกจากระบบเรียบร้อย`);
+      setPatients((prev) => prev.filter((item) => item.id !== p.id));
+      await fetchPatients();
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลบข้อมูลคนไข้ได้');
     } finally {
       setActionLoading(false);
     }
@@ -446,6 +464,15 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
                             title="ยุติการดูแลและจัดเก็บถาวร"
                           >
                             <Archive className="w-4 h-4" />
+                          </button>
+
+                          {/* Delete Patient Completely */}
+                          <button
+                            onClick={() => handleDeletePatient(p)}
+                            className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                            title="ลบคนไข้คนนี้ออกจากระบบอย่างถาวร"
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>

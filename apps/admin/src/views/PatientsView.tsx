@@ -12,7 +12,8 @@ import {
   Send,
   Plus,
   Archive,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from 'lucide-react';
 import {
   PatientRecord,
@@ -181,17 +182,62 @@ export const PatientsView: React.FC = () => {
     }
   };
 
+  const handleDeletePatient = async () => {
+    if (!selectedPatient) return;
+    const confirm = window.confirm(
+      `ยืนยันการลบคนไข้ ${selectedPatient.first_name} ${selectedPatient.last_name} (HN: ${selectedPatient.hn}) ออกจากระบบอย่างถาวร?\n\nคำเตือน: ข้อมูลประวัติคนไข้ รูปหน้า สแกนใบหน้าชีวมาตร และบันทึกเวชระเบียนทั้งหมดจะถูกลบออกจากฐานข้อมูล Supabase อย่างถาวร และจะไม่สามารถกู้คืนได้`
+    );
+    if (!confirm) return;
+
+    try {
+      setActionLoading(true);
+      await defaultApiClient.patients.delete(selectedPatient.id);
+      setSuccessMsg(`ลบคนไข้ ${selectedPatient.first_name} (HN: ${selectedPatient.hn}) ออกจากระบบเรียบร้อยแล้ว`);
+      const deletedId = selectedPatient.id;
+      setSelectedPatient(null);
+      setPatients((prev) => (Array.isArray(prev) ? prev.filter((p) => p.id !== deletedId) : []));
+      await fetchPatients();
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลบข้อมูลคนไข้ได้');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeletePatientDirect = async (p: PatientRecord, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const confirm = window.confirm(
+      `ยืนยันการลบคนไข้ ${p.first_name} ${p.last_name} (HN: ${p.hn}) ออกจากระบบอย่างถาวร?\n\nคำเตือน: ข้อมูลประวัติคนไข้และข้อมูลทั้งหมดจะถูกลบออกจากระบบอย่างถาวร (คนไข้จะหายไปจากตารางทันที)`
+    );
+    if (!confirm) return;
+
+    try {
+      setActionLoading(true);
+      await defaultApiClient.patients.delete(p.id);
+      setSuccessMsg(`ลบคนไข้ ${p.first_name} (HN: ${p.hn}) ออกจากระบบเรียบร้อยแล้ว`);
+      if (selectedPatient?.id === p.id) {
+        setSelectedPatient(null);
+      }
+      setPatients((prev) => (Array.isArray(prev) ? prev.filter((item) => item.id !== p.id) : []));
+      await fetchPatients();
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลบข้อมูลคนไข้ได้');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleDeleteBiometrics = async () => {
     if (!selectedPatient) return;
     const confirm = window.confirm(
-      `ยืนยันการลบข้อมูลชีวมาตร (PDPA) ของ ${selectedPatient.first_name} ${selectedPatient.last_name}?\n\nการกระทำนี้จะลบไฟล์รูปหน้าและเวกเตอร์ 512 มิติทั้งหมดอย่างถาวร แต่ยังคงเวชระเบียนไว้`
+      `ยืนยันการลบ/รีเซ็ตเฉพาะข้อมูลชีวมาตรใบหน้า (PDPA) ของ ${selectedPatient.first_name} ${selectedPatient.last_name}?\n\nหมายเหตุ: การกระทำนี้จะลบเฉพาะไฟล์รูปหน้าและเวกเตอร์ 512 มิติ เพื่อให้สแกนหน้าใหม่ โดยประวัติคนไข้จะยังคงอยู่ในระบบ (สถานะเปลี่ยนเป็นรอสแกนหน้า)\n\nหากต้องการลบคนไข้ทิ้งออกจากระบบ กรุณาใช้ปุ่ม "ลบคนไข้ถาวร"`
     );
     if (!confirm) return;
 
     try {
       setActionLoading(true);
       await defaultApiClient.patients.deleteBiometrics(selectedPatient.id);
-      setSuccessMsg('ลบข้อมูลชีวมาตรใบหน้าและเวกเตอร์ตามกฎหมาย PDPA สำเร็จ');
+      setSuccessMsg('ลบข้อมูลชีวมาตรใบหน้าและเวกเตอร์ตามกฎหมาย PDPA สำเร็จ (สถานะเปลี่ยนเป็นรอสแกนหน้า)');
       if (selectedPatient) {
         setSelectedPatient({
           ...selectedPatient,
@@ -421,8 +467,25 @@ export const PatientsView: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <ChevronRight className="w-5 h-5 text-slate-500 inline" />
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeletePatientDirect(patient, e)}
+                          disabled={actionLoading}
+                          title="ลบคนไข้คนนี้ออกจากระบบอย่างถาวร"
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openPatientDetail(patient)}
+                          className="p-1 rounded text-slate-500 hover:text-teal-400 transition"
+                        >
+                          <ChevronRight className="w-5 h-5 inline" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -548,31 +611,80 @@ export const PatientsView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Danger / PDPA Controls */}
-                  <div className="bg-rose-500/5 p-5 rounded-2xl border border-rose-500/20 space-y-3">
-                    <h4 className="text-xs font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
-                      <ShieldAlert className="w-4 h-4" />
-                      <span>ความปลอดภัยและสิทธิข้อมูลส่วนบุคคล (PDPA)</span>
-                    </h4>
-                    <p className="text-xs text-slate-400">
-                      คนไข้สามารถขอใช้สิทธิลบข้อมูลชีวมาตร (Biometric Data)
-                      ระบบจะลบเวกเตอร์และรูปภาพใบหน้าออกจากพื้นที่จัดเก็บโดยถาวร แต่จะรักษาเวชระเบียนทางการแพทย์ไว้
-                    </p>
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        onClick={handleDeleteBiometrics}
-                        disabled={actionLoading}
-                        className="px-4 py-2 rounded-xl bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 border border-rose-500/30 text-xs font-semibold"
-                      >
-                        ลบข้อมูลชีวมาตรใบหน้า (PDPA)
-                      </button>
-                      <button
-                        onClick={handleArchivePatient}
-                        disabled={actionLoading}
-                        className="px-4 py-2 rounded-xl bg-slate-800 text-slate-400 hover:text-slate-200 text-xs font-semibold"
-                      >
-                        ปิดแฟ้มประวัติ (Archive)
-                      </button>
+                  {/* Danger & Patient Management Controls */}
+                  <div className="bg-rose-500/5 p-5 rounded-2xl border border-rose-500/20 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4" />
+                        <span>การจัดการข้อมูลความปลอดภัย, PDPA และการลบบัญชี</span>
+                      </h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2.5 text-xs text-slate-400">
+                      {/* 1. Permanent Patient Deletion */}
+                      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-rose-300 flex items-center gap-1.5">
+                            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                            <span>ลบคนไข้ถาวร (ลบออกจากระบบทั้งประวัติและใบหน้า)</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            ลบข้อมูลผู้ป่วย รูปหน้า เวกเตอร์ชีวมาตร และประวัติทั้งหมดออกจากฐานข้อมูล Supabase อย่างถาวร (คนไข้จะหายไปจากตารางทันที)
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleDeletePatient}
+                          disabled={actionLoading}
+                          className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center shadow-md shadow-rose-950/50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>ลบคนไข้ถาวร</span>
+                        </button>
+                      </div>
+
+                      {/* 2. Biometric PDPA Reset */}
+                      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-amber-300 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-400" />
+                            <span>รีเซ็ตเฉพาะข้อมูลใบหน้า (PDPA Biometric Reset)</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            ลบเฉพาะข้อมูลชีวมาตรใบหน้าเพื่อขอสแกนหน้าใหม่ แต่ยังคงเก็บข้อมูลและเวชระเบียนคนไข้ไว้ในตาราง (สถานะเปลี่ยนเป็นรอสแกนหน้า)
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleDeleteBiometrics}
+                          disabled={actionLoading}
+                          className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center"
+                        >
+                          <span>รีเซ็ตเฉพาะใบหน้า</span>
+                        </button>
+                      </div>
+
+                      {/* 3. Soft Archive */}
+                      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                            <Archive className="w-3.5 h-3.5 text-slate-400" />
+                            <span>ปิดแฟ้มประวัติ (Archive)</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            ยุติคอร์สการรักษาและจัดเก็บแฟ้มประวัติเข้าสู่คลังเอกสาร
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleArchivePatient}
+                          disabled={actionLoading}
+                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center"
+                        >
+                          <Archive className="w-3.5 h-3.5" />
+                          <span>ปิดแฟ้ม</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

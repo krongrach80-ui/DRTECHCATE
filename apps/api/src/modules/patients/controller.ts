@@ -105,6 +105,20 @@ export class PatientController {
       next(err);
     }
   };
+
+  deletePatient = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
+      const id = String(req.params.id);
+      await this.service.deletePatient(id, req.user, req.ip);
+      res.status(200).json({
+        ok: true,
+        message: 'Patient permanently deleted from database.',
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
 
 export const defaultPatientController = new PatientController();

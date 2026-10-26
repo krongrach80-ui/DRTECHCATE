@@ -331,6 +331,46 @@ export class PatientService {
       },
     });
   }
+
+  // =========================================================================
+  // 9. DELETE PATIENT PERMANENTLY (ADMIN / STAFF DELETE)
+  // =========================================================================
+  async deletePatient(
+    patientId: string,
+    actor: UserSession,
+    ipAddress?: string
+  ): Promise<void> {
+    const patient = await this.getPatientById(patientId, actor, ipAddress);
+
+    await this.repo.deletePatient(patient.id);
+
+    try {
+      const { defaultPatientVaultService } = await import('../smart-onboarding/vault.service');
+      defaultPatientVaultService.deletePatientVault(patient.id);
+    } catch {}
+
+    try {
+      const { dispatchHospitalEvent } = await import('../events/routes');
+      dispatchHospitalEvent({
+        event: 'patient_deleted',
+        patientId: patient.id,
+        data: { patient_id: patient.id, hn: patient.hn },
+      });
+    } catch {}
+
+    await this.auditService.write({
+      actor_type: 'staff',
+      action: 'patient.delete',
+      actor_id: actor.id,
+      entity: 'patient',
+      entity_id: patient.id,
+      ip: ipAddress,
+      metadata: {
+        hn: patient.hn,
+        name: `${patient.first_name} ${patient.last_name}`,
+      },
+    });
+  }
 }
 
 export let defaultPatientService = new PatientService();

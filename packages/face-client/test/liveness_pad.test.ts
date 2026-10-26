@@ -11,23 +11,31 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
     const checker = new PassiveLivenessChecker();
 
     it('rejects a flat 2D photograph with near-zero depth variance', () => {
-      const spoofFlatDetection: FaceDetectionResult = {
+      const spoofFlatDetection = {
         hasFace: true,
+        multipleFaces: false,
+        faceCount: 1,
+        confidence: 0.95,
         box: { x: 50, y: 50, width: 200, height: 200 },
         liveness: {
           depthScore: 0.08, // Very low 3D protrusion (flat 2D paper photo or phone screen)
           microMotionScore: 0.02,
           is3dLive: false,
+          state: 'spoof_blocked' as const,
+          statusMessageThai: 'ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง',
+          isLiveVerified: false,
+          ear: 0.3,
+          isBlinking: false,
         },
         landmarks: {
           leftEye: { x: 80, y: 90 },
           rightEye: { x: 140, y: 90 },
           noseTip: { x: 110, y: 120 },
-          mouthCenter: { x: 110, y: 160 },
+          mouth: { x: 110, y: 160 },
           leftEarTragion: { x: 60, y: 110 },
           rightEarTragion: { x: 160, y: 110 },
         },
-      };
+      } as unknown as FaceDetectionResult;
 
       const result = checker.check(spoofFlatDetection);
       expect(result.isLive).toBe(false);
@@ -35,23 +43,31 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
     });
 
     it('accepts genuine 3D live facial structure with natural depth and micro-movement', () => {
-      const liveHumanDetection: FaceDetectionResult = {
+      const liveHumanDetection = {
         hasFace: true,
+        multipleFaces: false,
+        faceCount: 1,
+        confidence: 0.95,
         box: { x: 50, y: 50, width: 200, height: 200 },
         liveness: {
           depthScore: 0.78, // High natural 3D protrusion
           microMotionScore: 0.45,
           is3dLive: true,
+          state: 'live_verified' as const,
+          statusMessageThai: 'บุคคลจริง',
+          isLiveVerified: true,
+          ear: 0.3,
+          isBlinking: false,
         },
         landmarks: {
           leftEye: { x: 80, y: 90 },
           rightEye: { x: 140, y: 90 },
           noseTip: { x: 110, y: 120 },
-          mouthCenter: { x: 110, y: 160 },
+          mouth: { x: 110, y: 160 },
           leftEarTragion: { x: 60, y: 110 },
           rightEarTragion: { x: 160, y: 110 },
         },
-      };
+      } as unknown as FaceDetectionResult;
 
       const result = checker.check(liveHumanDetection);
       expect(result.isLive).toBe(true);
@@ -69,7 +85,7 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
         hasFace: true,
         pose: { yaw: 2, pitch: 1, roll: 0 },
         eyes: { ear: 0.32, isBlinking: false },
-      });
+      } as any);
       expect(update.stageIndex).toBe(0);
       expect(update.stageId).toBe('front_blink');
       expect(update.stagePassed).toBe(false);
@@ -80,14 +96,14 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
         hasFace: true,
         pose: { yaw: 1, pitch: 1, roll: 0 },
         eyes: { ear: 0.15, isBlinking: true },
-      });
+      } as any);
 
       // 1.3 Blink completes (EAR recovers > 0.25)
       update = tracker.update({
         hasFace: true,
         pose: { yaw: 2, pitch: 0, roll: 0 },
         eyes: { ear: 0.30, isBlinking: false },
-      });
+      } as any);
       expect(update.blinkVerified).toBe(true);
       expect(update.stagePassed).toBe(true);
 
@@ -98,7 +114,7 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
       update = tracker.update({
         hasFace: true,
         pose: { yaw: -5, pitch: 0, roll: 0 },
-      });
+      } as any);
       expect(update.stageIndex).toBe(1);
       expect(update.stageId).toBe('left_turn');
       expect(update.stagePassed).toBe(false);
@@ -107,7 +123,7 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
       update = tracker.update({
         hasFace: true,
         pose: { yaw: -18, pitch: 0, roll: 0 },
-      });
+      } as any);
       expect(update.stagePassed).toBe(true);
 
       // Advance to Stage 3: Right Turn
@@ -117,7 +133,7 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
       update = tracker.update({
         hasFace: true,
         pose: { yaw: 8, pitch: 0, roll: 0 },
-      });
+      } as any);
       expect(update.stageIndex).toBe(2);
       expect(update.stageId).toBe('right_turn');
       expect(update.stagePassed).toBe(false);
@@ -126,7 +142,7 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
       update = tracker.update({
         hasFace: true,
         pose: { yaw: 20, pitch: 0, roll: 0 },
-      });
+      } as any);
       expect(update.stagePassed).toBe(true);
 
       // Advance to Stage 4: Pitch Nod
@@ -136,13 +152,13 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
       tracker.update({
         hasFace: true,
         pose: { yaw: 0, pitch: 5, roll: 0 },
-      });
+      } as any);
 
       // 4.2 Nods down by at least 10°
       update = tracker.update({
         hasFace: true,
         pose: { yaw: 0, pitch: -12, roll: 0 },
-      });
+      } as any);
       expect(update.stageIndex).toBe(3);
       expect(update.stageId).toBe('pitch_nod');
       expect(update.stagePassed).toBe(true);
@@ -161,7 +177,7 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
           hasFace: true,
           liveness: { depthScore: 0.05, microMotionScore: 0.01, is3dLive: false },
           eyes: { ear: 0.32, isBlinking: false },
-        });
+        } as any);
       }
 
       expect(lastResult.isLive).toBe(false);
@@ -178,17 +194,17 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
         hasFace: true,
         liveness: { depthScore: 0.75, microMotionScore: 0.35, is3dLive: true },
         eyes: { ear: 0.30, isBlinking: false },
-      });
+      } as any);
       verifier.evaluate({
         hasFace: true,
         liveness: { depthScore: 0.72, microMotionScore: 0.35, is3dLive: true },
         eyes: { ear: 0.16, isBlinking: true },
-      });
+      } as any);
       verifier.evaluate({
         hasFace: true,
         liveness: { depthScore: 0.76, microMotionScore: 0.35, is3dLive: true },
         eyes: { ear: 0.28, isBlinking: false },
-      });
+      } as any);
 
       // Wait 250ms for required duration
       return new Promise<void>((resolve) => {
@@ -197,7 +213,7 @@ describe('[LIVENESS-PAD] Presentation Attack Detection & Anti-Spoofing Engine', 
             hasFace: true,
             liveness: { depthScore: 0.78, microMotionScore: 0.40, is3dLive: true },
             eyes: { ear: 0.31, isBlinking: false },
-          });
+          } as any);
 
           expect(result.isLive).toBe(true);
           expect(result.state).toBe('live_verified');

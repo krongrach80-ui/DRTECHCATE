@@ -500,5 +500,34 @@ describe('[UNIT] DrTech.Care System 5B: Patients & Registration Complete Test Su
       expect(completeRes.body.data.version).toBe(4);
       expect(completeRes.body.data.started_at).toBeDefined();
     });
+
+    it('5.6 should permanently delete patient and all data via DELETE /api/patients/:id', async () => {
+      const pRes = await request(app)
+        .post('/api/patients')
+        .set('Cookie', ['access_token=mock-token:admin-001:admin:active'])
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send({
+          first_name: 'คนไข้ทดสอบ',
+          last_name: 'จะถูกลบ',
+        });
+
+      const patientId = pRes.body.data.id;
+
+      // Delete patient permanently
+      const delRes = await request(app)
+        .delete(`/api/patients/${patientId}`)
+        .set('Cookie', ['access_token=mock-token:admin-001:admin:active'])
+        .set('X-Requested-With', 'XMLHttpRequest');
+
+      expect(delRes.status).toBe(200);
+      expect(delRes.body.ok).toBe(true);
+
+      // Verify patient is gone (404)
+      const getRes = await request(app)
+        .get(`/api/patients/${patientId}`)
+        .set('Cookie', ['access_token=mock-token:admin-001:admin:active']);
+
+      expect(getRes.status).toBe(404);
+    });
   });
 });

@@ -46,6 +46,7 @@ export interface IPatientRepository {
   ): Promise<CheckinRecord>;
   getTodayCheckinPatientIds(dateStr: string): Promise<string[]>;
   deleteBiometrics(patientId: string): Promise<void>;
+  deletePatient(patientId: string): Promise<boolean>;
   cleanupExpiredPendingPatients(): Promise<number>;
 }
 
@@ -584,6 +585,37 @@ export class PatientRepository implements IPatientRepository {
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, patientId }, 'Unexpected error in deleteBiometrics');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
+
+  // =========================================================================
+  // 4.5 PERMANENT PATIENT DELETION (DELETE /api/patients/:id)
+  // =========================================================================
+  async deletePatient(patientId: string): Promise<boolean> {
+    try {
+      const adminClient = getAdminClient();
+      // 1. Delete biometric face templates and enrollments
+      await adminClient.from('face_templates').delete().eq('patient_id', patientId);
+      await adminClient.from('face_enrollments').delete().eq('patient_id', patientId);
+
+      // 2. Delete patient row from Supabase (cascades to related tables)
+      const { error } = await adminClient.from('patients').delete().eq('id', patientId);
+      if (error) {
+        logger.error({ error, patientId }, 'Database error deleting patient from Supabase');
+        throw new AppError('Database service unavailable: ' + error.message, 500, 'DATABASE_ERROR');
+      }
+
+      // 3. Remove from in-memory fake repository if present
+      try {
+        const { currentFakePatientRepo } = await import('../../__tests__/fixtures/fakeRepositories');
+        currentFakePatientRepo.inMemoryPatients.delete(patientId);
+      } catch {}
+
+      return true;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, patientId }, 'Unexpected error in deletePatient');
       throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }

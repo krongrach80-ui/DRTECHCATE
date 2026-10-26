@@ -310,6 +310,11 @@ export class FakePatientRepository implements IPatientRepository {
     }
   }
 
+  async deletePatient(patientId: string): Promise<boolean> {
+    this.inMemoryPatients.delete(patientId);
+    return true;
+  }
+
   async cleanupExpiredPendingPatients(): Promise<number> {
     const now = new Date().toISOString();
     let cleaned = 0;

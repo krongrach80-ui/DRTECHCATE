@@ -633,6 +633,12 @@ export class ApiClient {
       );
     },
 
+    delete: async (id: string) => {
+      return this.request<{ ok: boolean; message: string }>(`/patients/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
     deleteBiometrics: async (patientId: string) => {
       return this.request<{ message: string }>(`/face/${patientId}`, {
         method: 'DELETE',
