@@ -11778,8 +11778,9 @@ var SmartOnboardingService = class {
         const { data: dbPatients } = await supabase.from("patients").select("*");
         if (dbPatients && Array.isArray(dbPatients)) {
           for (const p of dbPatients) {
-            const pRecord = p.history?.patient_record;
+            const pRecord = p.history?.patient_record ? { ...p.history.patient_record } : void 0;
             const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
+            const storedPin = p.history?.pin || "1234";
             const builtRecord = pRecord || {
               patient_id: p.id,
               hn: p.hn,
@@ -11805,13 +11806,10 @@ var SmartOnboardingService = class {
               rehab_scores: [],
               clinical: { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] }
             };
-            builtRecord.history = p.history;
-            if (p.history?.pin) {
-              if (!builtRecord.clinical) {
-                builtRecord.clinical = { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] };
-              }
-              builtRecord.clinical.pin = p.history.pin;
+            if (!builtRecord.clinical) {
+              builtRecord.clinical = { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] };
             }
+            builtRecord.clinical.pin = storedPin;
             const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
             if (existingIndex >= 0) {
               records[existingIndex] = builtRecord;
@@ -11826,7 +11824,7 @@ var SmartOnboardingService = class {
     }
     const matched = records.find((r) => {
       if (!r) return false;
-      const storedPin = r.history?.pin || r.clinical?.pin || "1234";
+      const storedPin = r.clinical?.pin || r.pin || "1234";
       const rHn = r.hn ? String(r.hn).trim() : "";
       const rId = r.patient_id ? String(r.patient_id).trim() : "";
       const rPhone = r.phone ? String(r.phone).trim() : "";

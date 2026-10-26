@@ -311,8 +311,9 @@ export class SmartOnboardingService {
         const { data: dbPatients } = await supabase.from('patients').select('*');
         if (dbPatients && Array.isArray(dbPatients)) {
           for (const p of dbPatients) {
-            const pRecord: PatientRecordFile | undefined = p.history?.patient_record;
+            const pRecord: PatientRecordFile | undefined = p.history?.patient_record ? { ...p.history.patient_record } : undefined;
             const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
+            const storedPin = p.history?.pin || '1234';
             const builtRecord: PatientRecordFile = pRecord || {
               patient_id: p.id,
               hn: p.hn,
@@ -339,13 +340,10 @@ export class SmartOnboardingService {
               clinical: { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] },
             };
 
-            (builtRecord as any).history = p.history;
-            if (p.history?.pin) {
-              if (!builtRecord.clinical) {
-                builtRecord.clinical = { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] };
-              }
-              (builtRecord.clinical as any).pin = p.history.pin;
+            if (!builtRecord.clinical) {
+              builtRecord.clinical = { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] };
             }
+            (builtRecord.clinical as any).pin = storedPin;
 
             const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
             if (existingIndex >= 0) {
@@ -362,7 +360,7 @@ export class SmartOnboardingService {
 
     const matched = records.find((r) => {
       if (!r) return false;
-      const storedPin = (r as any).history?.pin || (r.clinical as any)?.pin || '1234';
+      const storedPin = (r.clinical as any)?.pin || (r as any).pin || '1234';
       const rHn = r.hn ? String(r.hn).trim() : '';
       const rId = r.patient_id ? String(r.patient_id).trim() : '';
       const rPhone = r.phone ? String(r.phone).trim() : '';
