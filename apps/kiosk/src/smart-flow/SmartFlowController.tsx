@@ -17,6 +17,7 @@ export type SmartFlowStep = 'login' | 'enroll' | 'info_form' | 'daily_plan';
 interface SmartFlowControllerProps {
   customDetector?: FaceDetector;
   onOpenStaffLoginModal?: () => void;
+  onOpenNewPatientModal?: () => void;
   onStepChange?: (step: SmartFlowStep) => void;
   isPaused?: boolean;
 }
@@ -24,6 +25,7 @@ interface SmartFlowControllerProps {
 export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
   customDetector,
   onOpenStaffLoginModal,
+  onOpenNewPatientModal,
   onStepChange,
   isPaused,
 }) => {
@@ -73,6 +75,7 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
           onNavigateToEnroll={handleNavigateToEnroll}
           customDetector={customDetector}
           onOpenStaffLoginModal={onOpenStaffLoginModal}
+          onOpenNewPatientModal={onOpenNewPatientModal}
           isPaused={isPaused}
         />
       )}

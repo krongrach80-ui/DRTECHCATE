@@ -70,7 +70,7 @@ export const App: React.FC = () => {
   const [currentStaffUser, setCurrentStaffUser] = useState<UserProfile | null>(initialAuth.user);
   const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>([]);
   const [flowMode, setFlowMode] = useState<'smart' | 'classic'>('smart');
-  const [smartStep, setSmartStep] = useState<SmartFlowStep>('login');
+  const [_smartStep, setSmartStep] = useState<SmartFlowStep>('login');
   const [isStaffLoginModalOpen, setIsStaffLoginModalOpen] = useState(false);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const machine = useMemo(() => new KioskStateMachine(), []);
@@ -437,19 +437,18 @@ export const App: React.FC = () => {
   if (flowMode === 'smart') {
     return (
       <div className="w-screen h-screen flex flex-col bg-gradient-to-br from-[#E6F8F5] via-[#F4FBF9] to-[#E0F2FE] text-[#063932] select-none overflow-hidden relative font-sans">
-        {smartStep !== 'login' && (
-          <KioskClinicalHeader
-            kioskId={kioskId}
-            onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากตู้ Kiosk')}
-            onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
-            onOpenStaffLoginModal={handleOpenStaffLoginModal}
-          />
-        )}
+        <KioskClinicalHeader
+          kioskId={kioskId}
+          onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากตู้ Kiosk')}
+          onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
+          onOpenStaffLoginModal={handleOpenStaffLoginModal}
+        />
 
         <div className="flex-1 overflow-hidden relative">
           <SmartFlowController
             onStepChange={setSmartStep}
             onOpenStaffLoginModal={handleOpenStaffLoginModal}
+            onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
             isPaused={isStaffLoginModalOpen || isNewPatientModalOpen || isPairingOpen || roleMode !== 'kiosk'}
           />
         </div>
