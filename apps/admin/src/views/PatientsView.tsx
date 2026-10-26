@@ -105,6 +105,20 @@ export const PatientsView: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (errorMsg) {
+      const timer = setTimeout(() => setErrorMsg(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [errorMsg]);
+
+  useEffect(() => {
+    if (successMsg) {
+      const timer = setTimeout(() => setSuccessMsg(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg]);
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchPatients(search);

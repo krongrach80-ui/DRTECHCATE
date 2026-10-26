@@ -98,6 +98,20 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
+  useEffect(() => {
+    if (errorMsg) {
+      const timer = setTimeout(() => setErrorMsg(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [errorMsg]);
+
+  useEffect(() => {
+    if (successMsg) {
+      const timer = setTimeout(() => setSuccessMsg(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg]);
+
   // Handle Edit Patient (Optimistic locking with version)
   const handleOpenEdit = (p: PatientRecord) => {
     setSelectedPatient(p);

@@ -8986,12 +8986,16 @@ function createRateLimiter(options) {
   return (0, import_express_rate_limit.default)({
     windowMs: 60 * 1e3,
     // 1 minute
-    max: 100,
-    // max 100 requests per minute by default
+    max: 1500,
+    // max 1500 requests per minute (25 req/s) for clinical operations and multi-tab dashboards
     standardHeaders: true,
     // Return standard `RateLimit-*` headers
     legacyHeaders: false,
     // Disable `X-RateLimit-*` headers
+    skip: (req) => {
+      const url = req.originalUrl || req.url || "";
+      return url.includes("/health") || url.includes("/events");
+    },
     validate: {
       xForwardedForHeader: false
       // Safely ignore client-sent X-Forwarded-For when trust proxy is false
