@@ -178,11 +178,22 @@ export const App: React.FC = () => {
       const res = await defaultApiClient.auth.login(credentials);
       const user = res.user;
       if (user) {
-        setCurrentStaffUser(user);
+        const uname = (user.username || credentials.username || '').toLowerCase();
+        const role = (user.role || res.role || '').toLowerCase();
+        const fullUser: UserProfile = {
+          ...user,
+          username: user.username || credentials.username,
+          full_name: user.full_name || (uname === 'director' ? 'ผู้อำนวยการโรงพยาบาล' : uname === 'admin' ? 'ผู้ดูแลระบบ' : 'กภ.สมชาย กายภาพดี'),
+          role: (uname === 'director' ? 'director' : (user.role || (uname === 'admin' ? 'admin' : 'pt'))) as any,
+        };
+        setCurrentStaffUser(fullUser);
+        try {
+          localStorage.setItem('drtech_user_profile', JSON.stringify(fullUser));
+        } catch {
+          // ignore localStorage error
+        }
         setIsStaffLoginModalOpen(false);
         await fetchStaffCalls();
-        const role = (user.role || res.role || '').toLowerCase();
-        const uname = (user.username || credentials.username || '').toLowerCase();
         if (role === 'admin' || role === 'director' || uname === 'director' || uname === 'admin') {
           setRoleMode('admin');
           if (window.location.pathname !== '/admin') {
@@ -206,6 +217,12 @@ export const App: React.FC = () => {
       await defaultApiClient.auth.logout();
     } catch {
       // non-blocking
+    }
+    try {
+      localStorage.removeItem('drtech_user_profile');
+      sessionStorage.removeItem('drtech_user_profile');
+    } catch {
+      // ignore
     }
     setCurrentStaffUser(null);
     setRoleMode('kiosk');
