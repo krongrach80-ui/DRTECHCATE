@@ -244,7 +244,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       const firstName = splitNames[0] || 'ผู้ป่วย';
       const lastName = splitNames.slice(1).join(' ') || 'ใหม่';
 
-      // 2. Call API to create patient with resilient fallback
+      // 2. Call API to create patient and verify response
       const res = await defaultApiClient.patients.create({
         first_name: firstName,
         last_name: lastName,
@@ -253,23 +253,16 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
         phone: phone.trim() || undefined,
         injury: diagnosis.trim() || undefined,
         responsible_pt_id: responsiblePtId || undefined,
-      }).catch((apiErr) => {
-        console.warn('Backend patient creation warning, creating resilient patient session:', apiErr);
-        return {
-          id: `patient-${Date.now()}`,
-          hn: hn,
-          first_name: firstName,
-          last_name: lastName,
-          phone,
-          injury: diagnosis,
-        } as unknown;
       });
 
       const newId =
         (res as { id?: string })?.id ||
         (res as { data?: { id?: string } })?.data?.id ||
-        (res as { patient?: { id?: string } })?.patient?.id ||
-        `patient-${Date.now()}`;
+        (res as { patient?: { id?: string } })?.patient?.id;
+
+      if (!newId) {
+        throw new Error('ไม่สามารถบันทึกข้อมูลคนไข้ลงฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
+      }
 
       setCreatedPatientId(newId);
       setCapturedFrames([]);

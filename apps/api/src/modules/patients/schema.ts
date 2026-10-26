@@ -28,20 +28,74 @@ export function normalizePhone(rawPhone?: string | null): string | null {
   return digits;
 }
 
+export function normalizeCreatePatientInput(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object') return {};
+  const obj = { ...(raw as Record<string, unknown>) };
+
+  // 1. Automatically split fullName or name into first_name and last_name
+  const fullName = (obj.fullName || obj.name || obj.full_name) as string | undefined;
+  if (fullName && typeof fullName === 'string' && (!obj.first_name || String(obj.first_name).trim() === '')) {
+    const parts = fullName.trim().split(/\s+/);
+    obj.first_name = parts[0] || 'ผู้ป่วย';
+    obj.last_name = parts.slice(1).join(' ') || '-';
+  }
+
+  if (obj.first_name && typeof obj.first_name === 'string') {
+    obj.first_name = obj.first_name.trim();
+  }
+  if (!obj.first_name || String(obj.first_name).trim() === '') {
+    obj.first_name = 'ผู้ป่วย';
+  }
+
+  if (obj.last_name && typeof obj.last_name === 'string') {
+    obj.last_name = obj.last_name.trim();
+  }
+  if (!obj.last_name || String(obj.last_name).trim() === '') {
+    obj.last_name = '-';
+  }
+
+  // 2. Normalize gender / sex if provided
+  const rawSex = (obj.sex ?? obj.gender) as string | undefined;
+  if (rawSex !== undefined && rawSex !== null && String(rawSex).trim() !== '') {
+    const s = String(rawSex).trim().toLowerCase();
+    if (s === 'male' || s === 'm' || s === 'ชาย') {
+      obj.sex = 'male';
+    } else if (s === 'female' || s === 'f' || s === 'หญิง') {
+      obj.sex = 'female';
+    } else {
+      obj.sex = 'other';
+    }
+  }
+
+  // 3. Fallbacks for empty string optional fields
+  if (obj.injury === '') {
+    obj.injury = '-';
+  }
+  if (obj.phone === '') {
+    obj.phone = '-';
+  }
+
+  return obj;
+}
+
 // =========================================================================
 // 2. PATIENT CRUD SCHEMAS
 // =========================================================================
-export const CreatePatientSchema = z.object({
-  first_name: z.string().trim().min(1, 'First name is required').max(100),
-  last_name: z.string().trim().min(1, 'Last name is required').max(100),
-  age: z.coerce.number().int().min(0).max(150).optional().nullable(),
-  sex: PatientSexSchema.optional().nullable(),
-  phone: z.string().trim().max(30).optional().nullable(),
-  injury: z.string().trim().max(500).optional().nullable(),
-  history: z.record(z.string(), z.unknown()).optional().default({}),
-  responsible_pt_id: z.string().trim().optional().nullable(),
-  registered_via: PatientRegisteredViaSchema.optional().default('reception'),
-});
+export const CreatePatientSchema = z.preprocess(
+  normalizeCreatePatientInput,
+  z.object({
+    hn: z.string().trim().optional().nullable(),
+    first_name: z.string().trim().min(1, 'First name is required').max(100),
+    last_name: z.string().trim().min(1, 'Last name is required').max(100),
+    age: z.coerce.number().int().min(0).max(150).optional().nullable(),
+    sex: PatientSexSchema.optional().nullable(),
+    phone: z.string().trim().max(30).optional().nullable(),
+    injury: z.string().trim().max(500).optional().nullable(),
+    history: z.record(z.string(), z.unknown()).optional().default({}),
+    responsible_pt_id: z.string().trim().optional().nullable(),
+    registered_via: PatientRegisteredViaSchema.optional().default('reception'),
+  })
+);
 
 export type CreatePatientInput = z.infer<typeof CreatePatientSchema>;
 

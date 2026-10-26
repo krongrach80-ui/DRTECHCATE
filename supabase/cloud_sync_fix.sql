@@ -902,6 +902,36 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role, authenticated, anon;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role, authenticated, anon;
 GRANT ALL ON ALL ROUTINES IN SCHEMA public TO service_role, authenticated, anon;
 
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated, service_role;
+
+GRANT ALL ON TABLE public.profiles TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.pts TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.patients TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.patient_pt_assignments TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.case_transfers TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.face_enrollments TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.face_templates TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.kiosk_devices TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.staff_calls TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.exercises TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.minigames TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.minigame_questions TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.modpacks TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.modpack_items TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.courses TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.course_items TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.mission_runs TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.mission_steps TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.treatment_results TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.medical_notes TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.consents TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.checkins TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.bans TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.audit_logs TO anon, authenticated, service_role;
+GRANT ALL ON SEQUENCE public.patient_hn_seq TO anon, authenticated, service_role;
+
 -- Anon RLS Policies (Safely allow reading and operations without 42501 or empty result errors)
 DROP POLICY IF EXISTS "profiles_select_anon" ON public.profiles;
 CREATE POLICY "profiles_select_anon" ON public.profiles

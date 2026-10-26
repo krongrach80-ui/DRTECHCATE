@@ -74,10 +74,25 @@ export class StaffRepository implements IStaffRepository {
       if (authError) {
         logger.warn({ authError, email }, 'admin.createUser returned error, checking for existing user');
         try {
-          const { data: usersList } = await adminClient.auth.admin.listUsers();
+          const { data: usersList } = await adminClient.auth.admin.listUsers({ perPage: 1000 });
           const existing = usersList?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
           if (existing?.id) {
             return existing.id;
+          }
+        } catch {
+          // ignore
+        }
+
+        // Also check if username already has an ID in public.profiles
+        const username = email.split('@')[0];
+        try {
+          const { data: profile } = await adminClient
+            .from('profiles')
+            .select('id')
+            .ilike('username', username)
+            .maybeSingle();
+          if (profile?.id) {
+            return profile.id;
           }
         } catch {
           // ignore
@@ -86,7 +101,17 @@ export class StaffRepository implements IStaffRepository {
 
       return crypto.randomUUID();
     } catch (err) {
-      logger.warn({ err, email }, 'Unexpected error creating staff auth user; generating UUID fallback');
+      logger.warn({ err, email }, 'Unexpected error creating staff auth user; checking existing profile fallback');
+      try {
+        const username = email.split('@')[0];
+        const adminClient = getAdminClient();
+        const { data: profile } = await adminClient
+          .from('profiles')
+          .select('id')
+          .ilike('username', username)
+          .maybeSingle();
+        if (profile?.id) return profile.id;
+      } catch {}
       return crypto.randomUUID();
     }
   }
@@ -267,8 +292,21 @@ export class StaffRepository implements IStaffRepository {
 
     try {
       const adminClient = getAdminClient();
+      let targetId = profileData.id;
+
+      try {
+        const { data: existingProfile } = await adminClient
+          .from('profiles')
+          .select('id')
+          .ilike('username', profileData.username)
+          .maybeSingle();
+        if (existingProfile?.id) {
+          targetId = existingProfile.id;
+        }
+      } catch {}
+
       const { error: profileError } = await adminClient.from('profiles').upsert({
-        id: profileData.id,
+        id: targetId,
         role: profileData.role,
         username: profileData.username,
         full_name: profileData.full_name,
@@ -295,7 +333,7 @@ export class StaffRepository implements IStaffRepository {
 
       if (profileData.role === 'pt' && ptData) {
         const { error: ptError } = await adminClient.from('pts').upsert({
-          user_id: profileData.id,
+          user_id: targetId,
           license_no: ptData.license_no,
           license_expiry: ptData.license_expiry || null,
           specialty: ptData.specialty || null,
@@ -304,13 +342,13 @@ export class StaffRepository implements IStaffRepository {
         }, { onConflict: 'user_id' });
 
         if (ptError) {
-          logger.warn({ ptError, ptData, userId: profileData.id }, 'Warning upserting pt details');
+          logger.warn({ ptError, ptData, userId: targetId }, 'Warning upserting pt details');
         }
       }
 
-      const created = await this.getStaffById(profileData.id);
+      const created = await this.getStaffById(targetId);
       return created || {
-        id: profileData.id,
+        id: targetId,
         role: profileData.role,
         username: profileData.username,
         full_name: profileData.full_name,

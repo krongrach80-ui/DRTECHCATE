@@ -708,6 +708,14 @@ export const PatientsView: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreatePatient} className="space-y-4">
+              {errorMsg && (
+                <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs sm:text-sm flex items-center justify-between">
+                  <span>{errorMsg}</span>
+                  <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-white ml-2">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">ชื่อจริง *</label>

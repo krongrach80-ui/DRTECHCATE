@@ -172,6 +172,7 @@ export const StaffView: React.FC = () => {
         window.dispatchEvent(new CustomEvent('staff-updated'));
         setSuccessMsg(`สร้างผู้ใช้ ${formData.username} สำเร็จเรียบร้อย`);
       }
+      await fetchStaff();
       setIsWizardOpen(false);
       setWizardStep(1);
       setFormData({
@@ -188,7 +189,6 @@ export const StaffView: React.FC = () => {
         sex: 'male',
         injury: '',
       });
-      await fetchStaff();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการสร้างผู้ใช้');
     } finally {
@@ -489,6 +489,14 @@ export const StaffView: React.FC = () => {
 
             {/* Wizard Steps Form */}
             <form onSubmit={handleCreateStaff} className="p-6 space-y-5">
+              {errorMsg && (
+                <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs sm:text-sm flex items-center justify-between">
+                  <span>{errorMsg}</span>
+                  <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-white ml-2">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               {wizardStep === 1 && (
                 <div className="space-y-4">
                   <h4 className="text-sm sm:text-base font-bold text-teal-300 tracking-normal">
@@ -738,7 +746,7 @@ export const StaffView: React.FC = () => {
                   className="h-11 flex items-center gap-2 px-6 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm sm:text-base transition shadow-lg shadow-teal-950/40 disabled:opacity-50 active:scale-[0.98]"
                 >
                   <span>
-                    {wizardStep < (formData.role === 'pt' ? 3 : 2) ? 'ขั้นตอนถัดไป' : 'บันทึกและสร้างบัญชี'}
+                    {wizardStep < (formData.role === 'pt' ? 3 : (formData.role === 'patient' ? 3 : 2)) ? 'ขั้นตอนถัดไป' : 'บันทึกและสร้างบัญชี'}
                   </span>
                   <ChevronRight className="w-4 h-4" />
                 </button>

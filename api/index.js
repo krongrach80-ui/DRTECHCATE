@@ -1470,6 +1470,46 @@ function normalizePhone(rawPhone) {
   }
   return digits;
 }
+function normalizeCreatePatientInput(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const obj = { ...raw };
+  const fullName = obj.fullName || obj.name || obj.full_name;
+  if (fullName && typeof fullName === "string" && (!obj.first_name || String(obj.first_name).trim() === "")) {
+    const parts = fullName.trim().split(/\s+/);
+    obj.first_name = parts[0] || "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22";
+    obj.last_name = parts.slice(1).join(" ") || "-";
+  }
+  if (obj.first_name && typeof obj.first_name === "string") {
+    obj.first_name = obj.first_name.trim();
+  }
+  if (!obj.first_name || String(obj.first_name).trim() === "") {
+    obj.first_name = "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22";
+  }
+  if (obj.last_name && typeof obj.last_name === "string") {
+    obj.last_name = obj.last_name.trim();
+  }
+  if (!obj.last_name || String(obj.last_name).trim() === "") {
+    obj.last_name = "-";
+  }
+  const rawSex = obj.sex ?? obj.gender;
+  if (rawSex !== void 0 && rawSex !== null && String(rawSex).trim() !== "") {
+    const s = String(rawSex).trim().toLowerCase();
+    if (s === "male" || s === "m" || s === "\u0E0A\u0E32\u0E22") {
+      obj.sex = "male";
+    } else if (s === "female" || s === "f" || s === "\u0E2B\u0E0D\u0E34\u0E07") {
+      obj.sex = "female";
+    } else {
+      obj.sex = "other";
+    }
+  }
+  if (obj.injury === "") {
+    obj.injury = "-";
+  }
+  if (obj.phone === "") {
+    obj.phone = "-";
+  }
+  return obj;
+}
 var import_zod4, PatientRegistrationStatusSchema, PatientSexSchema, PatientRegisteredViaSchema, CreatePatientSchema, UpdatePatientSchema, PatientQuerySchema, SendToKioskSchema, CheckinSchema;
 var init_schema2 = __esm({
   "apps/api/src/modules/patients/schema.ts"() {
@@ -1483,17 +1523,21 @@ var init_schema2 = __esm({
     ]);
     PatientSexSchema = import_zod4.z.enum(["male", "female", "other"]);
     PatientRegisteredViaSchema = import_zod4.z.enum(["reception", "kiosk"]);
-    CreatePatientSchema = import_zod4.z.object({
-      first_name: import_zod4.z.string().trim().min(1, "First name is required").max(100),
-      last_name: import_zod4.z.string().trim().min(1, "Last name is required").max(100),
-      age: import_zod4.z.coerce.number().int().min(0).max(150).optional().nullable(),
-      sex: PatientSexSchema.optional().nullable(),
-      phone: import_zod4.z.string().trim().max(30).optional().nullable(),
-      injury: import_zod4.z.string().trim().max(500).optional().nullable(),
-      history: import_zod4.z.record(import_zod4.z.string(), import_zod4.z.unknown()).optional().default({}),
-      responsible_pt_id: import_zod4.z.string().trim().optional().nullable(),
-      registered_via: PatientRegisteredViaSchema.optional().default("reception")
-    });
+    CreatePatientSchema = import_zod4.z.preprocess(
+      normalizeCreatePatientInput,
+      import_zod4.z.object({
+        hn: import_zod4.z.string().trim().optional().nullable(),
+        first_name: import_zod4.z.string().trim().min(1, "First name is required").max(100),
+        last_name: import_zod4.z.string().trim().min(1, "Last name is required").max(100),
+        age: import_zod4.z.coerce.number().int().min(0).max(150).optional().nullable(),
+        sex: PatientSexSchema.optional().nullable(),
+        phone: import_zod4.z.string().trim().max(30).optional().nullable(),
+        injury: import_zod4.z.string().trim().max(500).optional().nullable(),
+        history: import_zod4.z.record(import_zod4.z.string(), import_zod4.z.unknown()).optional().default({}),
+        responsible_pt_id: import_zod4.z.string().trim().optional().nullable(),
+        registered_via: PatientRegisteredViaSchema.optional().default("reception")
+      })
+    );
     UpdatePatientSchema = import_zod4.z.object({
       first_name: import_zod4.z.string().trim().min(1).max(100).optional(),
       last_name: import_zod4.z.string().trim().min(1).max(100).optional(),
@@ -1615,11 +1659,11 @@ var init_repository3 = __esm({
               validPtId = null;
             }
           }
-          const { data, error } = await adminClient.from("patients").insert({
-            first_name: input.first_name.trim(),
-            last_name: input.last_name.trim(),
+          const insertPayload = {
+            first_name: (input.first_name || "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22").trim(),
+            last_name: (input.last_name || "-").trim(),
             age: typeof input.age === "number" && !isNaN(input.age) ? input.age : 30,
-            sex: input.sex || "unspecified",
+            sex: input.sex || "other",
             phone: normalizePhone(input.phone) || "-",
             history: cleanHistory,
             injury: input.injury?.trim() || "-",
@@ -1628,7 +1672,19 @@ var init_repository3 = __esm({
             registered_via: input.registered_via || "reception",
             pending_expires_at: expiresAt,
             version: 1
-          }).select("*").single();
+          };
+          if (input.hn) {
+            insertPayload.hn = input.hn;
+          }
+          let { data, error } = await adminClient.from("patients").insert(insertPayload).select("*").single();
+          if (error && (error.code === "23505" || error.message?.includes("hn"))) {
+            logger.warn({ error, hn: insertPayload.hn }, "HN duplicate detected, generating non-duplicate HN");
+            const uniqueHn = `P-${Math.floor(1e3 + Math.random() * 9e3)}-${Date.now().toString().slice(-4)}`;
+            insertPayload.hn = uniqueHn;
+            const retryRes = await adminClient.from("patients").insert(insertPayload).select("*").single();
+            data = retryRes.data;
+            error = retryRes.error;
+          }
           if (error || !data) {
             logger.error({ error, input }, "Failed to insert patient in Supabase");
             if (process.env.NODE_ENV === "test") {
@@ -2416,17 +2472,32 @@ var init_repository6 = __esm({
           if (authError) {
             logger.warn({ authError, email }, "admin.createUser returned error, checking for existing user");
             try {
-              const { data: usersList } = await adminClient.auth.admin.listUsers();
+              const { data: usersList } = await adminClient.auth.admin.listUsers({ perPage: 1e3 });
               const existing = usersList?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
               if (existing?.id) {
                 return existing.id;
               }
             } catch {
             }
+            const username = email.split("@")[0];
+            try {
+              const { data: profile } = await adminClient.from("profiles").select("id").ilike("username", username).maybeSingle();
+              if (profile?.id) {
+                return profile.id;
+              }
+            } catch {
+            }
           }
           return crypto.randomUUID();
         } catch (err) {
-          logger.warn({ err, email }, "Unexpected error creating staff auth user; generating UUID fallback");
+          logger.warn({ err, email }, "Unexpected error creating staff auth user; checking existing profile fallback");
+          try {
+            const username = email.split("@")[0];
+            const adminClient = getAdminClient();
+            const { data: profile } = await adminClient.from("profiles").select("id").ilike("username", username).maybeSingle();
+            if (profile?.id) return profile.id;
+          } catch {
+          }
           return crypto.randomUUID();
         }
       }
@@ -2550,8 +2621,16 @@ var init_repository6 = __esm({
         const nowIso = (/* @__PURE__ */ new Date()).toISOString();
         try {
           const adminClient = getAdminClient();
+          let targetId = profileData.id;
+          try {
+            const { data: existingProfile } = await adminClient.from("profiles").select("id").ilike("username", profileData.username).maybeSingle();
+            if (existingProfile?.id) {
+              targetId = existingProfile.id;
+            }
+          } catch {
+          }
           const { error: profileError } = await adminClient.from("profiles").upsert({
-            id: profileData.id,
+            id: targetId,
             role: profileData.role,
             username: profileData.username,
             full_name: profileData.full_name,
@@ -2577,7 +2656,7 @@ var init_repository6 = __esm({
           }
           if (profileData.role === "pt" && ptData) {
             const { error: ptError } = await adminClient.from("pts").upsert({
-              user_id: profileData.id,
+              user_id: targetId,
               license_no: ptData.license_no,
               license_expiry: ptData.license_expiry || null,
               specialty: ptData.specialty || null,
@@ -2585,12 +2664,12 @@ var init_repository6 = __esm({
               sex: ptData.sex || null
             }, { onConflict: "user_id" });
             if (ptError) {
-              logger.warn({ ptError, ptData, userId: profileData.id }, "Warning upserting pt details");
+              logger.warn({ ptError, ptData, userId: targetId }, "Warning upserting pt details");
             }
           }
-          const created = await this.getStaffById(profileData.id);
+          const created = await this.getStaffById(targetId);
           return created || {
-            id: profileData.id,
+            id: targetId,
             role: profileData.role,
             username: profileData.username,
             full_name: profileData.full_name,
@@ -11235,6 +11314,8 @@ var import_path3 = __toESM(require("path"));
 init_logger();
 var PatientVaultService = class {
   constructor(customUploadDir) {
+    this.inMemoryRecords = /* @__PURE__ */ new Map();
+    this.inMemorySnapshots = /* @__PURE__ */ new Map();
     this.baseUploadDir = customUploadDir || import_path3.default.resolve(process.cwd(), "public", "uploads", "patients");
   }
   getPatientVaultDir(patientId) {
@@ -11242,18 +11323,22 @@ var PatientVaultService = class {
   }
   ensurePatientVault(patientId) {
     const vaultDir = this.getPatientVaultDir(patientId);
-    if (!import_fs2.default.existsSync(vaultDir)) {
-      import_fs2.default.mkdirSync(vaultDir, { recursive: true });
-      console.log(`[STORAGE] Created directory: /public/uploads/patients/${patientId}/`);
-      logger.info(`[STORAGE] Created directory: /public/uploads/patients/${patientId}/`);
-    }
-    const loginHistDir = import_path3.default.join(vaultDir, "login_history");
-    if (!import_fs2.default.existsSync(loginHistDir)) {
-      import_fs2.default.mkdirSync(loginHistDir, { recursive: true });
-    }
-    const enrollFramesDir = import_path3.default.join(vaultDir, "enrollment_frames");
-    if (!import_fs2.default.existsSync(enrollFramesDir)) {
-      import_fs2.default.mkdirSync(enrollFramesDir, { recursive: true });
+    try {
+      if (!import_fs2.default.existsSync(vaultDir)) {
+        import_fs2.default.mkdirSync(vaultDir, { recursive: true });
+        console.log(`[STORAGE] Created directory: /public/uploads/patients/${patientId}/`);
+        logger.info(`[STORAGE] Created directory: /public/uploads/patients/${patientId}/`);
+      }
+      const loginHistDir = import_path3.default.join(vaultDir, "login_history");
+      if (!import_fs2.default.existsSync(loginHistDir)) {
+        import_fs2.default.mkdirSync(loginHistDir, { recursive: true });
+      }
+      const enrollFramesDir = import_path3.default.join(vaultDir, "enrollment_frames");
+      if (!import_fs2.default.existsSync(enrollFramesDir)) {
+        import_fs2.default.mkdirSync(enrollFramesDir, { recursive: true });
+      }
+    } catch (fsErr) {
+      logger.warn({ fsErr, patientId }, "[STORAGE] Filesystem is read-only (Serverless/Vercel); using in-memory vault");
     }
     return vaultDir;
   }
@@ -11261,11 +11346,6 @@ var PatientVaultService = class {
    * Saves profile_face.jpg and patient_record.json with full schema normalization
    */
   savePatientRecord(patientId, record, profileImageBuffer) {
-    const vaultDir = this.ensurePatientVault(patientId);
-    if (profileImageBuffer && profileImageBuffer.length > 0) {
-      const profilePath = import_path3.default.join(vaultDir, "profile_face.jpg");
-      import_fs2.default.writeFileSync(profilePath, profileImageBuffer);
-    }
     const normalizedRecord = {
       ...record,
       patient_id: patientId,
@@ -11314,10 +11394,20 @@ var PatientVaultService = class {
         prescribed_exercises: s.prescribed_exercises || s.assigned_exercises || []
       };
     }
-    const recordPath = import_path3.default.join(vaultDir, "patient_record.json");
-    import_fs2.default.writeFileSync(recordPath, JSON.stringify(normalizedRecord, null, 2), "utf-8");
-    console.log(`[STORAGE] Saved profile_face.jpg and patient_record.json for ${patientId} successfully.`);
-    logger.info(`[STORAGE] Saved profile_face.jpg and patient_record.json for ${patientId} successfully.`);
+    this.inMemoryRecords.set(patientId, normalizedRecord);
+    try {
+      const vaultDir = this.ensurePatientVault(patientId);
+      if (profileImageBuffer && profileImageBuffer.length > 0) {
+        const profilePath = import_path3.default.join(vaultDir, "profile_face.jpg");
+        import_fs2.default.writeFileSync(profilePath, profileImageBuffer);
+      }
+      const recordPath = import_path3.default.join(vaultDir, "patient_record.json");
+      import_fs2.default.writeFileSync(recordPath, JSON.stringify(normalizedRecord, null, 2), "utf-8");
+      console.log(`[STORAGE] Saved profile_face.jpg and patient_record.json for ${patientId} successfully.`);
+      logger.info(`[STORAGE] Saved profile_face.jpg and patient_record.json for ${patientId} successfully.`);
+    } catch (fsErr) {
+      logger.warn({ fsErr, patientId }, "[STORAGE] Filesystem write bypassed in serverless environment; persisted in-memory");
+    }
   }
   /**
    * Initializes or updates a patient vault
@@ -11326,63 +11416,83 @@ var PatientVaultService = class {
     this.savePatientRecord(patientId, record, profileImageBuffer);
   }
   /**
-   * Reads patient_record.json from disk
+   * Reads patient_record.json from disk or in-memory fallback
    */
   getPatientRecord(patientId) {
     const recordPath = import_path3.default.join(this.getPatientVaultDir(patientId), "patient_record.json");
-    if (!import_fs2.default.existsSync(recordPath)) {
-      return null;
-    }
     try {
-      const content = import_fs2.default.readFileSync(recordPath, "utf-8");
-      return JSON.parse(content);
+      if (import_fs2.default.existsSync(recordPath)) {
+        const content = import_fs2.default.readFileSync(recordPath, "utf-8");
+        const parsed = JSON.parse(content);
+        this.inMemoryRecords.set(patientId, parsed);
+        return parsed;
+      }
     } catch (err) {
-      logger.error({ err, patientId }, "Failed to read patient_record.json");
-      return null;
+      logger.warn({ err, patientId }, "Failed to read patient_record.json from disk, checking in-memory cache");
     }
+    return this.inMemoryRecords.get(patientId) || null;
   }
   /**
    * Lists all patient records across all vaults
    */
   listAllPatientRecords() {
-    if (!import_fs2.default.existsSync(this.baseUploadDir)) {
-      return [];
+    const recordsMap = /* @__PURE__ */ new Map();
+    for (const [id, rec] of this.inMemoryRecords.entries()) {
+      recordsMap.set(id, rec);
     }
-    const entries = import_fs2.default.readdirSync(this.baseUploadDir, { withFileTypes: true });
-    const records = [];
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const record = this.getPatientRecord(entry.name);
-        if (record) {
-          records.push(record);
+    try {
+      if (import_fs2.default.existsSync(this.baseUploadDir)) {
+        const entries = import_fs2.default.readdirSync(this.baseUploadDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const record = this.getPatientRecord(entry.name);
+            if (record) {
+              recordsMap.set(entry.name, record);
+            }
+          }
         }
       }
+    } catch (fsErr) {
+      logger.warn({ fsErr }, "Failed reading patient directory from disk, using in-memory list");
     }
-    return records;
+    return Array.from(recordsMap.values());
   }
   /**
    * Saves snapshot to login_history/ and enforces strict 10-snapshot rolling retention
    */
   recordLoginSnapshot(patientId, imageBuffer) {
-    const vaultDir = this.ensurePatientVault(patientId);
-    const loginHistDir = import_path3.default.join(vaultDir, "login_history");
     const now = /* @__PURE__ */ new Date();
     const pad = (n) => String(n).padStart(2, "0");
     const tsStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(
       now.getHours()
     )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    let filename = `login_${tsStr}.jpg`;
-    let counter = 1;
-    while (import_fs2.default.existsSync(import_path3.default.join(loginHistDir, filename))) {
-      filename = `login_${tsStr}_${counter}.jpg`;
-      counter++;
+    const filename = `login_${tsStr}.jpg`;
+    const snapshotUrl = `/uploads/patients/${patientId}/login_history/${filename}`;
+    const memorySnaps = this.inMemorySnapshots.get(patientId) || [];
+    memorySnaps.unshift({ name: filename, url: snapshotUrl, time: Date.now() });
+    if (memorySnaps.length > 10) {
+      memorySnaps.splice(10);
     }
-    const filePath = import_path3.default.join(loginHistDir, filename);
-    import_fs2.default.writeFileSync(filePath, imageBuffer);
-    this.enforceLoginHistoryRetention(loginHistDir, 10);
-    console.log(`[STORAGE] Saved login snapshot and enforced 10-file retention limit for ${patientId}.`);
-    logger.info(`[STORAGE] Saved login snapshot and enforced 10-file retention limit for ${patientId}.`);
-    return `/uploads/patients/${patientId}/login_history/${filename}`;
+    this.inMemorySnapshots.set(patientId, memorySnaps);
+    try {
+      const vaultDir = this.ensurePatientVault(patientId);
+      const loginHistDir = import_path3.default.join(vaultDir, "login_history");
+      let finalFilename = filename;
+      let counter = 1;
+      while (import_fs2.default.existsSync(import_path3.default.join(loginHistDir, finalFilename))) {
+        finalFilename = `login_${tsStr}_${counter}.jpg`;
+        counter++;
+      }
+      const filePath = import_path3.default.join(loginHistDir, finalFilename);
+      import_fs2.default.writeFileSync(filePath, imageBuffer);
+      this.enforceLoginHistoryRetention(loginHistDir, 10);
+      console.log(`[STORAGE] Saved login snapshot and enforced 10-file retention limit for ${patientId}.`);
+      logger.info(`[STORAGE] Saved login snapshot and enforced 10-file retention limit for ${patientId}.`);
+      return `/uploads/patients/${patientId}/login_history/${finalFilename}`;
+    } catch (fsErr) {
+      logger.warn({ fsErr, patientId }, "[STORAGE] Login snapshot disk write bypassed on read-only filesystem");
+    }
+    return snapshotUrl;
   }
   enforceLoginHistoryRetention(loginHistDir, maxFiles = 10) {
     try {
@@ -11416,12 +11526,19 @@ var PatientVaultService = class {
     const vaultDir = this.getPatientVaultDir(patientId);
     const loginHistDir = import_path3.default.join(vaultDir, "login_history");
     let snapshots = [];
-    if (import_fs2.default.existsSync(loginHistDir)) {
-      snapshots = import_fs2.default.readdirSync(loginHistDir).filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg")).map((f) => ({
-        name: f,
-        url: `/uploads/patients/${patientId}/login_history/${f}`,
-        time: import_fs2.default.statSync(import_path3.default.join(loginHistDir, f)).mtimeMs
-      })).sort((a, b) => b.time - a.time).slice(0, 10).map((s) => s.url);
+    try {
+      if (import_fs2.default.existsSync(loginHistDir)) {
+        snapshots = import_fs2.default.readdirSync(loginHistDir).filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg")).map((f) => ({
+          name: f,
+          url: `/uploads/patients/${patientId}/login_history/${f}`,
+          time: import_fs2.default.statSync(import_path3.default.join(loginHistDir, f)).mtimeMs
+        })).sort((a, b) => b.time - a.time).slice(0, 10).map((s) => s.url);
+      }
+    } catch {
+    }
+    if (snapshots.length === 0) {
+      const memSnaps = this.inMemorySnapshots.get(patientId) || [];
+      snapshots = memSnaps.map((s) => s.url);
     }
     return {
       record,
@@ -11452,16 +11569,18 @@ var PatientVaultService = class {
    * Recursively deletes public/uploads/patients/{patient_id}/ from disk
    */
   deletePatientVault(patientId) {
+    this.inMemoryRecords.delete(patientId);
+    this.inMemorySnapshots.delete(patientId);
     const vaultDir = this.getPatientVaultDir(patientId);
-    if (import_fs2.default.existsSync(vaultDir)) {
-      try {
+    try {
+      if (import_fs2.default.existsSync(vaultDir)) {
         import_fs2.default.rmSync(vaultDir, { recursive: true, force: true });
         logger.info(`[STORAGE] Permanently deleted patient vault directory: ${vaultDir}`);
         return true;
-      } catch (err) {
-        logger.error({ err, vaultDir }, "Failed to delete patient vault directory");
-        return false;
       }
+    } catch (err) {
+      logger.error({ err, vaultDir }, "Failed to delete patient vault directory from disk");
+      return true;
     }
     return false;
   }
@@ -11639,7 +11758,7 @@ var SmartOnboardingService = class {
         first_name: "\u0E23\u0E2D\u0E25\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25",
         last_name: `(${patient_id})`,
         age: 0,
-        sex: "OTHER",
+        sex: "other",
         injury: "\u0E23\u0E2D\u0E25\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25",
         registration_status: "face_registered_pending_info",
         registered_via: "kiosk",
@@ -11765,7 +11884,7 @@ var SmartOnboardingService = class {
         first_name: info.first_name,
         last_name: info.last_name,
         age: Number(info.age),
-        sex: info.gender === "male" || info.gender === "M" ? "M" : "F",
+        sex: info.gender && (info.gender.toLowerCase() === "female" || info.gender.toLowerCase() === "f") ? "female" : info.gender && (info.gender.toLowerCase() === "male" || info.gender.toLowerCase() === "m") ? "male" : "other",
         phone: info.phone,
         injury: info.initial_symptoms || "\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B",
         registration_status: "active",

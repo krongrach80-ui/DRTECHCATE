@@ -191,24 +191,44 @@ export class PatientRepository implements IPatientRepository {
         }
       }
 
-      const { data, error } = await adminClient
+      const insertPayload: Record<string, unknown> = {
+        first_name: (input.first_name || 'ผู้ป่วย').trim(),
+        last_name: (input.last_name || '-').trim(),
+        age: typeof input.age === 'number' && !isNaN(input.age) ? input.age : 30,
+        sex: input.sex || 'other',
+        phone: normalizePhone(input.phone) || '-',
+        history: cleanHistory,
+        injury: input.injury?.trim() || '-',
+        responsible_pt_id: validPtId,
+        registration_status: input.registration_status || 'active',
+        registered_via: input.registered_via || 'reception',
+        pending_expires_at: expiresAt,
+        version: 1,
+      };
+
+      if ((input as any).hn) {
+        insertPayload.hn = (input as any).hn;
+      }
+
+      let { data, error } = await adminClient
         .from('patients')
-        .insert({
-          first_name: input.first_name.trim(),
-          last_name: input.last_name.trim(),
-          age: typeof input.age === 'number' && !isNaN(input.age) ? input.age : 30,
-          sex: input.sex || 'unspecified',
-          phone: normalizePhone(input.phone) || '-',
-          history: cleanHistory,
-          injury: input.injury?.trim() || '-',
-          responsible_pt_id: validPtId,
-          registration_status: input.registration_status || 'active',
-          registered_via: input.registered_via || 'reception',
-          pending_expires_at: expiresAt,
-          version: 1,
-        })
+        .insert(insertPayload)
         .select('*')
         .single();
+
+      // If duplicate HN error occurs, auto-generate non-duplicate HN and retry
+      if (error && (error.code === '23505' || error.message?.includes('hn'))) {
+        logger.warn({ error, hn: insertPayload.hn }, 'HN duplicate detected, generating non-duplicate HN');
+        const uniqueHn = `P-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-4)}`;
+        insertPayload.hn = uniqueHn;
+        const retryRes = await adminClient
+          .from('patients')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+        data = retryRes.data;
+        error = retryRes.error;
+      }
 
       if (error || !data) {
         logger.error({ error, input }, 'Failed to insert patient in Supabase');
