@@ -185,6 +185,10 @@ export class SmartOnboardingService {
       history: {
         patient_record: newRecord,
         face_vector: avgVector,
+        frames: payload.frames?.map((f) => ({
+          pose: f.pose,
+          embedding: f.embedding,
+        })),
         pin: payload.pin?.trim() || '1234',
         chronic_diseases: '-',
         allergies: '-',
@@ -386,6 +390,18 @@ export class SmartOnboardingService {
     similarityPercentage?: number;
     message?: string;
   }> {
+    if (
+      !probeVector ||
+      !Array.isArray(probeVector) ||
+      probeVector.length !== 512 ||
+      probeVector.every((v) => Math.abs(v) < 1e-4 || Math.abs(v - 0.01) < 1e-4)
+    ) {
+      return {
+        matched: false,
+        message: 'ไม่พบใบหน้าชีวมาตรในตำแหน่งกล้อง กรุณาจัดตำแหน่งใบหน้าให้อยู่ในกรอบวงกลมและลองใหม่อีกครั้ง',
+      };
+    }
+
     const records = this.vaultService.listAllPatientRecords();
 
     // Augment with Supabase patients database (essential for Cloud & Serverless persistence)
@@ -404,35 +420,53 @@ export class SmartOnboardingService {
             const pRecord: PatientRecordFile | undefined = p.history?.patient_record;
             const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
             if (pVector && Array.isArray(pVector) && pVector.length === 512) {
-              const exists = records.some((r) => r.patient_id === p.id || r.hn === p.hn);
-              if (!exists) {
-                records.push(
-                  pRecord || {
-                    patient_id: p.id,
-                    hn: p.hn,
-                    first_name: p.first_name,
-                    last_name: p.last_name,
-                    age: p.age || 0,
-                    gender: p.sex === 'M' ? 'male' : p.sex === 'F' ? 'female' : 'unspecified',
-                    phone: p.phone || '',
-                    initial_symptoms: p.injury || '',
-                    registration_status: p.registration_status,
-                    registered_via: p.registered_via || 'kiosk',
-                    created_at: p.created_at || new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                    biometrics: {
-                      face_vector: pVector,
-                      registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
-                      confidence_score: 0.95,
-                      model_version: 'w600k_r50',
-                      enrolled_at: p.created_at || new Date().toISOString(),
-                    },
-                    schedule: p.history?.schedule || null,
-                    daily_checklists: p.history?.daily_checklists || {},
-                    rehab_scores: p.history?.rehab_scores || [],
-                    clinical: { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] },
-                  }
-                );
+              const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
+              const builtRecord: PatientRecordFile = pRecord || {
+                patient_id: p.id,
+                hn: p.hn,
+                first_name: p.first_name,
+                last_name: p.last_name,
+                age: p.age || 0,
+                gender: (p.sex === 'female' || p.sex === 'F') ? 'female' : 'male',
+                phone: p.phone || '',
+                initial_symptoms: p.injury || '',
+                registration_status: p.registration_status,
+                registered_via: p.registered_via || 'kiosk',
+                created_at: p.created_at || new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                biometrics: {
+                  face_vector: pVector,
+                  registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
+                  confidence_score: 0.95,
+                  model_version: 'w600k_r50',
+                  enrolled_at: p.created_at || new Date().toISOString(),
+                },
+                schedule: p.history?.schedule || null,
+                daily_checklists: p.history?.daily_checklists || {},
+                rehab_scores: p.history?.rehab_scores || [],
+                clinical: { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] },
+              };
+
+              if (!builtRecord.biometrics) {
+                builtRecord.biometrics = {
+                  face_vector: pVector,
+                  registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
+                  confidence_score: 0.95,
+                  model_version: 'w600k_r50',
+                  enrolled_at: p.created_at || new Date().toISOString(),
+                };
+              } else {
+                builtRecord.biometrics.face_vector = pVector;
+              }
+
+              if (p.history?.frames && Array.isArray(p.history.frames)) {
+                (builtRecord as any).enrolled_frames = p.history.frames;
+              }
+
+              if (existingIndex >= 0) {
+                records[existingIndex] = builtRecord;
+              } else {
+                records.push(builtRecord);
               }
             }
           }
@@ -448,10 +482,32 @@ export class SmartOnboardingService {
       distance: number;
       percent: number;
     } | null = null;
+    let nearestCandidate: { name: string; hn: string; sim: number; dist: number } | null = null;
 
     for (const record of records) {
-      if (record.biometrics && record.biometrics.face_vector) {
-        const result = evaluateBiometricMatch(probeVector, record.biometrics.face_vector);
+      const candidateVectors: number[][] = [];
+      if (record.biometrics?.face_vector && record.biometrics.face_vector.length === 512) {
+        candidateVectors.push(record.biometrics.face_vector);
+      }
+      const extraFrames = (record as any).enrolled_frames;
+      if (extraFrames && Array.isArray(extraFrames)) {
+        for (const ef of extraFrames) {
+          if (ef.embedding && Array.isArray(ef.embedding) && ef.embedding.length === 512) {
+            candidateVectors.push(ef.embedding);
+          }
+        }
+      }
+
+      for (const vec of candidateVectors) {
+        const result = evaluateBiometricMatch(probeVector, vec);
+        if (!nearestCandidate || result.cosineSimilarity > nearestCandidate.sim) {
+          nearestCandidate = {
+            name: `${record.first_name} ${record.last_name}`,
+            hn: record.hn,
+            sim: result.cosineSimilarity,
+            dist: result.euclideanDistance,
+          };
+        }
         if (result.isMatch) {
           if (!bestMatch || result.cosineSimilarity > bestMatch.similarity) {
             bestMatch = {
@@ -465,10 +521,16 @@ export class SmartOnboardingService {
       }
     }
 
+    if (nearestCandidate) {
+      logger.info(
+        `[FACE-AUTH-EVAL] Nearest: ${nearestCandidate.name} (${nearestCandidate.hn}) | Similarity: ${nearestCandidate.sim} | Distance: ${nearestCandidate.dist} | IsMatch: ${Boolean(bestMatch)}`
+      );
+    }
+
     if (bestMatch) {
       const patient = bestMatch.record;
       logger.info(
-        `[FACE-AUTH] Calculated Distance: ${bestMatch.distance} | Similarity: ${bestMatch.percent}% | Matched Patient: ${patient.first_name} (${patient.patient_id})`
+        `[FACE-AUTH] Success: ${patient.first_name} (${patient.hn}) | Similarity: ${bestMatch.percent}% | Distance: ${bestMatch.distance}`
       );
 
       // Record snapshot to login_history/

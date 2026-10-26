@@ -30,6 +30,12 @@ import {
   SmoothButton,
 } from '../../../../packages/hospital-ui-kit/src/index.js';
 import { defaultApiClient, PtDirectoryRecord } from '../../../../packages/api-client/src/index.js';
+import {
+  MediaPipeFaceDetector,
+  FaceAligner,
+  GeometricLandmarkEmbeddingModel,
+  l2Normalize,
+} from '../../../../packages/face-client/src/index.js';
 
 interface NewPatientRegistrationModalProps {
   isOpen: boolean;
@@ -126,6 +132,30 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   const formScrollRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const autoScanCancelRef = useRef<boolean>(false);
+
+  const detectorRef = useRef<MediaPipeFaceDetector | null>(null);
+  const alignerRef = useRef<FaceAligner | null>(null);
+  const embeddingModelRef = useRef<GeometricLandmarkEmbeddingModel | null>(null);
+
+  const getFaceServices = () => {
+    if (!detectorRef.current) {
+      detectorRef.current = new MediaPipeFaceDetector({
+        wasmPath: '/models/wasm',
+        modelAssetPath: '/models/face_landmarker.task',
+      });
+    }
+    if (!alignerRef.current) {
+      alignerRef.current = new FaceAligner();
+    }
+    if (!embeddingModelRef.current) {
+      embeddingModelRef.current = new GeometricLandmarkEmbeddingModel();
+    }
+    return {
+      detector: detectorRef.current,
+      aligner: alignerRef.current,
+      embeddingModel: embeddingModelRef.current,
+    };
+  };
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -247,46 +277,127 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     pose: 'front' | 'left' | 'right' | 'nod',
     customSource?: HTMLCanvasElement | HTMLImageElement
   ): Promise<CapturedBiometricFrame> => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 112;
-    canvas.height = 112;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Cannot get 2D rendering context');
+    const { detector, aligner, embeddingModel } = getFaceServices();
+
+    // 1. Prepare unmirrored source canvas from webcam video or customSource
+    let sourceCanvas: HTMLCanvasElement;
+    let vw = 640;
+    let vh = 480;
 
     if (customSource) {
-      ctx.drawImage(customSource, 0, 0, 112, 112);
+      vw = customSource.width || 640;
+      vh = customSource.height || 480;
+      sourceCanvas = document.createElement('canvas');
+      sourceCanvas.width = vw;
+      sourceCanvas.height = vh;
+      const sctx = sourceCanvas.getContext('2d');
+      if (sctx) sctx.drawImage(customSource, 0, 0, vw, vh);
     } else if (videoRef.current && videoRef.current.videoWidth > 0) {
-      // Draw real video frame directly without artificial translations
-      ctx.drawImage(videoRef.current, 0, 0, 112, 112);
+      vw = videoRef.current.videoWidth;
+      vh = videoRef.current.videoHeight;
+      sourceCanvas = document.createElement('canvas');
+      sourceCanvas.width = vw;
+      sourceCanvas.height = vh;
+      const sctx = sourceCanvas.getContext('2d');
+      if (sctx) sctx.drawImage(videoRef.current, 0, 0, vw, vh);
     } else {
-      // Clinical geometric fallback canvas if camera has no frame
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(0, 0, 112, 112);
-      ctx.strokeStyle = '#10b981';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(56, 56, 36, 0, Math.PI * 2);
-      ctx.stroke();
+      sourceCanvas = document.createElement('canvas');
+      sourceCanvas.width = 112;
+      sourceCanvas.height = 112;
+      const sctx = sourceCanvas.getContext('2d');
+      if (sctx) {
+        sctx.fillStyle = '#0f172a';
+        sctx.fillRect(0, 0, 112, 112);
+      }
     }
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    // 2. Perform Face Detection & ArcFace Alignment
+    let alignedCanvas: HTMLCanvasElement;
+    let detectionBox: { x: number; y: number; width: number; height: number } | null = null;
+
+    try {
+      const detection = await detector.detect(sourceCanvas);
+      if (detection.box) {
+        detectionBox = detection.box;
+      }
+      if (detection.hasFace && detection.landmarks) {
+        alignedCanvas = aligner.align(sourceCanvas, detection.landmarks);
+      } else if (detection.hasFace && detection.box && detection.box.width > 20) {
+        alignedCanvas = document.createElement('canvas');
+        alignedCanvas.width = 112;
+        alignedCanvas.height = 112;
+        const actx = alignedCanvas.getContext('2d');
+        if (actx) {
+          const pad = detection.box.width * 0.15;
+          const sx = Math.max(0, detection.box.x - pad);
+          const sy = Math.max(0, detection.box.y - pad);
+          const sw = Math.min(vw - sx, detection.box.width + pad * 2);
+          const sh = Math.min(vh - sy, detection.box.height + pad * 2);
+          actx.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, 112, 112);
+        }
+      } else {
+        alignedCanvas = document.createElement('canvas');
+        alignedCanvas.width = 112;
+        alignedCanvas.height = 112;
+        const actx = alignedCanvas.getContext('2d');
+        if (actx) {
+          const size = Math.min(vw, vh) * 0.58;
+          const sx = (vw - size) / 2;
+          const sy = Math.max(0, (vh - size) * 0.35);
+          actx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, 112, 112);
+        }
+      }
+    } catch {
+      alignedCanvas = document.createElement('canvas');
+      alignedCanvas.width = 112;
+      alignedCanvas.height = 112;
+      const actx = alignedCanvas.getContext('2d');
+      if (actx) {
+        const size = Math.min(vw, vh) * 0.58;
+        const sx = (vw - size) / 2;
+        const sy = Math.max(0, (vh - size) * 0.35);
+        actx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, 112, 112);
+      }
+    }
+
+    // 3. Extract crisp portrait avatar for preview & display
+    const avatarCanvas = document.createElement('canvas');
+    avatarCanvas.width = 240;
+    avatarCanvas.height = 240;
+    const avCtx = avatarCanvas.getContext('2d');
+    if (avCtx) {
+      let cropX = 0, cropY = 0, cropSize = Math.min(vw, vh);
+      if (detectionBox && detectionBox.width > 20) {
+        const pad = Math.max(detectionBox.width, detectionBox.height) * 0.25;
+        const cx = detectionBox.x + detectionBox.width / 2;
+        const cy = detectionBox.y + detectionBox.height / 2;
+        cropSize = Math.max(detectionBox.width, detectionBox.height) + pad * 2;
+        cropX = Math.max(0, cx - cropSize / 2);
+        cropY = Math.max(0, cy - cropSize / 2);
+        if (cropX + cropSize > vw) cropSize = vw - cropX;
+        if (cropY + cropSize > vh) cropSize = vh - cropY;
+      } else {
+        cropSize = Math.min(vw, vh) * 0.68;
+        cropX = (vw - cropSize) / 2;
+        cropY = Math.max(0, (vh - cropSize) * 0.35);
+      }
+      avCtx.drawImage(sourceCanvas, cropX, cropY, cropSize, cropSize, 0, 0, 240, 240);
+    }
+    const dataUrl = avatarCanvas.toDataURL('image/jpeg', 0.88);
     const jpegBase64 = dataUrl.split(',')[1] || '';
 
+    // 4. Compute 512-D L2-normalized biometric embedding
     let embedding: number[] = [];
     try {
-      const { GeometricLandmarkEmbeddingModel } = await import(
-        '../../../../packages/face-client/src/index.js'
-      );
-      const model = new GeometricLandmarkEmbeddingModel();
-      embedding = await model.embed(canvas);
+      embedding = await embeddingModel.embed(alignedCanvas);
     } catch {
       // Safe fallback
     }
 
-    // Ensure valid 512-D L2-normalized vector
     if (!embedding || embedding.length !== 512) {
       embedding = Array.from({ length: 512 }, (_, i) => Math.sin(i * 0.1) * 0.044);
     }
+    embedding = l2Normalize(embedding);
 
     return {
       index: targetIndex,

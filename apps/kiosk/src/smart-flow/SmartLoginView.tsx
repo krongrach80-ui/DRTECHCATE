@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FaceDetector } from '../../../../packages/face-client/src/index.js';
+import { FaceDetector, l2Normalize } from '../../../../packages/face-client/src/index.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import { getFaceClientServices } from '../services/faceClientService';
 import {
@@ -112,7 +112,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       const { camera, detector, aligner, embeddingModel } = services;
 
       if (!videoRef.current) {
-        throw new Error('Camera video stream is not available');
+        throw new Error('กล้องเว็บแคมยังไม่พร้อมใช้งาน');
       }
 
       // 1. Capture raw unmirrored frame
@@ -121,24 +121,72 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       let snapshotBase64: string | undefined;
 
       try {
-        snapshotBase64 = rawFrame.toDataURL('image/jpeg', 0.8);
+        snapshotBase64 = rawFrame.toDataURL('image/jpeg', 0.85);
       } catch {
         // Ignore snapshot generation failure
       }
 
+      // 2. Real Face Detection
+      const detection = await detector.detect(rawFrame);
+      if (!detection.hasFace) {
+        setStatusText('ยังตรวจไม่พบใบหน้า กรุณาจัดตำแหน่งใบหน้าให้อยู่ในกรอบวงกลม');
+        hasTriggeredScanRef.current = false;
+        setCountdown(3);
+        setIsScanning(false);
+        return;
+      }
+
+      // 3. ArcFace Landmark Alignment & Cropping
       try {
-        const detection = await detector.detect(rawFrame);
-        if (detection.hasFace && detection.landmarks) {
+        if (detection.landmarks) {
           const aligned = aligner.align(rawFrame, detection.landmarks);
           probe = await embeddingModel.embed(aligned);
           const actx = aligned.getContext?.('2d');
           if (actx) actx.clearRect(0, 0, aligned.width, aligned.height);
+        } else if (detection.box && detection.box.width > 20) {
+          const faceCrop = document.createElement('canvas');
+          faceCrop.width = 112;
+          faceCrop.height = 112;
+          const fcCtx = faceCrop.getContext('2d');
+          if (fcCtx) {
+            const fw = rawFrame.width || 640;
+            const fh = rawFrame.height || 480;
+            const pad = detection.box.width * 0.15;
+            const sx = Math.max(0, detection.box.x - pad);
+            const sy = Math.max(0, detection.box.y - pad);
+            const sw = Math.min(fw - sx, detection.box.width + pad * 2);
+            const sh = Math.min(fh - sy, detection.box.height + pad * 2);
+            fcCtx.drawImage(rawFrame, sx, sy, sw, sh, 0, 0, 112, 112);
+            probe = await embeddingModel.embed(faceCrop);
+          }
         } else {
-          probe = new Array(512).fill(0.01);
+          const faceCrop = document.createElement('canvas');
+          faceCrop.width = 112;
+          faceCrop.height = 112;
+          const fcCtx = faceCrop.getContext('2d');
+          if (fcCtx) {
+            const fw = rawFrame.width || 640;
+            const fh = rawFrame.height || 480;
+            const size = Math.min(fw, fh) * 0.58;
+            const sx = (fw - size) / 2;
+            const sy = Math.max(0, (fh - size) * 0.35);
+            fcCtx.drawImage(rawFrame, sx, sy, size, size, 0, 0, 112, 112);
+            probe = await embeddingModel.embed(faceCrop);
+          }
         }
-      } catch {
-        probe = new Array(512).fill(0.01);
+      } catch (err) {
+        console.warn('Face embedding extraction fallback:', err);
       }
+
+      if (!probe || probe.length !== 512) {
+        setStatusText('คุณภาพภาพสแกนยังไม่สมบูรณ์ กรุณานิ่งไว้สักครู่');
+        hasTriggeredScanRef.current = false;
+        setCountdown(2);
+        setIsScanning(false);
+        return;
+      }
+
+      probe = l2Normalize(probe);
 
       // 4. Call /api/smart-onboarding/scan-login
       const res = await defaultApiClient.smartOnboarding
@@ -168,7 +216,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         setStatusText(`ยืนยันตัวตนสำเร็จ: คุณ ${patient.first_name} (${similarityPercent}%)`);
       } else {
         setUnrecognizedAlert(
-          res?.message || 'ไม่พบบัญชีในระบบ กรุณาเลือก "ลงทะเบียนคนไข้ใหม่" หรือ "ใช้รหัส PIN"'
+          res?.message || 'ไม่พบบัญชีที่ตรงกับใบหน้านี้ในระบบ กรุณาลองสแกนใหม่อีกครั้ง หรือเข้าสู่ระบบด้วยรหัส PIN / HN'
         );
         setStatusText('ไม่พบบัญชีในระบบ');
       }
