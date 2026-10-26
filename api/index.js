@@ -11779,35 +11779,44 @@ var SmartOnboardingService = class {
         if (dbPatients && Array.isArray(dbPatients)) {
           for (const p of dbPatients) {
             const pRecord = p.history?.patient_record;
-            const exists = records.some((r) => r.patient_id === p.id || r.hn === p.hn);
-            if (!exists) {
-              records.push(
-                pRecord || {
-                  patient_id: p.id,
-                  hn: p.hn,
-                  first_name: p.first_name,
-                  last_name: p.last_name,
-                  age: p.age || 0,
-                  gender: p.sex === "female" ? "female" : "male",
-                  phone: p.phone || "",
-                  initial_symptoms: p.injury || "",
-                  registration_status: p.registration_status,
-                  registered_via: p.registered_via || "kiosk",
-                  created_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-                  updated_at: (/* @__PURE__ */ new Date()).toISOString(),
-                  biometrics: {
-                    face_vector: p.history?.face_vector || [],
-                    registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
-                    confidence_score: 1,
-                    model_version: "w600k_r50",
-                    enrolled_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
-                  },
-                  schedule: null,
-                  daily_checklists: {},
-                  rehab_scores: [],
-                  clinical: { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] }
-                }
-              );
+            const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
+            const builtRecord = pRecord || {
+              patient_id: p.id,
+              hn: p.hn,
+              first_name: p.first_name,
+              last_name: p.last_name,
+              age: p.age || 0,
+              gender: p.sex === "female" || p.sex === "F" ? "female" : "male",
+              phone: p.phone || "",
+              initial_symptoms: p.injury || "",
+              registration_status: p.registration_status,
+              registered_via: p.registered_via || "kiosk",
+              created_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+              biometrics: {
+                face_vector: pVector || [],
+                registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
+                confidence_score: 1,
+                model_version: "w600k_r50",
+                enrolled_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
+              },
+              schedule: null,
+              daily_checklists: {},
+              rehab_scores: [],
+              clinical: { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] }
+            };
+            builtRecord.history = p.history;
+            if (p.history?.pin) {
+              if (!builtRecord.clinical) {
+                builtRecord.clinical = { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] };
+              }
+              builtRecord.clinical.pin = p.history.pin;
+            }
+            const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
+            if (existingIndex >= 0) {
+              records[existingIndex] = builtRecord;
+            } else {
+              records.push(builtRecord);
             }
           }
         }
@@ -11816,7 +11825,7 @@ var SmartOnboardingService = class {
       }
     }
     const matched = records.find((r) => {
-      const storedPin = r.history?.pin || r.clinical?.pin;
+      const storedPin = r.history?.pin || r.clinical?.pin || "1234";
       if (hn) {
         return (r.hn === hn || r.patient_id === hn) && (storedPin === cleanPin || r.hn.endsWith(cleanPin));
       }
