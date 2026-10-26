@@ -406,6 +406,7 @@ export const App: React.FC = () => {
           <SmartFlowController
             onStepChange={setSmartStep}
             onOpenStaffLoginModal={handleOpenStaffLoginModal}
+            isPaused={isStaffLoginModalOpen || isNewPatientModalOpen || isPairingOpen || roleMode !== 'kiosk'}
           />
         </div>
 

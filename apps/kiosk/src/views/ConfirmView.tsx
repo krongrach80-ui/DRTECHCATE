@@ -106,6 +106,12 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
       loopActive = false;
       if (nodInterval) clearInterval(nodInterval);
       unsubscribe();
+      camera.stop();
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
+      }
     };
   }, [handleConfirm]);
 

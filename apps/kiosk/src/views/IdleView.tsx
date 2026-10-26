@@ -115,7 +115,12 @@ export const IdleView: React.FC<IdleViewProps> = ({
       loopActive = false;
       if (detectionTimer) clearInterval(detectionTimer);
       unsubscribe();
-      // Leave camera running or stop if leaving idle
+      camera.stop();
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
+      }
     };
   }, [onStart, onDetectorReadyChange, customDetector]);
 

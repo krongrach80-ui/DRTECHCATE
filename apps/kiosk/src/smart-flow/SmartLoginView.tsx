@@ -27,6 +27,7 @@ interface SmartLoginViewProps {
   onNavigateToEnroll: () => void;
   customDetector?: FaceDetector;
   onOpenStaffLoginModal?: () => void;
+  isPaused?: boolean;
 }
 
 export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
@@ -34,6 +35,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   onNavigateToEnroll,
   customDetector,
   onOpenStaffLoginModal,
+  isPaused = false,
 }) => {
   const [presenceDetected, setPresenceDetected] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(5);
@@ -45,11 +47,15 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [similarityInfo, setSimilarityInfo] = useState<{ percent: number; distance: number } | null>(null);
   const [cameraRotation, setCameraRotation] = useState<0 | 90 | 180 | 270>(0);
   const [isMirrored, setIsMirrored] = useState<boolean>(true);
+  const [userDisabledCamera, setUserDisabledCamera] = useState<boolean>(false);
 
   // Modals inside Kiosk Screen
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
   const [enteredPin, setEnteredPin] = useState<string>('');
   const [isAboutModalOpen, setIsAboutModalOpen] = useState<boolean>(false);
+
+  // Effective pause state: paused when external prop says so, or when any modal/menu is open, or when user toggled off
+  const isScanningPaused = Boolean(isPaused || isAboutModalOpen || isPinModalOpen || userDisabledCamera);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -64,9 +70,36 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     isMirroredRef.current = isMirrored;
   }, [cameraRotation, isMirrored]);
 
+  // Completely Stop & Release Camera hardware and timers
+  const stopCamera = useCallback(() => {
+    try {
+      const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+      services.camera.stop();
+    } catch {
+      // safe
+    }
+    if (videoRef.current) {
+      if (videoRef.current.srcObject) {
+        try {
+          const stream = videoRef.current.srcObject as MediaStream;
+          stream.getTracks().forEach((track) => track.stop());
+        } catch {
+          // safe
+        }
+        videoRef.current.srcObject = null;
+      }
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setCameraReady(false);
+    setPresenceDetected(false);
+  }, [customDetector]);
+
   // Trigger login scan at 0s
   const executeScanLogin = useCallback(async () => {
-    if (!isMountedRef.current || isScanning || hasTriggeredScanRef.current) return;
+    if (!isMountedRef.current || isScanning || hasTriggeredScanRef.current || isScanningPaused) return;
     hasTriggeredScanRef.current = true;
     setIsScanning(true);
     setStatusText('กำลังสแกนใบหน้าและตรวจสอบอัตลักษณ์ชีวมาตร...');
@@ -112,7 +145,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       // Memory wipe invariant: Wipe probe vector immediately
       probe.fill(0);
 
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || isScanningPaused) return;
 
       if (res.matched && res.patient) {
         const distance = typeof res.distance === 'number' ? res.distance : 0.20;
@@ -142,17 +175,18 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         setIsScanning(false);
       }
     }
-  }, [customDetector, isScanning]);
+  }, [customDetector, isScanning, isScanningPaused]);
 
   // Request & Initialize Camera
   const startCamera = useCallback(async () => {
+    if (isScanningPaused) return;
     try {
       const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
       const { camera } = services;
 
       if (videoRef.current) {
         await camera.start(videoRef.current);
-        if (isMountedRef.current) {
+        if (isMountedRef.current && !isScanningPaused) {
           setCameraReady(true);
         }
       }
@@ -161,9 +195,30 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         setCameraReady(false);
       }
     }
-  }, [customDetector]);
+  }, [customDetector, isScanningPaused]);
 
+  // Tab visibility: Release camera if browser tab is hidden / minimized
   useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopCamera();
+      } else if (!isScanningPaused) {
+        startCamera();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [stopCamera, startCamera, isScanningPaused]);
+
+  // Main Camera & Presence Loop (Pauses completely when isScanningPaused is true)
+  useEffect(() => {
+    if (isScanningPaused) {
+      stopCamera();
+      return;
+    }
+
     isMountedRef.current = true;
     hasTriggeredScanRef.current = false;
     const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
@@ -173,7 +228,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     let animId: number;
 
     const unsubscribe = inputManager.subscribe((event) => {
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || isScanningPaused) return;
       if (event.type === 'PRESENCE_DETECTED') {
         setPresenceDetected(true);
         setStatusText('ตรวจพบผู้ป่วย จัดท่านั่งและมองกล้อง (เริ่มสแกนใน 5 วินาที)');
@@ -184,7 +239,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     startCamera();
 
     const renderLoop = () => {
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || isScanningPaused) return;
       if (previewCanvasRef.current && videoRef.current && videoRef.current.readyState >= 2) {
         camera.setRotation(cameraRotationRef.current);
         camera.setMirrorPreview(isMirroredRef.current);
@@ -196,7 +251,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
     // Presence detection loop
     const presenceInterval = setInterval(async () => {
-      if (!isMountedRef.current || presenceDetected) return;
+      if (!isMountedRef.current || presenceDetected || isScanningPaused) return;
       if (videoRef.current && videoRef.current.readyState >= 2) {
         try {
           const res = await detector.detect(videoRef.current);
@@ -225,19 +280,34 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       isMountedRef.current = false;
       cancelAnimationFrame(animId);
       clearInterval(presenceInterval);
-      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
       unsubscribe();
+      stopCamera();
     };
-  }, [customDetector, presenceDetected, startCamera]);
+  }, [customDetector, presenceDetected, startCamera, isScanningPaused, stopCamera]);
 
-  // 5-Second Cooldown Countdown Logic
+  // 5-Second Cooldown Countdown Logic (Pauses countdown immediately if paused)
   useEffect(() => {
+    if (isScanningPaused) {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+      return;
+    }
+
     if (presenceDetected && !hasTriggeredScanRef.current && !matchedPatient && !unrecognizedAlert) {
       setCountdown(5);
       countdownTimerRef.current = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
-            if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+            if (countdownTimerRef.current) {
+              clearInterval(countdownTimerRef.current);
+              countdownTimerRef.current = null;
+            }
             executeScanLogin();
             return 0;
           }
@@ -246,10 +316,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       }, 1000);
 
       return () => {
-        if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+        if (countdownTimerRef.current) {
+          clearInterval(countdownTimerRef.current);
+          countdownTimerRef.current = null;
+        }
       };
     }
-  }, [presenceDetected, executeScanLogin, matchedPatient, unrecognizedAlert]);
+  }, [presenceDetected, executeScanLogin, matchedPatient, unrecognizedAlert, isScanningPaused]);
 
   const handleResetScan = () => {
     setUnrecognizedAlert(null);
@@ -332,25 +405,33 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             /* Fallback Box: Yellow Amber Dashed */
             <div className="w-full bg-[#FFFBEB] border-[1.5px] border-dashed border-[#F59E0B] rounded-2xl p-4 text-center flex flex-col items-center justify-center">
               <div className="w-7 h-7 rounded-full border-2 border-[#F59E0B] text-[#F59E0B] flex items-center justify-center font-bold text-xs mb-1.5">
-                !
+                {userDisabledCamera || isScanningPaused ? '⏸️' : '!'}
               </div>
-              <h3 className="text-sm font-bold text-[#78350F]">กล้องยังไม่พร้อมใช้งาน</h3>
+              <h3 className="text-sm font-bold text-[#78350F]">
+                {userDisabledCamera || isScanningPaused ? 'หยุดการสแกนชั่วคราว' : 'กล้องยังไม่พร้อมใช้งาน'}
+              </h3>
               <p className="text-[11px] text-[#B45309] font-medium mt-0.5 mb-3.5">
-                กรุณาอนุญาตการใช้กล้อง หรือใช้รหัส PIN แทน
+                {userDisabledCamera || isScanningPaused
+                  ? 'ระบบหยุดตรวจจับใบหน้าอัตโนมัติขณะเปิดเมนูอื่น หรือเมื่อกดหยุดสแกน'
+                  : 'กรุณาอนุญาตการใช้กล้อง หรือใช้รหัส PIN แทน'}
               </p>
 
               <button
                 type="button"
-                onClick={startCamera}
+                onClick={() => {
+                  setUserDisabledCamera(false);
+                  startCamera();
+                }}
                 className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#10B981] to-[#2563EB] text-white text-xs font-bold shadow-md shadow-emerald-500/25 hover:brightness-105 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>ลองเปิดกล้องอีกครั้ง</span>
+                <span>{userDisabledCamera || isScanningPaused ? 'เปิดกล้องเริ่มสแกนใหม่' : 'ลองเปิดกล้องอีกครั้ง'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => {
+                  stopCamera();
                   setEnteredPin('');
                   setIsPinModalOpen(true);
                 }}
@@ -422,9 +503,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               {/* Close/Toggle Camera button */}
               <button
                 type="button"
-                onClick={() => setCameraReady(false)}
+                onClick={() => {
+                  setUserDisabledCamera(true);
+                  stopCamera();
+                }}
                 className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 text-white text-xs flex items-center justify-center hover:bg-rose-600 transition cursor-pointer z-20"
-                title="ปิดกล้อง"
+                title="หยุดสแกน / ปิดกล้อง"
               >
                 ✕
               </button>
@@ -501,7 +585,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         {/* Pill 1: เกี่ยวกับระบบ */}
         <button
           type="button"
-          onClick={() => setIsAboutModalOpen(true)}
+          onClick={() => {
+            stopCamera();
+            setIsAboutModalOpen(true);
+          }}
           className="px-4 py-1.5 rounded-full bg-white border border-[#CBD5E1] text-[#475569] text-xs font-semibold shadow-md hover:-translate-y-0.5 active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
         >
           <Info className="w-3.5 h-3.5 text-slate-500" />
@@ -513,7 +600,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           id="open-staff-login-btn"
           data-testid="open-staff-login-btn"
           type="button"
-          onClick={onOpenStaffLoginModal}
+          onClick={() => {
+            stopCamera();
+            onOpenStaffLoginModal?.();
+          }}
           title="เข้าสู่ระบบบุคลากร / รพ."
           className="px-4 py-1.5 rounded-full bg-white border-[1.5px] border-[#10B981] text-[#065F46] text-xs font-bold shadow-md shadow-emerald-500/15 hover:-translate-y-0.5 active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
         >
