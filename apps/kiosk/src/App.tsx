@@ -83,13 +83,14 @@ export const App: React.FC = () => {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   const fetchStaffCalls = useCallback(async () => {
+    if (!currentStaffUser) return;
     try {
       const calls = await defaultApiClient.kiosk.listStaffCalls();
       setStaffCalls(calls);
     } catch {
       // non-blocking
     }
-  }, []);
+  }, [currentStaffUser]);
 
   // Check auth session & route on mount
   useEffect(() => {

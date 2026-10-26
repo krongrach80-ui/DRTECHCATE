@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ClinicalSidebar,
   ClinicalMenuId,
@@ -52,14 +52,15 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const fetchCalls = async () => {
+  const fetchCalls = useCallback(async () => {
+    if (!currentUser) return;
     try {
       const calls = await defaultApiClient.kiosk.listStaffCalls();
       setStaffCalls(calls);
     } catch {
       // non-blocking
     }
-  };
+  }, [currentUser]);
 
   useEffect(() => {
     if (initialStaffCalls) {
@@ -85,7 +86,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
       unsubSse?.();
       clearInterval(syncInterval);
     };
-  }, [initialStaffCalls]);
+  }, [initialStaffCalls, fetchCalls]);
 
   // Tab change (Instant, zero fake setTimeout per Rule 2.2)
   const handleSelectTab = (tab: ClinicalMenuId) => {

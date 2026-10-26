@@ -94,11 +94,22 @@ export class StaffRepository implements IStaffRepository {
   async getStaffById(id: string): Promise<StaffProfileRecord | null> {
     try {
       const adminClient = getAdminClient();
-      const { data: profile, error } = await adminClient
+      let { data: profile, error } = await adminClient
         .from('profiles')
         .select('*, pts(*)')
         .eq('id', id)
         .maybeSingle();
+
+      if (error && (error.code === 'PGRST200' || error.message?.includes('pts') || error.message?.includes('relationship'))) {
+        logger.warn({ error, id }, 'Falling back to profiles query without pts relationship');
+        const fallbackRes = await adminClient
+          .from('profiles')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+        profile = fallbackRes.data;
+        error = fallbackRes.error;
+      }
 
       if (error) {
         logger.error({ error, id }, 'Database error querying staff by id');
@@ -117,11 +128,22 @@ export class StaffRepository implements IStaffRepository {
     const cleanUsername = username.trim().toLowerCase();
     try {
       const adminClient = getAdminClient();
-      const { data: profile, error } = await adminClient
+      let { data: profile, error } = await adminClient
         .from('profiles')
         .select('*, pts(*)')
         .ilike('username', cleanUsername)
         .maybeSingle();
+
+      if (error && (error.code === 'PGRST200' || error.message?.includes('pts') || error.message?.includes('relationship'))) {
+        logger.warn({ error, cleanUsername }, 'Falling back to profiles query without pts relationship');
+        const fallbackRes = await adminClient
+          .from('profiles')
+          .select('*')
+          .ilike('username', cleanUsername)
+          .maybeSingle();
+        profile = fallbackRes.data;
+        error = fallbackRes.error;
+      }
 
       if (error) {
         logger.error({ error, cleanUsername }, 'Database error querying staff by username');
@@ -155,7 +177,31 @@ export class StaffRepository implements IStaffRepository {
         query = query.or(`full_name.ilike.${searchPattern},username.ilike.${searchPattern}`);
       }
 
-      const { data, error } = await query;
+      let { data, error } = await query;
+
+      if (error && (error.code === 'PGRST200' || error.message?.includes('pts') || error.message?.includes('relationship'))) {
+        logger.warn({ error, filter }, 'Falling back to profiles query without pts relationship');
+        let fallbackQuery = adminClient
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (filter?.role) {
+          fallbackQuery = fallbackQuery.eq('role', filter.role);
+        }
+        if (filter?.status) {
+          fallbackQuery = fallbackQuery.eq('status', filter.status);
+        }
+        if (filter?.search) {
+          const searchPattern = `%${filter.search}%`;
+          fallbackQuery = fallbackQuery.or(`full_name.ilike.${searchPattern},username.ilike.${searchPattern}`);
+        }
+
+        const fallbackRes = await fallbackQuery;
+        data = fallbackRes.data;
+        error = fallbackRes.error;
+      }
+
       if (error) {
         logger.error({ error, filter }, 'Database error listing staff profiles');
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');

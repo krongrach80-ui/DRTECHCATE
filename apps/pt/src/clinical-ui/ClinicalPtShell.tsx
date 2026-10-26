@@ -4,7 +4,7 @@
  * Strictly Isolated: 5 Windows + Reception View. PT CANNOT view/edit other PTs' profiles.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ClinicalSidebar,
   ClinicalMenuId,
@@ -56,14 +56,15 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
 
   const currentUserId = currentUser?.id || 'pt-01';
 
-  const fetchCalls = async () => {
+  const fetchCalls = useCallback(async () => {
+    if (!currentUser) return;
     try {
       const calls = await defaultApiClient.kiosk.listStaffCalls();
       setStaffCalls(calls);
     } catch {
       // non-blocking
     }
-  };
+  }, [currentUser]);
 
   useEffect(() => {
     if (initialStaffCalls) {
@@ -89,7 +90,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
       unsubSse?.();
       clearInterval(syncInterval);
     };
-  }, [initialStaffCalls]);
+  }, [initialStaffCalls, fetchCalls]);
 
   // Tab change (Instant, zero fake setTimeout per Rule 2.2)
   const handleSelectTab = (tab: ClinicalMenuId) => {
