@@ -17,6 +17,7 @@ import { EmbeddingModel, averageAndNormalize } from './embed';
 import {
   PadProvider,
   ActiveChallengeTracker,
+  ActiveLivenessTracker,
   ChallengeStep,
   getThaiPoseInstruction,
 } from './liveness';
@@ -42,6 +43,8 @@ export interface VerifyFlowConfig {
     thaiInstruction: string;
     qualityPassed: boolean;
     issues?: string[];
+    livenessState?: 'checking' | 'live_verified' | 'spoof_blocked';
+    livenessScore?: number;
   }) => void;
   maxAttemptsPerStep?: number;
 }
@@ -76,6 +79,10 @@ export interface EnrollFlowConfig {
     thaiInstruction: string;
     qualityPassed: boolean;
     issues?: string[];
+    livenessScore?: number;
+    livenessState?: 'checking' | 'live_verified' | 'spoof_blocked';
+    ear?: number;
+    depthScore?: number;
   }) => void;
   maxAttemptsPerPose?: number;
 }
@@ -158,13 +165,15 @@ export class FaceFlowManager {
     const collectedFrames: FaceEnrollmentFrame[] = [];
     const totalFrames = REQUIRED_ENROLL_POSES.length; // 10
     const maxAttempts = config.maxAttemptsPerPose || 120;
+    const activeTracker = new ActiveLivenessTracker();
 
     for (let i = 0; i < totalFrames; i++) {
       const targetPose = REQUIRED_ENROLL_POSES[i];
-      const thaiInstruction = getThaiPoseInstruction(targetPose);
+      let thaiInstruction = getThaiPoseInstruction(targetPose);
 
       // Give user time to transition pose when moving to a new pose group
       if (i > 0 && REQUIRED_ENROLL_POSES[i] !== REQUIRED_ENROLL_POSES[i - 1]) {
+        activeTracker.advanceStage();
         config.onProgress?.({
           frameIndex: collectedFrames.length,
           totalFrames,
@@ -173,7 +182,7 @@ export class FaceFlowManager {
           qualityPassed: false,
           issues: ['POSE_TRANSITION'],
         });
-        await new Promise((r) => setTimeout(r, 1200));
+        await new Promise((r) => setTimeout(r, 600));
       }
 
       config.qualityChecker.resetStability();
@@ -191,16 +200,34 @@ export class FaceFlowManager {
           targetPose
         );
 
+        // Active & Passive Liveness Verification
+        const activeResult = activeTracker.update(detection);
+        const depthScore = detection.liveness?.depthScore ?? 0.85;
+        const is3dLive = detection.liveness?.is3dLive ?? (depthScore >= 0.28);
+        const ear = detection.eyes?.ear ?? 0.30;
+        const isLiveVerified = is3dLive && (activeResult.blinkVerified || targetPose !== 'front');
+
+        const combinedIssues = [...quality.issues];
+        if (!is3dLive && attempts > 5) {
+          combinedIssues.push('⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง (Liveness Check Failed) กรุณามองกล้องด้วยใบหน้าจริง');
+        }
+
+        thaiInstruction = activeResult.thaiInstruction || getThaiPoseInstruction(targetPose);
+
         config.onProgress?.({
           frameIndex: collectedFrames.length,
           totalFrames,
           currentPose: targetPose,
           thaiInstruction,
-          qualityPassed: quality.passed,
-          issues: quality.issues,
+          qualityPassed: quality.passed && is3dLive,
+          issues: combinedIssues,
+          livenessScore: depthScore,
+          livenessState: !is3dLive ? 'spoof_blocked' : isLiveVerified ? 'live_verified' : 'checking',
+          ear,
+          depthScore,
         });
 
-        if (quality.passed && detection.landmarks) {
+        if (quality.passed && is3dLive && detection.landmarks) {
           // 1. Align face to 112x112 ArcFace coordinates
           const alignedCanvas = config.aligner.align(frame, detection.landmarks);
 

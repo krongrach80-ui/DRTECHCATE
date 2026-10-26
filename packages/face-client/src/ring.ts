@@ -187,3 +187,60 @@ export const EnrollmentProgressRing: React.FC<EnrollmentRingProps> = ({
     )
   );
 };
+
+export interface LivenessTelemetryBadgeProps {
+  state?: 'checking' | 'live_verified' | 'spoof_blocked';
+  statusMessageThai?: string;
+  depthScore?: number;
+  ear?: number;
+  isBlinking?: boolean;
+  className?: string;
+}
+
+export const LivenessTelemetryBadge: React.FC<LivenessTelemetryBadgeProps> = ({
+  state = 'checking',
+  statusMessageThai,
+  depthScore,
+  ear,
+  isBlinking,
+  className = '',
+}) => {
+  let badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+  let dotColor = 'bg-amber-400 animate-pulse';
+  let defaultLabel = '🟡 กำลังตรวจสอบความมีชีวิต (Checking Liveness...)';
+
+  if (state === 'live_verified') {
+    badgeColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.35)]';
+    dotColor = 'bg-emerald-400';
+    defaultLabel = '🟢 Liveness: บุคคลจริง (Live Verified)';
+  } else if (state === 'spoof_blocked') {
+    badgeColor = 'bg-rose-500/20 text-rose-300 border-rose-500/60 shadow-[0_0_15px_rgba(244,63,94,0.45)]';
+    dotColor = 'bg-rose-500 animate-ping';
+    defaultLabel = '🔴 แจ้งเตือน: ไม่ผ่านเกณฑ์บุคคลจริง (Spoof Blocked)';
+  }
+
+  const label = statusMessageThai || defaultLabel;
+
+  return React.createElement(
+    'div',
+    {
+      className: `flex items-center gap-2 px-3 py-1.5 rounded-full border backdrop-blur-md text-xs font-semibold select-none transition-all duration-200 ${badgeColor} ${className}`,
+    },
+    React.createElement('span', { className: `w-2 h-2 rounded-full ${dotColor}` }),
+    React.createElement('span', null, label),
+    depthScore !== undefined
+      ? React.createElement(
+          'span',
+          { className: 'text-[10px] opacity-75 font-mono ml-1' },
+          `3D:${(depthScore * 100).toFixed(0)}%`
+        )
+      : null,
+    ear !== undefined
+      ? React.createElement(
+          'span',
+          { className: 'text-[10px] opacity-75 font-mono' },
+          `EAR:${ear.toFixed(2)}${isBlinking ? ' (กะพริบตา)' : ''}`
+        )
+      : null
+  );
+};

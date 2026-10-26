@@ -15,6 +15,7 @@ import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
   FaceFlowManager,
   ChallengeStep,
+  LivenessTelemetryBadge,
 } from '../../../../packages/face-client/src/index.js';
 import { getFaceClientServices, FaceClientServices } from '../services/faceClientService';
 import { AlertCircle, Bell, RefreshCw, CheckCircle2, ShieldCheck } from 'lucide-react';
@@ -51,6 +52,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
   const [totalSteps, setTotalSteps] = useState<number>(2);
   const [flowPhase, setFlowPhase] = useState<'connecting' | 'challenge' | 'probe' | 'done'>('connecting');
   const [cameraReady, setCameraReady] = useState<boolean>(false);
+  const [livenessState, setLivenessState] = useState<'checking' | 'live_verified' | 'spoof_blocked'>('checking');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -128,6 +130,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
             setStepIndex(info.stepIndex);
             setCurrentStepPose(info.currentPose);
             setStatusText(info.thaiInstruction);
+            if (info.livenessState) setLivenessState(info.livenessState);
           },
         });
 
@@ -227,6 +230,10 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
         <p className="text-sm text-slate-400 mt-1">
           ระบบตรวจสอบใบหน้าจริงและท่าทางป้องกันการปลอมแปลง (Active Liveness Challenge)
         </p>
+
+        <div className="mt-3 flex justify-center">
+          <LivenessTelemetryBadge state={livenessState} />
+        </div>
 
         {failedCount > 0 && (
           <div className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold">

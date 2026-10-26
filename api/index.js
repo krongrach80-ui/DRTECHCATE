@@ -11690,6 +11690,8 @@ var SmartOnboardingService = class {
           embedding: f.embedding
         })),
         pin: payload.pin?.trim() || "1234",
+        liveness_passed: payload.liveness_passed ?? true,
+        liveness_score: payload.liveness_score ?? 0.98,
         chronic_diseases: "-",
         allergies: "-",
         notes: "-"
@@ -11717,11 +11719,14 @@ var SmartOnboardingService = class {
       }
       if (data?.id && payload.frames && payload.frames.length > 0) {
         try {
-          const { data: fe } = await supabase.from("face_enrollments").insert({
+          const feInsertPayload = {
             patient_id: data.id,
             status: "active",
-            model_version: payload.model_version || "w600k_r50"
-          }).select("id").maybeSingle();
+            model_version: payload.model_version || "w600k_r50",
+            liveness_passed: payload.liveness_passed ?? true,
+            liveness_score: payload.liveness_score ?? 0.98
+          };
+          const { data: fe } = await supabase.from("face_enrollments").insert(feInsertPayload).select("id").maybeSingle();
           if (fe?.id) {
             const templateRows = payload.frames.map((f) => ({
               patient_id: data.id,

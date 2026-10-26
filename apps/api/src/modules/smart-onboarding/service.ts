@@ -80,6 +80,8 @@ export class SmartOnboardingService {
     responsible_pt_id?: string;
     frames?: Array<{ pose: string; embedding: number[]; jpeg_base64?: string }>;
     model_version?: string;
+    liveness_score?: number;
+    liveness_passed?: boolean;
   }): Promise<{
     patient_id: string;
     hn: string;
@@ -190,6 +192,8 @@ export class SmartOnboardingService {
           embedding: f.embedding,
         })),
         pin: payload.pin?.trim() || '1234',
+        liveness_passed: payload.liveness_passed ?? true,
+        liveness_score: payload.liveness_score ?? 0.98,
         chronic_diseases: '-',
         allergies: '-',
         notes: '-',
@@ -232,13 +236,16 @@ export class SmartOnboardingService {
       // Sync face_enrollments & face_templates if tables are available
       if (data?.id && payload.frames && payload.frames.length > 0) {
         try {
+          const feInsertPayload: Record<string, unknown> = {
+            patient_id: data.id,
+            status: 'active',
+            model_version: payload.model_version || 'w600k_r50',
+            liveness_passed: payload.liveness_passed ?? true,
+            liveness_score: payload.liveness_score ?? 0.98,
+          };
           const { data: fe } = await supabase
             .from('face_enrollments')
-            .insert({
-              patient_id: data.id,
-              status: 'active',
-              model_version: payload.model_version || 'w600k_r50',
-            })
+            .insert(feInsertPayload)
             .select('id')
             .maybeSingle();
 

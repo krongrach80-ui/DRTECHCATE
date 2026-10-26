@@ -1240,6 +1240,8 @@ export class ApiClient {
       responsible_pt_id?: string;
       frames?: Array<{ pose: string; embedding: number[]; jpeg_base64?: string }>;
       model_version?: string;
+      liveness_score?: number;
+      liveness_passed?: boolean;
     }) => {
       return this.request<{
         ok: boolean;

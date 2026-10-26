@@ -5,7 +5,13 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FaceDetector, l2Normalize } from '../../../../packages/face-client/src/index.js';
+import {
+  FaceDetector,
+  l2Normalize,
+  FastLoginLivenessVerifier,
+  LivenessTelemetryBadge,
+  LivenessVerificationResult,
+} from '../../../../packages/face-client/src/index.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import { getFaceClientServices } from '../services/faceClientService';
 import {
@@ -48,9 +54,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [unrecognizedAlert, setUnrecognizedAlert] = useState<string | null>(null);
   const [matchedPatient, setMatchedPatient] = useState<PatientRecordFile | null>(null);
   const [similarityInfo, setSimilarityInfo] = useState<{ percent: number; distance: number } | null>(null);
+  const [livenessResult, setLivenessResult] = useState<LivenessVerificationResult | null>(null);
   const [cameraRotation, setCameraRotation] = useState<0 | 90 | 180 | 270>(0);
   const [isMirrored, setIsMirrored] = useState<boolean>(true);
   const [userDisabledCamera, setUserDisabledCamera] = useState<boolean>(false);
+
+  const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(1500));
 
   // Modals inside Kiosk Screen
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
@@ -126,12 +135,28 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         // Ignore snapshot generation failure
       }
 
-      // 2. Real Face Detection
+      // 2. Real Face Detection & Active Liveness Gate
       const detection = await detector.detect(rawFrame);
       if (!detection.hasFace) {
         setStatusText('ยังตรวจไม่พบใบหน้า กรุณาจัดตำแหน่งใบหน้าให้อยู่ในกรอบวงกลม');
         hasTriggeredScanRef.current = false;
         setCountdown(3);
+        setIsScanning(false);
+        return;
+      }
+
+      // 2.1 Fast Liveness Analysis (3D depth ratio + micro-motion / blink check)
+      const liv = fastLivenessVerifierRef.current.evaluate(detection);
+      setLivenessResult(liv);
+
+      if (liv.state === 'spoof_blocked' || (!liv.isLive && liv.depthScore < 0.20)) {
+        const spoofMsg = '⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง (Liveness Check Failed) กรุณามองกล้องด้วยใบหน้าจริงและกะพริบตา';
+        console.warn(
+          `[Liveness Status: FAILED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Blink/Motion Verified: ${liv.blinkVerified || liv.motionVerified}] [Calculated Distance: N/A] [Matched Patient Name: None] [Similarity %: 0%]`
+        );
+        setStatusText(spoofMsg);
+        setUnrecognizedAlert(spoofMsg);
+        hasTriggeredScanRef.current = false;
         setIsScanning(false);
         return;
       }
@@ -208,6 +233,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         const patient = (res as any).patient;
         const distance = typeof res.distance === 'number' ? res.distance : 0.20;
         const similarityPercent = Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
+        console.log(
+          `[Liveness Status: PASSED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Blink/Motion Verified: ${liv.blinkVerified || liv.motionVerified}] [Calculated Distance: ${distance.toFixed(3)}] [Matched Patient Name: ${patient.first_name} ${patient.last_name}] [Similarity %: ${similarityPercent}%]`
+        );
         setMatchedPatient(patient);
         setSimilarityInfo({
           percent: similarityPercent,
@@ -215,6 +243,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         });
         setStatusText(`ยืนยันตัวตนสำเร็จ: คุณ ${patient.first_name} (${similarityPercent}%)`);
       } else {
+        console.log(
+          `[Liveness Status: PASSED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Blink/Motion Verified: ${liv.blinkVerified || liv.motionVerified}] [Calculated Distance: N/A] [Matched Patient Name: None] [Similarity %: 0%]`
+        );
         setUnrecognizedAlert(
           res?.message || 'ไม่พบบัญชีที่ตรงกับใบหน้านี้ในระบบ กรุณาลองสแกนใหม่อีกครั้ง หรือเข้าสู่ระบบด้วยรหัส PIN / HN'
         );
@@ -304,26 +335,33 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     };
     animId = requestAnimationFrame(renderLoop);
 
-    // Presence detection loop
+    // Presence detection & live liveness loop
     const presenceInterval = setInterval(async () => {
-      if (!isMountedRef.current || presenceDetected || isScanningPaused) return;
+      if (!isMountedRef.current || isScanningPaused) return;
       if (videoRef.current && videoRef.current.readyState >= 2) {
         try {
           const res = await detector.detect(videoRef.current);
           if (res.hasFace && res.box) {
-            const vw = videoRef.current.videoWidth || 640;
-            const vh = videoRef.current.videoHeight || 480;
-            inputManager.processFaceDetection(
-              {
-                x: res.box.x / vw,
-                y: res.box.y / vh,
-                width: res.box.width / vw,
-                height: res.box.height / vh,
-              },
-              performance.now()
-            );
+            const liv = fastLivenessVerifierRef.current.evaluate(res);
+            setLivenessResult(liv);
+            if (!presenceDetected) {
+              const vw = videoRef.current.videoWidth || 640;
+              const vh = videoRef.current.videoHeight || 480;
+              inputManager.processFaceDetection(
+                {
+                  x: res.box.x / vw,
+                  y: res.box.y / vh,
+                  width: res.box.width / vw,
+                  height: res.box.height / vh,
+                },
+                performance.now()
+              );
+            }
           } else {
-            inputManager.processFaceDetection(null, performance.now());
+            setLivenessResult(null);
+            if (!presenceDetected) {
+              inputManager.processFaceDetection(null, performance.now());
+            }
           }
         } catch {
           // ignore detection pass
@@ -381,6 +419,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const handleResetScan = () => {
     setUnrecognizedAlert(null);
     setMatchedPatient(null);
+    setLivenessResult(null);
+    fastLivenessVerifierRef.current.start();
     hasTriggeredScanRef.current = false;
     setCountdown(5);
     setStatusText('เตรียมสแกนใหม่อีกครั้ง...');
@@ -511,21 +551,38 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             /* Active Live Camera Box */
             <div
               onClick={() => executeScanLogin()}
-              className="w-full h-48 rounded-2xl bg-[#02201C] border-2 border-[#10B981] relative overflow-hidden flex items-center justify-center cursor-pointer group hover:border-emerald-300 transition"
+              className="w-full h-52 rounded-2xl bg-[#02201C] border-2 border-[#10B981] relative overflow-hidden flex items-center justify-center cursor-pointer group hover:border-emerald-300 transition"
               title="แตะที่นี่เพื่อสแกนใบหน้าทันที"
             >
               <canvas ref={previewCanvasRef} className="w-full h-full object-cover" />
 
+              {/* Real-time Liveness Telemetry Badge */}
+              <div className="absolute top-2 inset-x-0 flex justify-center z-20 pointer-events-none">
+                <LivenessTelemetryBadge
+                  state={livenessResult?.state || 'checking'}
+                  statusMessageThai={livenessResult?.statusMessageThai}
+                  depthScore={livenessResult?.depthScore}
+                  ear={livenessResult?.ear}
+                  isBlinking={livenessResult?.blinkVerified}
+                />
+              </div>
+
               {/* Reticle / Face scan guide */}
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-                <div className="w-28 h-36 rounded-full border-2 border-dashed border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.35)] relative animate-pulse group-hover:scale-105 transition-transform">
+                <div className={`w-28 h-36 rounded-full border-2 border-dashed ${
+                  livenessResult?.state === 'live_verified'
+                    ? 'border-emerald-400 shadow-[0_0_22px_rgba(16,185,129,0.55)]'
+                    : livenessResult?.state === 'spoof_blocked'
+                    ? 'border-rose-400 shadow-[0_0_22px_rgba(244,63,94,0.55)]'
+                    : 'border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.35)]'
+                } relative animate-pulse group-hover:scale-105 transition-transform`}>
                   <div className="absolute left-[10%] w-[80%] h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent top-1/2 animate-bounce" />
                 </div>
                 <div className="absolute bottom-2 px-3 py-1 rounded-full bg-[#042924]/85 backdrop-blur-md border border-emerald-500/40 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5 shadow-md">
                   {isScanning ? (
                     <>
                       <RefreshCw className="w-3 h-3 animate-spin text-cyan-300" />
-                      <span>กำลังสแกนใบหน้า...</span>
+                      <span>กำลังสแกนใบหน้าและตรวจสอบความมีชีวิต...</span>
                     </>
                   ) : countdown > 0 ? (
                     <>

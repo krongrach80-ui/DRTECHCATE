@@ -17,6 +17,7 @@ import {
   EnrollmentProgressRing,
   RequiredPose,
   REQUIRED_ENROLL_POSES,
+  LivenessTelemetryBadge,
 } from '../../../../packages/face-client/src/index.js';
 import { getFaceClientServices, FaceClientServices } from '../services/faceClientService';
 import { ShieldCheck, RefreshCw, Bell, AlertCircle, CheckCircle2 } from 'lucide-react';
@@ -47,6 +48,9 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
   const [cameraReady, setCameraReady] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
+  const [livenessState, setLivenessState] = useState<'checking' | 'live_verified' | 'spoof_blocked'>('checking');
+  const [livenessDepthScore, setLivenessDepthScore] = useState<number | undefined>(undefined);
+  const [livenessEar, setLivenessEar] = useState<number | undefined>(undefined);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -104,6 +108,9 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
             setCurrentFrameIndex(info.frameIndex);
             setCurrentPose(info.currentPose);
             setStatusText(info.thaiInstruction);
+            if (info.livenessState) setLivenessState(info.livenessState);
+            if (info.depthScore !== undefined) setLivenessDepthScore(info.depthScore);
+            if (info.ear !== undefined) setLivenessEar(info.ear);
             onFrameCaptured?.();
           },
         });
@@ -182,6 +189,14 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
             เก็บ {currentFrameIndex} / {REQUIRED_ENROLL_POSES.length} เฟรม
           </span>
         </p>
+
+        <div className="mt-2.5 flex justify-center">
+          <LivenessTelemetryBadge
+            state={livenessState}
+            depthScore={livenessDepthScore}
+            ear={livenessEar}
+          />
+        </div>
 
         {enrollError && (
           <div className="mt-2 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold">

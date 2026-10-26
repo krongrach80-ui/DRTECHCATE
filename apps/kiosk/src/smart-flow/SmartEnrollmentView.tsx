@@ -10,6 +10,7 @@ import {
   EnrollmentProgressRing,
   RequiredPose,
   FaceDetector,
+  LivenessTelemetryBadge,
 } from '../../../../packages/face-client/src/index.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import { getFaceClientServices } from '../services/faceClientService';
@@ -33,6 +34,9 @@ export const SmartEnrollmentView: React.FC<SmartEnrollmentViewProps> = ({
   const [cameraReady, setCameraReady] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
+  const [livenessState, setLivenessState] = useState<'checking' | 'live_verified' | 'spoof_blocked'>('checking');
+  const [livenessDepthScore, setLivenessDepthScore] = useState<number | undefined>(undefined);
+  const [livenessEar, setLivenessEar] = useState<number | undefined>(undefined);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -87,6 +91,9 @@ export const SmartEnrollmentView: React.FC<SmartEnrollmentViewProps> = ({
             setCurrentFrameIndex(info.frameIndex);
             setCurrentPose(info.currentPose);
             setStatusText(info.thaiInstruction);
+            if (info.livenessState) setLivenessState(info.livenessState);
+            if (info.depthScore !== undefined) setLivenessDepthScore(info.depthScore);
+            if (info.ear !== undefined) setLivenessEar(info.ear);
           },
         });
 
@@ -172,6 +179,13 @@ export const SmartEnrollmentView: React.FC<SmartEnrollmentViewProps> = ({
         <p className="text-sm text-slate-400">
           ระบบสแกนอัตลักษณ์ 10 เฟรมตามมาตรฐาน ISO/IEC 30107-3 เพื่อความปลอดภัยระดับการแพทย์
         </p>
+        <div className="mt-3 flex justify-center">
+          <LivenessTelemetryBadge
+            state={livenessState}
+            depthScore={livenessDepthScore}
+            ear={livenessEar}
+          />
+        </div>
       </div>
 
       {/* Camera Feed & 10-Tick Ring */}

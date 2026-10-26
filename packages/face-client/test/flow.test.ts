@@ -111,7 +111,7 @@ describe('[FACE-CLIENT] flow.ts - Enrollment 10-Frames & Verification Probe', ()
 
       // Verify progress callback ran and contains Thai guidance
       expect(progressHistory.length).toBeGreaterThanOrEqual(10);
-      expect(progressHistory[0].thaiInstruction).toBe('มองตรงที่กล้องและยิ้มเล็กน้อย');
+      expect(progressHistory[0].thaiInstruction).toMatch(/มองตรง|กะพริบตา/);
     });
 
     it('1.2 compressCanvasToJpeg should produce JPEG dataURL scaled within max dimensions', () => {
