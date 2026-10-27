@@ -370,6 +370,53 @@ export class StaffService {
 
     return avatarUrl;
   }
+
+  async deleteStaff(
+    id: string,
+    adminUser: UserSession,
+    clientIp?: string,
+    clientDeviceId?: string
+  ): Promise<void> {
+    if (!isStaffAdmin(adminUser.role)) {
+      throw new AppError('Access denied: requires admin role', 403, 'FORBIDDEN');
+    }
+
+    if (adminUser.id === id) {
+      throw new AppError('Administrators cannot delete their own account', 400, 'CANNOT_DELETE_SELF');
+    }
+
+    const existing = await this.repo.getStaffById(id);
+    if (!existing) {
+      throw new AppError(`Staff member ${id} not found`, 404, 'NOT_FOUND');
+    }
+
+    if (existing.username === 'director') {
+      throw new AppError('Cannot delete the primary hospital director account', 400, 'CANNOT_DELETE_DIRECTOR');
+    }
+
+    await this.repo.deleteStaff(id);
+
+    try {
+      await this.authService.forceLogout(id, adminUser, clientIp, clientDeviceId, 'Staff deleted by administrator');
+    } catch {
+      // Ignore if session not active
+    }
+
+    await audit.write({
+      actor_type: 'staff',
+      actor_id: adminUser.id,
+      action: 'staff_deleted',
+      entity: 'staff',
+      entity_id: id,
+      ip: clientIp || null,
+      device_id: clientDeviceId || null,
+      metadata: {
+        username: existing.username,
+        role: existing.role,
+        full_name: existing.full_name,
+      },
+    });
+  }
 }
 
 export let defaultStaffService = new StaffService();

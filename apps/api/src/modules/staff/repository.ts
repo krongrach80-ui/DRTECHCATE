@@ -52,6 +52,7 @@ export interface IStaffRepository {
   ): Promise<string>;
   createAuthUser(email: string, password: string): Promise<string>;
   resetAuthPassword(userId: string, newPassword: string): Promise<void>;
+  deleteStaff(id: string): Promise<void>;
 }
 
 export class StaffRepository implements IStaffRepository {
@@ -601,6 +602,56 @@ export class StaffRepository implements IStaffRepository {
             sex: 'male',
           } : null),
     };
+  }
+
+  async deleteStaff(id: string): Promise<void> {
+    try {
+      const adminClient = getAdminClient();
+
+      // 1. Clear responsible_pt_id on patients assigned to this staff
+      await adminClient
+        .from('patients')
+        .update({ responsible_pt_id: null })
+        .eq('responsible_pt_id', id);
+
+      // 2. Remove patient-PT assignments
+      await adminClient
+        .from('patient_pt_assignments')
+        .delete()
+        .eq('pt_id', id);
+
+      // 3. Remove case transfers involving this staff
+      await adminClient
+        .from('case_transfers')
+        .delete()
+        .or(`from_pt_id.eq.${id},to_pt_id.eq.${id},created_by.eq.${id}`);
+
+      // 4. Delete PT record from public.pts
+      await adminClient
+        .from('pts')
+        .delete()
+        .eq('user_id', id);
+
+      // 5. Delete profile record from public.profiles
+      const { error: profileErr } = await adminClient
+        .from('profiles')
+        .delete()
+        .eq('id', id);
+
+      if (profileErr) {
+        logger.warn({ profileErr, id }, 'Failed to delete profile from public.profiles');
+      }
+
+      // 6. Delete from auth.users if exists
+      try {
+        await adminClient.auth.admin.deleteUser(id);
+      } catch (authErr) {
+        logger.warn({ authErr, id }, 'Failed to delete user from Supabase auth.users');
+      }
+    } catch (err) {
+      logger.error({ err, id }, 'Error deleting staff');
+      throw err;
+    }
   }
 }
 

@@ -586,6 +586,12 @@ export class ApiClient {
       });
       return res.json();
     },
+
+    delete: async (id: string) => {
+      return this.request<{ ok: boolean; message: string }>(`/staff/${id}`, {
+        method: 'DELETE',
+      });
+    },
   };
 
   // =========================================================================
@@ -686,6 +692,12 @@ export class ApiClient {
       if (Array.isArray(res)) return res as PtRecord[];
       if (res && Array.isArray(res.data)) return res.data as PtRecord[];
       return [] as PtRecord[];
+    },
+
+    delete: async (id: string) => {
+      return this.request<{ ok: boolean; message: string }>(`/staff/${id}`, {
+        method: 'DELETE',
+      });
     },
   };
 

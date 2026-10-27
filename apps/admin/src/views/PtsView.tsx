@@ -6,7 +6,9 @@ import {
   RefreshCw,
   Users,
   ChevronRight,
-  FileCheck
+  FileCheck,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import {
   PtRecord,
@@ -43,12 +45,25 @@ export const PtsView: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [ptData, patientData] = await Promise.all([
+      const [ptData, staffPtData, patientData] = await Promise.all([
         defaultApiClient.pts.list().catch(() => []),
+        defaultApiClient.staff.list({ role: 'pt' }).catch(() => []),
         defaultApiClient.patients.list().catch(() => []),
       ]);
-      const rawPts = Array.isArray(ptData) ? ptData : [];
-      const ptsToMap = rawPts.length > 0 ? rawPts : DEMO_PTS;
+
+      const combined: any[] = [];
+      const seen = new Set<string>();
+
+      const rawList = [...(Array.isArray(ptData) ? ptData : []), ...(Array.isArray(staffPtData) ? staffPtData : [])] as any[];
+      for (const item of rawList) {
+        const id = item.user_id || item.id || item.profile?.id;
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          combined.push(item);
+        }
+      }
+
+      const ptsToMap = combined.length > 0 ? combined : DEMO_PTS;
 
       const normalized: PtRecord[] = ptsToMap.map((p: any) => ({
         user_id: p.user_id || p.id || 'pt-01',
@@ -71,6 +86,38 @@ export const PtsView: React.FC = () => {
       setPatients(Array.isArray(patientData) ? patientData : []);
     } catch {
       setPts(DEMO_PTS);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePt = async (pt: PtRecord, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const ptName = pt.profile?.full_name || 'นักกายภาพ';
+    const ptUsername = pt.profile?.username || '';
+    const ptId = pt.user_id || pt.profile?.id;
+
+    if (!ptId) return;
+
+    if (ptUsername === 'director' || ptUsername === 'admin') {
+      alert('ไม่สามารถลบบัญชีผู้ดูแลระบบหลักได้');
+      return;
+    }
+
+    const confirmPrompt = `คุณแน่ใจหรือไม่ว่าต้องการลบนักกายภาพบำบัด "${ptName}" (@${ptUsername}) ออกจากระบบอย่างถาวร?\n\nคำเตือน: ข้อมูลนักกายภาพและการมอบหมายคนไข้จะถูกลบและไม่สามารถกู้คืนได้`;
+
+    if (!window.confirm(confirmPrompt)) return;
+
+    try {
+      setLoading(true);
+      await defaultApiClient.staff.delete(ptId);
+      window.dispatchEvent(new CustomEvent('staff-updated'));
+      if (selectedPt?.user_id === ptId) {
+        setSelectedPt(null);
+      }
+      await fetchData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลบนักกายภาพ');
     } finally {
       setLoading(false);
     }
@@ -176,9 +223,25 @@ export const PtsView: React.FC = () => {
                         <p className="text-xs text-slate-400">@{pt.profile?.username}</p>
                       </div>
                     </div>
-                    <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/30">
-                      PT
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {pt.profile?.status === 'suspended' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                          <AlertTriangle className="w-2.5 h-2.5" />
+                          <span>ระงับ</span>
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/30">
+                          PT
+                        </span>
+                      )}
+                      <button
+                        onClick={(e) => handleDeletePt(pt, e)}
+                        title="ลบนักกายภาพบำบัดท่านนี้ถาวร"
+                        className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-2 pt-2 border-t border-slate-800/80 text-xs">
@@ -262,7 +325,14 @@ export const PtsView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex justify-end pt-4 border-t border-slate-800">
+            <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+              <button
+                onClick={() => handleDeletePt(selectedPt)}
+                className="px-4 py-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>ลบนักกายภาพท่านนี้</span>
+              </button>
               <button
                 onClick={() => setSelectedPt(null)}
                 className="px-4 py-2 bg-slate-800 text-slate-300 hover:bg-slate-700 rounded-xl text-xs font-semibold"

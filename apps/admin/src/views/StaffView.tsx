@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   X,
   ChevronRight,
-  UserCheck
+  UserCheck,
+  Trash2
 } from 'lucide-react';
 import { UserProfile, defaultApiClient } from '../../../../packages/api-client/src/index.js';
 
@@ -283,6 +284,38 @@ export const StaffView: React.FC = () => {
     }
   };
 
+  const handleDeleteStaff = async (user: UserProfile) => {
+    if (user.username === 'director' || user.username === 'admin') {
+      alert('ไม่สามารถลบบัญชีผู้ดูแลระบบหลักหรือผู้อำนวยการโรงพยาบาลได้');
+      return;
+    }
+
+    const isPatient = (user.role as string) === 'patient';
+    const typeLabel = isPatient ? 'คนไข้' : user.role === 'pt' ? 'นักกายภาพบำบัด' : 'เจ้าหน้าที่';
+    const confirmPrompt = `คุณแน่ใจหรือไม่ว่าต้องการลบ${typeLabel} "${user.full_name}" (@${user.username}) ออกจากระบบอย่างถาวร?\n\nคำเตือน: ข้อมูลบัญชีและสิทธิ์การเข้าใช้งานจะถูกลบทั้งหมดและไม่สามารถกู้คืนได้`;
+
+    if (!window.confirm(confirmPrompt)) return;
+
+    try {
+      setActionLoading(true);
+      setErrorMsg(null);
+      if (isPatient) {
+        await defaultApiClient.patients.delete(user.id);
+        window.dispatchEvent(new CustomEvent('patient-created'));
+        setSuccessMsg(`ลบประวัติคนไข้ ${user.full_name} สำเร็จเรียบร้อย`);
+      } else {
+        await defaultApiClient.staff.delete(user.id);
+        window.dispatchEvent(new CustomEvent('staff-updated'));
+        setSuccessMsg(`ลบ${typeLabel} ${user.full_name} (@${user.username}) ออกจากระบบเรียบร้อย`);
+      }
+      await fetchStaff();
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลบผู้ใช้');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const filteredStaff = (Array.isArray(staffList) ? staffList : DEMO_STAFF).filter((u) => {
     const matchesSearch =
       u.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -485,11 +518,20 @@ export const StaffView: React.FC = () => {
                           className={`p-2 rounded-lg transition ${
                             user.status === 'suspended'
                               ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                              : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
+                              : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
                           }`}
                         >
                           <UserX className="w-4 h-4" />
                         </button>
+                        {user.username !== 'director' && user.username !== 'admin' && (
+                          <button
+                            onClick={() => handleDeleteStaff(user)}
+                            title={`ลบ${(user.role as string) === 'patient' ? 'คนไข้' : user.role === 'pt' ? 'นักกายภาพบำบัด' : 'เจ้าหน้าที่'}ถาวร`}
+                            className="p-2 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 transition"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

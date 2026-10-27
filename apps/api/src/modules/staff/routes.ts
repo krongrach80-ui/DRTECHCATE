@@ -33,6 +33,7 @@ export function createStaffRouter(controller: StaffController = defaultStaffCont
   router.post('/:id/reset-password', authenticate, requireRole('admin'), controller.resetPassword);
 
   router.post('/:id/avatar', authenticate, avatarUpload.single('avatar'), controller.uploadAvatar);
+  router.delete('/:id', authenticate, requireRole('admin'), controller.deleteStaff);
 
   return router;
 }

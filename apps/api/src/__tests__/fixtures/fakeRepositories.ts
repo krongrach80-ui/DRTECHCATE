@@ -558,6 +558,9 @@ export class FakeStaffRepository implements IStaffRepository {
   }
 
   async resetAuthPassword(_userId: string, _newPassword: string): Promise<void> {}
+  async deleteStaff(id: string): Promise<void> {
+    this.inMemoryStaff.delete(id);
+  }
 
   async createStaff(
     profileData: {

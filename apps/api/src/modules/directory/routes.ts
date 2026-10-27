@@ -3,6 +3,7 @@ import multer from 'multer';
 import { authenticate } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/requireRole';
 import { DirectoryController, defaultDirectoryController } from './controller';
+import { defaultStaffController } from '../staff/controller';
 
 const mediaUpload = multer({
   storage: multer.memoryStorage(),
@@ -40,6 +41,7 @@ export function createDirectoryRouter(
     }
     return controller.listPts(req, res, next);
   });
+  router.delete('/pts/:id', authenticate, requireRole('admin'), defaultStaffController.deleteStaff);
 
   // 2. Exercises Catalog
   router.get('/exercises', authenticate, controller.listExercises);

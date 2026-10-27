@@ -2977,6 +2977,27 @@ var init_repository6 = __esm({
           } : null
         };
       }
+      async deleteStaff(id) {
+        try {
+          const adminClient = getAdminClient();
+          await adminClient.from("patients").update({ responsible_pt_id: null }).eq("responsible_pt_id", id);
+          await adminClient.from("patient_pt_assignments").delete().eq("pt_id", id);
+          await adminClient.from("case_transfers").delete().or(`from_pt_id.eq.${id},to_pt_id.eq.${id},created_by.eq.${id}`);
+          await adminClient.from("pts").delete().eq("user_id", id);
+          const { error: profileErr } = await adminClient.from("profiles").delete().eq("id", id);
+          if (profileErr) {
+            logger.warn({ profileErr, id }, "Failed to delete profile from public.profiles");
+          }
+          try {
+            await adminClient.auth.admin.deleteUser(id);
+          } catch (authErr) {
+            logger.warn({ authErr, id }, "Failed to delete user from Supabase auth.users");
+          }
+        } catch (err) {
+          logger.error({ err, id }, "Error deleting staff");
+          throw err;
+        }
+      }
     };
     currentStaffRepository = new StaffRepository();
     defaultStaffRepository = new Proxy(
@@ -5753,6 +5774,40 @@ var init_service5 = __esm({
         });
         return avatarUrl;
       }
+      async deleteStaff(id, adminUser, clientIp, clientDeviceId) {
+        if (!isStaffAdmin(adminUser.role)) {
+          throw new AppError("Access denied: requires admin role", 403, "FORBIDDEN");
+        }
+        if (adminUser.id === id) {
+          throw new AppError("Administrators cannot delete their own account", 400, "CANNOT_DELETE_SELF");
+        }
+        const existing = await this.repo.getStaffById(id);
+        if (!existing) {
+          throw new AppError(`Staff member ${id} not found`, 404, "NOT_FOUND");
+        }
+        if (existing.username === "director") {
+          throw new AppError("Cannot delete the primary hospital director account", 400, "CANNOT_DELETE_DIRECTOR");
+        }
+        await this.repo.deleteStaff(id);
+        try {
+          await this.authService.forceLogout(id, adminUser, clientIp, clientDeviceId, "Staff deleted by administrator");
+        } catch {
+        }
+        await audit.write({
+          actor_type: "staff",
+          actor_id: adminUser.id,
+          action: "staff_deleted",
+          entity: "staff",
+          entity_id: id,
+          ip: clientIp || null,
+          device_id: clientDeviceId || null,
+          metadata: {
+            username: existing.username,
+            role: existing.role,
+            full_name: existing.full_name
+          }
+        });
+      }
     };
     defaultStaffService = new StaffService();
   }
@@ -7537,6 +7592,9 @@ var init_fakeRepositories = __esm({
         return (0, import_crypto9.randomUUID)();
       }
       async resetAuthPassword(_userId, _newPassword) {
+      }
+      async deleteStaff(id) {
+        this.inMemoryStaff.delete(id);
       }
       async createStaff(profileData, ptData) {
         const id = profileData.id || (0, import_crypto9.randomUUID)();
@@ -10967,6 +11025,26 @@ var StaffController = class {
         next(err);
       }
     };
+    this.deleteStaff = async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new AppError("Authentication required", 401, "UNAUTHORIZED");
+        }
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        if (!id) {
+          throw new AppError("Staff ID is required", 400, "BAD_REQUEST");
+        }
+        const clientIp = (req.ip || req.socket.remoteAddress || "127.0.0.1").replace(/^.*:/, "");
+        const clientDeviceId = req.cookies?.staff_device_id;
+        await this.staffService.deleteStaff(id, req.user, clientIp, clientDeviceId);
+        res.status(200).json({
+          ok: true,
+          message: "Staff deleted successfully"
+        });
+      } catch (err) {
+        next(err);
+      }
+    };
   }
 };
 var defaultStaffController = new StaffController();
@@ -10986,6 +11064,7 @@ function createStaffRouter(controller = defaultStaffController) {
   router3.post("/:id/suspend", authenticate, requireRole("admin"), controller.suspendStaff);
   router3.post("/:id/reset-password", authenticate, requireRole("admin"), controller.resetPassword);
   router3.post("/:id/avatar", authenticate, avatarUpload.single("avatar"), controller.uploadAvatar);
+  router3.delete("/:id", authenticate, requireRole("admin"), controller.deleteStaff);
   return router3;
 }
 var staffRoutes = createStaffRouter();
@@ -11442,6 +11521,7 @@ function createDirectoryRouter(controller = defaultDirectoryController) {
     }
     return controller.listPts(req, res, next);
   });
+  router3.delete("/pts/:id", authenticate, requireRole("admin"), defaultStaffController.deleteStaff);
   router3.get("/exercises", authenticate, controller.listExercises);
   router3.get("/exercises/:id", authenticate, controller.getExerciseById);
   router3.post("/exercises", authenticate, controller.createExercise);

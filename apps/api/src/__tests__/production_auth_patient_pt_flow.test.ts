@@ -189,6 +189,37 @@ describe('[VERIFICATION] Production Auth, PT Directory & Patient Creation Flow',
       const pts = dirListRes.body.data || [];
       const foundInDirectory = pts.find((p: any) => p.username === uniqueUsername || p.full_name === uniqueName);
       expect(foundInDirectory).toBeDefined();
+
+      // 4. Delete the PT via DELETE /api/staff/:id
+      const ptId = createStaffRes.body.data.id;
+      const deleteRes = await request(app)
+        .delete(`/api/staff/${ptId}`)
+        .set('Authorization', `Bearer ${directorBearerToken}`)
+        .set('X-Requested-With', 'XMLHttpRequest');
+
+      expect(deleteRes.status).toBe(200);
+      expect(deleteRes.body.ok).toBe(true);
+
+      // 5. Verify the PT is now deleted from GET /api/staff
+      const afterDeleteStaffRes = await request(app)
+        .get('/api/staff')
+        .set('Authorization', `Bearer ${directorBearerToken}`)
+        .set('X-Requested-With', 'XMLHttpRequest');
+
+      expect(afterDeleteStaffRes.status).toBe(200);
+      const staffAfter = afterDeleteStaffRes.body.data || [];
+      expect(staffAfter.find((s: any) => s.id === ptId)).toBeUndefined();
+    });
+
+    it('should reject deleting director or self with 400', async () => {
+      // Trying to delete director
+      const deleteDirectorRes = await request(app)
+        .delete('/api/staff/d1000000-0000-0000-0000-000000000001')
+        .set('Authorization', `Bearer ${directorBearerToken}`)
+        .set('X-Requested-With', 'XMLHttpRequest');
+
+      expect(deleteDirectorRes.status).toBe(400);
     });
   });
 });
+

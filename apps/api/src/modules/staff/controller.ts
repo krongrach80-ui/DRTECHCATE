@@ -202,6 +202,31 @@ export class StaffController {
       next(err);
     }
   };
+
+  deleteStaff = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
+      }
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        throw new AppError('Staff ID is required', 400, 'BAD_REQUEST');
+      }
+
+      const clientIp = (req.ip || req.socket.remoteAddress || '127.0.0.1').replace(/^.*:/, '');
+      const clientDeviceId = req.cookies?.staff_device_id;
+
+      await this.staffService.deleteStaff(id, req.user, clientIp, clientDeviceId);
+
+      res.status(200).json({
+        ok: true,
+        message: 'Staff deleted successfully',
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
 
 export const defaultStaffController = new StaffController();
