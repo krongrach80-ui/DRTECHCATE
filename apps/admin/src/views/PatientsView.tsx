@@ -26,6 +26,12 @@ import { SmartPendingPatientsBanner } from '../smart-portal/index.js';
 
 const DEMO_PATIENTS: PatientRecord[] = [];
 
+const formatPatientName = (first?: string, last?: string): string => {
+  const cleanFirst = first?.trim() || '';
+  const cleanLast = last && last.trim() !== '-' && last.trim() !== '' ? ` ${last.trim()}` : '';
+  return `${cleanFirst}${cleanLast}`.trim() || 'ผู้ป่วย';
+};
+
 export const PatientsView: React.FC = () => {
   const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
   const [ptsList, setPtsList] = useState<UserProfile[]>([]);
@@ -455,7 +461,7 @@ export const PatientsView: React.FC = () => {
                   >
                     <td className="px-6 py-4 font-mono font-bold text-teal-400">{patient.hn}</td>
                     <td className="px-6 py-4 font-medium text-white">
-                      {patient.first_name} {patient.last_name}
+                      {formatPatientName(patient.first_name, patient.last_name)}
                     </td>
                     <td className="px-6 py-4 text-xs text-slate-400">
                       {patient.age} ปี / {patient.sex === 'male' ? 'ชาย' : patient.sex === 'female' ? 'หญิง' : 'อื่นๆ'}
@@ -522,7 +528,7 @@ export const PatientsView: React.FC = () => {
                 <div>
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     <span>
-                      {selectedPatient.first_name} {selectedPatient.last_name}
+                      {formatPatientName(selectedPatient.first_name, selectedPatient.last_name)}
                     </span>
                     <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-400 border border-teal-500/30">
                       {selectedPatient.hn}

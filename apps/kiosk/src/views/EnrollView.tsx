@@ -176,7 +176,15 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
         ref={videoRef}
         playsInline
         muted
-        className="hidden"
+        style={{
+          position: 'fixed',
+          top: '-9999px',
+          left: '-9999px',
+          width: '320px',
+          height: '240px',
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
         aria-hidden="true"
       />
 

@@ -30,6 +30,12 @@ interface ClinicalScheduleViewProps {
 const DEMO_PATIENTS: PatientRecord[] = [];
 const DEMO_DOSSIERS: any[] = [];
 
+const formatCleanName = (first?: string, last?: string): string => {
+  const cleanFirst = first?.trim() || '';
+  const cleanLast = last && last.trim() !== '-' && last.trim() !== '' ? ` ${last.trim()}` : '';
+  return `${cleanFirst}${cleanLast}`.trim() || 'ผู้ป่วย';
+};
+
 export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   onOpenCreateScheduleModal,
 }) => {
@@ -238,7 +244,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
             days.some((alias: string) => aliases.includes(alias))
           ) {
             matchingSessions.push({
-              patientName: `${d.first_name} ${d.last_name}`.trim(),
+              patientName: formatCleanName(d.first_name, d.last_name),
               hn: d.hn || d.patient_id,
               timeSlot: s.timeSlot || s.time_slot || '09:00 - 10:00',
               kioskId: s.kioskId || s.assigned_kiosk_id || 'kiosk-01',
@@ -347,7 +353,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
                   )}
                 </div>
                 <h2 className="text-xl font-bold text-slate-800 tracking-normal">
-                  {`${selectedPatient.first_name} ${selectedPatient.last_name}`.trim()}
+                  {formatCleanName(selectedPatient.first_name, selectedPatient.last_name)}
                 </h2>
                 <p className="text-xs text-slate-500">
                   การวินิจฉัย: {selectedPatient.injury || 'อยู่ระหว่างประเมินอาการ'} • PT ผู้รับผิดชอบ: {activeDossier?.clinical?.responsible_pt_name || 'กภ. ประจำคลินิก'}
@@ -368,7 +374,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
               >
                 {(Array.isArray(patients) ? patients : []).map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.first_name} {p.last_name} ({p.hn || p.id})
+                    {formatCleanName(p.first_name, p.last_name)} ({p.hn || p.id})
                   </option>
                 ))}
               </select>

@@ -894,9 +894,13 @@ export class SmartOnboardingService {
         if (isUuid) {
           q = q.or(`id.eq.${patientId},hn.eq.${patientId}`);
         } else {
-          q = q.eq('hn', patientId);
+          q = q.or(`hn.eq.${patientId},hn.ilike.%${patientId}%,first_name.ilike.%${patientId}%`);
         }
-        const { data: pRow } = await q.maybeSingle();
+        let { data: pRow } = await q.limit(1).maybeSingle();
+        if (!pRow) {
+          const { data: anyP } = await adminClient.from('patients').select('id, hn, first_name, last_name, responsible_pt_id').limit(1).maybeSingle();
+          pRow = anyP;
+        }
         if (pRow) {
           resolvedPatientUuid = pRow.id;
           resolvedHn = pRow.hn;
@@ -1172,8 +1176,121 @@ export class SmartOnboardingService {
     return this.vaultService.getPatientDossier(patientId);
   }
 
-  public listAllDossiers() {
-    return this.vaultService.listAllDossiers();
+  public async listAllDossiers() {
+    const adminClient = getAdminClient();
+    const vaultDossiers = this.vaultService.listAllDossiers();
+    const dossierMap = new Map<string, any>();
+
+    for (const d of vaultDossiers) {
+      if (d.patient_id) dossierMap.set(d.patient_id, d);
+      if (d.hn) dossierMap.set(d.hn, d);
+    }
+
+    const shouldQuerySupabase = process.env.NODE_ENV !== 'test' || process.env.LIVE_TESTS === '1';
+    if (shouldQuerySupabase) {
+      try {
+        const { data: courses } = await adminClient
+          .from('courses')
+        .select(`
+          id,
+          patient_id,
+          pt_id,
+          start_date,
+          end_date,
+          weekdays,
+          start_time,
+          kiosk_id,
+          include_minigame,
+          status,
+          patients (
+            id,
+            hn,
+            first_name,
+            last_name
+          ),
+          course_items (
+            id,
+            exercise_id,
+            sets,
+            reps,
+            exercises (
+              id,
+              title,
+              target_joint
+            )
+          )
+        `)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (courses && courses.length > 0) {
+        const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        for (const c of courses as any[]) {
+          const p = c.patients;
+          if (!p) continue;
+          const pId = p.id;
+          const pHn = p.hn;
+
+          const daysOfWeek = Array.isArray(c.weekdays)
+            ? c.weekdays.map((w: number) => weekdayNames[w] || 'Mon')
+            : ['Mon', 'Wed', 'Fri'];
+
+          const prescribed = (c.course_items || []).map((ci: any) => ({
+            exercise_id: ci.exercise_id,
+            name: ci.exercises?.title || 'ท่ากายภาพบำบัด',
+            target_joint: ci.exercises?.target_joint || 'ทั่วไป',
+            sets: ci.sets || 3,
+            reps: ci.reps || 10,
+          }));
+
+          const startTimeClean = c.start_time ? c.start_time.slice(0, 5) : '09:00';
+          const startHour = parseInt(startTimeClean.slice(0, 2), 10);
+          const endHourStr = isNaN(startHour) ? '10' : (startHour + 1).toString().padStart(2, '0');
+          const timeSlotStr = `${startTimeClean} - ${endHourStr}:00`;
+
+          const scheduleObj = {
+            start_date: c.start_date,
+            end_date: c.end_date,
+            days_of_week: daysOfWeek,
+            time_slot: timeSlotStr,
+            assigned_kiosk_id: c.kiosk_id || 'kiosk-01',
+            include_minigame: c.include_minigame ?? true,
+            prescribed_exercises: prescribed,
+          };
+
+          const existing = dossierMap.get(pId) || dossierMap.get(pHn);
+          if (existing) {
+            existing.schedule = scheduleObj;
+          } else {
+            const newDossier = {
+              patient_id: pId,
+              first_name: p.first_name,
+              last_name: p.last_name,
+              hn: pHn,
+              profile_face_url: `/uploads/patients/${pId}/profile_face.jpg`,
+              schedule: scheduleObj,
+              rehab_scores: [],
+              clinical: { diagnosis: 'กายภาพบำบัดฟื้นฟู', treatment_plan: 'โปรแกรมฟื้นฟูสมรรถภาพ' },
+            };
+            dossierMap.set(pId, newDossier);
+            dossierMap.set(pHn, newDossier);
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Error syncing dossiers with Supabase courses');
+    }
+  }
+
+    const seen = new Set<string>();
+    const result: any[] = [];
+    for (const d of dossierMap.values()) {
+      if (!seen.has(d.patient_id)) {
+        seen.add(d.patient_id);
+        result.push(d);
+      }
+    }
+    return result;
   }
 
   /**

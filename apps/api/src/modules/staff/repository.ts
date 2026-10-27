@@ -335,7 +335,6 @@ export class StaffRepository implements IStaffRepository {
         bio: profileData.bio || null,
         status: profileData.status || 'active',
         created_at: nowIso,
-        updated_at: nowIso,
       }, { onConflict: 'id' }).select('*').single();
 
       // If foreign key constraint failed on profiles_id_fkey (e.g. running in env without service_role key),
@@ -352,7 +351,6 @@ export class StaffRepository implements IStaffRepository {
           bio: profileData.bio || null,
           status: profileData.status || 'active',
           created_at: nowIso,
-          updated_at: nowIso,
         }, { onConflict: 'id' }).select('*').single();
         profData = retryRes.data;
         profileError = retryRes.error;
@@ -372,7 +370,6 @@ export class StaffRepository implements IStaffRepository {
           specialty: ptData?.specialty || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
           age: ptData?.age || 35,
           sex: ptData?.sex || 'male',
-          updated_at: nowIso,
         }, { onConflict: 'user_id' });
 
         if (ptError) {
@@ -516,8 +513,8 @@ export class StaffRepository implements IStaffRepository {
       status: dbItem.status as StaffStatus,
       force_logout_at: (dbItem.force_logout_at as string) || null,
       last_login_at: (dbItem.last_login_at as string) || null,
-      created_at: String(dbItem.created_at),
-      updated_at: String(dbItem.updated_at),
+      created_at: String(dbItem.created_at || new Date().toISOString()),
+      updated_at: String(dbItem.updated_at || dbItem.created_at || new Date().toISOString()),
       pt_details: ptRecord
         ? {
             license_no: String(ptRecord.license_no || ''),

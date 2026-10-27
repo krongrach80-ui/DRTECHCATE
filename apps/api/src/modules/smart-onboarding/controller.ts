@@ -212,7 +212,7 @@ export class SmartOnboardingController {
 
   listDossiers = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const data = this.service.listAllDossiers();
+      const data = await this.service.listAllDossiers();
       res.status(200).json({
         ok: true,
         data,

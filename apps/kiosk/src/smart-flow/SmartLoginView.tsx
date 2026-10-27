@@ -84,10 +84,18 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     isMirroredRef.current = isMirrored;
   }, [cameraRotation, isMirrored]);
 
-  // Completely Stop & Release Camera hardware and timers
+  const customDetectorRef = useRef(customDetector);
+  useEffect(() => {
+    customDetectorRef.current = customDetector;
+  }, [customDetector]);
+
+  const isCameraStartingRef = useRef<boolean>(false);
+  const isCameraStartedRef = useRef<boolean>(false);
+
+  // Completely Stop & Release Camera hardware and timers (Mount/Unmount lifecycle only)
   const stopCamera = useCallback(() => {
     try {
-      const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+      const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
       services.camera.stop();
     } catch {
       // safe
@@ -107,11 +115,37 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
     }
+    isCameraStartedRef.current = false;
     setCameraReady(false);
     setPresenceDetected(false);
-  }, [customDetector]);
+  }, []);
 
-  // Trigger login scan at 0s
+  // Request & Initialize Camera - Strictly isolated from frame detection & reactive states
+  const startCamera = useCallback(async () => {
+    if (isCameraStartingRef.current || isCameraStartedRef.current) return;
+    isCameraStartingRef.current = true;
+    try {
+      const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+      const { camera } = services;
+
+      if (videoRef.current) {
+        await camera.start(videoRef.current);
+        isCameraStartedRef.current = true;
+        if (isMountedRef.current) {
+          setCameraReady(true);
+        }
+      }
+    } catch (camErr) {
+      console.warn('Camera start error:', camErr);
+      if (isMountedRef.current) {
+        setCameraReady(false);
+      }
+    } finally {
+      isCameraStartingRef.current = false;
+    }
+  }, []);
+
+  // Trigger login scan at 0s or on manual tap
   const executeScanLogin = useCallback(async () => {
     if (!isMountedRef.current || isScanning || hasTriggeredScanRef.current || isScanningPaused) return;
     hasTriggeredScanRef.current = true;
@@ -119,7 +153,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setStatusText('กำลังสแกนใบหน้าและตรวจสอบอัตลักษณ์ชีวมาตร...');
 
     try {
-      const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+      const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
       const { camera, detector, aligner, embeddingModel } = services;
 
       if (!videoRef.current) {
@@ -291,35 +325,28 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         setIsScanning(false);
       }
     }
-  }, [customDetector, isScanning, isScanningPaused]);
+  }, [isScanning, isScanningPaused]);
 
-  // Request & Initialize Camera - Isolated from detection states
-  const startCamera = useCallback(async () => {
-    if (isScanningPaused) return;
-    try {
-      const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
-      const { camera } = services;
+  const executeScanLoginRef = useRef(executeScanLogin);
+  useEffect(() => {
+    executeScanLoginRef.current = executeScanLogin;
+  }, [executeScanLogin]);
 
-      if (videoRef.current) {
-        await camera.start(videoRef.current);
-        if (isMountedRef.current && !isScanningPaused) {
-          setCameraReady(true);
-        }
-      }
-    } catch (camErr) {
-      console.warn('Camera start error:', camErr);
-      if (isMountedRef.current) {
-        setCameraReady(false);
-      }
-    }
-  }, [customDetector, isScanningPaused]);
+  // 1. ISOLATED CAMERA LIFECYCLE: Starts camera strictly ONCE on mount, stops ONLY on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    startCamera();
 
-  // Tab visibility: Release camera if browser tab is hidden / minimized
+    return () => {
+      isMountedRef.current = false;
+      stopCamera();
+    };
+  }, [startCamera, stopCamera]);
+
+  // Tab visibility: re-verify stream when tab becomes active without restarting hardware repeatedly
   useEffect(() => {
     const handleVisibility = () => {
-      if (document.hidden) {
-        stopCamera();
-      } else if (!isScanningPaused) {
+      if (!document.hidden && !isCameraStartedRef.current && !userDisabledCamera) {
         startCamera();
       }
     };
@@ -327,29 +354,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [stopCamera, startCamera, isScanningPaused]);
-
-  // 1. ISOLATED CAMERA LIFECYCLE: Starts camera ONCE on mount / unpause, stops on unmount / pause
-  useEffect(() => {
-    if (isScanningPaused) {
-      stopCamera();
-      return;
-    }
-
-    isMountedRef.current = true;
-    startCamera();
-
-    return () => {
-      stopCamera();
-    };
-  }, [isScanningPaused, startCamera, stopCamera]);
+  }, [startCamera, userDisabledCamera]);
 
   // 2. ISOLATED PREVIEW CANVAS RENDER LOOP (Runs on requestAnimationFrame smoothly without re-initializing camera)
   useEffect(() => {
     if (isScanningPaused || !cameraReady) return;
 
     let animId: number;
-    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+    const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
     const { camera } = services;
 
     const renderLoop = () => {
@@ -366,7 +378,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     return () => {
       cancelAnimationFrame(animId);
     };
-  }, [cameraReady, isScanningPaused, customDetector]);
+  }, [cameraReady, isScanningPaused]);
 
   // 3. ISOLATED DETECTION & PRESENCE LOOP (Throttled, updates React state ONLY when values actually change)
   const prevFaceInCircleRef = useRef<boolean>(false);
@@ -535,16 +547,20 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   }, [cameraReady, isScanningPaused, customDetector, isScanning]);
 
   // 4. Active Countdown Logic: ticks down ONLY when face is strictly in circle and passed liveness
+  const hasMatchedPatient = Boolean(matchedPatient);
+  const hasUnrecognizedAlert = Boolean(unrecognizedAlert);
+  const livenessState = livenessResult?.state;
+
   useEffect(() => {
     if (
       isScanningPaused ||
       !cameraReady ||
       isScanning ||
-      matchedPatient ||
-      unrecognizedAlert ||
+      hasMatchedPatient ||
+      hasUnrecognizedAlert ||
       !faceInCircle ||
       !presenceDetected ||
-      livenessResult?.state !== 'live_verified'
+      livenessState !== 'live_verified'
     ) {
       if (countdownTimerRef.current) {
         clearInterval(countdownTimerRef.current);
@@ -564,7 +580,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               clearInterval(countdownTimerRef.current);
               countdownTimerRef.current = null;
             }
-            executeScanLogin();
+            executeScanLoginRef.current();
             return 0;
           }
           return prev - 1;
@@ -582,12 +598,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     cameraReady,
     isScanningPaused,
     isScanning,
-    matchedPatient,
-    unrecognizedAlert,
+    hasMatchedPatient,
+    hasUnrecognizedAlert,
     faceInCircle,
     presenceDetected,
-    livenessResult?.state,
-    executeScanLogin,
+    livenessState,
   ]);
 
   const handleResetScan = () => {
@@ -598,6 +613,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     hasTriggeredScanRef.current = false;
     setCountdown(5);
     setStatusText('เตรียมสแกนใหม่อีกครั้ง...');
+  };
+
+  const handleRetryCamera = () => {
+    setUserDisabledCamera(false);
+    isCameraStartedRef.current = false;
+    startCamera();
   };
 
   // Patient login via PIN - queries real patient registry
@@ -670,7 +691,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   return (
     <div className="w-full h-full min-h-screen relative flex items-center justify-center p-4 bg-gradient-to-br from-[#E6F8F5] via-[#F4FBF9] to-[#E0F2FE] text-[#063932] select-none overflow-hidden font-sans">
-      <video ref={videoRef} playsInline muted className="hidden" aria-hidden="true" />
+      {/* Kept permanently mounted offscreen in DOM without display:none to guarantee active decoder pipeline */}
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        style={{
+          position: 'fixed',
+          top: '-9999px',
+          left: '-9999px',
+          width: '320px',
+          height: '240px',
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
+        aria-hidden="true"
+      />
 
       {/* Ambient Top-Right Decorative Aesthetics */}
       <div className="absolute top-0 right-0 w-[480px] h-[480px] bg-[radial-gradient(circle_at_85%_15%,rgba(16,185,129,0.16)_0%,rgba(14,165,233,0.10)_40%,transparent_70%)] pointer-events-none z-0" />
@@ -698,10 +734,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
               <button
                 type="button"
-                onClick={() => {
-                  setUserDisabledCamera(false);
-                  startCamera();
-                }}
+                onClick={handleRetryCamera}
                 className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#10B981] to-[#2563EB] text-white text-xs font-bold shadow-md shadow-emerald-500/25 hover:brightness-105 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <RefreshCw className="w-3.5 h-3.5" />

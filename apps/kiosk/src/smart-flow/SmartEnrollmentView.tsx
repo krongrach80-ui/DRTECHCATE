@@ -170,7 +170,21 @@ export const SmartEnrollmentView: React.FC<SmartEnrollmentViewProps> = ({
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950 text-slate-100">
-      <video ref={videoRef} playsInline muted className="hidden" aria-hidden="true" />
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        style={{
+          position: 'fixed',
+          top: '-9999px',
+          left: '-9999px',
+          width: '320px',
+          height: '240px',
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
+        aria-hidden="true"
+      />
 
       {/* Header */}
       <div className="text-center max-w-xl">

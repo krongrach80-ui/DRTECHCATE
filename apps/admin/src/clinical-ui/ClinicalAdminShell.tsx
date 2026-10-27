@@ -211,7 +211,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           style={{
             background: hospitalTheme.colors.workspaceBg,
           }}
-          className="flex-1 overflow-y-auto"
+          className="flex-1 overflow-y-auto pt-2"
         >
           {/* Master Prompt v3 Spec 8.1: 6 Windows */}
           <ErrorBoundary key={activeTab} moduleName={pageMeta.title}>

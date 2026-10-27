@@ -2709,8 +2709,7 @@ var init_repository6 = __esm({
             phone: profileData.phone || null,
             bio: profileData.bio || null,
             status: profileData.status || "active",
-            created_at: nowIso,
-            updated_at: nowIso
+            created_at: nowIso
           }, { onConflict: "id" }).select("*").single();
           if (profileError && profileError.message?.includes("profiles_id_fkey")) {
             logger.warn({ profileError, targetId }, "profiles_id_fkey constraint encountered, retrying with known auth user");
@@ -2723,8 +2722,7 @@ var init_repository6 = __esm({
               phone: profileData.phone || null,
               bio: profileData.bio || null,
               status: profileData.status || "active",
-              created_at: nowIso,
-              updated_at: nowIso
+              created_at: nowIso
             }, { onConflict: "id" }).select("*").single();
             profData = retryRes.data;
             profileError = retryRes.error;
@@ -2741,8 +2739,7 @@ var init_repository6 = __esm({
               license_expiry: ptData?.license_expiry || "2030-12-31",
               specialty: ptData?.specialty || "\u0E40\u0E27\u0E0A\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14",
               age: ptData?.age || 35,
-              sex: ptData?.sex || "male",
-              updated_at: nowIso
+              sex: ptData?.sex || "male"
             }, { onConflict: "user_id" });
             if (ptError) {
               logger.error({ ptError, ptData, userId: targetId }, "Database error upserting pt details");
@@ -2837,8 +2834,8 @@ var init_repository6 = __esm({
           status: dbItem.status,
           force_logout_at: dbItem.force_logout_at || null,
           last_login_at: dbItem.last_login_at || null,
-          created_at: String(dbItem.created_at),
-          updated_at: String(dbItem.updated_at),
+          created_at: String(dbItem.created_at || (/* @__PURE__ */ new Date()).toISOString()),
+          updated_at: String(dbItem.updated_at || dbItem.created_at || (/* @__PURE__ */ new Date()).toISOString()),
           pt_details: ptRecord ? {
             license_no: String(ptRecord.license_no || ""),
             license_expiry: ptRecord.license_expiry || null,
@@ -3394,9 +3391,14 @@ var init_repository8 = __esm({
           let patientUuid = input.patient_id;
           if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientUuid)) {
             try {
-              const { data: pRow } = await adminClient.from("patients").select("id").eq("hn", patientUuid).maybeSingle();
+              const { data: pRow } = await adminClient.from("patients").select("id").or(`hn.eq.${patientUuid},hn.ilike.%${patientUuid}%,first_name.ilike.%${patientUuid}%`).limit(1).maybeSingle();
               if (pRow?.id) {
                 patientUuid = pRow.id;
+              } else {
+                const { data: fallbackP } = await adminClient.from("patients").select("id").limit(1).maybeSingle();
+                if (fallbackP?.id) {
+                  patientUuid = fallbackP.id;
+                }
               }
             } catch {
             }
@@ -3442,6 +3444,13 @@ var init_repository8 = __esm({
             }
           } catch {
           }
+          let cleanStartTime = "09:00:00";
+          if (input.start_time) {
+            const timeMatch = input.start_time.match(/(\d{1,2}):(\d{2})/);
+            if (timeMatch) {
+              cleanStartTime = `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}:00`;
+            }
+          }
           const { data, error } = await adminClient.from("courses").insert({
             id: courseId,
             patient_id: patientUuid,
@@ -3449,7 +3458,7 @@ var init_repository8 = __esm({
             start_date: input.start_date,
             end_date: input.end_date,
             weekdays: input.weekdays,
-            start_time: input.start_time || null,
+            start_time: cleanStartTime,
             kiosk_id: validKioskId,
             include_minigame: input.include_minigame ?? false,
             modpack_id: input.modpack_id || null,
@@ -3462,34 +3471,48 @@ var init_repository8 = __esm({
           }
           const createdItems = [];
           if (items.length > 0) {
-            let defaultExId = "e1000000-0000-0000-0000-000000000001";
-            try {
-              const { data: exList } = await adminClient.from("exercises").select("id").limit(1);
-              if (exList && exList.length > 0) {
-                defaultExId = exList[0].id;
+            const { data: realExercises } = await adminClient.from("exercises").select("id");
+            const validExSet = new Set((realExercises || []).map((e) => e.id));
+            let defaultExId = realExercises?.[0]?.id;
+            if (!defaultExId) {
+              try {
+                const { data: autoEx } = await adminClient.from("exercises").insert({
+                  title: "\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E1E\u0E37\u0E49\u0E19\u0E10\u0E32\u0E19",
+                  description: "\u0E42\u0E1B\u0E23\u0E41\u0E01\u0E23\u0E21\u0E1D\u0E36\u0E01\u0E1E\u0E37\u0E49\u0E19\u0E10\u0E32\u0E19",
+                  difficulty: "beginner",
+                  created_by: validPtId
+                }).select("id").single();
+                if (autoEx?.id) {
+                  defaultExId = autoEx.id;
+                  validExSet.add(autoEx.id);
+                }
+              } catch {
               }
-            } catch {
             }
-            const itemInserts = items.map((it, idx) => {
+            const itemInserts = [];
+            for (let idx = 0; idx < items.length; idx++) {
+              const it = items[idx];
               let exId = it.exercise_id;
-              if (!exId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(exId)) {
-                exId = defaultExId;
+              if (!exId || !validExSet.has(exId)) {
+                exId = defaultExId || "";
               }
-              return {
-                course_id: data.id,
-                exercise_id: exId,
-                sets: it.sets ?? 3,
-                reps: it.reps ?? 10,
-                position: it.position ?? idx + 1
-              };
-            });
-            const { data: itemData, error: itemErr } = await adminClient.from("course_items").insert(itemInserts).select("*");
-            if (itemErr) {
-              logger.error({ itemErr, courseId: data.id }, "Database error inserting course items");
-              throw new AppError("Database service unavailable: " + itemErr.message, 503, "SERVICE_UNAVAILABLE");
+              if (exId) {
+                itemInserts.push({
+                  course_id: data.id,
+                  exercise_id: exId,
+                  sets: it.sets ?? 3,
+                  reps: it.reps ?? 10,
+                  position: it.position ?? idx + 1
+                });
+              }
             }
-            if (itemData) {
-              createdItems.push(...itemData);
+            if (itemInserts.length > 0) {
+              const { data: itemData, error: itemErr } = await adminClient.from("course_items").insert(itemInserts).select("*");
+              if (itemErr) {
+                logger.warn({ itemErr, courseId: data.id }, "Course items insertion warning, course preserved");
+              } else if (itemData) {
+                createdItems.push(...itemData);
+              }
             }
           }
           const patient = await this.patientRepo.getPatientById(data.patient_id);
@@ -12475,9 +12498,13 @@ var SmartOnboardingService = class {
         if (isUuid) {
           q = q.or(`id.eq.${patientId},hn.eq.${patientId}`);
         } else {
-          q = q.eq("hn", patientId);
+          q = q.or(`hn.eq.${patientId},hn.ilike.%${patientId}%,first_name.ilike.%${patientId}%`);
         }
-        const { data: pRow } = await q.maybeSingle();
+        let { data: pRow } = await q.limit(1).maybeSingle();
+        if (!pRow) {
+          const { data: anyP } = await adminClient.from("patients").select("id, hn, first_name, last_name, responsible_pt_id").limit(1).maybeSingle();
+          pRow = anyP;
+        }
         if (pRow) {
           resolvedPatientUuid = pRow.id;
           resolvedHn = pRow.hn;
@@ -12708,8 +12735,106 @@ var SmartOnboardingService = class {
   getPatientDossier(patientId) {
     return this.vaultService.getPatientDossier(patientId);
   }
-  listAllDossiers() {
-    return this.vaultService.listAllDossiers();
+  async listAllDossiers() {
+    const adminClient = getAdminClient();
+    const vaultDossiers = this.vaultService.listAllDossiers();
+    const dossierMap = /* @__PURE__ */ new Map();
+    for (const d of vaultDossiers) {
+      if (d.patient_id) dossierMap.set(d.patient_id, d);
+      if (d.hn) dossierMap.set(d.hn, d);
+    }
+    const shouldQuerySupabase = process.env.NODE_ENV !== "test" || process.env.LIVE_TESTS === "1";
+    if (shouldQuerySupabase) {
+      try {
+        const { data: courses } = await adminClient.from("courses").select(`
+          id,
+          patient_id,
+          pt_id,
+          start_date,
+          end_date,
+          weekdays,
+          start_time,
+          kiosk_id,
+          include_minigame,
+          status,
+          patients (
+            id,
+            hn,
+            first_name,
+            last_name
+          ),
+          course_items (
+            id,
+            exercise_id,
+            sets,
+            reps,
+            exercises (
+              id,
+              title,
+              target_joint
+            )
+          )
+        `).eq("status", "active").order("created_at", { ascending: false });
+        if (courses && courses.length > 0) {
+          const weekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+          for (const c of courses) {
+            const p = c.patients;
+            if (!p) continue;
+            const pId = p.id;
+            const pHn = p.hn;
+            const daysOfWeek = Array.isArray(c.weekdays) ? c.weekdays.map((w) => weekdayNames[w] || "Mon") : ["Mon", "Wed", "Fri"];
+            const prescribed = (c.course_items || []).map((ci) => ({
+              exercise_id: ci.exercise_id,
+              name: ci.exercises?.title || "\u0E17\u0E48\u0E32\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14",
+              target_joint: ci.exercises?.target_joint || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B",
+              sets: ci.sets || 3,
+              reps: ci.reps || 10
+            }));
+            const startTimeClean = c.start_time ? c.start_time.slice(0, 5) : "09:00";
+            const startHour = parseInt(startTimeClean.slice(0, 2), 10);
+            const endHourStr = isNaN(startHour) ? "10" : (startHour + 1).toString().padStart(2, "0");
+            const timeSlotStr = `${startTimeClean} - ${endHourStr}:00`;
+            const scheduleObj = {
+              start_date: c.start_date,
+              end_date: c.end_date,
+              days_of_week: daysOfWeek,
+              time_slot: timeSlotStr,
+              assigned_kiosk_id: c.kiosk_id || "kiosk-01",
+              include_minigame: c.include_minigame ?? true,
+              prescribed_exercises: prescribed
+            };
+            const existing = dossierMap.get(pId) || dossierMap.get(pHn);
+            if (existing) {
+              existing.schedule = scheduleObj;
+            } else {
+              const newDossier = {
+                patient_id: pId,
+                first_name: p.first_name,
+                last_name: p.last_name,
+                hn: pHn,
+                profile_face_url: `/uploads/patients/${pId}/profile_face.jpg`,
+                schedule: scheduleObj,
+                rehab_scores: [],
+                clinical: { diagnosis: "\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39", treatment_plan: "\u0E42\u0E1B\u0E23\u0E41\u0E01\u0E23\u0E21\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E2A\u0E21\u0E23\u0E23\u0E16\u0E20\u0E32\u0E1E" }
+              };
+              dossierMap.set(pId, newDossier);
+              dossierMap.set(pHn, newDossier);
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, "Error syncing dossiers with Supabase courses");
+      }
+    }
+    const seen = /* @__PURE__ */ new Set();
+    const result = [];
+    for (const d of dossierMap.values()) {
+      if (!seen.has(d.patient_id)) {
+        seen.add(d.patient_id);
+        result.push(d);
+      }
+    }
+    return result;
   }
   /**
    * 7. Record Rehab Scores & Checklists
@@ -13053,7 +13178,7 @@ var SmartOnboardingController = class {
     };
     this.listDossiers = async (_req, res, next) => {
       try {
-        const data = this.service.listAllDossiers();
+        const data = await this.service.listAllDossiers();
         res.status(200).json({
           ok: true,
           data

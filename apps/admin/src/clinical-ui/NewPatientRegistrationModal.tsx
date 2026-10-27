@@ -217,6 +217,9 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   const prevLivStateRef = useRef<string>('');
   const prevLivMsgRef = useRef<string>('');
   const lastLivCheckRef = useRef<number>(0);
+  const prevDepthRef = useRef<number | undefined>(undefined);
+  const prevEarRef = useRef<number | undefined>(undefined);
+  const prevBlinkRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (step !== 2 || !cameraActive) return;
@@ -235,9 +238,18 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
             const depth = res.liveness?.depthScore ?? 0.85;
             const ear = res.eyes?.ear ?? 0.30;
             const isBlinking = Boolean(res.eyes?.isBlinking || ear < 0.20);
-            setLivenessDepthScore(depth);
-            setLivenessEar(ear);
-            setLivenessBlinking(isBlinking);
+            if (prevDepthRef.current === undefined || Math.abs(depth - prevDepthRef.current) >= 0.05) {
+              prevDepthRef.current = depth;
+              setLivenessDepthScore(depth);
+            }
+            if (prevEarRef.current === undefined || Math.abs(ear - prevEarRef.current) >= 0.05) {
+              prevEarRef.current = ear;
+              setLivenessEar(ear);
+            }
+            if (prevBlinkRef.current !== isBlinking) {
+              prevBlinkRef.current = isBlinking;
+              setLivenessBlinking(isBlinking);
+            }
 
             const trackerUpdate = activeLivenessTrackerRef.current.update(res);
             let nextState: 'checking' | 'live_verified' | 'spoof_blocked' = 'checking';
@@ -1196,7 +1208,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                   style={{
                     transform: `rotate(${cameraRotation}deg) scaleX(${isMirrored ? -1 : 1})`,
                   }}
-                  className={`w-full h-full object-cover transition-transform duration-200 ${cameraActive ? 'block' : 'hidden'}`}
+                  className={`w-full h-full object-cover transition-opacity duration-200 ${cameraActive ? 'opacity-100' : 'opacity-0'}`}
                 />
 
                 {!cameraActive && (

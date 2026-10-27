@@ -35,6 +35,12 @@ interface SmartScheduleWizardModalProps {
   preselectedPatientId?: string;
 }
 
+const formatCleanName = (first?: string, last?: string): string => {
+  const cleanFirst = first?.trim() || '';
+  const cleanLast = last && last.trim() !== '-' && last.trim() !== '' ? ` ${last.trim()}` : '';
+  return `${cleanFirst}${cleanLast}`.trim() || 'ผู้ป่วย';
+};
+
 export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> = ({
   isOpen,
   onClose,
@@ -213,7 +219,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
 
     try {
       await defaultApiClient.smartOnboarding.saveSchedule({
-        patient_id: selectedPatient.id || (selectedPatient as any).patient_id,
+        patient_id: selectedPatient.id || (selectedPatient as any).patient_id || selectedPatient.hn,
         schedule: {
           start_date: startDate,
           end_date: endDate,
@@ -251,7 +257,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
             <div className="text-xs uppercase font-semibold text-emerald-400 mb-1">
               {selectedPatient ? (
                 <span>
-                  ตารางกายภาพ: {selectedPatient.first_name} {selectedPatient.last_name} (
+                  ตารางกายภาพ: {formatCleanName(selectedPatient.first_name, selectedPatient.last_name)} (
                   {(selectedPatient as any).patient_id || selectedPatient.hn || selectedPatient.id})
                 </span>
               ) : (
@@ -323,7 +329,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
                   <option value="" disabled>-- เลือกคนไข้จากฐานข้อมูลจริง --</option>
                   {patients.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.first_name} {p.last_name || ''} ({p.hn || p.id})
+                      {formatCleanName(p.first_name, p.last_name)} ({p.hn || p.id})
                     </option>
                   ))}
                 </select>
@@ -359,7 +365,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
                         </div>
                         <div>
                           <div className="text-sm font-bold text-white">
-                            {p.first_name} {p.last_name || ''}
+                            {formatCleanName(p.first_name, p.last_name)}
                           </div>
                           <div className="text-xs text-slate-400">
                             HN: {p.hn || p.id} • อายุ {p.age || '-'} ปี • {p.injury || 'ทั่วไป'}

@@ -161,6 +161,7 @@ export const StaffView: React.FC = () => {
         });
         window.dispatchEvent(new CustomEvent('patient-created'));
         setSuccessMsg(`สร้างบัญชีคนไข้ ${formData.full_name} สำเร็จเรียบร้อย`);
+      } else {
         const safePassword =
           formData.password && formData.password.length >= 12
             ? formData.password
@@ -293,7 +294,7 @@ export const StaffView: React.FC = () => {
   });
 
   return (
-    <div className="p-8 pt-6 mt-2 space-y-6">
+    <div className="p-8 pt-8 mt-2 space-y-6">
       {/* View Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
