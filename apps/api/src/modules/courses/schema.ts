@@ -78,7 +78,16 @@ export interface CourseItemRecord {
 // 3. COURSE CRUD SCHEMAS
 // =========================================================================
 export const CreateCourseSchema = z
-  .object({
+  .preprocess((val: any) => {
+    if (typeof val === 'object' && val !== null) {
+      const copy = { ...val };
+      if (!copy.weekdays) {
+        copy.weekdays = copy.days_of_week || copy.day_of_week || copy.selectedDays || copy.days;
+      }
+      return copy;
+    }
+    return val;
+  }, z.object({
     patient_id: z.string().trim().min(1, 'Patient ID is required'),
     pt_id: z.string().trim().optional(),
     start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'start_date must be YYYY-MM-DD'),
@@ -105,7 +114,7 @@ export const CreateCourseSchema = z
       message: 'end_date must be greater than or equal to start_date',
       path: ['end_date'],
     }
-  );
+  ));
 
 export type CreateCourseInput = z.input<typeof CreateCourseSchema>;
 export type CreateCourseOutput = z.output<typeof CreateCourseSchema>;
@@ -163,13 +172,21 @@ export const TodayAppointmentsQuerySchema = z.object({
 
 export type TodayAppointmentsFilter = z.infer<typeof TodayAppointmentsQuerySchema>;
 
-export const CalendarViewQuerySchema = z.object({
+export const CalendarViewQuerySchema = z.preprocess((val: any) => {
+  if (typeof val === 'object' && val !== null) {
+    const copy = { ...val };
+    if (!copy.start_date) copy.start_date = copy.from || copy.from_date;
+    if (!copy.end_date) copy.end_date = copy.to || copy.to_date;
+    return copy;
+  }
+  return val;
+}, z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/, 'month must be YYYY-MM').optional(),
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   pt_id: z.string().trim().optional(),
   patient_id: z.string().trim().optional(),
-});
+}));
 
 export type CalendarViewFilter = z.infer<typeof CalendarViewQuerySchema>;
 

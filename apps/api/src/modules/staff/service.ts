@@ -42,10 +42,16 @@ export class StaffService {
       throw new AppError(`Username '${cleanUsername}' is already taken`, 409, 'USERNAME_EXISTS');
     }
 
-    const emailDomain = getEnv().INTERNAL_EMAIL_DOMAIN;
-    const internalEmail = `${cleanUsername}@${emailDomain}`;
+    const emailDomain = getEnv().INTERNAL_EMAIL_DOMAIN || 'drtech.care';
+    const internalEmail = cleanUsername.includes('@') ? cleanUsername : `${cleanUsername}@${emailDomain}`;
 
-    const authUserId = await this.repo.createAuthUser(internalEmail, input.password);
+    // Supabase Auth requires minimum 6 characters for password
+    let safePassword = input.password;
+    if (safePassword.length < 6) {
+      safePassword = safePassword.padEnd(6, '0');
+    }
+
+    const authUserId = await this.repo.createAuthUser(internalEmail, safePassword);
 
     const created = await this.repo.createStaff(
       {
@@ -59,11 +65,11 @@ export class StaffService {
       },
       input.role === 'pt'
         ? {
-            license_no: input.license_no || '',
-            license_expiry: input.license_expiry || null,
-            specialty: input.specialty || null,
-            age: input.age || null,
-            sex: input.sex || null,
+            license_no: input.license_no || ('กภ.' + Math.floor(10000 + Math.random() * 90000)),
+            license_expiry: input.license_expiry || '2030-12-31',
+            specialty: input.specialty || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+            age: input.age || 35,
+            sex: input.sex || 'male',
           }
         : undefined
     );

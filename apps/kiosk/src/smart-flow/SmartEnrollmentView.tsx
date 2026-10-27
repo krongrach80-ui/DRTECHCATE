@@ -43,6 +43,11 @@ export const SmartEnrollmentView: React.FC<SmartEnrollmentViewProps> = ({
   const isMountedRef = useRef<boolean>(true);
   const hasFinishedRef = useRef<boolean>(false);
 
+  const onEnrollSuccessRef = useRef(onEnrollSuccess);
+  useEffect(() => {
+    onEnrollSuccessRef.current = onEnrollSuccess;
+  });
+
   useEffect(() => {
     isMountedRef.current = true;
     hasFinishedRef.current = false;
@@ -143,7 +148,7 @@ export const SmartEnrollmentView: React.FC<SmartEnrollmentViewProps> = ({
 
         setTimeout(() => {
           if (isMountedRef.current) {
-            onEnrollSuccess(createdPatientId);
+            onEnrollSuccessRef.current(createdPatientId);
           }
         }, 800);
       } catch (err: unknown) {
@@ -161,7 +166,7 @@ export const SmartEnrollmentView: React.FC<SmartEnrollmentViewProps> = ({
       cancelAnimationFrame(animFrameId);
       camera.stop();
     };
-  }, [onEnrollSuccess, customDetector]);
+  }, [customDetector]);
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950 text-slate-100">

@@ -121,15 +121,16 @@ export class SmartOnboardingController {
 
   saveSchedule = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { patient_id, schedule } = req.body;
-      if (!patient_id || !schedule) {
+      const patientId = req.body.patient_id || req.body.patientId;
+      const schedule = req.body.schedule || req.body;
+      if (!patientId || !schedule) {
         res.status(400).json({
           ok: false,
           error: { code: 'BAD_REQUEST', message: 'patient_id and schedule are required' },
         });
         return;
       }
-      const data = await this.service.saveSchedule(patient_id, schedule);
+      const data = await this.service.saveSchedule(patientId, schedule);
       res.status(200).json({
         ok: true,
         data,

@@ -57,6 +57,13 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
   const isMountedRef = useRef<boolean>(true);
   const hasFinishedRef = useRef<boolean>(false);
 
+  const onFrameCapturedRef = useRef(onFrameCaptured);
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => {
+    onFrameCapturedRef.current = onFrameCaptured;
+    onCompleteRef.current = onComplete;
+  });
+
   useEffect(() => {
     isMountedRef.current = true;
     hasFinishedRef.current = false;
@@ -111,7 +118,7 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
             if (info.livenessState) setLivenessState(info.livenessState);
             if (info.depthScore !== undefined) setLivenessDepthScore(info.depthScore);
             if (info.ear !== undefined) setLivenessEar(info.ear);
-            onFrameCaptured?.();
+            onFrameCapturedRef.current?.();
           },
         });
 
@@ -143,7 +150,7 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
         setStatusText('ลงทะเบียนใบหน้าสำเร็จเรียบร้อยแล้ว!');
 
         setTimeout(() => {
-          onComplete();
+          onCompleteRef.current();
         }, 1200);
       } catch (err: unknown) {
         if (!isMountedRef.current || hasFinishedRef.current) return;
@@ -160,7 +167,7 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
       cancelAnimationFrame(animFrameId);
       camera.stop();
     };
-  }, [ticketId, patientId, onFrameCaptured, onComplete, injectedServices]);
+  }, [ticketId, patientId, injectedServices]);
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950">

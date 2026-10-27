@@ -225,6 +225,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
         },
       });
 
+      window.dispatchEvent(new CustomEvent('schedule-updated'));
       onSuccess();
       onClose();
     } catch (err: unknown) {

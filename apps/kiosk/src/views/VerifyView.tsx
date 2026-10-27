@@ -59,6 +59,17 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
   const isMountedRef = useRef<boolean>(true);
   const hasFinishedRef = useRef<boolean>(false);
 
+  const onSuccessRef = useRef(onSuccess);
+  const onFailureRef = useRef(onFailure);
+  const onCallStaffRef = useRef(onCallStaff);
+  const failedCountRef = useRef(failedCount);
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+    onFailureRef.current = onFailure;
+    onCallStaffRef.current = onCallStaff;
+    failedCountRef.current = failedCount;
+  });
+
   useEffect(() => {
     isMountedRef.current = true;
     hasFinishedRef.current = false;
@@ -176,14 +187,14 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
         const avUrl = verifyRes.candidate?.avatar_url || verifyRes.avatar_url || null;
         const sToken = verifyRes.session_token || verifyRes.sessionToken || '';
 
-        onSuccess(pId, fName, avUrl, sToken);
+        onSuccessRef.current(pId, fName, avUrl, sToken);
       } catch (err: unknown) {
         if (!isMountedRef.current || hasFinishedRef.current) return;
         const msg = err instanceof Error ? err.message : 'การยืนยันตัวตนล้มเหลว';
         setChallengeError(msg);
         setStatusText(msg);
 
-        const nextFailedCount = failedCount + 1;
+        const nextFailedCount = failedCountRef.current + 1;
         if (nextFailedCount >= 3) {
           // Automatic staff call on 3 failures (Spec 12 & DoD 3)
           try {
@@ -194,9 +205,9 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
           } catch {
             // Ignore call failure
           }
-          onCallStaff();
+          onCallStaffRef.current();
         } else {
-          onFailure?.(msg);
+          onFailureRef.current?.(msg);
         }
       }
     }
@@ -208,7 +219,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
       cancelAnimationFrame(animFrameId);
       camera.stop();
     };
-  }, [kioskId, failedCount, onSuccess, onFailure, onCallStaff, injectedServices]);
+  }, [kioskId, injectedServices]);
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950">

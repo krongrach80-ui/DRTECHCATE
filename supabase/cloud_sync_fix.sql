@@ -54,7 +54,7 @@ CREATE SEQUENCE IF NOT EXISTS public.patient_hn_seq START WITH 100001 INCREMENT 
 
 -- 1. profiles
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
   full_name TEXT NOT NULL,
   role public.user_role NOT NULL DEFAULT 'pt',
@@ -64,7 +64,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email TEXT;
 
 -- 2. pts (Physical Therapists details linked to profiles)
 CREATE TABLE IF NOT EXISTS public.pts (

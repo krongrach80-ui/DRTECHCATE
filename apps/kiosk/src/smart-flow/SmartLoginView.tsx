@@ -293,7 +293,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     }
   }, [customDetector, isScanning, isScanningPaused]);
 
-  // Request & Initialize Camera
+  // Request & Initialize Camera - Isolated from detection states
   const startCamera = useCallback(async () => {
     if (isScanningPaused) return;
     try {
@@ -306,7 +306,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           setCameraReady(true);
         }
       }
-    } catch {
+    } catch (camErr) {
+      console.warn('Camera start error:', camErr);
       if (isMountedRef.current) {
         setCameraReady(false);
       }
@@ -328,7 +329,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     };
   }, [stopCamera, startCamera, isScanningPaused]);
 
-  // Main Camera & Presence Loop (Pauses completely when isScanningPaused is true)
+  // 1. ISOLATED CAMERA LIFECYCLE: Starts camera ONCE on mount / unpause, stops on unmount / pause
   useEffect(() => {
     if (isScanningPaused) {
       stopCamera();
@@ -336,23 +337,20 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     }
 
     isMountedRef.current = true;
-    hasTriggeredScanRef.current = false;
-    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
-    const { camera, detector, inputManager } = services;
-
-    inputManager.setIdleMode(true);
-    let animId: number;
-
-    const unsubscribe = inputManager.subscribe((event) => {
-      if (!isMountedRef.current || isScanningPaused) return;
-      if (event.type === 'PRESENCE_DETECTED') {
-        setPresenceDetected(true);
-        setStatusText('ตรวจพบผู้ป่วย จัดท่านั่งและมองกล้อง (เริ่มสแกนใน 5 วินาที)');
-      }
-    });
-
-    // Attempt starting camera
     startCamera();
+
+    return () => {
+      stopCamera();
+    };
+  }, [isScanningPaused, startCamera, stopCamera]);
+
+  // 2. ISOLATED PREVIEW CANVAS RENDER LOOP (Runs on requestAnimationFrame smoothly without re-initializing camera)
+  useEffect(() => {
+    if (isScanningPaused || !cameraReady) return;
+
+    let animId: number;
+    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+    const { camera } = services;
 
     const renderLoop = () => {
       if (!isMountedRef.current || isScanningPaused) return;
@@ -365,48 +363,125 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     };
     animId = requestAnimationFrame(renderLoop);
 
-    // Presence detection & live liveness loop
-    const presenceInterval = setInterval(async () => {
+    return () => {
+      cancelAnimationFrame(animId);
+    };
+  }, [cameraReady, isScanningPaused, customDetector]);
+
+  // 3. ISOLATED DETECTION & PRESENCE LOOP (Throttled, updates React state ONLY when values actually change)
+  const prevFaceInCircleRef = useRef<boolean>(false);
+  const prevPresenceDetectedRef = useRef<boolean>(false);
+  const prevLivenessStateRef = useRef<string>('');
+  const prevStatusTextRef = useRef<string>('');
+
+  useEffect(() => {
+    if (isScanningPaused || !cameraReady) return;
+
+    hasTriggeredScanRef.current = false;
+    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+    const { detector, inputManager } = services;
+
+    inputManager.setIdleMode(true);
+
+    const unsubscribe = inputManager.subscribe((event) => {
       if (!isMountedRef.current || isScanningPaused) return;
+      if (event.type === 'PRESENCE_DETECTED') {
+        if (!prevPresenceDetectedRef.current) {
+          prevPresenceDetectedRef.current = true;
+          setPresenceDetected(true);
+        }
+        const text = 'ตรวจพบผู้ป่วย จัดท่านั่งและมองกล้อง (เริ่มสแกนใน 5 วินาที)';
+        if (prevStatusTextRef.current !== text) {
+          prevStatusTextRef.current = text;
+          setStatusText(text);
+        }
+      }
+    });
+
+    // Run face detection interval (140ms, throttled)
+    const presenceInterval = setInterval(async () => {
+      if (!isMountedRef.current || isScanningPaused || isScanning) return;
       if (videoRef.current && videoRef.current.readyState >= 2) {
         try {
           const vw = videoRef.current.videoWidth || 640;
           const vh = videoRef.current.videoHeight || 480;
           const res = await detector.detect(videoRef.current);
+
           if (res.hasFace && res.box) {
             const roi = checkFaceROIInCircle(res, vw, vh);
+
             if (!roi.inCircle) {
-              setFaceInCircle(false);
-              setPresenceDetected(false);
-              fastLivenessVerifierRef.current.start();
-              setLivenessResult({
-                isLive: false,
-                depthScore: res.liveness?.depthScore ?? 0,
-                motionScore: 0,
-                ear: res.eyes?.ear ?? 0.3,
-                blinkVerified: false,
-                motionVerified: false,
-                state: 'face_not_in_circle',
-                statusMessageThai: '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)',
-              });
-              setStatusText('กรุณาขยับใบหน้าให้ตรงกรอบวงกลม');
-              setCountdown(5);
+              if (prevFaceInCircleRef.current !== false) {
+                prevFaceInCircleRef.current = false;
+                setFaceInCircle(false);
+              }
+              if (prevPresenceDetectedRef.current !== false) {
+                prevPresenceDetectedRef.current = false;
+                setPresenceDetected(false);
+              }
+              if (prevLivenessStateRef.current !== 'face_not_in_circle') {
+                prevLivenessStateRef.current = 'face_not_in_circle';
+                fastLivenessVerifierRef.current.start();
+                setLivenessResult({
+                  isLive: false,
+                  depthScore: res.liveness?.depthScore ?? 0,
+                  motionScore: 0,
+                  ear: res.eyes?.ear ?? 0.3,
+                  blinkVerified: false,
+                  motionVerified: false,
+                  state: 'face_not_in_circle',
+                  statusMessageThai: '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)',
+                });
+              }
+              const msg = 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม';
+              if (prevStatusTextRef.current !== msg) {
+                prevStatusTextRef.current = msg;
+                setStatusText(msg);
+              }
               inputManager.processFaceDetection(null, performance.now());
             } else {
-              setFaceInCircle(true);
-              const liv = fastLivenessVerifierRef.current.evaluate(res);
-              setLivenessResult(liv);
-              if (liv.state === 'live_verified') {
-                setPresenceDetected(true);
-                setStatusText('ตรวจพบใบหน้าจริงในวงกลม (เริ่มสแกนอัตโนมัติ)');
-              } else if (liv.state === 'spoof_blocked') {
-                setPresenceDetected(false);
-                setStatusText('⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง');
-                setCountdown(5);
-              } else {
-                setPresenceDetected(false);
-                setStatusText('🟡 กำลังตรวจสอบความมีชีวิต...');
+              if (prevFaceInCircleRef.current !== true) {
+                prevFaceInCircleRef.current = true;
+                setFaceInCircle(true);
               }
+              const liv = fastLivenessVerifierRef.current.evaluate(res);
+              if (prevLivenessStateRef.current !== liv.state) {
+                prevLivenessStateRef.current = liv.state;
+                setLivenessResult(liv);
+              }
+
+              if (liv.state === 'live_verified') {
+                if (prevPresenceDetectedRef.current !== true) {
+                  prevPresenceDetectedRef.current = true;
+                  setPresenceDetected(true);
+                }
+                const msg = 'ตรวจพบใบหน้าจริงในวงกลม (เริ่มสแกนอัตโนมัติ)';
+                if (prevStatusTextRef.current !== msg) {
+                  prevStatusTextRef.current = msg;
+                  setStatusText(msg);
+                }
+              } else if (liv.state === 'spoof_blocked') {
+                if (prevPresenceDetectedRef.current !== false) {
+                  prevPresenceDetectedRef.current = false;
+                  setPresenceDetected(false);
+                }
+                const msg = '⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง';
+                if (prevStatusTextRef.current !== msg) {
+                  prevStatusTextRef.current = msg;
+                  setStatusText(msg);
+                }
+              } else {
+                if (prevPresenceDetectedRef.current !== false) {
+                  prevPresenceDetectedRef.current = false;
+                  setPresenceDetected(false);
+                }
+                const msg = '🟡 กำลังตรวจสอบความมีชีวิต...';
+                if (prevStatusTextRef.current !== msg) {
+                  prevStatusTextRef.current = msg;
+                  setStatusText(msg);
+                }
+              }
+
               inputManager.processFaceDetection(
                 {
                   x: res.box.x / vw,
@@ -418,43 +493,48 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               );
             }
           } else {
-            setFaceInCircle(false);
-            setPresenceDetected(false);
-            fastLivenessVerifierRef.current.start();
-            setLivenessResult({
-              isLive: false,
-              depthScore: 0,
-              motionScore: 0,
-              ear: 0,
-              blinkVerified: false,
-              motionVerified: false,
-              state: 'face_not_in_circle',
-              statusMessageThai: '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)',
-            });
-            setStatusText('กรุณาขยับใบหน้าให้ตรงกรอบวงกลม');
-            setCountdown(5);
+            if (prevFaceInCircleRef.current !== false) {
+              prevFaceInCircleRef.current = false;
+              setFaceInCircle(false);
+            }
+            if (prevPresenceDetectedRef.current !== false) {
+              prevPresenceDetectedRef.current = false;
+              setPresenceDetected(false);
+            }
+            if (prevLivenessStateRef.current !== 'no_face') {
+              prevLivenessStateRef.current = 'no_face';
+              fastLivenessVerifierRef.current.start();
+              setLivenessResult({
+                isLive: false,
+                depthScore: 0,
+                motionScore: 0,
+                ear: 0,
+                blinkVerified: false,
+                motionVerified: false,
+                state: 'face_not_in_circle',
+                statusMessageThai: '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)',
+              });
+            }
+            const msg = 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม';
+            if (prevStatusTextRef.current !== msg) {
+              prevStatusTextRef.current = msg;
+              setStatusText(msg);
+            }
             inputManager.processFaceDetection(null, performance.now());
           }
         } catch {
-          // ignore detection pass
+          // ignore detection pass error
         }
       }
-    }, 120);
+    }, 140);
 
     return () => {
-      isMountedRef.current = false;
-      cancelAnimationFrame(animId);
       clearInterval(presenceInterval);
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-      }
       unsubscribe();
-      stopCamera();
     };
-  }, [customDetector, presenceDetected, startCamera, isScanningPaused, stopCamera]);
+  }, [cameraReady, isScanningPaused, customDetector, isScanning]);
 
-  // Active Countdown Logic: ticks down ONLY when face is strictly in circle and passed liveness
+  // 4. Active Countdown Logic: ticks down ONLY when face is strictly in circle and passed liveness
   useEffect(() => {
     if (
       isScanningPaused ||

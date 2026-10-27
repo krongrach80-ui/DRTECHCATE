@@ -6,38 +6,40 @@ export type StaffRole = z.infer<typeof StaffRoleSchema>;
 export const StaffStatusSchema = z.enum(['active', 'suspended', 'archived']);
 export type StaffStatus = z.infer<typeof StaffStatusSchema>;
 
-export const CreateStaffSchema = z.object({
-  username: z
-    .string()
-    .trim()
-    .min(3, 'Username must be at least 3 characters')
-    .max(30, 'Username cannot exceed 30 characters')
-    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain alphanumeric characters and underscores'),
-  password: z
-    .string()
-    .min(12, 'Password must be at least 12 characters (Master Prompt v3 Section 6)'),
-  role: StaffRoleSchema,
-  full_name: z.string().trim().min(1, 'Full name is required').max(100),
-  phone: z.string().trim().max(20).optional().nullable(),
-  bio: z.string().trim().max(500).optional().nullable(),
-  // PT specific fields
-  license_no: z.string().trim().max(50).optional(),
-  license_expiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional().nullable(),
-  specialty: z.string().trim().max(100).optional().nullable(),
-  age: z.coerce.number().int().min(18).max(100).optional().nullable(),
-  sex: z.enum(['male', 'female', 'other']).optional().nullable(),
-}).refine(
-  (data) => {
-    if (data.role === 'pt' && !data.license_no) {
-      return false;
+export const CreateStaffSchema = z
+  .object({
+    username: z
+      .string()
+      .trim()
+      .min(3, 'Username must be at least 3 characters')
+      .max(30, 'Username cannot exceed 30 characters')
+      .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain alphanumeric characters and underscores'),
+    password: z
+      .string()
+      .min(12, 'Password must be at least 12 characters (Master Prompt v3 Section 6)'),
+    role: StaffRoleSchema,
+    full_name: z.string().trim().min(1, 'Full name is required').max(100),
+    phone: z.string().trim().max(20).optional().nullable(),
+    bio: z.string().trim().max(500).optional().nullable(),
+    // PT specific fields
+    license_no: z.string().trim().max(50).optional(),
+    license_expiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional().nullable(),
+    specialty: z.string().trim().max(100).optional().nullable(),
+    age: z.coerce.number().int().min(18).max(100).optional().nullable(),
+    sex: z.enum(['male', 'female', 'other']).optional().nullable(),
+  })
+  .refine(
+    (data) => {
+      if (data.role === 'pt' && !data.license_no) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: 'License number is required for Physical Therapist (PT)',
+      path: ['license_no'],
     }
-    return true;
-  },
-  {
-    message: 'Physiotherapist license number is required when role is pt',
-    path: ['license_no'],
-  }
-);
+  );
 
 export type CreateStaffInput = z.infer<typeof CreateStaffSchema>;
 

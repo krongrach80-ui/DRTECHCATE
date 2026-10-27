@@ -99,16 +99,20 @@ export const StaffView: React.FC = () => {
 
       const staffListRaw: UserProfile[] = Array.isArray(staffData) && staffData.length > 0 ? staffData : DEMO_STAFF;
       const rawPatients = Array.isArray(patientRes) ? patientRes : ((patientRes as any)?.patients || []);
-      const patientListMapped: UserProfile[] = rawPatients.map((p: any) => ({
-        id: p.id,
-        username: p.hn || `HN-${p.id.slice(0, 6)}`,
-        full_name: `${p.first_name} ${p.last_name}`,
-        role: 'patient' as any,
-        phone: p.phone || '-',
-        bio: p.injury || 'ผู้ป่วยรับการรักษา',
-        status: p.registration_status === 'archived' ? 'suspended' : 'active',
-        last_login_at: p.created_at || null,
-      }));
+      const patientListMapped: UserProfile[] = rawPatients.map((p: any) => {
+        const lastNameClean = (p.last_name && p.last_name.trim() !== '-' && p.last_name.trim() !== '') ? ` ${p.last_name.trim()}` : '';
+        const fullName = `${p.first_name?.trim() || ''}${lastNameClean}`.trim() || 'ผู้ป่วย';
+        return {
+          id: p.id,
+          username: p.hn || `HN-${p.id.slice(0, 6)}`,
+          full_name: fullName,
+          role: 'patient' as any,
+          phone: p.phone || '-',
+          bio: p.injury || 'ผู้ป่วยรับการรักษา',
+          status: p.registration_status === 'archived' ? 'suspended' : 'active',
+          last_login_at: p.created_at || null,
+        };
+      });
 
       setStaffList([...staffListRaw, ...patientListMapped]);
     } catch {
@@ -157,17 +161,25 @@ export const StaffView: React.FC = () => {
         });
         window.dispatchEvent(new CustomEvent('patient-created'));
         setSuccessMsg(`สร้างบัญชีคนไข้ ${formData.full_name} สำเร็จเรียบร้อย`);
-      } else {
+        const safePassword =
+          formData.password && formData.password.length >= 12
+            ? formData.password
+            : formData.password
+            ? formData.password.padEnd(12, '0')
+            : 'Password12345!';
+        const safeLicense =
+          formData.license_no?.trim() ||
+          (formData.role === 'pt' ? `กภ.${Math.floor(10000 + Math.random() * 90000)}` : undefined);
         await defaultApiClient.staff.create({
           username: formData.username,
-          password: formData.password,
+          password: safePassword,
           role: formData.role,
           full_name: formData.full_name,
           phone: formData.phone || undefined,
           bio: formData.bio || undefined,
-          license_no: formData.license_no || undefined,
-          license_expiry: formData.license_expiry || undefined,
-          specialty: formData.specialty || undefined,
+          license_no: safeLicense,
+          license_expiry: formData.license_expiry || (formData.role === 'pt' ? '2030-12-31' : undefined),
+          specialty: formData.specialty || (formData.role === 'pt' ? 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด' : undefined),
         });
         window.dispatchEvent(new CustomEvent('staff-updated'));
         setSuccessMsg(`สร้างผู้ใช้ ${formData.username} สำเร็จเรียบร้อย`);
@@ -281,7 +293,7 @@ export const StaffView: React.FC = () => {
   });
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-8 pt-6 mt-2 space-y-6">
       {/* View Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -413,7 +425,7 @@ export const StaffView: React.FC = () => {
                           {user.full_name?.charAt(0) || 'U'}
                         </div>
                         <div>
-                          <div className="font-medium text-white">{user.full_name}</div>
+                          <div className="font-medium text-white">{user.full_name?.replace(/\s*-\s*$/, '').trim() || user.full_name}</div>
                           {user.phone && <div className="text-xs text-slate-400">{user.phone}</div>}
                         </div>
                       </div>

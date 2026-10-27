@@ -213,14 +213,20 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     };
   }, [step]);
 
-  // Real-time Active Liveness & Face Mesh Telemetry Loop (Step 2)
+  // Real-time Active Liveness & Face Mesh Telemetry Loop (Step 2 - Throttled to 150ms)
+  const prevLivStateRef = useRef<string>('');
+  const prevLivMsgRef = useRef<string>('');
+  const lastLivCheckRef = useRef<number>(0);
+
   useEffect(() => {
     if (step !== 2 || !cameraActive) return;
     let animId: number;
     let isChecking = false;
 
     const checkLivenessFrame = async () => {
-      if (videoRef.current && videoRef.current.readyState >= 2 && !isChecking) {
+      const now = performance.now();
+      if (videoRef.current && videoRef.current.readyState >= 2 && !isChecking && now - lastLivCheckRef.current >= 150) {
+        lastLivCheckRef.current = now;
         isChecking = true;
         try {
           const { detector } = getFaceServices();
@@ -234,22 +240,38 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
             setLivenessBlinking(isBlinking);
 
             const trackerUpdate = activeLivenessTrackerRef.current.update(res);
+            let nextState: 'checking' | 'live_verified' | 'spoof_blocked' = 'checking';
+            let nextMsg = '🟡 กำลังตรวจสอบความมีชีวิต (Checking Liveness...)';
+
             if (depth < 0.20) {
-              setLivenessState('spoof_blocked');
-              setLivenessStatusMsg('🔴 แจ้งเตือน: ไม่ผ่านเกณฑ์บุคคลจริง (Spoof Blocked)');
+              nextState = 'spoof_blocked';
+              nextMsg = '🔴 แจ้งเตือน: ไม่ผ่านเกณฑ์บุคคลจริง (Spoof Blocked)';
             } else if (trackerUpdate.stagePassed || trackerUpdate.blinkVerified) {
-              setLivenessState('live_verified');
-              setLivenessStatusMsg('🟢 Liveness: บุคคลจริง (Live Verified)');
-            } else {
-              setLivenessState('checking');
-              setLivenessStatusMsg('🟡 กำลังตรวจสอบความมีชีวิต (Checking Liveness...)');
+              nextState = 'live_verified';
+              nextMsg = '🟢 Liveness: บุคคลจริง (Live Verified)';
+            }
+
+            if (prevLivStateRef.current !== nextState) {
+              prevLivStateRef.current = nextState;
+              setLivenessState(nextState);
+            }
+            if (prevLivMsgRef.current !== nextMsg) {
+              prevLivMsgRef.current = nextMsg;
+              setLivenessStatusMsg(nextMsg);
             }
           } else {
             setLivenessDepthScore(undefined);
             setLivenessEar(undefined);
             setLivenessBlinking(false);
-            setLivenessState('checking');
-            setLivenessStatusMsg('🟡 กรุณาจัดตำแหน่งใบหน้าให้อยู่ในกรอบวงกลม');
+            if (prevLivStateRef.current !== 'checking') {
+              prevLivStateRef.current = 'checking';
+              setLivenessState('checking');
+            }
+            const notInCircleMsg = '🟡 กรุณาจัดตำแหน่งใบหน้าให้อยู่ในกรอบวงกลม';
+            if (prevLivMsgRef.current !== notInCircleMsg) {
+              prevLivMsgRef.current = notInCircleMsg;
+              setLivenessStatusMsg(notInCircleMsg);
+            }
           }
         } catch {
           // non-blocking

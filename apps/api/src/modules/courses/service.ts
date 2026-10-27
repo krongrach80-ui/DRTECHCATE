@@ -47,12 +47,13 @@ export class CourseService {
     if (!patient) {
       throw new AppError('Patient not found', 404, 'PATIENT_NOT_FOUND');
     }
+    input.patient_id = patient.id; // Always use resolved UUID
 
     let ptId = input.pt_id || actor.id;
 
     if (actor.role === 'pt') {
       // 1. Invariant: PT cannot create a course for a patient they do not actively manage
-      const hasAccess = await this.patientRepo.isPatientAccessibleByPt(input.patient_id, actor.id);
+      const hasAccess = await this.patientRepo.isPatientAccessibleByPt(patient.id, actor.id);
       if (!hasAccess) {
         throw new AppError(
           'Forbidden: Physiotherapist cannot create or assign a course to a patient who is not under their active care.',
@@ -72,9 +73,7 @@ export class CourseService {
 
       ptId = actor.id;
     } else if (actor.role === 'admin' || actor.role === 'director' || actor.role === 'superadmin') {
-      if (!input.pt_id) {
-        ptId = patient.responsible_pt_id || actor.id;
-      }
+      ptId = input.pt_id || patient.responsible_pt_id || actor.id;
     }
 
     // 3. Snapshot exercises from modpack if modpack_id provided and items empty

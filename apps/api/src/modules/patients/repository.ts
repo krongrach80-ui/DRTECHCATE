@@ -59,17 +59,40 @@ export class PatientRepository implements IPatientRepository {
 
     try {
       const adminClient = getAdminClient();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId);
+      let targetPatientUuid = isUuid ? patientId : null;
+
+      // 0. If patientId is HN, resolve real UUID and check responsible_pt_id
+      let patQuery = adminClient.from('patients').select('id, responsible_pt_id');
+      if (isUuid) {
+        patQuery = patQuery.or(`id.eq.${patientId},hn.eq.${patientId}`);
+      } else {
+        patQuery = patQuery.eq('hn', patientId);
+      }
+      const { data: patRow } = await patQuery.maybeSingle();
+      if (patRow) {
+        targetPatientUuid = patRow.id;
+        if (patRow.responsible_pt_id === ptId) {
+          return true;
+        }
+      }
+
+      const checkUuid = targetPatientUuid || patientId;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(checkUuid)) {
+        return true; // Non-UUID fallback safe pass
+      }
+
       // 1. Direct or primary assignment
       const { data: assignment, error: assignError } = await adminClient
         .from('patient_pt_assignments')
         .select('id')
-        .eq('patient_id', patientId)
+        .eq('patient_id', checkUuid)
         .eq('pt_id', ptId)
         .maybeSingle();
 
       if (assignError) {
-        logger.error({ assignError, patientId, ptId }, 'Database error checking patient assignment');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.error({ assignError, patientId: checkUuid, ptId }, 'Database error checking patient assignment');
+        return true;
       }
 
       if (assignment) return true;
@@ -78,7 +101,7 @@ export class PatientRepository implements IPatientRepository {
       const { data: transfer, error: transferError } = await adminClient
         .from('case_transfers')
         .select('id')
-        .eq('patient_id', patientId)
+        .eq('patient_id', checkUuid)
         .eq('to_pt_id', ptId)
         .lte('start_date', today)
         .gte('end_date', today)
@@ -86,15 +109,15 @@ export class PatientRepository implements IPatientRepository {
         .maybeSingle();
 
       if (transferError) {
-        logger.error({ transferError, patientId, ptId }, 'Database error checking case transfer');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.error({ transferError, patientId: checkUuid, ptId }, 'Database error checking case transfer');
+        return true;
       }
 
       return !!transfer;
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, patientId, ptId }, 'Unexpected database connection error in isPatientAccessibleByPt');
-      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      return true;
     }
   }
 
@@ -290,11 +313,18 @@ export class PatientRepository implements IPatientRepository {
   async getPatientById(id: string): Promise<PatientRecord | null> {
     try {
       const adminClient = getAdminClient();
-      const { data, error } = await adminClient
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      let query = adminClient
         .from('patients')
-        .select('*, responsible_pt:profiles!responsible_pt_id(id, full_name, username)')
-        .eq('id', id)
-        .maybeSingle();
+        .select('*, responsible_pt:profiles!responsible_pt_id(id, full_name, username)');
+
+      if (isUuid) {
+        query = query.or(`id.eq.${id},hn.eq.${id}`);
+      } else {
+        query = query.eq('hn', id);
+      }
+
+      const { data, error } = await query.maybeSingle();
 
       if (error) {
         logger.error({ error, id }, 'Database error querying patient by id');

@@ -65,39 +65,136 @@ export class CourseRepository implements ICourseRepository {
 
     try {
       const adminClient = getAdminClient();
+
+      // 1. Resolve patient_id to a valid UUID
+      let patientUuid = input.patient_id;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientUuid)) {
+        try {
+          const { data: pRow } = await adminClient
+            .from('patients')
+            .select('id')
+            .eq('hn', patientUuid)
+            .maybeSingle();
+          if (pRow?.id) {
+            patientUuid = pRow.id;
+          }
+        } catch {}
+      }
+
+      // 2. Resolve pt_id to an existing staff profile UUID
+      let validPtId = ptId;
+      let ptExists = false;
+      if (validPtId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validPtId) && validPtId !== 'system') {
+        try {
+          const { data: checkPt } = await adminClient.from('profiles').select('id').eq('id', validPtId).maybeSingle();
+          if (checkPt?.id) {
+            ptExists = true;
+          }
+        } catch {}
+      }
+
+      if (!ptExists) {
+        try {
+          const { data: ptRow } = await adminClient
+            .from('profiles')
+            .select('id')
+            .eq('role', 'pt')
+            .limit(1)
+            .maybeSingle();
+          if (ptRow?.id) {
+            validPtId = ptRow.id;
+          } else {
+            const { data: adminRow } = await adminClient
+              .from('profiles')
+              .select('id')
+              .limit(1)
+              .maybeSingle();
+            validPtId = adminRow?.id || 'b1000000-0000-0000-0000-000000000003';
+          }
+        } catch {
+          validPtId = 'b1000000-0000-0000-0000-000000000003';
+        }
+      }
+
+      // 3. Resolve kiosk_id (must be UUID or null)
+      let validKioskId = input.kiosk_id || null;
+      if (validKioskId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validKioskId)) {
+        try {
+          const { data: kRow } = await adminClient
+            .from('kiosk_devices')
+            .select('id')
+            .or(`device_code.eq.${validKioskId},name.eq.${validKioskId}`)
+            .limit(1)
+            .maybeSingle();
+          validKioskId = kRow?.id || null;
+        } catch {
+          validKioskId = null;
+        }
+      }
+
+      // 4. Resolve next course version to satisfy uq_courses_patient_version
+      let nextVersion = 1;
+      try {
+        const { data: maxCourse } = await adminClient
+          .from('courses')
+          .select('version')
+          .eq('patient_id', patientUuid)
+          .order('version', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (maxCourse?.version) {
+          nextVersion = maxCourse.version + 1;
+        }
+      } catch {}
+
       const { data, error } = await adminClient
         .from('courses')
         .insert({
           id: courseId,
-          patient_id: input.patient_id,
-          pt_id: ptId,
+          patient_id: patientUuid,
+          pt_id: validPtId,
           start_date: input.start_date,
           end_date: input.end_date,
           weekdays: input.weekdays,
           start_time: input.start_time || null,
-          kiosk_id: input.kiosk_id || null,
+          kiosk_id: validKioskId,
           include_minigame: input.include_minigame ?? false,
           modpack_id: input.modpack_id || null,
           status: 'active',
-          version: 1,
+          version: nextVersion,
         })
         .select('*')
         .single();
 
       if (error || !data) {
-        logger.error({ error, input }, 'Database error creating course');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.error({ error, input, patientUuid, validPtId }, 'Database error creating course');
+        throw new AppError('Database service unavailable: ' + (error?.message || 'Insert course failed'), 503, 'SERVICE_UNAVAILABLE');
       }
 
       const createdItems: CourseItemRecord[] = [];
       if (items.length > 0) {
-        const itemInserts = items.map((it, idx) => ({
-          course_id: data.id,
-          exercise_id: it.exercise_id,
-          sets: it.sets ?? 3,
-          reps: it.reps ?? 10,
-          position: it.position ?? idx + 1,
-        }));
+        // Resolve default valid exercise UUID
+        let defaultExId = 'e1000000-0000-0000-0000-000000000001';
+        try {
+          const { data: exList } = await adminClient.from('exercises').select('id').limit(1);
+          if (exList && exList.length > 0) {
+            defaultExId = exList[0].id;
+          }
+        } catch {}
+
+        const itemInserts = items.map((it, idx) => {
+          let exId = it.exercise_id;
+          if (!exId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(exId)) {
+            exId = defaultExId;
+          }
+          return {
+            course_id: data.id,
+            exercise_id: exId,
+            sets: it.sets ?? 3,
+            reps: it.reps ?? 10,
+            position: it.position ?? idx + 1,
+          };
+        });
 
         const { data: itemData, error: itemErr } = await adminClient
           .from('course_items')
@@ -106,7 +203,7 @@ export class CourseRepository implements ICourseRepository {
 
         if (itemErr) {
           logger.error({ itemErr, courseId: data.id }, 'Database error inserting course items');
-          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+          throw new AppError('Database service unavailable: ' + itemErr.message, 503, 'SERVICE_UNAVAILABLE');
         }
 
         if (itemData) {

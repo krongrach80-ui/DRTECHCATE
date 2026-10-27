@@ -87,6 +87,14 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
 
   useEffect(() => {
     void loadData();
+
+    const handleScheduleUpdated = () => {
+      void loadData();
+    };
+    window.addEventListener('schedule-updated', handleScheduleUpdated);
+    return () => {
+      window.removeEventListener('schedule-updated', handleScheduleUpdated);
+    };
   }, [loadData]);
 
   const handleOpenWizard = (patientId?: string) => {
