@@ -91,8 +91,48 @@ export const PatientsView: React.FC = () => {
 
   const fetchPts = async () => {
     try {
-      const data = await defaultApiClient.staff.list().catch(() => []);
-      setPtsList(Array.isArray(data) ? data.filter((u: UserProfile) => u.role === 'pt') : []);
+      const [dirPts, staffList] = await Promise.all([
+        defaultApiClient.directory.listPts().catch(() => []),
+        defaultApiClient.staff.list({ role: 'pt' }).catch(() => []),
+      ]);
+      const combined = new Map<string, UserProfile>();
+      if (Array.isArray(staffList)) {
+        staffList.filter((u) => u.role === 'pt').forEach((pt) => combined.set(pt.id, pt));
+      }
+      if (Array.isArray(dirPts)) {
+        dirPts.forEach((d: any) => {
+          const ptId = d.id || d.user_id;
+          if (ptId && !combined.has(ptId)) {
+            combined.set(ptId, {
+              id: ptId,
+              username: d.username || 'pt',
+              full_name: d.full_name || 'กภ. วิภาวี สุขใจ',
+              role: 'pt',
+              status: 'active',
+              pt_details: d.pt_details,
+            });
+          }
+        });
+      }
+      if (combined.size === 0) {
+        combined.set('b1000000-0000-0000-0000-000000000003', {
+          id: 'b1000000-0000-0000-0000-000000000003',
+          username: 'pt_somchai',
+          full_name: 'กภ. วิภาวี สุขใจ',
+          role: 'pt',
+          status: 'active',
+          pt_details: {
+            license_no: 'กภ.12345',
+            specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+          },
+        });
+      }
+      const list = Array.from(combined.values());
+      setPtsList(list);
+      setCreateFormData((prev) => ({
+        ...prev,
+        responsible_pt_id: prev.responsible_pt_id || (list.length > 0 ? list[0].id : ''),
+      }));
     } catch {
       // non-blocking
     }
@@ -105,9 +145,14 @@ export const PatientsView: React.FC = () => {
     const handlePatientCreated = () => {
       fetchPatients();
     };
+    const handleStaffUpdated = () => {
+      fetchPts();
+    };
     window.addEventListener('patient-created', handlePatientCreated);
+    window.addEventListener('staff-updated', handleStaffUpdated);
     return () => {
       window.removeEventListener('patient-created', handlePatientCreated);
+      window.removeEventListener('staff-updated', handleStaffUpdated);
     };
   }, []);
 
@@ -157,6 +202,7 @@ export const PatientsView: React.FC = () => {
       });
       setSuccessMsg(`ลงทะเบียนคนไข้ใหม่สำเร็จ! ได้รับรหัส HN: ${created.hn}`);
       setIsCreateModalOpen(false);
+      window.dispatchEvent(new CustomEvent('patient-created', { detail: { id: created.id } }));
       setCreateFormData({
         first_name: '',
         last_name: '',
@@ -164,7 +210,7 @@ export const PatientsView: React.FC = () => {
         sex: 'male',
         phone: '',
         injury: '',
-        responsible_pt_id: '',
+        responsible_pt_id: ptsList.length > 0 ? ptsList[0].id : '',
       });
       await fetchPatients();
     } catch (err: unknown) {

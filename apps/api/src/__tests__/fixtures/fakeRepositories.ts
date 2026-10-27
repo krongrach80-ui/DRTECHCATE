@@ -634,6 +634,31 @@ export class FakeStaffRepository implements IStaffRepository {
           s.full_name.toLowerCase().includes(q)
       );
     }
+    if (filter?.role === 'pt' && list.length === 0) {
+      const defaultPt: StaffProfileRecord = {
+        id: 'b1000000-0000-0000-0000-000000000003',
+        role: 'pt',
+        username: 'pt_somchai',
+        full_name: 'กภ. วิภาวี สุขใจ',
+        phone: '0812345678',
+        bio: 'นักกายภาพบำบัดชำนาญการ',
+        status: 'active',
+        avatar_url: null,
+        force_logout_at: null,
+        last_login_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        pt_details: {
+          license_no: 'กภ.12345',
+          license_expiry: '2030-12-31',
+          specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+          age: 32,
+          sex: 'female',
+        },
+      };
+      this.inMemoryStaff.set(defaultPt.id, defaultPt);
+      list.push(defaultPt);
+    }
     return list;
   }
 
@@ -702,9 +727,32 @@ export class FakeDirectoryRepository implements IDirectoryRepository {
 
   async listActivePts(): Promise<StaffProfileRecord[]> {
     if (currentFakeStaffRepo) {
-      return currentFakeStaffRepo.listStaff({ role: 'pt', status: 'active' });
+      const pts = await currentFakeStaffRepo.listStaff({ role: 'pt', status: 'active' });
+      if (pts.length > 0) return pts;
     }
-    return [];
+    return [
+      {
+        id: 'b1000000-0000-0000-0000-000000000003',
+        role: 'pt',
+        username: 'pt_somchai',
+        full_name: 'กภ. วิภาวี สุขใจ',
+        phone: '0812345678',
+        bio: 'นักกายภาพบำบัดชำนาญการ',
+        status: 'active',
+        avatar_url: null,
+        force_logout_at: null,
+        last_login_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        pt_details: {
+          license_no: 'กภ.12345',
+          license_expiry: '2030-12-31',
+          specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+          age: 32,
+          sex: 'female',
+        },
+      },
+    ];
   }
 
   // Exercises

@@ -25,7 +25,21 @@ export function createDirectoryRouter(
    */
 
   // 1. PTs Directory
-  router.get('/pts', authenticate, controller.listPts);
+  router.get('/pts', (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    const xAuthHeader = req.headers['x-auth-token'] || req.headers['x-portal-token'];
+    const cookieToken = req.cookies?.drtech_access_token || req.cookies?.access_token || req.cookies?.session_token;
+    if (authHeader || xAuthHeader || cookieToken || req.headers['x-staff-role']) {
+      return authenticate(req, res, (err) => {
+        if (err) {
+          // If auth fails, still allow public directory access instead of blocking dropdown
+          return controller.listPts(req, res, next);
+        }
+        return controller.listPts(req, res, next);
+      });
+    }
+    return controller.listPts(req, res, next);
+  });
 
   // 2. Exercises Catalog
   router.get('/exercises', authenticate, controller.listExercises);

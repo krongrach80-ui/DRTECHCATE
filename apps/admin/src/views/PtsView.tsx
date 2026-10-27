@@ -78,6 +78,15 @@ export const PtsView: React.FC = () => {
 
   useEffect(() => {
     fetchData();
+    const handleUpdate = () => {
+      fetchData();
+    };
+    window.addEventListener('staff-updated', handleUpdate);
+    window.addEventListener('patient-created', handleUpdate);
+    return () => {
+      window.removeEventListener('staff-updated', handleUpdate);
+      window.removeEventListener('patient-created', handleUpdate);
+    };
   }, []);
 
   const filteredPts = (Array.isArray(pts) ? pts : []).filter((p) => {

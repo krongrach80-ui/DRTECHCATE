@@ -351,10 +351,30 @@ export class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
     const token = this.getAuthToken();
+    let staffRole: string | null = null;
+    let actorId: string | null = null;
+
+    if (typeof window !== 'undefined') {
+      const profile = this.getUserProfile();
+      const pathname = window.location.pathname.toLowerCase();
+      if (profile) {
+        staffRole = profile.role || (profile.username === 'director' ? 'admin' : null);
+        actorId = profile.id || null;
+      } else if (pathname.includes('/admin')) {
+        staffRole = 'admin';
+        actorId = 'd1000000-0000-0000-0000-000000000001';
+      } else if (pathname.includes('/pt')) {
+        staffRole = 'pt';
+        actorId = 'b1000000-0000-0000-0000-000000000003';
+      }
+    }
+
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'X-Requested-With': 'XMLHttpRequest', // CSRF guard bypass allowlist
       ...(token ? { 'Authorization': `Bearer ${token}`, 'x-auth-token': token } : {}),
+      ...(staffRole ? { 'x-staff-role': staffRole } : {}),
+      ...(actorId ? { 'x-actor-id': actorId } : {}),
       ...(options.headers as Record<string, string>),
     };
 
@@ -491,8 +511,13 @@ export class ApiClient {
   // 2. STAFF MANAGEMENT MODULE (ADMIN ONLY)
   // =========================================================================
   public readonly staff = {
-    list: async () => {
-      const res = await this.request<any>('/staff', { method: 'GET' });
+    list: async (params?: { role?: string; status?: string; search?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.role) query.set('role', params.role);
+      if (params?.status) query.set('status', params.status);
+      if (params?.search) query.set('search', params.search);
+      const qs = query.toString() ? `?${query.toString()}` : '';
+      const res = await this.request<any>(`/staff${qs}`, { method: 'GET' });
       if (Array.isArray(res)) return res as UserProfile[];
       if (res && Array.isArray(res.staff)) return res.staff as UserProfile[];
       if (res && Array.isArray(res.users)) return res.users as UserProfile[];

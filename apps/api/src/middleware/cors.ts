@@ -25,6 +25,15 @@ export function createCorsMiddleware() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-auth-token'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'x-auth-token',
+      'x-staff-role',
+      'x-actor-id',
+      'x-portal-token',
+      'drtech_access_token',
+    ],
   });
 }

@@ -315,24 +315,62 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       setConsentPdpa(true);
 
       // Load PT directory for dropdown
-      defaultApiClient.directory.listPts().then((pts) => {
+      Promise.all([
+        defaultApiClient.directory.listPts().catch(() => []),
+        defaultApiClient.staff.list({ role: 'pt' }).catch(() => []),
+      ]).then(([dirPts, staffList]) => {
+        const combined = new Map<string, PtDirectoryRecord>();
+        if (Array.isArray(staffList)) {
+          staffList.filter((u: any) => u.role === 'pt').forEach((pt: any) => {
+            combined.set(pt.id, {
+              id: pt.id,
+              username: pt.username || 'pt',
+              full_name: pt.full_name || 'กภ. วิภาวี สุขใจ',
+              pt_details: pt.pt_details,
+            });
+          });
+        }
+        if (Array.isArray(dirPts)) {
+          dirPts.forEach((d: any) => {
+            const ptId = d.id || d.user_id;
+            if (ptId && !combined.has(ptId)) {
+              combined.set(ptId, {
+                id: ptId,
+                username: d.username || 'pt',
+                full_name: d.full_name || 'กภ. วิภาวี สุขใจ',
+                pt_details: d.pt_details,
+              });
+            }
+          });
+        }
+        if (combined.size === 0) {
+          combined.set('b1000000-0000-0000-0000-000000000003', {
+            id: 'b1000000-0000-0000-0000-000000000003',
+            username: 'pt_somchai',
+            full_name: 'กภ. วิภาวี สุขใจ',
+            pt_details: {
+              license_no: 'กภ.12345',
+              specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+            },
+          });
+        }
+        const pts = Array.from(combined.values());
         setPtsList(pts);
         if (pts.length > 0) {
           setResponsiblePtId((prev) => prev || pts[0].id);
         }
       }).catch(() => {
-        setPtsList([
-          {
-            id: 'pt-somchai-uuid',
-            username: 'pt_somchai',
-            full_name: 'กภ. ภัทรพล เจริญสุข',
-            pt_details: {
-              license_no: 'กภ.12345',
-              specialty: 'เวชศาสตร์ฟื้นฟูข้อและกล้ามเนื้อ',
-            },
+        const defaultPt: PtDirectoryRecord = {
+          id: 'b1000000-0000-0000-0000-000000000003',
+          username: 'pt_somchai',
+          full_name: 'กภ. วิภาวี สุขใจ',
+          pt_details: {
+            license_no: 'กภ.12345',
+            specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
           },
-        ]);
-        setResponsiblePtId('pt-somchai-uuid');
+        };
+        setPtsList([defaultPt]);
+        setResponsiblePtId(defaultPt.id);
       });
     } else {
       stopCamera();

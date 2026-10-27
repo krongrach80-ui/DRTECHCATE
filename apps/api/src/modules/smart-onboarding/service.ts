@@ -181,6 +181,7 @@ export class SmartOnboardingService {
       sex: (payload.sex && (payload.sex.toLowerCase() === 'female' || payload.sex.toLowerCase() === 'f')) ? 'female' : (payload.sex && (payload.sex.toLowerCase() === 'male' || payload.sex.toLowerCase() === 'm')) ? 'male' : 'other',
       phone: payload.phone?.trim() || '-',
       injury: payload.injury?.trim() || payload.initial_symptoms?.trim() || 'กายภาพทั่วไป',
+      responsible_pt_id: payload.responsible_pt_id || null,
       registration_status: 'active',
       registered_via: 'kiosk',
       version: 1,
@@ -231,6 +232,19 @@ export class SmartOnboardingService {
       if (data) {
         savedPatientId = data.id || patient_id;
         savedHn = data.hn || hn;
+
+        if (payload.responsible_pt_id) {
+          try {
+            await supabase
+              .from('patient_pt_assignments')
+              .upsert(
+                { patient_id: data.id, pt_id: payload.responsible_pt_id, is_primary: true },
+                { onConflict: 'patient_id,pt_id' }
+              );
+          } catch {
+            // non-blocking assignment sync
+          }
+        }
       }
 
       // Sync face_enrollments & face_templates if tables are available

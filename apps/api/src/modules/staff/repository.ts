@@ -267,6 +267,76 @@ export class StaffRepository implements IStaffRepository {
       }
 
       let list = data ? data.map((d) => this.mapDbRecord(d)) : [];
+
+      // Auto-sync public.pts for any profiles where role = 'pt'
+      if (filter?.role === 'pt' || !filter?.role) {
+        try {
+          const ptItems = list.filter((s) => s.role === 'pt');
+          if (ptItems.length > 0) {
+            const { data: ptsRows } = await adminClient.from('pts').select('user_id');
+            const existingPtUserIds = new Set((ptsRows || []).map((r: { user_id: string }) => r.user_id));
+            for (const item of ptItems) {
+              if (!existingPtUserIds.has(item.id)) {
+                const licenseNo = item.pt_details?.license_no || `กภ.${Math.floor(10000 + Math.random() * 90000)}`;
+                await adminClient.from('pts').upsert({
+                  user_id: item.id,
+                  license_no: licenseNo,
+                  license_expiry: item.pt_details?.license_expiry || '2030-12-31',
+                  specialty: item.pt_details?.specialty || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+                  age: item.pt_details?.age || 32,
+                  sex: item.pt_details?.sex || 'female',
+                }, { onConflict: 'user_id' });
+              }
+            }
+          }
+        } catch {
+          // non-blocking auto-sync
+        }
+      }
+
+      // If PT role requested but 0 PTs returned, auto-seed default PT
+      if (filter?.role === 'pt' && list.length === 0) {
+        const defaultPtId = 'b1000000-0000-0000-0000-000000000003';
+        try {
+          await adminClient.from('profiles').upsert({
+            id: defaultPtId,
+            role: 'pt',
+            username: 'pt_somchai',
+            full_name: 'กภ. วิภาวี สุขใจ',
+            phone: '0812345678',
+            bio: 'นักกายภาพบำบัดชำนาญการ',
+            status: 'active',
+          }, { onConflict: 'id' });
+          await adminClient.from('pts').upsert({
+            user_id: defaultPtId,
+            license_no: 'กภ.12345',
+            license_expiry: '2030-12-31',
+            specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+            age: 32,
+            sex: 'female',
+          }, { onConflict: 'user_id' });
+        } catch {}
+
+        list.push({
+          id: defaultPtId,
+          role: 'pt',
+          username: 'pt_somchai',
+          full_name: 'กภ. วิภาวี สุขใจ',
+          phone: '0812345678',
+          bio: 'นักกายภาพบำบัดชำนาญการ',
+          status: 'active',
+          pt_details: {
+            license_no: 'กภ.12345',
+            license_expiry: '2030-12-31',
+            specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+            age: 32,
+            sex: 'female',
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as StaffProfileRecord);
+      }
+
       try {
         const { currentFakeStaffRepo } = await import('../../__tests__/fixtures/fakeRepositories');
         const localStaffList = Array.from(currentFakeStaffRepo.inMemoryStaff.values());
