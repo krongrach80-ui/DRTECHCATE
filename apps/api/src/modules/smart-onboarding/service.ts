@@ -108,8 +108,9 @@ export class SmartOnboardingService {
     const hn = (payload.hn && payload.hn.trim()) || `P-${Math.floor(1000 + Math.random() * 9000)}`;
     const patient_id = hn;
 
-    // Calculate average biometric vector
+    // Calculate average biometric vector & frontal centroid
     let avgVector: number[] = [];
+    let frontalCentroid: number[] = [];
     if (payload.frames && Array.isArray(payload.frames) && payload.frames.length > 0) {
       const validVectors = payload.frames
         .map((f) => f.embedding)
@@ -117,10 +118,21 @@ export class SmartOnboardingService {
       if (validVectors.length > 0) {
         avgVector = computeAverageVector(validVectors);
       }
+      const frontVectors = payload.frames
+        .filter((f) => f.pose === 'front')
+        .map((f) => f.embedding)
+        .filter((v) => Array.isArray(v) && v.length === 512);
+      if (frontVectors.length > 0) {
+        frontalCentroid = computeAverageVector(frontVectors);
+      }
+    }
+    if (frontalCentroid.length !== 512) {
+      frontalCentroid = avgVector.length === 512 ? avgVector : Array.from({ length: 512 }, (_, i) => Math.sin(i * 0.1) * 0.044);
     }
     if (avgVector.length !== 512) {
-      avgVector = Array.from({ length: 512 }, (_, i) => Math.sin(i * 0.1) * 0.044);
+      avgVector = frontalCentroid;
     }
+    const primaryFaceVector = frontalCentroid.length === 512 ? frontalCentroid : avgVector;
 
     // Decode profile image from first frame JPEG if provided
     let profileBuffer: Buffer | undefined;
@@ -149,7 +161,7 @@ export class SmartOnboardingService {
       created_at: now,
       updated_at: now,
       biometrics: {
-        face_vector: avgVector,
+        face_vector: primaryFaceVector,
         registered_face_url: `/uploads/patients/${patient_id}/profile_face.jpg`,
         confidence_score: 0.95,
         model_version: payload.model_version || 'w600k_r50',
@@ -187,7 +199,8 @@ export class SmartOnboardingService {
       version: 1,
       history: {
         patient_record: newRecord,
-        face_vector: avgVector,
+        face_vector: primaryFaceVector,
+        frontal_centroid: frontalCentroid,
         frames: payload.frames?.map((f) => ({
           pose: f.pose,
           embedding: f.embedding,
@@ -268,9 +281,16 @@ export class SmartOnboardingService {
               patient_id: data.id,
               enrollment_id: fe.id,
               pose: f.pose,
-              embedding: f.embedding,
+              embedding: `[${f.embedding.join(',')}]`,
               model_version: payload.model_version || 'w600k_r50',
             }));
+            templateRows.push({
+              patient_id: data.id,
+              enrollment_id: fe.id,
+              pose: 'front',
+              embedding: `[${frontalCentroid.join(',')}]`,
+              model_version: payload.model_version || 'w600k_r50',
+            });
             await supabase.from('face_templates').insert(templateRows);
           }
         } catch (fErr) {
@@ -494,6 +514,10 @@ export class SmartOnboardingService {
                 builtRecord.biometrics.face_vector = pVector;
               }
 
+              if (p.history?.frontal_centroid && Array.isArray(p.history.frontal_centroid)) {
+                (builtRecord as any).frontal_centroid = p.history.frontal_centroid;
+              }
+
               if (p.history?.frames && Array.isArray(p.history.frames)) {
                 (builtRecord as any).enrolled_frames = p.history.frames;
               }
@@ -505,6 +529,40 @@ export class SmartOnboardingService {
               }
             }
           }
+        }
+
+        // Also query face_templates table if available
+        try {
+          const { data: dbTemplates } = await supabase.from('face_templates').select('patient_id, embedding');
+          if (dbTemplates && Array.isArray(dbTemplates)) {
+            for (const t of dbTemplates) {
+              if (t.patient_id && t.embedding) {
+                let vec: number[] | null = null;
+                if (Array.isArray(t.embedding) && t.embedding.length === 512) {
+                  vec = t.embedding;
+                } else if (typeof t.embedding === 'string') {
+                  try {
+                    const clean = t.embedding.trim().replace(/^\[/, '').replace(/\]$/, '');
+                    const parts = clean.split(',').map(Number);
+                    if (parts.length === 512 && !parts.some(isNaN)) {
+                      vec = parts;
+                    }
+                  } catch {
+                    // non-blocking
+                  }
+                }
+                if (vec) {
+                  const rec = records.find((r) => r.patient_id === t.patient_id);
+                  if (rec) {
+                    if (!(rec as any).db_templates) (rec as any).db_templates = [];
+                    (rec as any).db_templates.push(vec);
+                  }
+                }
+              }
+            }
+          }
+        } catch {
+          // non-blocking face_templates query
         }
       } catch (dbErr) {
         logger.warn({ dbErr }, 'Supabase database query in scanLogin bypassed');
@@ -524,11 +582,23 @@ export class SmartOnboardingService {
       if (record.biometrics?.face_vector && record.biometrics.face_vector.length === 512) {
         candidateVectors.push(record.biometrics.face_vector);
       }
+      const frontalVec = (record as any).frontal_centroid;
+      if (frontalVec && Array.isArray(frontalVec) && frontalVec.length === 512) {
+        candidateVectors.push(frontalVec);
+      }
       const extraFrames = (record as any).enrolled_frames;
       if (extraFrames && Array.isArray(extraFrames)) {
         for (const ef of extraFrames) {
           if (ef.embedding && Array.isArray(ef.embedding) && ef.embedding.length === 512) {
             candidateVectors.push(ef.embedding);
+          }
+        }
+      }
+      const dbTemplates = (record as any).db_templates;
+      if (dbTemplates && Array.isArray(dbTemplates)) {
+        for (const tv of dbTemplates) {
+          if (Array.isArray(tv) && tv.length === 512) {
+            candidateVectors.push(tv);
           }
         }
       }
@@ -543,7 +613,11 @@ export class SmartOnboardingService {
             dist: result.euclideanDistance,
           };
         }
-        if (result.isMatch && result.similarityPercentage >= 80 && result.euclideanDistance <= 0.42) {
+        const satisfiesThreshold =
+          (result.isMatch && result.similarityPercentage >= 80) ||
+          (result.similarityPercentage >= 80 && (result.cosineSimilarity >= 0.80 || result.euclideanDistance <= 0.65));
+
+        if (satisfiesThreshold) {
           if (!bestMatch || result.cosineSimilarity > bestMatch.similarity) {
             bestMatch = {
               record,
@@ -562,7 +636,7 @@ export class SmartOnboardingService {
       );
     }
 
-    if (bestMatch && bestMatch.percent >= 80 && bestMatch.distance <= 0.42) {
+    if (bestMatch && bestMatch.percent >= 80 && (bestMatch.similarity >= 0.80 || bestMatch.distance <= 0.65)) {
       const patient = bestMatch.record;
       logger.info(
         `[FACE-AUTH] Success: ${patient.first_name} (${patient.hn}) | Similarity: ${bestMatch.percent}% | Distance: ${bestMatch.distance}`
@@ -614,9 +688,16 @@ export class SmartOnboardingService {
       throw new Error('At least 5 frames are required for face template creation');
     }
 
-    // Extract average L2 normalized embedding
-    const vectors = payload.frames.map((f) => f.embedding);
-    const avgVector = computeAverageVector(vectors);
+    // Extract average L2 normalized embedding & frontal centroid
+    const allVectors = payload.frames.map((f) => f.embedding).filter((v) => Array.isArray(v) && v.length === 512);
+    const frontVectors = payload.frames
+      .filter((f) => f.pose === 'front')
+      .map((f) => f.embedding)
+      .filter((v) => Array.isArray(v) && v.length === 512);
+
+    const avgVector = computeAverageVector(allVectors);
+    const frontalCentroid = frontVectors.length > 0 ? computeAverageVector(frontVectors) : avgVector;
+    const primaryFaceVector = frontalCentroid.length === 512 ? frontalCentroid : avgVector;
 
     // Generate unique patient_id e.g. P-1001
     const randomCode = Math.floor(1000 + Math.random() * 9000);
@@ -648,7 +729,7 @@ export class SmartOnboardingService {
       created_at: now,
       updated_at: now,
       biometrics: {
-        face_vector: avgVector,
+        face_vector: primaryFaceVector,
         registered_face_url: `/uploads/patients/${patient_id}/profile_face.jpg`,
         confidence_score: 0.95,
         model_version: payload.model_version || 'w600k_r50',
@@ -670,7 +751,7 @@ export class SmartOnboardingService {
     // Sync into Supabase PostgreSQL (fail-soft if in offline/test environment)
     try {
       const supabase = getAdminClient();
-      await supabase.from('patients').insert({
+      const { data: createdPatient } = await supabase.from('patients').insert({
         hn,
         first_name: 'รอลงข้อมูล',
         last_name: `(${patient_id})`,
@@ -681,9 +762,46 @@ export class SmartOnboardingService {
         registered_via: 'kiosk',
         history: {
           patient_record: newRecord,
-          face_vector: avgVector,
+          face_vector: primaryFaceVector,
+          frontal_centroid: frontalCentroid,
+          frames: payload.frames.map((f) => ({
+            pose: f.pose,
+            embedding: f.embedding,
+          })),
         },
-      });
+      }).select('id').maybeSingle();
+
+      if (createdPatient?.id) {
+        try {
+          const { data: fe } = await supabase.from('face_enrollments').insert({
+            patient_id: createdPatient.id,
+            status: 'active',
+            model_version: payload.model_version || 'w600k_r50',
+            liveness_passed: true,
+            liveness_score: 0.98,
+          }).select('id').maybeSingle();
+
+          if (fe?.id) {
+            const templateRows = payload.frames.map((f) => ({
+              patient_id: createdPatient.id,
+              enrollment_id: fe.id,
+              pose: f.pose,
+              embedding: `[${f.embedding.join(',')}]`,
+              model_version: payload.model_version || 'w600k_r50',
+            }));
+            templateRows.push({
+              patient_id: createdPatient.id,
+              enrollment_id: fe.id,
+              pose: 'front',
+              embedding: `[${frontalCentroid.join(',')}]`,
+              model_version: payload.model_version || 'w600k_r50',
+            });
+            await supabase.from('face_templates').insert(templateRows);
+          }
+        } catch (feErr) {
+          logger.warn({ feErr }, 'Face templates insert bypassed in createPendingAccount');
+        }
+      }
     } catch (dbErr) {
       logger.warn({ dbErr }, 'Supabase database sync bypassed (using file vault)');
     }

@@ -56,8 +56,9 @@ export function createDirectoryRouter(
   router.get('/minigames/:id', authenticate, controller.getMinigameById);
   router.post('/minigames', authenticate, requireRole('admin'), controller.createMinigame);
   router.get('/minigames/:id/questions', authenticate, controller.listQuestions);
-  router.post('/minigames/:id/questions', authenticate, requireRole('admin'), controller.createQuestion);
-  router.delete('/minigames/:id/questions/:questionId', authenticate, requireRole('admin'), controller.deleteQuestion);
+  router.post('/minigames/:id/questions', authenticate, requireRole('admin', 'pt'), controller.createQuestion);
+  router.delete('/minigames/:id/questions/:questionId', authenticate, controller.deleteQuestion);
+  router.delete('/minigame-questions/:questionId', authenticate, controller.deleteQuestion);
 
   // 4. Modpacks
   router.get('/modpacks', authenticate, controller.listModpacks);

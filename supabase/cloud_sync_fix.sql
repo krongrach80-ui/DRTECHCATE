@@ -1405,6 +1405,46 @@ CREATE POLICY "Allow anon and authenticated all on face_templates"
   USING (true)
   WITH CHECK (true);
 
+ALTER TABLE public.exercises ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and authenticated all on exercises" ON public.exercises;
+CREATE POLICY "Allow anon and authenticated all on exercises"
+  ON public.exercises FOR ALL
+  TO anon, authenticated, service_role
+  USING (true)
+  WITH CHECK (true);
+
+ALTER TABLE public.modpacks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and authenticated all on modpacks" ON public.modpacks;
+CREATE POLICY "Allow anon and authenticated all on modpacks"
+  ON public.modpacks FOR ALL
+  TO anon, authenticated, service_role
+  USING (true)
+  WITH CHECK (true);
+
+ALTER TABLE public.modpack_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and authenticated all on modpack_items" ON public.modpack_items;
+CREATE POLICY "Allow anon and authenticated all on modpack_items"
+  ON public.modpack_items FOR ALL
+  TO anon, authenticated, service_role
+  USING (true)
+  WITH CHECK (true);
+
+ALTER TABLE public.minigames ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and authenticated all on minigames" ON public.minigames;
+CREATE POLICY "Allow anon and authenticated all on minigames"
+  ON public.minigames FOR ALL
+  TO anon, authenticated, service_role
+  USING (true)
+  WITH CHECK (true);
+
+ALTER TABLE public.minigame_questions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and authenticated all on minigame_questions" ON public.minigame_questions;
+CREATE POLICY "Allow anon and authenticated all on minigame_questions"
+  ON public.minigame_questions FOR ALL
+  TO anon, authenticated, service_role
+  USING (true)
+  WITH CHECK (true);
+
 -- Summary Output
 SELECT
   '✓ SUCCESS: Cloud schema synchronization completed with 0 errors.' AS status,

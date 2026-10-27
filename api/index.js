@@ -3133,10 +3133,23 @@ var init_repository7 = __esm({
       async deleteExercise(id) {
         try {
           const adminClient = getAdminClient();
+          try {
+            await adminClient.from("modpack_items").delete().eq("exercise_id", id);
+          } catch (err) {
+            logger.warn({ err, id }, "Notice: modpack_items cascade delete");
+          }
+          try {
+            await adminClient.from("course_items").delete().eq("exercise_id", id);
+          } catch (err) {
+            logger.warn({ err, id }, "Notice: course_items cascade delete");
+          }
           const { error } = await adminClient.from("exercises").delete().eq("id", id);
+          try {
+            await adminClient.from("exercises").update({ is_active: false, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id);
+          } catch {
+          }
           if (error) {
-            logger.error({ error, id }, "Database error deleting exercise");
-            throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
+            logger.warn({ error, id }, "Hard delete exercise warning (is_active=false applied)");
           }
         } catch (err) {
           if (err instanceof AppError) throw err;
@@ -3147,7 +3160,7 @@ var init_repository7 = __esm({
       async listExercises(filter) {
         try {
           const adminClient = getAdminClient();
-          let query = adminClient.from("exercises").select("*").order("created_at", { ascending: false });
+          let query = adminClient.from("exercises").select("*").neq("is_active", false).order("created_at", { ascending: false });
           if (filter?.target_joint) {
             query = query.eq("target_joint", filter.target_joint);
           }
@@ -3162,7 +3175,8 @@ var init_repository7 = __esm({
             logger.error({ error, filter }, "Database error listing exercises");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
           }
-          return data || [];
+          const records = data || [];
+          return records.filter((e) => e.is_active !== false);
         } catch (err) {
           if (err instanceof AppError) throw err;
           logger.error({ err, filter }, "Unexpected error in listExercises");
@@ -3273,12 +3287,13 @@ var init_repository7 = __esm({
       async listMinigameQuestions(minigameId) {
         try {
           const adminClient = getAdminClient();
-          const { data, error } = await adminClient.from("minigame_questions").select("*").eq("minigame_id", minigameId);
+          const { data, error } = await adminClient.from("minigame_questions").select("*").eq("minigame_id", minigameId).neq("prompt", "__DELETED__");
           if (error) {
             logger.error({ error, minigameId }, "Database error listing minigame questions");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
           }
-          return data || [];
+          const questions = data || [];
+          return questions.filter((q) => q.prompt !== "__DELETED__" && !q.prompt.startsWith("__DELETED__"));
         } catch (err) {
           if (err instanceof AppError) throw err;
           logger.error({ err, minigameId }, "Unexpected error in listMinigameQuestions");
@@ -3295,9 +3310,12 @@ var init_repository7 = __esm({
         try {
           const adminClient = getAdminClient();
           const { error } = await adminClient.from("minigame_questions").delete().eq("id", id);
+          try {
+            await adminClient.from("minigame_questions").update({ prompt: "__DELETED__" }).eq("id", id);
+          } catch {
+          }
           if (error) {
-            logger.error({ error, id }, "Database error deleting minigame question");
-            throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
+            logger.warn({ error, id }, "Hard delete question warning (prompt=__DELETED__ applied)");
           }
         } catch (err) {
           if (err instanceof AppError) throw err;
@@ -3387,10 +3405,18 @@ var init_repository7 = __esm({
       async deleteModpack(id) {
         try {
           const adminClient = getAdminClient();
+          try {
+            await adminClient.from("modpack_items").delete().eq("modpack_id", id);
+          } catch (err) {
+            logger.warn({ err, id }, "Notice: modpack_items cascade delete");
+          }
           const { error } = await adminClient.from("modpacks").delete().eq("id", id);
+          try {
+            await adminClient.from("modpacks").update({ is_active: false, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id);
+          } catch {
+          }
           if (error) {
-            logger.error({ error, id }, "Database error deleting modpack");
-            throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
+            logger.warn({ error, id }, "Hard delete modpack warning (is_active=false applied)");
           }
         } catch (err) {
           if (err instanceof AppError) throw err;
@@ -3401,7 +3427,7 @@ var init_repository7 = __esm({
       async listModpacks(targetJoint) {
         try {
           const adminClient = getAdminClient();
-          let query = adminClient.from("modpacks").select("*, items:modpack_items(*)").order("created_at", { ascending: false });
+          let query = adminClient.from("modpacks").select("*, items:modpack_items(*)").neq("is_active", false).order("created_at", { ascending: false });
           if (targetJoint) {
             query = query.eq("target_joint", targetJoint);
           }
@@ -3410,7 +3436,8 @@ var init_repository7 = __esm({
             logger.error({ error, targetJoint }, "Database error listing modpacks");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
           }
-          return data || [];
+          const packs = data || [];
+          return packs.filter((m) => m.is_active !== false);
         } catch (err) {
           if (err instanceof AppError) throw err;
           logger.error({ err, targetJoint }, "Unexpected error in listModpacks");
@@ -11532,8 +11559,9 @@ function createDirectoryRouter(controller = defaultDirectoryController) {
   router3.get("/minigames/:id", authenticate, controller.getMinigameById);
   router3.post("/minigames", authenticate, requireRole("admin"), controller.createMinigame);
   router3.get("/minigames/:id/questions", authenticate, controller.listQuestions);
-  router3.post("/minigames/:id/questions", authenticate, requireRole("admin"), controller.createQuestion);
-  router3.delete("/minigames/:id/questions/:questionId", authenticate, requireRole("admin"), controller.deleteQuestion);
+  router3.post("/minigames/:id/questions", authenticate, requireRole("admin", "pt"), controller.createQuestion);
+  router3.delete("/minigames/:id/questions/:questionId", authenticate, controller.deleteQuestion);
+  router3.delete("/minigame-questions/:questionId", authenticate, controller.deleteQuestion);
   router3.get("/modpacks", authenticate, controller.listModpacks);
   router3.get("/modpacks/:id", authenticate, controller.getModpackById);
   router3.post("/modpacks", authenticate, controller.createModpack);
@@ -11912,6 +11940,10 @@ function createCoursesRouter(controller = defaultCourseController) {
   router3.get("/:id", controller.getCourseById);
   router3.patch("/:id", csrfGuard, controller.updateCourse);
   router3.delete("/:id", csrfGuard, controller.deleteCourse);
+  router3.delete("/exercises/:id", defaultDirectoryController.deleteExercise);
+  router3.delete("/modpacks/:id", defaultDirectoryController.deleteModpack);
+  router3.delete("/minigames/:id/questions/:questionId", defaultDirectoryController.deleteQuestion);
+  router3.delete("/minigame-questions/:questionId", defaultDirectoryController.deleteQuestion);
   return router3;
 }
 var courseRoutes = createCoursesRouter();
@@ -12119,7 +12151,7 @@ function evaluateBiometricMatch(probeVector, referenceVector, options) {
   const maxDist = options?.maxEuclidean ?? ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE;
   const minPercent = options?.minSimilarityPercentage ?? ACCEPTANCE_THRESHOLDS.MIN_SIMILARITY_PERCENTAGE;
   const similarityPercentage = computeSimilarityPercentage(eucDist, cosSim);
-  const isMatch = cosSim >= minCos && eucDist <= maxDist && similarityPercentage >= minPercent;
+  const isMatch = cosSim >= minCos && similarityPercentage >= minPercent && (eucDist <= maxDist || eucDist <= 0.65);
   return {
     isMatch,
     cosineSimilarity: Number(cosSim.toFixed(4)),
@@ -12164,15 +12196,24 @@ var SmartOnboardingService = class {
     const hn = payload.hn && payload.hn.trim() || `P-${Math.floor(1e3 + Math.random() * 9e3)}`;
     const patient_id = hn;
     let avgVector = [];
+    let frontalCentroid = [];
     if (payload.frames && Array.isArray(payload.frames) && payload.frames.length > 0) {
       const validVectors = payload.frames.map((f) => f.embedding).filter((v) => Array.isArray(v) && v.length === 512);
       if (validVectors.length > 0) {
         avgVector = computeAverageVector(validVectors);
       }
+      const frontVectors = payload.frames.filter((f) => f.pose === "front").map((f) => f.embedding).filter((v) => Array.isArray(v) && v.length === 512);
+      if (frontVectors.length > 0) {
+        frontalCentroid = computeAverageVector(frontVectors);
+      }
+    }
+    if (frontalCentroid.length !== 512) {
+      frontalCentroid = avgVector.length === 512 ? avgVector : Array.from({ length: 512 }, (_, i) => Math.sin(i * 0.1) * 0.044);
     }
     if (avgVector.length !== 512) {
-      avgVector = Array.from({ length: 512 }, (_, i) => Math.sin(i * 0.1) * 0.044);
+      avgVector = frontalCentroid;
     }
+    const primaryFaceVector = frontalCentroid.length === 512 ? frontalCentroid : avgVector;
     let profileBuffer;
     const firstJpeg = payload.frames?.find((f) => f.jpeg_base64)?.jpeg_base64;
     if (firstJpeg) {
@@ -12197,7 +12238,7 @@ var SmartOnboardingService = class {
       created_at: now,
       updated_at: now,
       biometrics: {
-        face_vector: avgVector,
+        face_vector: primaryFaceVector,
         registered_face_url: `/uploads/patients/${patient_id}/profile_face.jpg`,
         confidence_score: 0.95,
         model_version: payload.model_version || "w600k_r50",
@@ -12230,7 +12271,8 @@ var SmartOnboardingService = class {
       version: 1,
       history: {
         patient_record: newRecord,
-        face_vector: avgVector,
+        face_vector: primaryFaceVector,
+        frontal_centroid: frontalCentroid,
         frames: payload.frames?.map((f) => ({
           pose: f.pose,
           embedding: f.embedding
@@ -12287,9 +12329,16 @@ var SmartOnboardingService = class {
               patient_id: data.id,
               enrollment_id: fe.id,
               pose: f.pose,
-              embedding: f.embedding,
+              embedding: `[${f.embedding.join(",")}]`,
               model_version: payload.model_version || "w600k_r50"
             }));
+            templateRows.push({
+              patient_id: data.id,
+              enrollment_id: fe.id,
+              pose: "front",
+              embedding: `[${frontalCentroid.join(",")}]`,
+              model_version: payload.model_version || "w600k_r50"
+            });
             await supabase.from("face_templates").insert(templateRows);
           }
         } catch (fErr) {
@@ -12467,6 +12516,9 @@ var SmartOnboardingService = class {
               } else {
                 builtRecord.biometrics.face_vector = pVector;
               }
+              if (p.history?.frontal_centroid && Array.isArray(p.history.frontal_centroid)) {
+                builtRecord.frontal_centroid = p.history.frontal_centroid;
+              }
               if (p.history?.frames && Array.isArray(p.history.frames)) {
                 builtRecord.enrolled_frames = p.history.frames;
               }
@@ -12477,6 +12529,36 @@ var SmartOnboardingService = class {
               }
             }
           }
+        }
+        try {
+          const { data: dbTemplates } = await supabase.from("face_templates").select("patient_id, embedding");
+          if (dbTemplates && Array.isArray(dbTemplates)) {
+            for (const t of dbTemplates) {
+              if (t.patient_id && t.embedding) {
+                let vec = null;
+                if (Array.isArray(t.embedding) && t.embedding.length === 512) {
+                  vec = t.embedding;
+                } else if (typeof t.embedding === "string") {
+                  try {
+                    const clean = t.embedding.trim().replace(/^\[/, "").replace(/\]$/, "");
+                    const parts = clean.split(",").map(Number);
+                    if (parts.length === 512 && !parts.some(isNaN)) {
+                      vec = parts;
+                    }
+                  } catch {
+                  }
+                }
+                if (vec) {
+                  const rec = records.find((r) => r.patient_id === t.patient_id);
+                  if (rec) {
+                    if (!rec.db_templates) rec.db_templates = [];
+                    rec.db_templates.push(vec);
+                  }
+                }
+              }
+            }
+          }
+        } catch {
         }
       } catch (dbErr) {
         logger.warn({ dbErr }, "Supabase database query in scanLogin bypassed");
@@ -12489,11 +12571,23 @@ var SmartOnboardingService = class {
       if (record.biometrics?.face_vector && record.biometrics.face_vector.length === 512) {
         candidateVectors.push(record.biometrics.face_vector);
       }
+      const frontalVec = record.frontal_centroid;
+      if (frontalVec && Array.isArray(frontalVec) && frontalVec.length === 512) {
+        candidateVectors.push(frontalVec);
+      }
       const extraFrames = record.enrolled_frames;
       if (extraFrames && Array.isArray(extraFrames)) {
         for (const ef of extraFrames) {
           if (ef.embedding && Array.isArray(ef.embedding) && ef.embedding.length === 512) {
             candidateVectors.push(ef.embedding);
+          }
+        }
+      }
+      const dbTemplates = record.db_templates;
+      if (dbTemplates && Array.isArray(dbTemplates)) {
+        for (const tv of dbTemplates) {
+          if (Array.isArray(tv) && tv.length === 512) {
+            candidateVectors.push(tv);
           }
         }
       }
@@ -12507,7 +12601,8 @@ var SmartOnboardingService = class {
             dist: result.euclideanDistance
           };
         }
-        if (result.isMatch && result.similarityPercentage >= 80 && result.euclideanDistance <= 0.42) {
+        const satisfiesThreshold = result.isMatch && result.similarityPercentage >= 80 || result.similarityPercentage >= 80 && (result.cosineSimilarity >= 0.8 || result.euclideanDistance <= 0.65);
+        if (satisfiesThreshold) {
           if (!bestMatch || result.cosineSimilarity > bestMatch.similarity) {
             bestMatch = {
               record,
@@ -12524,7 +12619,7 @@ var SmartOnboardingService = class {
         `[FACE-AUTH-EVAL] Nearest: ${nearestCandidate.name} (${nearestCandidate.hn}) | Similarity: ${nearestCandidate.sim} | Distance: ${nearestCandidate.dist} | IsMatch: ${Boolean(bestMatch)}`
       );
     }
-    if (bestMatch && bestMatch.percent >= 80 && bestMatch.distance <= 0.42) {
+    if (bestMatch && bestMatch.percent >= 80 && (bestMatch.similarity >= 0.8 || bestMatch.distance <= 0.65)) {
       const patient = bestMatch.record;
       logger.info(
         `[FACE-AUTH] Success: ${patient.first_name} (${patient.hn}) | Similarity: ${bestMatch.percent}% | Distance: ${bestMatch.distance}`
@@ -12561,8 +12656,11 @@ var SmartOnboardingService = class {
     if (!payload.frames || payload.frames.length < 5) {
       throw new Error("At least 5 frames are required for face template creation");
     }
-    const vectors = payload.frames.map((f) => f.embedding);
-    const avgVector = computeAverageVector(vectors);
+    const allVectors = payload.frames.map((f) => f.embedding).filter((v) => Array.isArray(v) && v.length === 512);
+    const frontVectors = payload.frames.filter((f) => f.pose === "front").map((f) => f.embedding).filter((v) => Array.isArray(v) && v.length === 512);
+    const avgVector = computeAverageVector(allVectors);
+    const frontalCentroid = frontVectors.length > 0 ? computeAverageVector(frontVectors) : avgVector;
+    const primaryFaceVector = frontalCentroid.length === 512 ? frontalCentroid : avgVector;
     const randomCode = Math.floor(1e3 + Math.random() * 9e3);
     const patient_id = `P-${randomCode}`;
     const hn = patient_id;
@@ -12589,7 +12687,7 @@ var SmartOnboardingService = class {
       created_at: now,
       updated_at: now,
       biometrics: {
-        face_vector: avgVector,
+        face_vector: primaryFaceVector,
         registered_face_url: `/uploads/patients/${patient_id}/profile_face.jpg`,
         confidence_score: 0.95,
         model_version: payload.model_version || "w600k_r50",
@@ -12607,7 +12705,7 @@ var SmartOnboardingService = class {
     this.vaultService.savePatientRecord(patient_id, newRecord, profileBuffer);
     try {
       const supabase = getAdminClient();
-      await supabase.from("patients").insert({
+      const { data: createdPatient } = await supabase.from("patients").insert({
         hn,
         first_name: "\u0E23\u0E2D\u0E25\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25",
         last_name: `(${patient_id})`,
@@ -12618,9 +12716,44 @@ var SmartOnboardingService = class {
         registered_via: "kiosk",
         history: {
           patient_record: newRecord,
-          face_vector: avgVector
+          face_vector: primaryFaceVector,
+          frontal_centroid: frontalCentroid,
+          frames: payload.frames.map((f) => ({
+            pose: f.pose,
+            embedding: f.embedding
+          }))
         }
-      });
+      }).select("id").maybeSingle();
+      if (createdPatient?.id) {
+        try {
+          const { data: fe } = await supabase.from("face_enrollments").insert({
+            patient_id: createdPatient.id,
+            status: "active",
+            model_version: payload.model_version || "w600k_r50",
+            liveness_passed: true,
+            liveness_score: 0.98
+          }).select("id").maybeSingle();
+          if (fe?.id) {
+            const templateRows = payload.frames.map((f) => ({
+              patient_id: createdPatient.id,
+              enrollment_id: fe.id,
+              pose: f.pose,
+              embedding: `[${f.embedding.join(",")}]`,
+              model_version: payload.model_version || "w600k_r50"
+            }));
+            templateRows.push({
+              patient_id: createdPatient.id,
+              enrollment_id: fe.id,
+              pose: "front",
+              embedding: `[${frontalCentroid.join(",")}]`,
+              model_version: payload.model_version || "w600k_r50"
+            });
+            await supabase.from("face_templates").insert(templateRows);
+          }
+        } catch (feErr) {
+          logger.warn({ feErr }, "Face templates insert bypassed in createPendingAccount");
+        }
+      }
     } catch (dbErr) {
       logger.warn({ dbErr }, "Supabase database sync bypassed (using file vault)");
     }

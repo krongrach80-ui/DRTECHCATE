@@ -208,11 +208,14 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
 
     try {
       setActionLoading(true);
+      // Optimistic state removal: remove card from screen immediately
+      setExercises((prev) => prev.filter((item) => item.id !== ex.id));
       await defaultApiClient.exercises.delete(ex.id);
       setSuccessMsg(`ลบท่า "${ex.title}" เรียบร้อย`);
       await fetchExercises();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลบท่ากายภาพได้');
+      await fetchExercises();
     } finally {
       setActionLoading(false);
     }

@@ -216,11 +216,14 @@ export const LibraryView: React.FC = () => {
     if (!window.confirm(`ยืนยันการลบท่า "${title}"?`)) return;
     try {
       setActionLoading(true);
+      // Optimistic state removal: remove card from screen immediately
+      setExercises((prev) => prev.filter((e) => e.id !== id));
       await defaultApiClient.exercises.delete(id);
       setSuccessMsg(`ลบท่ากายภาพเรียบร้อย`);
       await fetchData();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลบท่ากายภาพได้');
+      await fetchData();
     } finally {
       setActionLoading(false);
     }
@@ -257,11 +260,14 @@ export const LibraryView: React.FC = () => {
     if (!selectedMinigame) return;
     try {
       setActionLoading(true);
+      // Optimistic state removal: remove question from screen immediately
+      setQuestions((prev) => prev.filter((q) => q.id !== questionId));
       await defaultApiClient.minigames.deleteQuestion(selectedMinigame.id, questionId);
-      setSuccessMsg('ลบโจทย์เรียบร้อย');
+      setSuccessMsg('ลบโจทย์คำถามเรียบร้อย');
       await openMinigameQuestions(selectedMinigame);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลบโจทย์ได้');
+      await openMinigameQuestions(selectedMinigame);
     } finally {
       setActionLoading(false);
     }
@@ -291,11 +297,14 @@ export const LibraryView: React.FC = () => {
     if (!window.confirm(`ยืนยันการลบชุดท่า "${name}"?`)) return;
     try {
       setActionLoading(true);
+      // Optimistic state removal: remove modpack from screen immediately
+      setModpacks((prev) => prev.filter((m) => m.id !== id));
       await defaultApiClient.modpacks.delete(id);
       setSuccessMsg('ลบชุดท่าเรียบร้อย');
       await fetchData();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถลบชุดท่าได้');
+      await fetchData();
     } finally {
       setActionLoading(false);
     }
@@ -593,17 +602,19 @@ export const LibraryView: React.FC = () => {
               <div
                 key={game.id}
                 onClick={() => openMinigameQuestions(game)}
-                className={`p-5 rounded-3xl border transition cursor-pointer ${
+                className={`p-5 rounded-3xl border-2 transition-all cursor-pointer ${
                   selectedMinigame?.id === game.id
-                    ? 'bg-teal-600/10 border-teal-500 text-teal-300'
-                    : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                    ? 'bg-slate-900 border-teal-400 shadow-xl shadow-teal-500/20 ring-2 ring-teal-500/40'
+                    : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Gamepad2 className="w-6 h-6 text-teal-400" />
+                  <Gamepad2 className={`w-7 h-7 flex-shrink-0 ${selectedMinigame?.id === game.id ? 'text-teal-300' : 'text-slate-400'}`} />
                   <div>
-                    <h3 className="font-bold text-white text-base">{game.title}</h3>
-                    <p className="text-xs text-slate-400">{game.description || 'มินิเกมฝึกสมอง'}</p>
+                    <h3 className="font-bold text-white text-base leading-snug">{game.title}</h3>
+                    <p className={`text-xs mt-1 ${selectedMinigame?.id === game.id ? 'text-teal-200' : 'text-slate-400'}`}>
+                      {game.description || 'มินิเกมฝึกสมอง'}
+                    </p>
                   </div>
                 </div>
               </div>

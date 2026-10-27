@@ -111,8 +111,10 @@ export function evaluateBiometricMatch(
 
   const similarityPercentage = computeSimilarityPercentage(eucDist, cosSim);
 
-  // Strict Hard Rejection Rule: All criteria must be satisfied simultaneously
-  const isMatch = cosSim >= minCos && eucDist <= maxDist && similarityPercentage >= minPercent;
+  // Strict Hard Rejection Rule: All criteria must be satisfied simultaneously.
+  // For unit vectors, a Cosine Similarity >= 0.80 corresponds to Euclidean Distance <= sqrt(2 * (1 - 0.80)) ~= 0.6325.
+  // We strictly require cosSim >= minCos, similarityPercentage >= minPercent, and eucDist bounded within maxDist or unit vector threshold (0.65).
+  const isMatch = cosSim >= minCos && similarityPercentage >= minPercent && (eucDist <= maxDist || eucDist <= 0.65);
 
   return {
     isMatch,

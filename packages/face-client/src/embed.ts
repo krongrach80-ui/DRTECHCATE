@@ -150,10 +150,41 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
       vChroma[j] = 0.615 * r - 0.51499 * g - 0.10001 * b;
     }
 
+    // 1.1 Contrast & Illumination Normalization (Zero-mean, unit-variance standard score)
+    let sumG = 0, sumG2 = 0;
+    let sumU = 0, sumU2 = 0;
+    let sumV = 0, sumV2 = 0;
+    for (let i = 0; i < totalPixels; i++) {
+      const g = gray[i];
+      sumG += g;
+      sumG2 += g * g;
+      const u = uChroma[i];
+      sumU += u;
+      sumU2 += u * u;
+      const v = vChroma[i];
+      sumV += v;
+      sumV2 += v * v;
+    }
+    const meanG = sumG / totalPixels;
+    const stdG = Math.sqrt(Math.max(1e-4, sumG2 / totalPixels - meanG * meanG));
+    const meanU = sumU / totalPixels;
+    const stdU = Math.sqrt(Math.max(1e-4, sumU2 / totalPixels - meanU * meanU));
+    const meanV = sumV / totalPixels;
+    const stdV = Math.sqrt(Math.max(1e-4, sumV2 / totalPixels - meanV * meanV));
+
+    const normGray = new Float32Array(totalPixels);
+    const normU = new Float32Array(totalPixels);
+    const normV = new Float32Array(totalPixels);
+    for (let i = 0; i < totalPixels; i++) {
+      normGray[i] = (gray[i] - meanG) / stdG;
+      normU[i] = (uChroma[i] - meanU) / stdU;
+      normV[i] = (vChroma[i] - meanV) / stdV;
+    }
+
     const vector: number[] = new Array(512).fill(0);
 
     // 2. Multiscale 2D Discrete Cosine Transform (DCT) - 256 components
-    // Downsample 112x112 to 16x16 block averages
+    // Downsample 112x112 to 16x16 block averages from illumination-normalized face
     const block16 = new Float32Array(256);
     const stepX = width / 16;
     const stepY = height / 16;
@@ -168,7 +199,7 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
         for (let y = startY; y < endY; y++) {
           const row = y * width;
           for (let x = startX; x < endX; x++) {
-            sum += gray[row + x];
+            sum += normGray[row + x];
             count++;
           }
         }
@@ -223,14 +254,14 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
           const r = y * width;
           for (let x = x0; x < x1; x++) {
             const idx = r + x;
-            const dx = gray[idx + 1] - gray[idx - 1];
-            const dy = gray[idx + width] - gray[idx - width];
+            const dx = normGray[idx + 1] - normGray[idx - 1];
+            const dy = normGray[idx + width] - normGray[idx - width];
             dxSum += dx;
             dySum += dy;
             magSum += Math.sqrt(dx * dx + dy * dy);
-            uSum += uChroma[idx];
-            vSum += vChroma[idx];
-            contrastSum += Math.abs(gray[idx] - gray[r + x0]);
+            uSum += normU[idx];
+            vSum += normV[idx];
+            contrastSum += Math.abs(normGray[idx] - normGray[r + x0]);
             pixelCount++;
           }
         }
@@ -261,8 +292,8 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
         const sy = Math.round(cy + radius * Math.sin(theta));
         const clampedX = Math.max(0, Math.min(width - 1, sx));
         const clampedY = Math.max(0, Math.min(height - 1, sy));
-        const pVal = gray[clampedY * width + clampedX];
-        const centerDiff = pVal - gray[Math.floor(cy) * width + Math.floor(cx)];
+        const pVal = normGray[clampedY * width + clampedX];
+        const centerDiff = pVal - normGray[Math.floor(cy) * width + Math.floor(cx)];
         vector[outIdx++] = centerDiff;
       }
     }

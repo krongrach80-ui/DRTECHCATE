@@ -3,6 +3,7 @@ import { authenticate } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/requireRole';
 import { csrfGuard } from '../../middleware/csrfGuard';
 import { CourseController, defaultCourseController } from './controller';
+import { defaultDirectoryController } from '../directory/controller';
 
 export function createCoursesRouter(controller: CourseController = defaultCourseController): Router {
   const router = Router();
@@ -23,6 +24,12 @@ export function createCoursesRouter(controller: CourseController = defaultCourse
   router.get('/:id', controller.getCourseById);
   router.patch('/:id', csrfGuard, controller.updateCourse);
   router.delete('/:id', csrfGuard, controller.deleteCourse);
+
+  // 3. Aliases for exercises, modpacks, and minigame questions
+  router.delete('/exercises/:id', defaultDirectoryController.deleteExercise);
+  router.delete('/modpacks/:id', defaultDirectoryController.deleteModpack);
+  router.delete('/minigames/:id/questions/:questionId', defaultDirectoryController.deleteQuestion);
+  router.delete('/minigame-questions/:questionId', defaultDirectoryController.deleteQuestion);
 
   return router;
 }

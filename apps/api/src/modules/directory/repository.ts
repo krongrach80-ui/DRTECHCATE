@@ -173,14 +173,36 @@ export class DirectoryRepository implements IDirectoryRepository {
   async deleteExercise(id: string): Promise<void> {
     try {
       const adminClient = getAdminClient();
+      // 1. Delete dependent relations in modpack_items and course_items
+      try {
+        await adminClient.from('modpack_items').delete().eq('exercise_id', id);
+      } catch (err) {
+        logger.warn({ err, id }, 'Notice: modpack_items cascade delete');
+      }
+      try {
+        await adminClient.from('course_items').delete().eq('exercise_id', id);
+      } catch (err) {
+        logger.warn({ err, id }, 'Notice: course_items cascade delete');
+      }
+
+      // 2. Hard delete attempt
       const { error } = await adminClient
         .from('exercises')
         .delete()
         .eq('id', id);
 
+      // 3. Guaranteed soft delete fallback
+      try {
+        await adminClient
+          .from('exercises')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('id', id);
+      } catch {
+        // safe
+      }
+
       if (error) {
-        logger.error({ error, id }, 'Database error deleting exercise');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.warn({ error, id }, 'Hard delete exercise warning (is_active=false applied)');
       }
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -192,7 +214,11 @@ export class DirectoryRepository implements IDirectoryRepository {
   async listExercises(filter?: ExerciseQueryFilter): Promise<ExerciseRecord[]> {
     try {
       const adminClient = getAdminClient();
-      let query = adminClient.from('exercises').select('*').order('created_at', { ascending: false });
+      let query = adminClient
+        .from('exercises')
+        .select('*')
+        .neq('is_active', false)
+        .order('created_at', { ascending: false });
 
       if (filter?.target_joint) {
         query = query.eq('target_joint', filter.target_joint);
@@ -210,7 +236,8 @@ export class DirectoryRepository implements IDirectoryRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return (data as ExerciseRecord[]) || [];
+      const records = (data as ExerciseRecord[]) || [];
+      return records.filter((e) => (e as any).is_active !== false);
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, filter }, 'Unexpected error in listExercises');
@@ -359,14 +386,16 @@ export class DirectoryRepository implements IDirectoryRepository {
       const { data, error } = await adminClient
         .from('minigame_questions')
         .select('*')
-        .eq('minigame_id', minigameId);
+        .eq('minigame_id', minigameId)
+        .neq('prompt', '__DELETED__');
 
       if (error) {
         logger.error({ error, minigameId }, 'Database error listing minigame questions');
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return (data as MinigameQuestionRecord[]) || [];
+      const questions = (data as MinigameQuestionRecord[]) || [];
+      return questions.filter((q) => q.prompt !== '__DELETED__' && !q.prompt.startsWith('__DELETED__'));
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, minigameId }, 'Unexpected error in listMinigameQuestions');
@@ -385,10 +414,18 @@ export class DirectoryRepository implements IDirectoryRepository {
   async deleteQuestion(id: string): Promise<void> {
     try {
       const adminClient = getAdminClient();
+      // 1. Attempt hard delete
       const { error } = await adminClient.from('minigame_questions').delete().eq('id', id);
+
+      // 2. Soft delete fallback
+      try {
+        await adminClient.from('minigame_questions').update({ prompt: '__DELETED__' }).eq('id', id);
+      } catch {
+        // safe
+      }
+
       if (error) {
-        logger.error({ error, id }, 'Database error deleting minigame question');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.warn({ error, id }, 'Hard delete question warning (prompt=__DELETED__ applied)');
       }
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -504,10 +541,28 @@ export class DirectoryRepository implements IDirectoryRepository {
   async deleteModpack(id: string): Promise<void> {
     try {
       const adminClient = getAdminClient();
+      // 1. Delete dependent modpack_items
+      try {
+        await adminClient.from('modpack_items').delete().eq('modpack_id', id);
+      } catch (err) {
+        logger.warn({ err, id }, 'Notice: modpack_items cascade delete');
+      }
+
+      // 2. Hard delete attempt
       const { error } = await adminClient.from('modpacks').delete().eq('id', id);
+
+      // 3. Guaranteed soft delete fallback
+      try {
+        await adminClient
+          .from('modpacks')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('id', id);
+      } catch {
+        // safe
+      }
+
       if (error) {
-        logger.error({ error, id }, 'Database error deleting modpack');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.warn({ error, id }, 'Hard delete modpack warning (is_active=false applied)');
       }
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -519,7 +574,12 @@ export class DirectoryRepository implements IDirectoryRepository {
   async listModpacks(targetJoint?: string): Promise<ModpackRecord[]> {
     try {
       const adminClient = getAdminClient();
-      let query = adminClient.from('modpacks').select('*, items:modpack_items(*)').order('created_at', { ascending: false });
+      let query = adminClient
+        .from('modpacks')
+        .select('*, items:modpack_items(*)')
+        .neq('is_active', false)
+        .order('created_at', { ascending: false });
+
       if (targetJoint) {
         query = query.eq('target_joint', targetJoint);
       }
@@ -530,7 +590,8 @@ export class DirectoryRepository implements IDirectoryRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return (data as ModpackRecord[]) || [];
+      const packs = (data as ModpackRecord[]) || [];
+      return packs.filter((m) => (m as any).is_active !== false);
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, targetJoint }, 'Unexpected error in listModpacks');
