@@ -11108,7 +11108,19 @@ init_service6();
 
 // apps/api/src/modules/directory/schema.ts
 var import_zod11 = require("zod");
-var ExerciseDifficultySchema = import_zod11.z.enum(["beginner", "intermediate", "advanced"]);
+var ExerciseDifficultySchema = import_zod11.z.preprocess((val) => {
+  if (!val || val === "" || val === void 0 || val === null) {
+    return "beginner";
+  }
+  if (typeof val === "string") {
+    const lower = val.toLowerCase().trim();
+    if (lower === "easy" || lower === "\u0E07\u0E48\u0E32\u0E22") return "beginner";
+    if (lower === "medium" || lower === "\u0E1B\u0E32\u0E19\u0E01\u0E25\u0E32\u0E07") return "intermediate";
+    if (lower === "hard" || lower === "\u0E22\u0E32\u0E01") return "advanced";
+    return lower;
+  }
+  return val;
+}, import_zod11.z.enum(["beginner", "intermediate", "advanced"]).default("beginner"));
 var CreateExerciseSchema = import_zod11.z.object({
   title: import_zod11.z.string().trim().min(1, "Title is required").max(150),
   description: import_zod11.z.string().trim().max(1e3).optional().nullable(),
@@ -11118,7 +11130,7 @@ var CreateExerciseSchema = import_zod11.z.object({
   warnings: import_zod11.z.string().trim().max(500).optional().nullable(),
   default_sets: import_zod11.z.coerce.number().int().min(1).max(20).default(3),
   default_reps: import_zod11.z.coerce.number().int().min(1).max(100).default(10),
-  difficulty: ExerciseDifficultySchema.default("beginner")
+  difficulty: ExerciseDifficultySchema.optional().default("beginner")
 });
 var UpdateExerciseSchema = CreateExerciseSchema.partial();
 var ExerciseQuerySchema = import_zod11.z.object({
@@ -12304,6 +12316,15 @@ var SmartOnboardingService = class {
       if (data) {
         savedPatientId = data.id || patient_id;
         savedHn = data.hn || hn;
+        if (data.id) {
+          const syncedRecord = {
+            ...newRecord,
+            patient_id: data.id,
+            hn: savedHn
+          };
+          this.vaultService.savePatientRecord(data.id, syncedRecord, profileBuffer);
+          this.vaultService.savePatientRecord(savedHn, syncedRecord, profileBuffer);
+        }
         if (payload.responsible_pt_id) {
           try {
             await supabase.from("patient_pt_assignments").upsert(
@@ -12410,7 +12431,7 @@ var SmartOnboardingService = class {
                 model_version: "w600k_r50",
                 enrolled_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
               },
-              schedule: null,
+              schedule: p.history?.schedule || this.vaultService.getPatientRecord(p.id)?.schedule || this.vaultService.getPatientRecord(p.hn)?.schedule || null,
               daily_checklists: {},
               rehab_scores: [],
               clinical: { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] }
@@ -12419,6 +12440,8 @@ var SmartOnboardingService = class {
               builtRecord.clinical = { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] };
             }
             builtRecord.clinical.pin = storedPin;
+            if (p.id) builtRecord.patient_id = p.id;
+            if (p.hn) builtRecord.hn = p.hn;
             const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
             if (existingIndex >= 0) {
               records[existingIndex] = builtRecord;
@@ -12500,11 +12523,13 @@ var SmartOnboardingService = class {
                   model_version: "w600k_r50",
                   enrolled_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
                 },
-                schedule: p.history?.schedule || null,
+                schedule: p.history?.schedule || this.vaultService.getPatientRecord(p.id)?.schedule || this.vaultService.getPatientRecord(p.hn)?.schedule || null,
                 daily_checklists: p.history?.daily_checklists || {},
                 rehab_scores: p.history?.rehab_scores || [],
                 clinical: { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] }
               };
+              if (p.id) builtRecord.patient_id = p.id;
+              if (p.hn) builtRecord.hn = p.hn;
               if (!builtRecord.biometrics) {
                 builtRecord.biometrics = {
                   face_vector: pVector,
@@ -12934,15 +12959,15 @@ var SmartOnboardingService = class {
     const shouldQuerySupabase = process.env.NODE_ENV !== "test" || process.env.LIVE_TESTS === "1";
     if (shouldQuerySupabase) {
       try {
-        let q = adminClient.from("patients").select("id, hn, first_name, last_name, responsible_pt_id");
+        let q = adminClient.from("patients").select("id, hn, first_name, last_name, responsible_pt_id, history");
         if (isUuid) {
-          q = q.or(`id.eq.${patientId},hn.eq.${patientId}`);
+          q = q.eq("id", patientId);
         } else {
           q = q.or(`hn.eq.${patientId},hn.ilike.%${patientId}%,first_name.ilike.%${patientId}%`);
         }
         let { data: pRow } = await q.limit(1).maybeSingle();
         if (!pRow) {
-          const { data: anyP } = await adminClient.from("patients").select("id, hn, first_name, last_name, responsible_pt_id").limit(1).maybeSingle();
+          const { data: anyP } = await adminClient.from("patients").select("id, hn, first_name, last_name, responsible_pt_id, history").limit(1).maybeSingle();
           pRow = anyP;
         }
         if (pRow) {
@@ -13087,6 +13112,19 @@ var SmartOnboardingService = class {
           effectivePtId || "b1000000-0000-0000-0000-000000000003",
           courseItems
         );
+        if (resolvedPatientUuid) {
+          try {
+            const { data: currentP } = await adminClient.from("patients").select("history").eq("id", resolvedPatientUuid).maybeSingle();
+            await adminClient.from("patients").update({
+              history: {
+                ...currentP?.history || {},
+                schedule
+              }
+            }).eq("id", resolvedPatientUuid);
+          } catch (syncErr) {
+            logger.warn({ syncErr, patientId }, "Non-blocking patients.history.schedule update failed in saveSchedule");
+          }
+        }
       } catch (courseErr) {
         logger.error({ courseErr, patientId }, "Supabase course save error in saveSchedule");
         if (courseErr instanceof AppError) throw courseErr;
@@ -13105,9 +13143,152 @@ var SmartOnboardingService = class {
   /**
    * 6. Dynamic Daily Rehab Plan (Asia/Bangkok timezone)
    */
-  getDailyPlan(patientId, currentDateStr) {
-    const patient = this.vaultService.getPatientRecord(patientId);
-    if (!patient || !patient.schedule) {
+  async getDailyPlan(patientId, currentDateStr) {
+    const isValidUuid = (s) => Boolean(s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s));
+    let patient = this.vaultService.getPatientRecord(patientId);
+    if (!patient) {
+      const allVaults = this.vaultService.listAllPatientRecords();
+      patient = allVaults.find((r) => r.patient_id === patientId || r.hn === patientId) || null;
+    }
+    let resolvedPatientUuid = isValidUuid(patient?.patient_id) ? patient.patient_id : isValidUuid(patientId) ? patientId : null;
+    let resolvedHn = patient?.hn || (!isValidUuid(patientId) ? patientId : null);
+    const adminClient = getAdminClient();
+    const shouldQuerySupabase = process.env.NODE_ENV !== "test" || process.env.LIVE_TESTS === "1";
+    if (shouldQuerySupabase && (!resolvedPatientUuid || !resolvedHn || !patient || !patient.schedule)) {
+      try {
+        let q = adminClient.from("patients").select("id, hn, first_name, last_name, history");
+        if (isValidUuid(patientId)) {
+          q = q.eq("id", patientId);
+        } else {
+          const cleanHn = (resolvedHn || patientId).trim();
+          q = q.or(`hn.eq.${cleanHn},hn.ilike.%${cleanHn}%,first_name.ilike.%${cleanHn}%`);
+        }
+        let { data: dbPatient } = await q.limit(1).maybeSingle();
+        if (!dbPatient && resolvedHn) {
+          const { data: pByHn } = await adminClient.from("patients").select("id, hn, first_name, last_name, history").eq("hn", resolvedHn).limit(1).maybeSingle();
+          dbPatient = pByHn;
+        }
+        if (dbPatient) {
+          resolvedPatientUuid = dbPatient.id;
+          resolvedHn = dbPatient.hn;
+          if (!patient) {
+            patient = {
+              patient_id: dbPatient.id,
+              hn: dbPatient.hn,
+              first_name: dbPatient.first_name,
+              last_name: dbPatient.last_name,
+              age: 45,
+              gender: "male",
+              registration_status: "active",
+              registered_via: "kiosk",
+              biometrics: {
+                face_vector: dbPatient.history?.face_vector || [],
+                registered_face_url: `/uploads/patients/${dbPatient.id}/profile_face.jpg`,
+                confidence_score: 1,
+                model_version: "w600k_r50",
+                enrolled_at: (/* @__PURE__ */ new Date()).toISOString()
+              },
+              schedule: dbPatient.history?.schedule || null,
+              daily_checklists: {},
+              rehab_scores: [],
+              clinical: { diagnosis: "", treatment_plan: "", progress_notes: [] },
+              created_at: (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            };
+          } else {
+            if (isValidUuid(dbPatient.id)) {
+              patient.patient_id = dbPatient.id;
+            }
+            if (!patient.schedule && dbPatient.history?.schedule) {
+              patient.schedule = dbPatient.history.schedule;
+            }
+          }
+        }
+      } catch (lookupErr) {
+        logger.warn({ lookupErr, patientId }, "Supabase patient lookup in getDailyPlan warning");
+      }
+    }
+    let effectiveSchedule = patient?.schedule || null;
+    const hasPrescriptions = Boolean(
+      effectiveSchedule && (Array.isArray(effectiveSchedule.prescribed_exercises) && effectiveSchedule.prescribed_exercises.length > 0 || Array.isArray(effectiveSchedule.assigned_exercises) && effectiveSchedule.assigned_exercises.length > 0)
+    );
+    if (shouldQuerySupabase && !hasPrescriptions) {
+      try {
+        let lookupUuid = isValidUuid(resolvedPatientUuid) ? resolvedPatientUuid : null;
+        if (!lookupUuid && resolvedHn) {
+          const { data: pByHn } = await adminClient.from("patients").select("id").eq("hn", resolvedHn).limit(1).maybeSingle();
+          if (pByHn?.id && isValidUuid(pByHn.id)) {
+            lookupUuid = pByHn.id;
+            resolvedPatientUuid = pByHn.id;
+          }
+        }
+        if (lookupUuid) {
+          const { data: dbCourses } = await adminClient.from("courses").select(`
+              id,
+              patient_id,
+              pt_id,
+              start_date,
+              end_date,
+              weekdays,
+              start_time,
+              kiosk_id,
+              include_minigame,
+              status,
+              course_items (
+                id,
+                exercise_id,
+                sets,
+                reps,
+                position,
+                exercises (
+                  id,
+                  title,
+                  target_joint,
+                  image_path,
+                  description,
+                  difficulty
+                )
+              )
+            `).eq("patient_id", lookupUuid).eq("status", "active").order("created_at", { ascending: false });
+          if (dbCourses && dbCourses.length > 0) {
+            const activeCourse = dbCourses[0];
+            const weekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+            const rawWk = activeCourse.weekdays || [];
+            const daysOfWeek = Array.isArray(rawWk) ? rawWk.map((w) => typeof w === "number" ? weekdayNames[w] || "Mon" : w) : ["Mon", "Wed", "Fri"];
+            const prescribed = (activeCourse.course_items || []).sort((a, b) => (a.position || 0) - (b.position || 0)).map((ci) => ({
+              exercise_id: ci.exercise_id,
+              name: ci.exercises?.title || "\u0E17\u0E48\u0E32\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14",
+              target_joint: ci.exercises?.target_joint || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B",
+              sets: ci.sets || 3,
+              reps: ci.reps || 10,
+              demo_url: ci.exercises?.image_path || void 0
+            }));
+            effectiveSchedule = {
+              course_id: activeCourse.id,
+              start_date: activeCourse.start_date,
+              end_date: activeCourse.end_date,
+              days_of_week: daysOfWeek,
+              weekdays: activeCourse.weekdays,
+              time_slot: activeCourse.start_time,
+              assigned_kiosk_id: activeCourse.kiosk_id,
+              include_minigame: Boolean(activeCourse.include_minigame),
+              prescribed_exercises: prescribed
+            };
+            if (patient) {
+              patient.schedule = effectiveSchedule;
+              if (resolvedPatientUuid) this.vaultService.savePatientRecord(resolvedPatientUuid, patient);
+              if (resolvedHn && resolvedHn !== resolvedPatientUuid) this.vaultService.savePatientRecord(resolvedHn, patient);
+            }
+          }
+        }
+      } catch (courseErr) {
+        logger.warn({ courseErr, patientId }, "Supabase course lookup in getDailyPlan warning");
+      }
+    }
+    if (!effectiveSchedule && patient?.history?.schedule) {
+      effectiveSchedule = patient.history.schedule;
+    }
+    if (!effectiveSchedule) {
       return {
         is_scheduled_today: false,
         reason: "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E15\u0E32\u0E23\u0E32\u0E07\u0E1D\u0E36\u0E01\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E23\u0E32\u0E22\u0E19\u0E35\u0E49",
@@ -13116,7 +13297,6 @@ var SmartOnboardingService = class {
         include_minigame: false
       };
     }
-    const schedule = patient.schedule;
     let now;
     if (currentDateStr) {
       const sanitized = currentDateStr.includes(" ") ? currentDateStr.replace(" ", "+") : currentDateStr;
@@ -13127,36 +13307,43 @@ var SmartOnboardingService = class {
     }
     let bkkIsoDate;
     let bkkDayShort;
+    let bkkDayNum;
     try {
       bkkIsoDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(now);
       bkkDayShort = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "Asia/Bangkok" }).format(now);
+      const bkkDateObj = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+      bkkDayNum = bkkDateObj.getDay();
     } catch {
       const validDate = isNaN(now.getTime()) ? /* @__PURE__ */ new Date() : now;
       bkkIsoDate = validDate.toISOString().split("T")[0];
       const daysMap = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      bkkDayShort = daysMap[validDate.getDay()];
+      bkkDayNum = validDate.getDay();
+      bkkDayShort = daysMap[bkkDayNum];
     }
-    const startDate = schedule.startDate || schedule.start_date || "1970-01-01";
-    const endDate = schedule.endDate || schedule.end_date || "2099-12-31";
-    const days = schedule.daysOfWeek || schedule.days_of_week || [];
+    const startDate = (effectiveSchedule.startDate || effectiveSchedule.start_date || "1970-01-01").slice(0, 10);
+    const endDate = (effectiveSchedule.endDate || effectiveSchedule.end_date || "2099-12-31").slice(0, 10);
     const isWithinDateRange = bkkIsoDate >= startDate && bkkIsoDate <= endDate;
+    const rawDays = effectiveSchedule.daysOfWeek || effectiveSchedule.days_of_week || effectiveSchedule.weekdays || [];
+    const days = Array.isArray(rawDays) ? rawDays : typeof rawDays === "string" ? rawDays.split(",").map((s) => s.trim()) : [];
     const dayAliases = {
-      Sun: ["Sun", "\u0E2D\u0E32\u0E17\u0E34\u0E15\u0E22\u0E4C", "\u0E2D\u0E32."],
-      Mon: ["Mon", "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C", "\u0E08."],
-      Tue: ["Tue", "\u0E2D\u0E31\u0E07\u0E04\u0E32\u0E23", "\u0E2D."],
-      Wed: ["Wed", "\u0E1E\u0E38\u0E18", "\u0E1E."],
-      Thu: ["Thu", "\u0E1E\u0E24\u0E2B\u0E31\u0E2A\u0E1A\u0E14\u0E35", "\u0E1E\u0E24."],
-      Fri: ["Fri", "\u0E28\u0E38\u0E01\u0E23\u0E4C", "\u0E28."],
-      Sat: ["Sat", "\u0E40\u0E2A\u0E32\u0E23\u0E4C", "\u0E2A."]
+      Sun: ["Sun", "sun", "Sunday", "\u0E2D\u0E32\u0E17\u0E34\u0E15\u0E22\u0E4C", "\u0E2D\u0E32.", 0, "0", 7, "7"],
+      Mon: ["Mon", "mon", "Monday", "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C", "\u0E08.", 1, "1"],
+      Tue: ["Tue", "tue", "Tuesday", "\u0E2D\u0E31\u0E07\u0E04\u0E32\u0E23", "\u0E2D.", 2, "2"],
+      Wed: ["Wed", "wed", "Wednesday", "\u0E1E\u0E38\u0E18", "\u0E1E.", 3, "3"],
+      Thu: ["Thu", "thu", "Thursday", "\u0E1E\u0E24\u0E2B\u0E31\u0E2A\u0E1A\u0E14\u0E35", "\u0E1E\u0E24.", 4, "4"],
+      Fri: ["Fri", "fri", "Friday", "\u0E28\u0E38\u0E01\u0E23\u0E4C", "\u0E28.", 5, "5"],
+      Sat: ["Sat", "sat", "Saturday", "\u0E40\u0E2A\u0E32\u0E23\u0E4C", "\u0E2A.", 6, "6"]
     };
-    const validAliases = dayAliases[bkkDayShort] || [bkkDayShort];
-    const isDayScheduled = days.some((d) => validAliases.includes(d));
-    const exercises = schedule.assigned_exercises || schedule.prescribed_exercises || [];
-    const includeMinigame = Boolean(schedule.include_minigame);
+    const validAliases = dayAliases[bkkDayShort] || [bkkDayShort, bkkDayNum, String(bkkDayNum)];
+    const isDayScheduled = days.length === 0 || days.some((d) => {
+      return validAliases.includes(d) || validAliases.includes(String(d)) || validAliases.includes(Number(d));
+    });
+    const exercises = effectiveSchedule.assigned_exercises || effectiveSchedule.prescribed_exercises || [];
+    const includeMinigame = Boolean(effectiveSchedule.include_minigame);
     if (isWithinDateRange && isDayScheduled) {
       return {
         is_scheduled_today: true,
-        schedule,
+        schedule: effectiveSchedule,
         exercises,
         include_minigame: includeMinigame
       };
@@ -13164,8 +13351,8 @@ var SmartOnboardingService = class {
     return {
       is_scheduled_today: false,
       reason: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E27\u0E31\u0E19\u0E1E\u0E31\u0E01\u0E1C\u0E48\u0E2D\u0E19\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13 \u0E2B\u0E23\u0E37\u0E2D\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1D\u0E36\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49",
-      schedule,
-      exercises: [],
+      schedule: effectiveSchedule,
+      exercises,
       include_minigame: false
     };
   }
@@ -13555,7 +13742,7 @@ var SmartOnboardingController = class {
         const rawParam = req.params.patientId;
         const patientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
         const date = typeof req.query.date === "string" ? req.query.date : void 0;
-        const data = this.service.getDailyPlan(patientId, date);
+        const data = await this.service.getDailyPlan(patientId, date);
         res.status(200).json({
           ok: true,
           data

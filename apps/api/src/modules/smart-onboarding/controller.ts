@@ -145,7 +145,7 @@ export class SmartOnboardingController {
       const rawParam = req.params.patientId;
       const patientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
       const date = typeof req.query.date === 'string' ? req.query.date : undefined;
-      const data = this.service.getDailyPlan(patientId, date);
+      const data = await this.service.getDailyPlan(patientId, date);
       res.status(200).json({
         ok: true,
         data,

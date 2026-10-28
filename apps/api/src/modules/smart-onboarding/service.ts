@@ -246,6 +246,17 @@ export class SmartOnboardingService {
         savedPatientId = data.id || patient_id;
         savedHn = data.hn || hn;
 
+        // Also save/update file vault with Supabase UUID to keep them strictly in sync
+        if (data.id) {
+          const syncedRecord: PatientRecordFile = {
+            ...newRecord,
+            patient_id: data.id,
+            hn: savedHn,
+          };
+          this.vaultService.savePatientRecord(data.id, syncedRecord, profileBuffer);
+          this.vaultService.savePatientRecord(savedHn, syncedRecord, profileBuffer);
+        }
+
         if (payload.responsible_pt_id) {
           try {
             await supabase
@@ -375,7 +386,7 @@ export class SmartOnboardingService {
                 model_version: 'w600k_r50',
                 enrolled_at: p.created_at || new Date().toISOString(),
               },
-              schedule: null,
+              schedule: p.history?.schedule || this.vaultService.getPatientRecord(p.id)?.schedule || this.vaultService.getPatientRecord(p.hn)?.schedule || null,
               daily_checklists: {},
               rehab_scores: [],
               clinical: { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] },
@@ -385,6 +396,8 @@ export class SmartOnboardingService {
               builtRecord.clinical = { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] };
             }
             (builtRecord.clinical as any).pin = storedPin;
+            if (p.id) builtRecord.patient_id = p.id;
+            if (p.hn) builtRecord.hn = p.hn;
 
             const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
             if (existingIndex >= 0) {
@@ -496,11 +509,14 @@ export class SmartOnboardingService {
                   model_version: 'w600k_r50',
                   enrolled_at: p.created_at || new Date().toISOString(),
                 },
-                schedule: p.history?.schedule || null,
+                schedule: p.history?.schedule || this.vaultService.getPatientRecord(p.id)?.schedule || this.vaultService.getPatientRecord(p.hn)?.schedule || null,
                 daily_checklists: p.history?.daily_checklists || {},
                 rehab_scores: p.history?.rehab_scores || [],
                 clinical: { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] },
               };
+
+              if (p.id) builtRecord.patient_id = p.id;
+              if (p.hn) builtRecord.hn = p.hn;
 
               if (!builtRecord.biometrics) {
                 builtRecord.biometrics = {
@@ -1022,15 +1038,15 @@ export class SmartOnboardingService {
     const shouldQuerySupabase = process.env.NODE_ENV !== 'test' || process.env.LIVE_TESTS === '1';
     if (shouldQuerySupabase) {
       try {
-        let q = adminClient.from('patients').select('id, hn, first_name, last_name, responsible_pt_id');
+        let q = adminClient.from('patients').select('id, hn, first_name, last_name, responsible_pt_id, history');
         if (isUuid) {
-          q = q.or(`id.eq.${patientId},hn.eq.${patientId}`);
+          q = q.eq('id', patientId);
         } else {
           q = q.or(`hn.eq.${patientId},hn.ilike.%${patientId}%,first_name.ilike.%${patientId}%`);
         }
         let { data: pRow } = await q.limit(1).maybeSingle();
         if (!pRow) {
-          const { data: anyP } = await adminClient.from('patients').select('id, hn, first_name, last_name, responsible_pt_id').limit(1).maybeSingle();
+          const { data: anyP } = await adminClient.from('patients').select('id, hn, first_name, last_name, responsible_pt_id, history').limit(1).maybeSingle();
           pRow = anyP;
         }
         if (pRow) {
@@ -1193,6 +1209,29 @@ export class SmartOnboardingService {
           effectivePtId || 'b1000000-0000-0000-0000-000000000003',
           courseItems
         );
+
+        // Sync schedule into Supabase patients table history JSON column
+        if (resolvedPatientUuid) {
+          try {
+            const { data: currentP } = await adminClient
+              .from('patients')
+              .select('history')
+              .eq('id', resolvedPatientUuid)
+              .maybeSingle();
+
+            await adminClient
+              .from('patients')
+              .update({
+                history: {
+                  ...(currentP?.history || {}),
+                  schedule,
+                },
+              })
+              .eq('id', resolvedPatientUuid);
+          } catch (syncErr) {
+            logger.warn({ syncErr, patientId }, 'Non-blocking patients.history.schedule update failed in saveSchedule');
+          }
+        }
       } catch (courseErr) {
         logger.error({ courseErr, patientId }, 'Supabase course save error in saveSchedule');
         // If course creation throws, do not fail silently if it is an AppError
@@ -1216,18 +1255,203 @@ export class SmartOnboardingService {
   /**
    * 6. Dynamic Daily Rehab Plan (Asia/Bangkok timezone)
    */
-  public getDailyPlan(
+  public async getDailyPlan(
     patientId: string,
     currentDateStr?: string
-  ): {
+  ): Promise<{
     is_scheduled_today: boolean;
     reason?: string;
     schedule?: any;
     exercises: PrescribedExercise[];
     include_minigame: boolean;
-  } {
-    const patient = this.vaultService.getPatientRecord(patientId);
-    if (!patient || !patient.schedule) {
+  }> {
+    const isValidUuid = (s?: string | null): s is string =>
+      Boolean(s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s));
+
+    // 1. Resolve patient record from vault (by patient_id or hn)
+    let patient = this.vaultService.getPatientRecord(patientId);
+    if (!patient) {
+      const allVaults = this.vaultService.listAllPatientRecords();
+      patient = allVaults.find((r) => r.patient_id === patientId || r.hn === patientId) || null;
+    }
+
+    let resolvedPatientUuid = isValidUuid(patient?.patient_id) ? patient!.patient_id : (isValidUuid(patientId) ? patientId : null);
+    let resolvedHn = patient?.hn || (!isValidUuid(patientId) ? patientId : null);
+
+    const adminClient = getAdminClient();
+    const shouldQuerySupabase = process.env.NODE_ENV !== 'test' || process.env.LIVE_TESTS === '1';
+
+    // 2. Lookup in Supabase patients table if missing UUID or HN or schedule
+    if (shouldQuerySupabase && (!resolvedPatientUuid || !resolvedHn || !patient || !patient.schedule)) {
+      try {
+        let q = adminClient.from('patients').select('id, hn, first_name, last_name, history');
+        if (isValidUuid(patientId)) {
+          q = q.eq('id', patientId);
+        } else {
+          const cleanHn = (resolvedHn || patientId).trim();
+          q = q.or(`hn.eq.${cleanHn},hn.ilike.%${cleanHn}%,first_name.ilike.%${cleanHn}%`);
+        }
+        let { data: dbPatient } = await q.limit(1).maybeSingle();
+
+        if (!dbPatient && resolvedHn) {
+          const { data: pByHn } = await adminClient
+            .from('patients')
+            .select('id, hn, first_name, last_name, history')
+            .eq('hn', resolvedHn)
+            .limit(1)
+            .maybeSingle();
+          dbPatient = pByHn;
+        }
+
+        if (dbPatient) {
+          resolvedPatientUuid = dbPatient.id;
+          resolvedHn = dbPatient.hn;
+          if (!patient) {
+            patient = {
+              patient_id: dbPatient.id,
+              hn: dbPatient.hn,
+              first_name: dbPatient.first_name,
+              last_name: dbPatient.last_name,
+              age: 45,
+              gender: 'male',
+              registration_status: 'active',
+              registered_via: 'kiosk',
+              biometrics: {
+                face_vector: dbPatient.history?.face_vector || [],
+                registered_face_url: `/uploads/patients/${dbPatient.id}/profile_face.jpg`,
+                confidence_score: 1.0,
+                model_version: 'w600k_r50',
+                enrolled_at: new Date().toISOString(),
+              },
+              schedule: dbPatient.history?.schedule || null,
+              daily_checklists: {},
+              rehab_scores: [],
+              clinical: { diagnosis: '', treatment_plan: '', progress_notes: [] },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+          } else {
+            if (isValidUuid(dbPatient.id)) {
+              patient.patient_id = dbPatient.id;
+            }
+            if (!patient.schedule && dbPatient.history?.schedule) {
+              patient.schedule = dbPatient.history.schedule;
+            }
+          }
+        }
+      } catch (lookupErr) {
+        logger.warn({ lookupErr, patientId }, 'Supabase patient lookup in getDailyPlan warning');
+      }
+    }
+
+    // 3. Resolve schedule: prefer vault, fallback to Supabase active courses
+    let effectiveSchedule: any = patient?.schedule || null;
+    const hasPrescriptions = Boolean(
+      effectiveSchedule &&
+      (
+        (Array.isArray(effectiveSchedule.prescribed_exercises) && effectiveSchedule.prescribed_exercises.length > 0) ||
+        (Array.isArray(effectiveSchedule.assigned_exercises) && effectiveSchedule.assigned_exercises.length > 0)
+      )
+    );
+
+    if (shouldQuerySupabase && !hasPrescriptions) {
+      try {
+        let lookupUuid = isValidUuid(resolvedPatientUuid) ? resolvedPatientUuid : null;
+        if (!lookupUuid && resolvedHn) {
+          const { data: pByHn } = await adminClient
+            .from('patients')
+            .select('id')
+            .eq('hn', resolvedHn)
+            .limit(1)
+            .maybeSingle();
+          if (pByHn?.id && isValidUuid(pByHn.id)) {
+            lookupUuid = pByHn.id;
+            resolvedPatientUuid = pByHn.id;
+          }
+        }
+
+        if (lookupUuid) {
+          const { data: dbCourses } = await adminClient
+            .from('courses')
+            .select(`
+              id,
+              patient_id,
+              pt_id,
+              start_date,
+              end_date,
+              weekdays,
+              start_time,
+              kiosk_id,
+              include_minigame,
+              status,
+              course_items (
+                id,
+                exercise_id,
+                sets,
+                reps,
+                position,
+                exercises (
+                  id,
+                  title,
+                  target_joint,
+                  image_path,
+                  description,
+                  difficulty
+                )
+              )
+            `)
+            .eq('patient_id', lookupUuid)
+            .eq('status', 'active')
+            .order('created_at', { ascending: false });
+
+          if (dbCourses && dbCourses.length > 0) {
+            const activeCourse = dbCourses[0];
+            const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const rawWk = activeCourse.weekdays || [];
+            const daysOfWeek = Array.isArray(rawWk)
+              ? rawWk.map((w: any) => (typeof w === 'number' ? (weekdayNames[w] || 'Mon') : w))
+              : ['Mon', 'Wed', 'Fri'];
+
+            const prescribed: PrescribedExercise[] = ((activeCourse.course_items as any[]) || [])
+              .sort((a, b) => (a.position || 0) - (b.position || 0))
+              .map((ci: any) => ({
+                exercise_id: ci.exercise_id,
+                name: ci.exercises?.title || 'ท่ากายภาพบำบัด',
+                target_joint: ci.exercises?.target_joint || 'ทั่วไป',
+                sets: ci.sets || 3,
+                reps: ci.reps || 10,
+                demo_url: ci.exercises?.image_path || undefined,
+              }));
+
+            effectiveSchedule = {
+              course_id: activeCourse.id,
+              start_date: activeCourse.start_date,
+              end_date: activeCourse.end_date,
+              days_of_week: daysOfWeek,
+              weekdays: activeCourse.weekdays,
+              time_slot: activeCourse.start_time,
+              assigned_kiosk_id: activeCourse.kiosk_id,
+              include_minigame: Boolean(activeCourse.include_minigame),
+              prescribed_exercises: prescribed,
+            };
+
+            if (patient) {
+              patient.schedule = effectiveSchedule;
+              if (resolvedPatientUuid) this.vaultService.savePatientRecord(resolvedPatientUuid, patient);
+              if (resolvedHn && resolvedHn !== resolvedPatientUuid) this.vaultService.savePatientRecord(resolvedHn, patient);
+            }
+          }
+        }
+      } catch (courseErr) {
+        logger.warn({ courseErr, patientId }, 'Supabase course lookup in getDailyPlan warning');
+      }
+    }
+
+    if (!effectiveSchedule && (patient as any)?.history?.schedule) {
+      effectiveSchedule = (patient as any).history.schedule;
+    }
+
+    if (!effectiveSchedule) {
       return {
         is_scheduled_today: false,
         reason: 'ไม่มีตารางฝึกสำหรับผู้ป่วยรายนี้',
@@ -1237,10 +1461,9 @@ export class SmartOnboardingService {
       };
     }
 
-    const schedule: any = patient.schedule;
+    // 4. Date and Asia/Bangkok Timezone evaluation
     let now: Date;
     if (currentDateStr) {
-      // Decode potential unescaped '+' from query params (Express turns '+' into ' ')
       const sanitized = currentDateStr.includes(' ') ? currentDateStr.replace(' ', '+') : currentDateStr;
       const parsed = new Date(sanitized);
       now = isNaN(parsed.getTime()) ? new Date() : parsed;
@@ -1248,45 +1471,58 @@ export class SmartOnboardingService {
       now = new Date();
     }
 
-    // Asia/Bangkok timezone calculation
     let bkkIsoDate: string;
     let bkkDayShort: string;
+    let bkkDayNum: number;
     try {
       bkkIsoDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(now);
       bkkDayShort = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Asia/Bangkok' }).format(now);
+      const bkkDateObj = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+      bkkDayNum = bkkDateObj.getDay();
     } catch {
       const validDate = isNaN(now.getTime()) ? new Date() : now;
       bkkIsoDate = validDate.toISOString().split('T')[0];
       const daysMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      bkkDayShort = daysMap[validDate.getDay()];
+      bkkDayNum = validDate.getDay();
+      bkkDayShort = daysMap[bkkDayNum];
     }
 
-    const startDate = schedule.startDate || schedule.start_date || '1970-01-01';
-    const endDate = schedule.endDate || schedule.end_date || '2099-12-31';
-    const days: string[] = schedule.daysOfWeek || schedule.days_of_week || [];
-
+    const startDate = (effectiveSchedule.startDate || effectiveSchedule.start_date || '1970-01-01').slice(0, 10);
+    const endDate = (effectiveSchedule.endDate || effectiveSchedule.end_date || '2099-12-31').slice(0, 10);
     const isWithinDateRange = bkkIsoDate >= startDate && bkkIsoDate <= endDate;
 
-    // Support Thai & English day names
-    const dayAliases: Record<string, string[]> = {
-      Sun: ['Sun', 'อาทิตย์', 'อา.'],
-      Mon: ['Mon', 'จันทร์', 'จ.'],
-      Tue: ['Tue', 'อังคาร', 'อ.'],
-      Wed: ['Wed', 'พุธ', 'พ.'],
-      Thu: ['Thu', 'พฤหัสบดี', 'พฤ.'],
-      Fri: ['Fri', 'ศุกร์', 'ศ.'],
-      Sat: ['Sat', 'เสาร์', 'ส.'],
-    };
-    const validAliases = dayAliases[bkkDayShort] || [bkkDayShort];
-    const isDayScheduled = days.some((d) => validAliases.includes(d));
+    const rawDays: unknown = effectiveSchedule.daysOfWeek || effectiveSchedule.days_of_week || effectiveSchedule.weekdays || [];
+    const days: any[] = Array.isArray(rawDays)
+      ? rawDays
+      : typeof rawDays === 'string'
+      ? (rawDays as string).split(',').map((s: string) => s.trim())
+      : [];
 
-    const exercises = schedule.assigned_exercises || schedule.prescribed_exercises || [];
-    const includeMinigame = Boolean(schedule.include_minigame);
+    const dayAliases: Record<string, (string | number)[]> = {
+      Sun: ['Sun', 'sun', 'Sunday', 'อาทิตย์', 'อา.', 0, '0', 7, '7'],
+      Mon: ['Mon', 'mon', 'Monday', 'จันทร์', 'จ.', 1, '1'],
+      Tue: ['Tue', 'tue', 'Tuesday', 'อังคาร', 'อ.', 2, '2'],
+      Wed: ['Wed', 'wed', 'Wednesday', 'พุธ', 'พ.', 3, '3'],
+      Thu: ['Thu', 'thu', 'Thursday', 'พฤหัสบดี', 'พฤ.', 4, '4'],
+      Fri: ['Fri', 'fri', 'Friday', 'ศุกร์', 'ศ.', 5, '5'],
+      Sat: ['Sat', 'sat', 'Saturday', 'เสาร์', 'ส.', 6, '6'],
+    };
+    const validAliases = dayAliases[bkkDayShort] || [bkkDayShort, bkkDayNum, String(bkkDayNum)];
+    const isDayScheduled = days.length === 0 || days.some((d) => {
+      return (
+        validAliases.includes(d) ||
+        validAliases.includes(String(d)) ||
+        validAliases.includes(Number(d))
+      );
+    });
+
+    const exercises: PrescribedExercise[] = effectiveSchedule.assigned_exercises || effectiveSchedule.prescribed_exercises || [];
+    const includeMinigame = Boolean(effectiveSchedule.include_minigame);
 
     if (isWithinDateRange && isDayScheduled) {
       return {
         is_scheduled_today: true,
-        schedule,
+        schedule: effectiveSchedule,
         exercises,
         include_minigame: includeMinigame,
       };
@@ -1295,8 +1531,8 @@ export class SmartOnboardingService {
     return {
       is_scheduled_today: false,
       reason: 'วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้',
-      schedule,
-      exercises: [],
+      schedule: effectiveSchedule,
+      exercises,
       include_minigame: false,
     };
   }

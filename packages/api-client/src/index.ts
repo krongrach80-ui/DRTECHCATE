@@ -98,7 +98,7 @@ export interface ExerciseRecord {
   default_sets: number;
   default_reps: number;
   duration_seconds?: number;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'beginner' | 'intermediate' | 'advanced' | 'easy' | 'medium' | 'hard' | string;
   created_by?: string;
   created_at?: string;
 }

@@ -27,6 +27,7 @@ export const SmartExerciseLibraryModal: React.FC<SmartExerciseLibraryModalProps>
   const [name, setName] = useState('');
   const [targetJoint, setTargetJoint] = useState('ไหล่ (Shoulder)');
   const [targetAngle, setTargetAngle] = useState(90);
+  const [difficulty, setDifficulty] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
   const [safetyPrecaution, setSafetyPrecaution] = useState('');
   const [demoFileBase64, setDemoFileBase64] = useState<string | null>(null);
 
@@ -62,6 +63,7 @@ export const SmartExerciseLibraryModal: React.FC<SmartExerciseLibraryModalProps>
         target_joint: targetJoint,
         warnings: safetyPrecaution.trim() || undefined,
         image_path: demoFileBase64 || undefined,
+        difficulty: difficulty,
         default_sets: 3,
         default_reps: 10,
       });
@@ -122,11 +124,11 @@ export const SmartExerciseLibraryModal: React.FC<SmartExerciseLibraryModalProps>
             />
           </div>
 
-          {/* Target Joint & Target Angle */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Target Joint, Difficulty & Target Angle */}
+          <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-slate-300">
-                ข้อต่อเป้าหมาย (Target Joint)
+                ข้อต่อเป้าหมาย
               </label>
               <select
                 value={targetJoint}
@@ -144,7 +146,22 @@ export const SmartExerciseLibraryModal: React.FC<SmartExerciseLibraryModalProps>
 
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-slate-300">
-                มุมองศาเป้าหมาย (องศา)
+                ระดับความยาก
+              </label>
+              <select
+                value={difficulty}
+                onChange={(e) => setDifficulty(e.target.value as 'beginner' | 'intermediate' | 'advanced')}
+                className="bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-white text-xs focus:outline-none"
+              >
+                <option value="beginner">ง่าย (Beginner)</option>
+                <option value="intermediate">ปานกลาง (Intermediate)</option>
+                <option value="advanced">ยาก (Advanced)</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-slate-300">
+                มุมเป้าหมาย (องศา)
               </label>
               <input
                 type="number"

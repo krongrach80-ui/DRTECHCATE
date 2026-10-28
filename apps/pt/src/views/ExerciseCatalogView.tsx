@@ -93,7 +93,7 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
     title: '',
     description: '',
     target_muscle: '',
-    difficulty: 'easy' as 'easy' | 'medium' | 'hard',
+    difficulty: 'beginner' as 'beginner' | 'intermediate' | 'advanced',
     default_sets: 3,
     default_reps: 10,
     duration_seconds: 30,
@@ -142,7 +142,7 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
         title: '',
         description: '',
         target_muscle: '',
-        difficulty: 'easy',
+        difficulty: 'beginner',
         default_sets: 3,
         default_reps: 10,
         duration_seconds: 30,
@@ -165,7 +165,7 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
       title: ex.title,
       description: ex.description || '',
       target_muscle: ex.target_muscle || '',
-      difficulty: (ex.difficulty as 'easy' | 'medium' | 'hard') || 'easy',
+      difficulty: (ex.difficulty as 'beginner' | 'intermediate' | 'advanced') || 'beginner',
       default_sets: ex.default_sets || 3,
       default_reps: ex.default_reps || 10,
       duration_seconds: ex.duration_seconds || 30,
@@ -414,14 +414,18 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded-lg border text-[11px] font-medium ${
-                        ex.difficulty === 'hard'
+                        ex.difficulty === 'hard' || ex.difficulty === 'advanced'
                           ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
-                          : ex.difficulty === 'medium'
+                          : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
                           ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
                           : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
                       }`}
                     >
-                      {ex.difficulty === 'hard' ? 'ยาก' : ex.difficulty === 'medium' ? 'ปานกลาง' : 'ง่าย'}
+                      {ex.difficulty === 'hard' || ex.difficulty === 'advanced'
+                        ? 'ยาก (Advanced)'
+                        : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
+                        ? 'ปานกลาง (Intermediate)'
+                        : 'ง่าย (Beginner)'}
                     </span>
                     <span className="px-2 py-0.5 rounded-lg bg-slate-950 font-mono text-teal-400 border border-slate-800">
                       {ex.default_sets} เซ็ต × {ex.default_reps} ครั้ง
@@ -530,12 +534,12 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                   <label className="block text-xs font-medium text-slate-300 mb-1">ความยาก</label>
                   <select
                     value={formData.difficulty}
-                    onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as 'easy' | 'medium' | 'hard' })}
+                    onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as 'beginner' | 'intermediate' | 'advanced' })}
                     className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
                   >
-                    <option value="easy">ง่าย (Easy)</option>
-                    <option value="medium">ปานกลาง (Medium)</option>
-                    <option value="hard">ยาก (Hard)</option>
+                    <option value="beginner">ง่าย (Beginner)</option>
+                    <option value="intermediate">ปานกลาง (Intermediate)</option>
+                    <option value="advanced">ยาก (Advanced)</option>
                   </select>
                 </div>
                 <div>
@@ -638,12 +642,12 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                   <label className="block text-xs font-medium text-slate-300 mb-1">ความยาก</label>
                   <select
                     value={formData.difficulty}
-                    onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as 'easy' | 'medium' | 'hard' })}
+                    onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as 'beginner' | 'intermediate' | 'advanced' })}
                     className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
                   >
-                    <option value="easy">ง่าย (Easy)</option>
-                    <option value="medium">ปานกลาง (Medium)</option>
-                    <option value="hard">ยาก (Hard)</option>
+                    <option value="beginner">ง่าย (Beginner)</option>
+                    <option value="intermediate">ปานกลาง (Intermediate)</option>
+                    <option value="advanced">ยาก (Advanced)</option>
                   </select>
                 </div>
                 <div>

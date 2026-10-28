@@ -125,7 +125,7 @@ export const LibraryView: React.FC = () => {
     warnings: '',
     default_sets: 3,
     default_reps: 10,
-    difficulty: 'easy' as 'easy' | 'medium' | 'hard',
+    difficulty: 'beginner' as 'beginner' | 'intermediate' | 'advanced',
   });
   const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
 
@@ -202,7 +202,7 @@ export const LibraryView: React.FC = () => {
         warnings: '',
         default_sets: 3,
         default_reps: 10,
-        difficulty: 'easy',
+        difficulty: 'beginner',
       });
       await fetchData();
     } catch (err: unknown) {
@@ -486,14 +486,18 @@ export const LibraryView: React.FC = () => {
                       </div>
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                          ex.difficulty === 'easy'
+                          ex.difficulty === 'easy' || ex.difficulty === 'beginner'
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                            : ex.difficulty === 'medium'
+                            : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
                             ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
                             : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
                         }`}
                       >
-                        {ex.difficulty}
+                        {ex.difficulty === 'easy' || ex.difficulty === 'beginner'
+                          ? 'BEGINNER'
+                          : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
+                          ? 'INTERMEDIATE'
+                          : 'ADVANCED'}
                       </span>
                     </div>
 
@@ -750,14 +754,14 @@ export const LibraryView: React.FC = () => {
                     onChange={(e) =>
                       setExerciseFormData({
                         ...exerciseFormData,
-                        difficulty: e.target.value as 'easy' | 'medium' | 'hard',
+                        difficulty: e.target.value as 'beginner' | 'intermediate' | 'advanced',
                       })
                     }
                     className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
                   >
-                    <option value="easy">ง่าย (Easy)</option>
-                    <option value="medium">ปานกลาง (Medium)</option>
-                    <option value="hard">ยาก (Hard)</option>
+                    <option value="beginner">ง่าย (Beginner)</option>
+                    <option value="intermediate">ปานกลาง (Intermediate)</option>
+                    <option value="advanced">ยาก (Advanced)</option>
                   </select>
                 </div>
               </div>

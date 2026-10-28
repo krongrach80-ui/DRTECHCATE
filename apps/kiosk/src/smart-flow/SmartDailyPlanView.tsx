@@ -74,7 +74,8 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     async function loadPlan() {
       try {
         setLoading(true);
-        const res = await defaultApiClient.smartOnboarding.getDailyPlan(patient.patient_id);
+        const targetId = patient.patient_id || patient.hn || '';
+        const res = await defaultApiClient.smartOnboarding.getDailyPlan(targetId);
         if (!isMountedRef.current) return;
 
         setIsScheduledToday(res.is_scheduled_today);
@@ -96,7 +97,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     return () => {
       isMountedRef.current = false;
     };
-  }, [patient.patient_id]);
+  }, [patient.patient_id, patient.hn]);
 
   // Handle exercise toggle
   const toggleExerciseComplete = (id: string) => {
@@ -232,6 +233,16 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           <div className="text-xs text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-2.5 w-full">
             {restReason}
           </div>
+
+          {exercises.length > 0 && (
+            <button
+              onClick={() => setIsScheduledToday(true)}
+              className="mt-6 w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-sm shadow-lg shadow-teal-950/50 flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
+            >
+              <Activity className="w-4 h-4" />
+              <span>เริ่มฝึกกายภาพทันที ({exercises.length} ท่า)</span>
+            </button>
+          )}
         </div>
 
         {/* Bottom Bar */}

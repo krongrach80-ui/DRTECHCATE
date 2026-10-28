@@ -3,7 +3,19 @@ import { z } from 'zod';
 // =========================================================================
 // 1. EXERCISE SCHEMAS
 // =========================================================================
-export const ExerciseDifficultySchema = z.enum(['beginner', 'intermediate', 'advanced']);
+export const ExerciseDifficultySchema = z.preprocess((val) => {
+  if (!val || val === '' || val === undefined || val === null) {
+    return 'beginner';
+  }
+  if (typeof val === 'string') {
+    const lower = val.toLowerCase().trim();
+    if (lower === 'easy' || lower === 'ง่าย') return 'beginner';
+    if (lower === 'medium' || lower === 'ปานกลาง') return 'intermediate';
+    if (lower === 'hard' || lower === 'ยาก') return 'advanced';
+    return lower;
+  }
+  return val;
+}, z.enum(['beginner', 'intermediate', 'advanced']).default('beginner'));
 export type ExerciseDifficulty = z.infer<typeof ExerciseDifficultySchema>;
 
 export const CreateExerciseSchema = z.object({
@@ -15,7 +27,7 @@ export const CreateExerciseSchema = z.object({
   warnings: z.string().trim().max(500).optional().nullable(),
   default_sets: z.coerce.number().int().min(1).max(20).default(3),
   default_reps: z.coerce.number().int().min(1).max(100).default(10),
-  difficulty: ExerciseDifficultySchema.default('beginner'),
+  difficulty: ExerciseDifficultySchema.optional().default('beginner'),
 });
 
 export type CreateExerciseInput = z.infer<typeof CreateExerciseSchema>;
