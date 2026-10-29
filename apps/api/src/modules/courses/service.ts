@@ -256,6 +256,20 @@ export class CourseService {
 
     return this.repo.getCalendarAppointments(startDate, endDate, filter.pt_id, accessibleIds);
   }
+
+  async deleteCourseDay(id: string, date: string, actor: UserSession): Promise<void> {
+    const course = await this.repo.getCourseById(id);
+    if (!course) {
+      throw new AppError('Course not found', 404, 'COURSE_NOT_FOUND');
+    }
+    if (actor.role === 'pt') {
+      const isAccessible = await this.patientRepo.isPatientAccessibleByPt(course.patient_id, actor.id);
+      if (!isAccessible) {
+        throw new AppError('Forbidden: patient not assigned to this PT', 403, 'FORBIDDEN');
+      }
+    }
+    await this.repo.deleteCourseDay(id, date);
+  }
 }
 
 export let defaultCourseService = new CourseService();

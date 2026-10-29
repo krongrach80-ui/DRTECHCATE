@@ -14,6 +14,8 @@ import {
   PauseCircle,
   Brain,
   Monitor,
+  Trash2,
+  X,
 } from 'lucide-react';
 import {
   MedicalCard,
@@ -55,6 +57,8 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     }>
   >(DEMO_DOSSIERS);
   const [loading, setLoading] = useState(true);
+  const [notification, setNotification] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Modal State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -110,6 +114,87 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     onOpenCreateScheduleModal?.(targetId);
   };
 
+  useEffect(() => {
+    if (!notification) return;
+    const timer = setTimeout(() => setNotification(null), 4000);
+    return () => clearTimeout(timer);
+  }, [notification]);
+
+  const todayBkkStr = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+    } catch {
+      return new Date().toISOString().split('T')[0];
+    }
+  }, []);
+
+  const handleDeleteDate = async (dateStr: string, patientId?: string) => {
+    const targetPatientId = patientId || selectedPatient?.id;
+    if (!targetPatientId) return;
+
+    if (!window.confirm(`ยืนยันการลบวันนัดวันที่ ${dateStr}?`)) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      await defaultApiClient.smartOnboarding.deleteScheduleDate(targetPatientId, dateStr);
+
+      setDossiers((prev) =>
+        prev.map((d) => {
+          if (d.patient_id === targetPatientId || d.hn === targetPatientId) {
+            if (!d.schedule) return d;
+            const curExcluded = Array.isArray(d.schedule.excluded_dates) ? [...d.schedule.excluded_dates] : [];
+            if (!curExcluded.includes(dateStr)) curExcluded.push(dateStr);
+            const isSingle = (d.schedule.startDate === dateStr || d.schedule.start_date === dateStr) &&
+              (d.schedule.endDate === dateStr || d.schedule.end_date === dateStr);
+            return {
+              ...d,
+              schedule: isSingle ? null : { ...d.schedule, excluded_dates: curExcluded },
+            };
+          }
+          return d;
+        })
+      );
+
+      setNotification(`ลบวันนัดวันที่ ${dateStr} เรียบร้อยแล้ว`);
+      window.dispatchEvent(new CustomEvent('schedule-updated'));
+    } catch (err) {
+      setNotification(err instanceof Error ? err.message : 'ไม่สามารถลบวันนัดได้');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleClearAllSchedule = async () => {
+    if (!selectedPatient) return;
+    const pName = formatCleanName(selectedPatient.first_name, selectedPatient.last_name);
+    if (!window.confirm(`ยืนยันการล้างตารางนัดทั้งหมดของคนไข้ "${pName}" หรือไม่?\n(ระบบจะลบวันนัดทั้งหมดออกจากฐานข้อมูล)`)) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      await defaultApiClient.smartOnboarding.clearSchedule(selectedPatient.id);
+
+      setDossiers((prev) =>
+        prev.map((d) => {
+          if (d.patient_id === selectedPatient.id || d.hn === selectedPatient.hn) {
+            return { ...d, schedule: null };
+          }
+          return d;
+        })
+      );
+
+      setNotification(`ล้างตารางนัดของคนไข้ ${pName} เรียบร้อยแล้ว`);
+      window.dispatchEvent(new CustomEvent('schedule-updated'));
+    } catch (err) {
+      setNotification(err instanceof Error ? err.message : 'ไม่สามารถล้างตารางนัดได้');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Dynamic calendar dates generation
   const daysOfWeek = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
   const daysInMonth = new Date(currentYear, currentMonthIndex + 1, 0).getDate();
@@ -156,6 +241,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         includeMinigame: boolean;
         dateRangeStr: string;
         matchingSessions: Array<{
+          patientId?: string;
           patientName: string;
           hn: string;
           timeSlot: string;
@@ -177,6 +263,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         todayDay === dayNum;
 
       const dateStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+      const isPast = dateStr < todayBkkStr;
       const dateObj = new Date(currentYear, currentMonthIndex, dayNum);
       const dayKey = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
       const aliases = dayAliases[dayKey] || [dayKey];
@@ -190,7 +277,13 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         let includeMinigame = false;
         let dateRangeStr = '';
 
-        if (s) {
+        const isExcluded = Boolean(
+          s && (s.excluded_dates?.includes(dateStr) || s.cancelled_dates?.includes(dateStr))
+        );
+
+        // REQUIREMENT 1: Past dates (dateStr < todayBkkStr) or excluded dates MUST NEVER show active session card!
+        // Past days always render empty state ("พักฟื้น")!
+        if (s && !isPast && !isExcluded) {
           const startDate = s.startDate || s.start_date || '1970-01-01';
           const endDate = s.endDate || s.end_date || '2099-12-31';
           const days = s.daysOfWeek || s.days_of_week || [];
@@ -207,8 +300,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         }
 
         const isPaused = false;
-        const isPast = dateObj < new Date(todayYear, todayMonth, todayDay);
-        const isCompleted = isPast && hasSession;
+        const isCompleted = false;
 
         map.set(dayNum, {
           hasSession,
@@ -225,6 +317,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       } else {
         // 'all' Mode: Aggregate across all dossiers
         const matchingSessions: Array<{
+          patientId: string;
           patientName: string;
           hn: string;
           timeSlot: string;
@@ -232,31 +325,35 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           includeMinigame: boolean;
         }> = [];
 
-        dossiers.forEach((d) => {
-          const s = d.schedule;
-          if (!s) return;
-          const startDate = s.startDate || s.start_date || '1970-01-01';
-          const endDate = s.endDate || s.end_date || '2099-12-31';
-          const days = s.daysOfWeek || s.days_of_week || [];
-          if (
-            dateStr >= startDate &&
-            dateStr <= endDate &&
-            days.some((alias: string) => aliases.includes(alias))
-          ) {
-            matchingSessions.push({
-              patientName: formatCleanName(d.first_name, d.last_name),
-              hn: d.hn || d.patient_id,
-              timeSlot: s.timeSlot || s.time_slot || '09:00 - 10:00',
-              kioskId: s.kioskId || s.assigned_kiosk_id || 'kiosk-01',
-              includeMinigame: Boolean(s.include_minigame),
-            });
-          }
-        });
+        // In 'all' mode: never aggregate past appointments
+        if (!isPast) {
+          dossiers.forEach((d) => {
+            const s = d.schedule;
+            if (!s) return;
+            if (s.excluded_dates?.includes(dateStr) || s.cancelled_dates?.includes(dateStr)) return;
+            const startDate = s.startDate || s.start_date || '1970-01-01';
+            const endDate = s.endDate || s.end_date || '2099-12-31';
+            const days = s.daysOfWeek || s.days_of_week || [];
+            if (
+              dateStr >= startDate &&
+              dateStr <= endDate &&
+              days.some((alias: string) => aliases.includes(alias))
+            ) {
+              matchingSessions.push({
+                patientId: d.patient_id,
+                patientName: formatCleanName(d.first_name, d.last_name),
+                hn: d.hn || d.patient_id,
+                timeSlot: s.timeSlot || s.time_slot || '09:00 - 10:00',
+                kioskId: s.kioskId || s.assigned_kiosk_id || 'kiosk-01',
+                includeMinigame: Boolean(s.include_minigame),
+              });
+            }
+          });
+        }
 
         const hasSession = matchingSessions.length > 0;
         const isPaused = false;
-        const isPast = dateObj < new Date(todayYear, todayMonth, todayDay);
-        const isCompleted = isPast && hasSession;
+        const isCompleted = false;
 
         map.set(dayNum, {
           hasSession,
@@ -274,7 +371,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     }
 
     return map;
-  }, [calendarMode, activeDossier, dossiers, dayAliases, daysInMonth, currentYear, currentMonthIndex]);
+  }, [calendarMode, activeDossier, dossiers, dayAliases, daysInMonth, currentYear, currentMonthIndex, todayBkkStr]);
 
   // Compute 4 KPI values dynamically
   const kpiStats = useMemo(() => {
@@ -306,6 +403,23 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
 
   return (
     <div className="p-4 sm:p-6 md:p-8 space-y-6 font-sans">
+      {/* Dynamic Toast / Feedback Alert */}
+      {notification && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center justify-between shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{notification}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotification(null)}
+            className="text-slate-400 hover:text-slate-700 p-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* 1. Header with Active Patient Card or Empty State */}
       {!selectedPatient ? (
         <MedicalCard className="p-8 bg-white border border-slate-200 text-center">
@@ -361,7 +475,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               {/* Change Patient Dropdown / Trigger */}
               <select
                 id="clinical-schedule-patient-select"
@@ -378,6 +492,22 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
                   </option>
                 ))}
               </select>
+
+              {/* Clear All Schedule Button */}
+              <button
+                type="button"
+                onClick={handleClearAllSchedule}
+                disabled={!activeDossier?.schedule || actionLoading}
+                className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
+                  activeDossier?.schedule
+                    ? 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:border-rose-400 active:scale-95 shadow-sm cursor-pointer'
+                    : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'
+                }`}
+                title="ล้างตารางนัดทั้งหมดของคนไข้ที่เลือกอยู่"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>🗑️ ล้างตารางนัดทั้งหมด</span>
+              </button>
 
               <SmoothButton
                 variant="primary"
@@ -531,6 +661,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           {/* Active Days */}
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const dayNum = i + 1;
+            const dateStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
             const entry = monthlyScheduleMap.get(dayNum);
             const isToday = Boolean(entry?.isToday);
             const hasSession = Boolean(entry?.hasSession);
@@ -574,16 +705,30 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
                 {hasSession ? (
                   <div className="space-y-1 my-1">
                     {calendarMode === 'individual' ? (
-                      <div className="text-[10px] font-semibold text-emerald-900 bg-emerald-100/90 px-2 py-1 rounded-lg">
+                      <div className="text-[10px] font-semibold text-emerald-900 bg-emerald-100/90 px-2 py-1.5 rounded-lg border border-emerald-200/80 shadow-sm relative group/pill">
                         <div className="flex items-center justify-between gap-1">
                           <span className="font-bold truncate">{entry?.timeSlot}</span>
-                          {entry?.includeMinigame && (
-                            <span title="รวมมินิเกมฝึกสมอง">
-                              <Brain className="w-3 h-3 text-purple-600 shrink-0" />
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {entry?.includeMinigame && (
+                              <span title="รวมมินิเกมฝึกสมอง">
+                                <Brain className="w-3 h-3 text-purple-600 shrink-0" />
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteDate(dateStr);
+                              }}
+                              disabled={actionLoading}
+                              className="p-0.5 rounded text-rose-500 hover:text-white hover:bg-rose-500 transition"
+                              title={`ลบวันนัด ${dateStr}`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between text-[9px] text-emerald-700 mt-0.5">
+                        <div className="flex items-center justify-between text-[9px] text-emerald-700 mt-1">
                           <span className="flex items-center gap-0.5">
                             <Monitor className="w-2.5 h-2.5" />
                             {entry?.kioskId}
@@ -597,10 +742,24 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
                           (entry?.matchingSessions || []).slice(0, 2).map((ms, idx) => (
                             <div
                               key={idx}
-                              className="text-[9px] font-semibold text-emerald-900 bg-emerald-100/80 px-1.5 py-0.5 rounded truncate flex items-center justify-between"
+                              className="text-[9px] font-semibold text-emerald-900 bg-emerald-100/80 px-1.5 py-0.5 rounded truncate flex items-center justify-between group/ms"
                             >
                               <span className="truncate">{ms.patientName}</span>
-                              <span className="text-[8px] text-emerald-700 ml-1">{ms.timeSlot.split(' ')[0]}</span>
+                              <div className="flex items-center gap-1 ml-1 shrink-0">
+                                <span className="text-[8px] text-emerald-700">{ms.timeSlot.split(' ')[0]}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteDate(dateStr, ms.patientId);
+                                  }}
+                                  disabled={actionLoading}
+                                  className="p-0.5 rounded text-rose-500 hover:text-white hover:bg-rose-500 transition opacity-0 group-hover/ms:opacity-100"
+                                  title={`ลบวันนัดของ ${ms.patientName}`}
+                                >
+                                  <Trash2 className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
                             </div>
                           ))
                         ) : (

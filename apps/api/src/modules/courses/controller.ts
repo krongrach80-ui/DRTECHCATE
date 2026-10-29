@@ -57,6 +57,18 @@ export class CourseController {
     }
   };
 
+  deleteCourseDay = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
+      const id = String(req.params.id);
+      const date = String(req.params.date);
+      await this.service.deleteCourseDay(id, date, req.user);
+      res.status(200).json({ ok: true, message: `Day ${date} removed from course successfully` });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   listCourses = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.user) throw new AppError('Authentication required', 401, 'UNAUTHORIZED');

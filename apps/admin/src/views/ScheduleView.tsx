@@ -78,7 +78,9 @@ export const ScheduleView: React.FC = () => {
       const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
       const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
       const cal = await defaultApiClient.courses.getCalendar({ start_date: start, end_date: end }).catch(() => []);
-      setCalendarCourses(cal);
+      const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+      const safeCal = (Array.isArray(cal) ? cal : []).filter((c: any) => !c.end_date || c.end_date >= todayBkk);
+      setCalendarCourses(safeCal);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถโหลดตารางนัดหมายได้');
     } finally {

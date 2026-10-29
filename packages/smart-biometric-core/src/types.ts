@@ -35,6 +35,8 @@ export interface TherapySchedule {
   modpack_name?: string;
   prescribed_exercises?: PrescribedExercise[];
   assigned_exercises?: PrescribedExercise[];
+  excluded_dates?: string[];
+  cancelled_dates?: string[];
 }
 
 export interface RehabScoreEntry {

@@ -3967,8 +3967,11 @@ var init_repository8 = __esm({
       }
       async getCalendarAppointments(startDate, endDate, ptId, accessiblePatientIds) {
         try {
+          await this.cleanupPastCourses();
+          const todayBkk = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(/* @__PURE__ */ new Date());
+          const effectiveStartDate = startDate < todayBkk ? todayBkk : startDate;
           const adminClient = getAdminClient();
-          let query = adminClient.from("courses").select("*, items:course_items(*)").neq("status", "cancelled").lte("start_date", endDate).gte("end_date", startDate);
+          let query = adminClient.from("courses").select("*, items:course_items(*)").eq("status", "active").lte("start_date", endDate).gte("end_date", effectiveStartDate);
           if (ptId) {
             query = query.eq("pt_id", ptId);
           }
@@ -4000,6 +4003,47 @@ var init_repository8 = __esm({
         } catch (err) {
           if (err instanceof AppError) throw err;
           logger.error({ err, startDate, endDate }, "Unexpected error in getCalendarAppointments");
+          throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
+        }
+      }
+      async cleanupPastCourses() {
+        const todayBkk = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(/* @__PURE__ */ new Date());
+        try {
+          const adminClient = getAdminClient();
+          await adminClient.from("courses").update({ status: "completed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("status", "active").lt("end_date", todayBkk);
+        } catch (err) {
+          logger.warn({ err }, "Warning during cleanupPastCourses");
+        }
+      }
+      async deleteCourseDay(id, date) {
+        try {
+          const adminClient = getAdminClient();
+          const { data: c } = await adminClient.from("courses").select("*").eq("id", id).maybeSingle();
+          if (!c) return;
+          if (c.start_date === date && c.end_date === date) {
+            await this.deleteCourse(id);
+          } else if (c.start_date === date) {
+            const nextD = new Date(date);
+            nextD.setDate(nextD.getDate() + 1);
+            const nextDateStr = nextD.toISOString().slice(0, 10);
+            if (nextDateStr > c.end_date) {
+              await this.deleteCourse(id);
+            } else {
+              await adminClient.from("courses").update({ start_date: nextDateStr, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id);
+            }
+          } else if (c.end_date === date) {
+            const prevD = new Date(date);
+            prevD.setDate(prevD.getDate() - 1);
+            const prevDateStr = prevD.toISOString().slice(0, 10);
+            if (prevDateStr < c.start_date) {
+              await this.deleteCourse(id);
+            } else {
+              await adminClient.from("courses").update({ end_date: prevDateStr, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id);
+            }
+          }
+        } catch (err) {
+          if (err instanceof AppError) throw err;
+          logger.error({ err, id, date }, "Unexpected error in deleteCourseDay");
           throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
         }
       }
@@ -6359,6 +6403,19 @@ var init_service7 = __esm({
         }
         return this.repo.getCalendarAppointments(startDate, endDate, filter.pt_id, accessibleIds);
       }
+      async deleteCourseDay(id, date, actor) {
+        const course = await this.repo.getCourseById(id);
+        if (!course) {
+          throw new AppError("Course not found", 404, "COURSE_NOT_FOUND");
+        }
+        if (actor.role === "pt") {
+          const isAccessible = await this.patientRepo.isPatientAccessibleByPt(course.patient_id, actor.id);
+          if (!isAccessible) {
+            throw new AppError("Forbidden: patient not assigned to this PT", 403, "FORBIDDEN");
+          }
+        }
+        await this.repo.deleteCourseDay(id, date);
+      }
     };
     defaultCourseService = new CourseService();
   }
@@ -8160,6 +8217,39 @@ var init_fakeRepositories = __esm({
           list = list.filter((c) => accessibleIds.includes(c.patient_id));
         }
         return list;
+      }
+      async cleanupPastCourses() {
+        const todayBkk = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(/* @__PURE__ */ new Date());
+        for (const c of this.inMemoryCourses.values()) {
+          if (c.status === "active" && c.end_date < todayBkk) {
+            c.status = "completed";
+          }
+        }
+      }
+      async deleteCourseDay(id, date) {
+        const c = this.inMemoryCourses.get(id);
+        if (!c) return;
+        if (c.start_date === date && c.end_date === date) {
+          await this.deleteCourse(id);
+        } else if (c.start_date === date) {
+          const nextD = new Date(date);
+          nextD.setDate(nextD.getDate() + 1);
+          const nextDateStr = nextD.toISOString().slice(0, 10);
+          if (nextDateStr > c.end_date) {
+            await this.deleteCourse(id);
+          } else {
+            c.start_date = nextDateStr;
+          }
+        } else if (c.end_date === date) {
+          const prevD = new Date(date);
+          prevD.setDate(prevD.getDate() - 1);
+          const prevDateStr = prevD.toISOString().slice(0, 10);
+          if (prevDateStr < c.start_date) {
+            await this.deleteCourse(id);
+          } else {
+            c.end_date = prevDateStr;
+          }
+        }
       }
     };
     FakeAuditRepository = class {
@@ -11906,6 +11996,17 @@ var CourseController = class {
         next(err);
       }
     };
+    this.deleteCourseDay = async (req, res, next) => {
+      try {
+        if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHORIZED");
+        const id = String(req.params.id);
+        const date = String(req.params.date);
+        await this.service.deleteCourseDay(id, date, req.user);
+        res.status(200).json({ ok: true, message: `Day ${date} removed from course successfully` });
+      } catch (err) {
+        next(err);
+      }
+    };
     this.listCourses = async (req, res, next) => {
       try {
         if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHORIZED");
@@ -11952,6 +12053,7 @@ function createCoursesRouter(controller = defaultCourseController) {
   router3.get("/:id", controller.getCourseById);
   router3.patch("/:id", csrfGuard, controller.updateCourse);
   router3.delete("/:id", csrfGuard, controller.deleteCourse);
+  router3.delete("/:id/days/:date", csrfGuard, controller.deleteCourseDay);
   router3.delete("/exercises/:id", defaultDirectoryController.deleteExercise);
   router3.delete("/modpacks/:id", defaultDirectoryController.deleteModpack);
   router3.delete("/minigames/:id/questions/:questionId", defaultDirectoryController.deleteQuestion);
@@ -13141,6 +13243,264 @@ var SmartOnboardingService = class {
     return updated;
   }
   /**
+   * Helper: Asia/Bangkok current date in YYYY-MM-DD
+   */
+  getTodayBkk() {
+    try {
+      return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(/* @__PURE__ */ new Date());
+    } catch {
+      return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    }
+  }
+  /**
+   * Auto-Cleanup Past / Expired Schedule Days (Asia/Bangkok)
+   * 1. If course/schedule has end_date < today: mark completed / remove schedule.
+   * 2. If course/schedule has start_date < today and end_date >= today: advance start_date to today so past dates are pruned.
+   * 3. Sync with both Supabase (courses + patients.history.schedule) and disk/memory Vault.
+   */
+  async cleanupPastSchedules(refDate) {
+    const todayBkk = refDate || this.getTodayBkk();
+    let cleanedCourses = 0;
+    let cleanedVaults = 0;
+    const adminClient = getAdminClient();
+    const shouldQuerySupabase = process.env.NODE_ENV !== "test" || process.env.LIVE_TESTS === "1";
+    if (shouldQuerySupabase) {
+      try {
+        const { data: expiredCourses, error: expErr } = await adminClient.from("courses").update({ status: "completed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("status", "active").lt("end_date", todayBkk).select("id, patient_id");
+        if (!expErr && expiredCourses) {
+          cleanedCourses += expiredCourses.length;
+        }
+        const { data: ongoingCourses } = await adminClient.from("courses").update({ start_date: todayBkk, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("status", "active").lt("start_date", todayBkk).gte("end_date", todayBkk).select("id, patient_id");
+        if (ongoingCourses) {
+          cleanedCourses += ongoingCourses.length;
+        }
+      } catch (err) {
+        logger.warn({ err }, "Warning during Supabase course auto-cleanup");
+      }
+    }
+    try {
+      const records = this.vaultService.listAllPatientRecords();
+      for (const record of records) {
+        const s = record.schedule;
+        if (!s) continue;
+        const endDate = (s.endDate || s.end_date || "").slice(0, 10);
+        const startDate = (s.startDate || s.start_date || "").slice(0, 10);
+        if (endDate && endDate < todayBkk) {
+          record.schedule = null;
+          this.vaultService.savePatientRecord(record.patient_id, record);
+          if (record.hn && record.hn !== record.patient_id) {
+            this.vaultService.savePatientRecord(record.hn, record);
+          }
+          cleanedVaults++;
+          if (shouldQuerySupabase && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.patient_id)) {
+            void (async () => {
+              try {
+                const { data: p } = await adminClient.from("patients").select("history").eq("id", record.patient_id).maybeSingle();
+                const hist = { ...p?.history || {} };
+                delete hist.schedule;
+                await adminClient.from("patients").update({ history: hist }).eq("id", record.patient_id);
+              } catch {
+              }
+            })();
+          }
+        } else if (startDate && startDate < todayBkk) {
+          s.startDate = todayBkk;
+          s.start_date = todayBkk;
+          if (Array.isArray(s.excluded_dates)) {
+            s.excluded_dates = s.excluded_dates.filter((d) => d >= todayBkk);
+          }
+          this.vaultService.savePatientRecord(record.patient_id, record);
+          if (record.hn && record.hn !== record.patient_id) {
+            this.vaultService.savePatientRecord(record.hn, record);
+          }
+          cleanedVaults++;
+          if (shouldQuerySupabase && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.patient_id)) {
+            void (async () => {
+              try {
+                const { data: p } = await adminClient.from("patients").select("history").eq("id", record.patient_id).maybeSingle();
+                const hist = { ...p?.history || {}, schedule: s };
+                await adminClient.from("patients").update({ history: hist }).eq("id", record.patient_id);
+              } catch {
+              }
+            })();
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "Warning during Vault schedule auto-cleanup");
+    }
+    return { cleanedCourses, cleanedVaults };
+  }
+  /**
+   * Delete an appointment on a specific date for a patient (Manual Delete Appointment Date)
+   */
+  async deleteScheduleDate(patientId, dateStr) {
+    const adminClient = getAdminClient();
+    const shouldQuerySupabase = process.env.NODE_ENV !== "test" || process.env.LIVE_TESTS === "1";
+    await this.cleanupPastSchedules();
+    let patient = this.vaultService.getPatientRecord(patientId);
+    if (!patient) {
+      const all = this.vaultService.listAllPatientRecords();
+      patient = all.find((r) => r.patient_id === patientId || r.hn === patientId) || null;
+    }
+    let resolvedPatientUuid = patient?.patient_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patient.patient_id) ? patient.patient_id : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId) ? patientId : null;
+    if (shouldQuerySupabase && !resolvedPatientUuid) {
+      try {
+        const { data: pRow } = await adminClient.from("patients").select("id, hn").or(`id.eq.${patientId},hn.eq.${patientId}`).limit(1).maybeSingle();
+        if (pRow) {
+          resolvedPatientUuid = pRow.id;
+        }
+      } catch {
+      }
+    }
+    if (patient && patient.schedule) {
+      const s = patient.schedule;
+      const sStart = (s.startDate || s.start_date || "").slice(0, 10);
+      const sEnd = (s.endDate || s.end_date || "").slice(0, 10);
+      const excluded = Array.isArray(s.excluded_dates) ? [...s.excluded_dates] : [];
+      if (!excluded.includes(dateStr)) {
+        excluded.push(dateStr);
+      }
+      s.excluded_dates = excluded;
+      if (sStart === dateStr && sEnd === dateStr) {
+        patient.schedule = null;
+      } else if (sStart === dateStr) {
+        const d = new Date(dateStr);
+        d.setDate(d.getDate() + 1);
+        const nextDateStr = d.toISOString().slice(0, 10);
+        s.startDate = nextDateStr;
+        s.start_date = nextDateStr;
+      } else if (sEnd === dateStr) {
+        const d = new Date(dateStr);
+        d.setDate(d.getDate() - 1);
+        const prevDateStr = d.toISOString().slice(0, 10);
+        s.endDate = prevDateStr;
+        s.end_date = prevDateStr;
+      }
+      this.vaultService.savePatientRecord(patient.patient_id, patient);
+      if (patient.hn && patient.hn !== patient.patient_id) {
+        this.vaultService.savePatientRecord(patient.hn, patient);
+      }
+    }
+    if (shouldQuerySupabase && resolvedPatientUuid) {
+      try {
+        await adminClient.from("courses").update({ status: "cancelled", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("patient_id", resolvedPatientUuid).eq("start_date", dateStr).eq("end_date", dateStr).eq("status", "active");
+        const { data: matchStartCourses } = await adminClient.from("courses").select("id, start_date, end_date").eq("patient_id", resolvedPatientUuid).eq("start_date", dateStr).eq("status", "active");
+        if (matchStartCourses && matchStartCourses.length > 0) {
+          for (const c of matchStartCourses) {
+            const nextD = new Date(dateStr);
+            nextD.setDate(nextD.getDate() + 1);
+            const nextDateStr = nextD.toISOString().slice(0, 10);
+            if (nextDateStr > c.end_date) {
+              await adminClient.from("courses").update({ status: "cancelled", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", c.id);
+            } else {
+              await adminClient.from("courses").update({ start_date: nextDateStr, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", c.id);
+            }
+          }
+        }
+        const { data: matchEndCourses } = await adminClient.from("courses").select("id, start_date, end_date").eq("patient_id", resolvedPatientUuid).eq("end_date", dateStr).eq("status", "active");
+        if (matchEndCourses && matchEndCourses.length > 0) {
+          for (const c of matchEndCourses) {
+            const prevD = new Date(dateStr);
+            prevD.setDate(prevD.getDate() - 1);
+            const prevDateStr = prevD.toISOString().slice(0, 10);
+            if (prevDateStr < c.start_date) {
+              await adminClient.from("courses").update({ status: "cancelled", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", c.id);
+            } else {
+              await adminClient.from("courses").update({ end_date: prevDateStr, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", c.id);
+            }
+          }
+        }
+        const { data: currentP } = await adminClient.from("patients").select("history").eq("id", resolvedPatientUuid).maybeSingle();
+        const curSched = currentP?.history?.schedule;
+        if (curSched) {
+          const curExcluded = Array.isArray(curSched.excluded_dates) ? [...curSched.excluded_dates] : [];
+          if (!curExcluded.includes(dateStr)) curExcluded.push(dateStr);
+          curSched.excluded_dates = curExcluded;
+          if (patient?.schedule === null) {
+            delete currentP.history.schedule;
+          } else {
+            currentP.history.schedule = { ...curSched, ...patient?.schedule || {} };
+          }
+          await adminClient.from("patients").update({ history: currentP.history }).eq("id", resolvedPatientUuid);
+        }
+      } catch (dbErr) {
+        logger.warn({ dbErr, patientId, dateStr }, "Warning updating Supabase during deleteScheduleDate");
+      }
+    }
+    dispatchHospitalEvent({
+      event: "schedule_updated",
+      patientId: resolvedPatientUuid || patientId,
+      data: {
+        patient_id: resolvedPatientUuid || patientId,
+        deleted_date: dateStr
+      }
+    });
+    return patient;
+  }
+  /**
+   * Clear all schedule for a patient
+   */
+  async clearPatientSchedule(patientId) {
+    const adminClient = getAdminClient();
+    const shouldQuerySupabase = process.env.NODE_ENV !== "test" || process.env.LIVE_TESTS === "1";
+    let patient = this.vaultService.getPatientRecord(patientId);
+    if (!patient) {
+      const all = this.vaultService.listAllPatientRecords();
+      patient = all.find((r) => r.patient_id === patientId || r.hn === patientId) || null;
+    }
+    let resolvedPatientUuid = patient?.patient_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patient.patient_id) ? patient.patient_id : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId) ? patientId : null;
+    if (shouldQuerySupabase && !resolvedPatientUuid) {
+      try {
+        const { data: pRow } = await adminClient.from("patients").select("id, hn").or(`id.eq.${patientId},hn.eq.${patientId}`).limit(1).maybeSingle();
+        if (pRow) {
+          resolvedPatientUuid = pRow.id;
+        }
+      } catch {
+      }
+    }
+    if (patient) {
+      patient.schedule = null;
+      this.vaultService.savePatientRecord(patient.patient_id, patient);
+      if (patient.hn && patient.hn !== patient.patient_id) {
+        this.vaultService.savePatientRecord(patient.hn, patient);
+      }
+    }
+    if (shouldQuerySupabase && resolvedPatientUuid) {
+      try {
+        await adminClient.from("courses").update({ status: "cancelled", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("patient_id", resolvedPatientUuid).eq("status", "active");
+        const { data: currentP } = await adminClient.from("patients").select("history").eq("id", resolvedPatientUuid).maybeSingle();
+        if (currentP?.history) {
+          const hist = { ...currentP.history };
+          delete hist.schedule;
+          await adminClient.from("patients").update({ history: hist }).eq("id", resolvedPatientUuid);
+        }
+      } catch (dbErr) {
+        logger.warn({ dbErr, patientId }, "Warning updating Supabase during clearPatientSchedule");
+      }
+    }
+    dispatchHospitalEvent({
+      event: "schedule_updated",
+      patientId: resolvedPatientUuid || patientId,
+      data: {
+        patient_id: resolvedPatientUuid || patientId,
+        cleared: true
+      }
+    });
+    return patient;
+  }
+  /**
+   * Get patient schedule with automatic past date cleanup
+   */
+  async getPatientSchedule(patientId) {
+    await this.cleanupPastSchedules();
+    const dossier = this.vaultService.getPatientDossier(patientId);
+    if (dossier?.schedule) return dossier.schedule;
+    const allDossiers = await this.listAllDossiers();
+    const found = allDossiers.find((d) => d.patient_id === patientId || d.hn === patientId);
+    return found?.schedule || null;
+  }
+  /**
    * 6. Dynamic Daily Rehab Plan (Asia/Bangkok timezone)
    */
   async getDailyPlan(patientId, currentDateStr) {
@@ -13340,7 +13700,10 @@ var SmartOnboardingService = class {
     });
     const exercises = effectiveSchedule.assigned_exercises || effectiveSchedule.prescribed_exercises || [];
     const includeMinigame = Boolean(effectiveSchedule.include_minigame);
-    if (isWithinDateRange && isDayScheduled) {
+    const isExcluded = Boolean(
+      Array.isArray(effectiveSchedule.excluded_dates) && effectiveSchedule.excluded_dates.includes(bkkIsoDate)
+    );
+    if (isWithinDateRange && isDayScheduled && !isExcluded) {
       return {
         is_scheduled_today: true,
         schedule: effectiveSchedule,
@@ -13363,6 +13726,8 @@ var SmartOnboardingService = class {
     return this.vaultService.getPatientDossier(patientId);
   }
   async listAllDossiers() {
+    await this.cleanupPastSchedules();
+    const todayBkk = this.getTodayBkk();
     const adminClient = getAdminClient();
     const vaultDossiers = this.vaultService.listAllDossiers();
     const dossierMap = /* @__PURE__ */ new Map();
@@ -13401,10 +13766,11 @@ var SmartOnboardingService = class {
               target_joint
             )
           )
-        `).eq("status", "active").order("created_at", { ascending: false });
+        `).eq("status", "active").gte("end_date", todayBkk).order("created_at", { ascending: false });
         if (courses && courses.length > 0) {
           const weekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
           for (const c of courses) {
+            if (c.end_date && c.end_date < todayBkk) continue;
             const p = c.patients;
             if (!p) continue;
             const pId = p.id;
@@ -13421,16 +13787,19 @@ var SmartOnboardingService = class {
             const startHour = parseInt(startTimeClean.slice(0, 2), 10);
             const endHourStr = isNaN(startHour) ? "10" : (startHour + 1).toString().padStart(2, "0");
             const timeSlotStr = `${startTimeClean} - ${endHourStr}:00`;
+            const existing = dossierMap.get(pId) || dossierMap.get(pHn);
+            const preservedExcluded = existing?.schedule?.excluded_dates || [];
             const scheduleObj = {
+              course_id: c.id,
               start_date: c.start_date,
               end_date: c.end_date,
               days_of_week: daysOfWeek,
               time_slot: timeSlotStr,
               assigned_kiosk_id: c.kiosk_id || "kiosk-01",
               include_minigame: c.include_minigame ?? true,
-              prescribed_exercises: prescribed
+              prescribed_exercises: prescribed,
+              excluded_dates: preservedExcluded
             };
-            const existing = dossierMap.get(pId) || dossierMap.get(pHn);
             if (existing) {
               existing.schedule = scheduleObj;
             } else {
@@ -13846,6 +14215,37 @@ var SmartOnboardingController = class {
         next(err);
       }
     };
+    this.getSchedule = async (req, res, next) => {
+      try {
+        const rawParam = req.params.patientId;
+        const patientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+        const schedule = await this.service.getPatientSchedule(patientId);
+        res.status(200).json({ ok: true, data: { schedule } });
+      } catch (err) {
+        next(err);
+      }
+    };
+    this.deleteScheduleDate = async (req, res, next) => {
+      try {
+        const rawParam = req.params.patientId;
+        const patientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+        const dateStr = req.params.dateStr;
+        await this.service.deleteScheduleDate(patientId, dateStr);
+        res.status(200).json({ ok: true, message: `\u0E25\u0E1A\u0E27\u0E31\u0E19\u0E19\u0E31\u0E14 ${dateStr} \u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27` });
+      } catch (err) {
+        next(err);
+      }
+    };
+    this.clearSchedule = async (req, res, next) => {
+      try {
+        const rawParam = req.params.patientId;
+        const patientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+        await this.service.clearPatientSchedule(patientId);
+        res.status(200).json({ ok: true, message: "\u0E25\u0E49\u0E32\u0E07\u0E15\u0E32\u0E23\u0E32\u0E07\u0E19\u0E31\u0E14\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E02\u0E2D\u0E07\u0E04\u0E19\u0E44\u0E02\u0E49\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27" });
+      } catch (err) {
+        next(err);
+      }
+    };
   }
 };
 var defaultSmartOnboardingController = new SmartOnboardingController();
@@ -13860,6 +14260,9 @@ function createSmartOnboardingRouter(controller = defaultSmartOnboardingControll
   router3.post("/complete-info", controller.completeInfo);
   router3.get("/pending-patients", controller.listPending);
   router3.post("/schedule", controller.saveSchedule);
+  router3.get("/schedule/:patientId", controller.getSchedule);
+  router3.delete("/schedule/:patientId/date/:dateStr", controller.deleteScheduleDate);
+  router3.delete("/schedule/:patientId", controller.clearSchedule);
   router3.get("/daily-plan/:patientId", controller.getDailyPlan);
   router3.post("/rehab-score", controller.saveRehabScore);
   router3.delete("/patient/:patientId", controller.deletePatient);

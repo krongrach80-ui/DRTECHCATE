@@ -1373,6 +1373,27 @@ export class ApiClient {
       });
     },
 
+    getSchedule: async (patientId: string) => {
+      return this.request<{ ok: boolean; data: { schedule: any } }>(
+        `/smart-onboarding/schedule/${patientId}`,
+        { method: 'GET' }
+      );
+    },
+
+    deleteScheduleDate: async (patientId: string, dateStr: string) => {
+      return this.request<{ ok: boolean; message: string }>(
+        `/smart-onboarding/schedule/${patientId}/date/${dateStr}`,
+        { method: 'DELETE' }
+      );
+    },
+
+    clearSchedule: async (patientId: string) => {
+      return this.request<{ ok: boolean; message: string }>(
+        `/smart-onboarding/schedule/${patientId}`,
+        { method: 'DELETE' }
+      );
+    },
+
     getDailyPlan: async (patientId: string, date?: string) => {
       const q = date ? `?date=${encodeURIComponent(date)}` : '';
       return this.request<{

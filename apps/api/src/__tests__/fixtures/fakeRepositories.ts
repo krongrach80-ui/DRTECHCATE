@@ -1224,6 +1224,41 @@ export class FakeCourseRepository implements ICourseRepository {
     }
     return list;
   }
+
+  async cleanupPastCourses(): Promise<void> {
+    const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+    for (const c of this.inMemoryCourses.values()) {
+      if (c.status === 'active' && c.end_date < todayBkk) {
+        c.status = 'completed';
+      }
+    }
+  }
+
+  async deleteCourseDay(id: string, date: string): Promise<void> {
+    const c = this.inMemoryCourses.get(id);
+    if (!c) return;
+    if (c.start_date === date && c.end_date === date) {
+      await this.deleteCourse(id);
+    } else if (c.start_date === date) {
+      const nextD = new Date(date);
+      nextD.setDate(nextD.getDate() + 1);
+      const nextDateStr = nextD.toISOString().slice(0, 10);
+      if (nextDateStr > c.end_date) {
+        await this.deleteCourse(id);
+      } else {
+        c.start_date = nextDateStr;
+      }
+    } else if (c.end_date === date) {
+      const prevD = new Date(date);
+      prevD.setDate(prevD.getDate() - 1);
+      const prevDateStr = prevD.toISOString().slice(0, 10);
+      if (prevDateStr < c.start_date) {
+        await this.deleteCourse(id);
+      } else {
+        c.end_date = prevDateStr;
+      }
+    }
+  }
 }
 
 export class FakeAuditRepository implements IAuditRepository {

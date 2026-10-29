@@ -27,6 +27,8 @@ export interface ICourseRepository {
   updateCourse(id: string, input: UpdateCourseInput, expectedVersion: number): Promise<CourseRecord>;
   archiveCourse(id: string, expectedVersion: number): Promise<void>;
   deleteCourse(id: string): Promise<void>;
+  deleteCourseDay(id: string, date: string): Promise<void>;
+  cleanupPastCourses(): Promise<void>;
   listCourses(
     filter: CourseQueryFilter,
     accessiblePatientIds?: string[] | null
@@ -597,13 +599,17 @@ export class CourseRepository implements ICourseRepository {
     accessiblePatientIds?: string[] | null
   ): Promise<CourseRecord[]> {
     try {
+      await this.cleanupPastCourses();
+      const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+      const effectiveStartDate = startDate < todayBkk ? todayBkk : startDate;
+
       const adminClient = getAdminClient();
       let query = adminClient
         .from('courses')
         .select('*, items:course_items(*)')
-        .neq('status', 'cancelled')
+        .eq('status', 'active')
         .lte('start_date', endDate)
-        .gte('end_date', startDate);
+        .gte('end_date', effectiveStartDate);
 
       if (ptId) {
         query = query.eq('pt_id', ptId);
@@ -641,6 +647,58 @@ export class CourseRepository implements ICourseRepository {
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, startDate, endDate }, 'Unexpected error in getCalendarAppointments');
+      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    }
+  }
+
+  async cleanupPastCourses(): Promise<void> {
+    const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+    try {
+      const adminClient = getAdminClient();
+      await adminClient
+        .from('courses')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('status', 'active')
+        .lt('end_date', todayBkk);
+    } catch (err) {
+      logger.warn({ err }, 'Warning during cleanupPastCourses');
+    }
+  }
+
+  async deleteCourseDay(id: string, date: string): Promise<void> {
+    try {
+      const adminClient = getAdminClient();
+      const { data: c } = await adminClient
+        .from('courses')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (!c) return;
+      if (c.start_date === date && c.end_date === date) {
+        await this.deleteCourse(id);
+      } else if (c.start_date === date) {
+        const nextD = new Date(date);
+        nextD.setDate(nextD.getDate() + 1);
+        const nextDateStr = nextD.toISOString().slice(0, 10);
+        if (nextDateStr > c.end_date) {
+          await this.deleteCourse(id);
+        } else {
+          await adminClient.from('courses').update({ start_date: nextDateStr, updated_at: new Date().toISOString() }).eq('id', id);
+        }
+      } else if (c.end_date === date) {
+        const prevD = new Date(date);
+        prevD.setDate(prevD.getDate() - 1);
+        const prevDateStr = prevD.toISOString().slice(0, 10);
+        if (prevDateStr < c.start_date) {
+          await this.deleteCourse(id);
+        } else {
+          await adminClient.from('courses').update({ end_date: prevDateStr, updated_at: new Date().toISOString() }).eq('id', id);
+        }
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      logger.error({ err, id, date }, 'Unexpected error in deleteCourseDay');
       throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
   }

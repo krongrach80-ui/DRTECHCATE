@@ -257,6 +257,41 @@ export class SmartOnboardingController {
       next(err);
     }
   };
+
+  getSchedule = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const rawParam = req.params.patientId;
+      const patientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+      const schedule = await this.service.getPatientSchedule(patientId);
+      res.status(200).json({ ok: true, data: { schedule } });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  deleteScheduleDate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const rawParam = req.params.patientId;
+      const patientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+      const dateStr = req.params.dateStr as string;
+      await this.service.deleteScheduleDate(patientId, dateStr);
+      res.status(200).json({ ok: true, message: `ลบวันนัด ${dateStr} เรียบร้อยแล้ว` });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  clearSchedule = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const rawParam = req.params.patientId;
+      const patientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+      await this.service.clearPatientSchedule(patientId);
+      res.status(200).json({ ok: true, message: 'ล้างตารางนัดทั้งหมดของคนไข้เรียบร้อยแล้ว' });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
 
 export const defaultSmartOnboardingController = new SmartOnboardingController();
+

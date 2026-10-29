@@ -31,8 +31,11 @@ export function createSmartOnboardingRouter(
   // 4. Pending Patients Queue for Staff/Admin
   router.get('/pending-patients', controller.listPending);
 
-  // 5. 3-Step Wizard Therapy Schedule
+  // 5. 3-Step Wizard Therapy Schedule & Deletion
   router.post('/schedule', controller.saveSchedule);
+  router.get('/schedule/:patientId', controller.getSchedule);
+  router.delete('/schedule/:patientId/date/:dateStr', controller.deleteScheduleDate);
+  router.delete('/schedule/:patientId', controller.clearSchedule);
 
   // 6. Patient Kiosk Dynamic Daily Plan (Asia/Bangkok)
   router.get('/daily-plan/:patientId', controller.getDailyPlan);

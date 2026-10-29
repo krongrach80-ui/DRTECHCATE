@@ -27,6 +27,7 @@ import {
   SmartScheduleView,
   SmartScheduleWizardModal
 } from '../smart-portal/index.js';
+import { ClinicalScheduleView } from '../../../admin/src/clinical-ui/index.js';
 
 interface PtScheduleViewProps {
   currentUserId: string;
@@ -38,7 +39,7 @@ const DEMO_TODAY_COURSES: TodayCourseItem[] = [];
 export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
   currentUserId: _currentUserId,
 }) => {
-  const [subTab, setSubTab] = useState<'today' | 'calendar' | 'smart'>('today');
+  const [subTab, setSubTab] = useState<'today' | 'calendar' | 'monthly' | 'smart'>('monthly');
   const [isSmartWizardOpen, setIsSmartWizardOpen] = useState(false);
   const [todayCourses, setTodayCourses] = useState<TodayCourseItem[]>(DEMO_TODAY_COURSES);
   const [calendarCourses, setCalendarCourses] = useState<CourseRecord[]>([]);
@@ -88,7 +89,9 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
       const rawPatients = Array.isArray(pts) ? pts : ((pts as any)?.patients || []);
       const safePatients = rawPatients.length > 0 ? rawPatients : DEMO_PATIENTS;
       setTodayCourses(safeToday);
-      setCalendarCourses(Array.isArray(cal) ? cal : []);
+      const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+      const safeCal = (Array.isArray(cal) ? cal : []).filter((c) => !c.end_date || c.end_date >= todayBkk);
+      setCalendarCourses(safeCal);
       setPatients(safePatients);
       setModpacks(Array.isArray(mps) ? mps : []);
       setExercises(Array.isArray(exs) ? exs : []);
@@ -284,6 +287,17 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
           <span>ปฏิทินคอร์สทั้งหมด (Calendar View) ({calendarCourses.length})</span>
         </button>
         <button
+          onClick={() => setSubTab('monthly')}
+          className={`pb-3 px-4 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+            subTab === 'monthly'
+              ? 'border-emerald-400 text-emerald-300'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <CalendarIcon className="w-4 h-4" />
+          <span>ตารางฝึกและปฏิทินฟื้นฟู (Monthly Planner)</span>
+        </button>
+        <button
           onClick={() => setSubTab('smart')}
           className={`pb-3 px-4 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
             subTab === 'smart'
@@ -295,6 +309,9 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
           <span>Smart Schedule (v4)</span>
         </button>
       </div>
+
+      {/* Master Prompt v6: Monthly Clinical Schedule Planner Grid */}
+      {subTab === 'monthly' && <ClinicalScheduleView />}
 
       {/* Master Prompt v4: Smart Schedule View */}
       {subTab === 'smart' && <SmartScheduleView />}

@@ -24,6 +24,7 @@ export function createCoursesRouter(controller: CourseController = defaultCourse
   router.get('/:id', controller.getCourseById);
   router.patch('/:id', csrfGuard, controller.updateCourse);
   router.delete('/:id', csrfGuard, controller.deleteCourse);
+  router.delete('/:id/days/:date', csrfGuard, controller.deleteCourseDay);
 
   // 3. Aliases for exercises, modpacks, and minigame questions
   router.delete('/exercises/:id', defaultDirectoryController.deleteExercise);
