@@ -12,7 +12,7 @@ interface PhysicalCardVisualProps {
   className?: string;
 }
 
-export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = ({
+export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(({
   visualKey,
   imageDescription,
   className = '',
@@ -525,7 +525,7 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = ({
       </div>
     </div>
   );
-};
+});
 
 // Fallback emoji dictionary for items
 function getIconEmoji(key: string): string {

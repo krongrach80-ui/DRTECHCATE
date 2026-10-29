@@ -264,7 +264,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
 
       {/* Physical Cards Minigame Modal */}
       {isPhysicalCardGameOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 flex items-center justify-center p-2 sm:p-4">
           <div className="w-full max-w-4xl h-[94vh] bg-[#EDF7F1] rounded-3xl overflow-hidden shadow-2xl relative border-2 border-emerald-500/40">
             <PhysicalCardGame onExit={() => setIsPhysicalCardGameOpen(false)} />
           </div>

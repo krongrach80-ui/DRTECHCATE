@@ -62,27 +62,57 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const [answerState, setAnswerState] = useState<'idle' | 'correct' | 'wrong'>('idle');
   const [selectedSide, setSelectedSide] = useState<'yes' | 'no' | null>(null);
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
-  const [leftHoldProgress, setLeftHoldProgress] = useState<number>(0);
-  const [rightHoldProgress, setRightHoldProgress] = useState<number>(0);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
+
+  // High-performance DOM Refs (Zero React re-renders during motion detection)
+  const leftProgressRef = useRef<HTMLDivElement | null>(null);
+  const rightProgressRef = useRef<HTMLDivElement | null>(null);
+  const leftHudDotRef = useRef<HTMLSpanElement | null>(null);
+  const rightHudDotRef = useRef<HTMLSpanElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Camera & Motion Detection
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
-  const [detectedHand, setDetectedHand] = useState<'left' | 'right' | null>(null);
 
   const activeQuestion: PhysicalCardQuestion =
     filteredList[currentIndex] || ALL_99_PHYSICAL_CARD_QUESTIONS[0];
 
+  // Cached AudioContext singleton to prevent audio hardware stuttering
+  const getAudioContext = useCallback(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      if (!audioCtxRef.current) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          audioCtxRef.current = new AudioContextClass();
+        }
+      }
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
+      return audioCtxRef.current;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+      }
+    };
+  }, []);
+
   // Sound Synthesizer via Web Audio API
   const playSound = useCallback(
     (type: 'correct' | 'wrong' | 'pop') => {
-      if (!soundEnabled || typeof window === 'undefined') return;
+      if (!soundEnabled) return;
       try {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioContextClass) return;
-        const ctx = new AudioContextClass();
+        const ctx = getAudioContext();
+        if (!ctx) return;
 
         if (type === 'correct') {
           // Cheerful chime: C5 (523Hz) -> E5 (659Hz) -> G5 (784Hz)
@@ -129,7 +159,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         // audio non-blocking
       }
     },
-    [soundEnabled]
+    [soundEnabled, getAudioContext]
   );
 
   // Initialize camera
@@ -171,93 +201,135 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
   // Motion Detection Loop for raising left / right hand in front of camera
   useEffect(() => {
-    if (!cameraActive || isGameOver || answerState !== 'idle') return;
+    if (!cameraActive || isGameOver || answerState !== 'idle') {
+      // Clear progress bars when not actively scanning
+      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+      if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
+      if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+      return;
+    }
 
     let animFrame: number;
-    let prevFrameData: Uint8ClampedArray | null = null;
-    const canvas = canvasRef.current || document.createElement('canvas');
-    canvas.width = 160;
-    canvas.height = 120;
+    let lastTime = 0;
+    const TARGET_INTERVAL_MS = 36; // ~28 FPS: buttery-smooth response with minimal CPU usage
+
+    // Lightweight 80x60 canvas for motion detection (75% fewer pixels than 160x120)
+    const canvas = document.createElement('canvas');
+    canvas.width = 80;
+    canvas.height = 60;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
+    let prevBuffer: Uint8ClampedArray | null = null;
     let leftAccumulator = 0;
     let rightAccumulator = 0;
 
-    const checkMotion = () => {
-      if (videoRef.current && ctx && videoRef.current.readyState === 4) {
-        // Mirror horizontally on canvas to strictly align with mirrored camera preview and user perspective:
-        // Screen Left (User Left hand) -> canvas x: 10 to 65 -> Left Zone ("ใช่")
-        // Screen Right (User Right hand) -> canvas x: 95 to 150 -> Right Zone ("ไม่")
-        ctx.save();
-        ctx.translate(160, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(videoRef.current, 0, 0, 160, 120);
-        ctx.restore();
+    const checkMotion = (timestamp: number) => {
+      if (timestamp - lastTime >= TARGET_INTERVAL_MS) {
+        lastTime = timestamp;
 
-        const currentData = ctx.getImageData(0, 0, 160, 120).data;
+        if (videoRef.current && ctx && videoRef.current.readyState === 4) {
+          // Mirror horizontally on canvas to strictly align with mirrored camera preview:
+          ctx.save();
+          ctx.translate(80, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(videoRef.current, 0, 0, 80, 60);
+          ctx.restore();
 
-        if (prevFrameData) {
-          let leftMotion = 0;
-          let rightMotion = 0;
+          const currentData = ctx.getImageData(0, 0, 80, 60).data;
 
-          // Screen Left Zone (10 to 65 x, 10 to 65 y) -> ยกมือฝั่งซ้าย ตอบข้อทางซ้าย ("ใช่")
-          // Screen Right Zone (95 to 150 x, 10 to 65 y) -> ยกมือฝั่งขวา ตอบข้อทางขวา ("ไม่")
-          for (let y = 10; y < 65; y += 4) {
-            for (let x = 10; x < 65; x += 4) {
-              const i = (y * 160 + x) * 4;
-              const diff =
-                Math.abs(currentData[i] - prevFrameData[i]) +
-                Math.abs(currentData[i + 1] - prevFrameData[i + 1]) +
-                Math.abs(currentData[i + 2] - prevFrameData[i + 2]);
-              if (diff > 55) leftMotion++;
+          if (prevBuffer) {
+            let leftMotion = 0;
+            let rightMotion = 0;
+
+            // Screen Left Zone (Screen Left: x: 6 to 32, y: 6 to 36, step: 2) -> Left hand ("ใช่")
+            // Screen Right Zone (Screen Right: x: 48 to 74, y: 6 to 36, step: 2) -> Right hand ("ไม่")
+            for (let y = 6; y < 36; y += 2) {
+              const rowOffset = y * 80;
+              for (let x = 6; x < 32; x += 2) {
+                const i = (rowOffset + x) * 4;
+                const diff =
+                  Math.abs(currentData[i] - prevBuffer[i]) +
+                  Math.abs(currentData[i + 1] - prevBuffer[i + 1]) +
+                  Math.abs(currentData[i + 2] - prevBuffer[i + 2]);
+                if (diff > 50) leftMotion++;
+              }
+              for (let x = 48; x < 74; x += 2) {
+                const i = (rowOffset + x) * 4;
+                const diff =
+                  Math.abs(currentData[i] - prevBuffer[i]) +
+                  Math.abs(currentData[i + 1] - prevBuffer[i + 1]) +
+                  Math.abs(currentData[i + 2] - prevBuffer[i + 2]);
+                if (diff > 50) rightMotion++;
+              }
             }
-            for (let x = 95; x < 150; x += 4) {
-              const i = (y * 160 + x) * 4;
-              const diff =
-                Math.abs(currentData[i] - prevFrameData[i]) +
-                Math.abs(currentData[i + 1] - prevFrameData[i + 1]) +
-                Math.abs(currentData[i + 2] - prevFrameData[i + 2]);
-              if (diff > 55) rightMotion++;
+
+            // Hysteresis calculation
+            if (leftMotion > 12) {
+              leftAccumulator = Math.min(100, leftAccumulator + 22);
+              rightAccumulator = Math.max(0, rightAccumulator - 18);
+            } else {
+              leftAccumulator = Math.max(0, leftAccumulator - 10);
             }
-          }
 
-          // Raise detection hysteresis
-          if (leftMotion > 18) {
-            leftAccumulator = Math.min(100, leftAccumulator + 18);
-            rightAccumulator = Math.max(0, rightAccumulator - 15);
+            if (rightMotion > 12) {
+              rightAccumulator = Math.min(100, rightAccumulator + 22);
+              leftAccumulator = Math.max(0, leftAccumulator - 18);
+            } else {
+              rightAccumulator = Math.max(0, rightAccumulator - 10);
+            }
+
+            // Direct GPU transform update on progress bars (Zero React re-renders)
+            const leftScale = (leftAccumulator / 100).toFixed(3);
+            const rightScale = (rightAccumulator / 100).toFixed(3);
+            if (leftProgressRef.current) {
+              leftProgressRef.current.style.transform = `scaleY(${leftScale})`;
+            }
+            if (rightProgressRef.current) {
+              rightProgressRef.current.style.transform = `scaleY(${rightScale})`;
+            }
+
+            // HUD indicators update
+            if (leftHudDotRef.current) {
+              leftHudDotRef.current.className =
+                leftAccumulator > 30
+                  ? 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse'
+                  : 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
+            }
+            if (rightHudDotRef.current) {
+              rightHudDotRef.current.className =
+                rightAccumulator > 30
+                  ? 'w-2 h-2 rounded-full bg-orange-400 animate-pulse'
+                  : 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+            }
+
+            // Trigger Answer when hold reaches 75%
+            if (leftAccumulator >= 75) {
+              leftAccumulator = 0;
+              if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+              handleAnswer('yes');
+            } else if (rightAccumulator >= 75) {
+              rightAccumulator = 0;
+              if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+              handleAnswer('no');
+            }
+
+            // Reuse pre-allocated buffer (Zero memory allocation in loop)
+            prevBuffer.set(currentData);
           } else {
-            leftAccumulator = Math.max(0, leftAccumulator - 10);
-          }
-
-          if (rightMotion > 18) {
-            rightAccumulator = Math.min(100, rightAccumulator + 18);
-            leftAccumulator = Math.max(0, leftAccumulator - 15);
-          } else {
-            rightAccumulator = Math.max(0, rightAccumulator - 10);
-          }
-
-          setLeftHoldProgress(leftAccumulator / 100);
-          setRightHoldProgress(rightAccumulator / 100);
-
-          if (leftAccumulator >= 75) {
-            setDetectedHand('left');
-            handleAnswer('yes');
-            leftAccumulator = 0;
-          } else if (rightAccumulator >= 75) {
-            setDetectedHand('right');
-            handleAnswer('no');
-            rightAccumulator = 0;
-          } else {
-            setDetectedHand(null);
+            prevBuffer = new Uint8ClampedArray(currentData);
           }
         }
-        prevFrameData = new Uint8ClampedArray(currentData);
       }
       animFrame = requestAnimationFrame(checkMotion);
     };
 
     animFrame = requestAnimationFrame(checkMotion);
-    return () => cancelAnimationFrame(animFrame);
+    return () => {
+      cancelAnimationFrame(animFrame);
+      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+    };
   }, [cameraActive, isGameOver, answerState]);
 
   // Handle user's answer (via gesture or direct click)
@@ -283,8 +355,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
       setShowExplanation(false);
       setAnswerState('idle');
       setSelectedSide(null);
-      setLeftHoldProgress(0);
-      setRightHoldProgress(0);
+      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+      if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
+      if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
 
       if (currentIndex + 1 < filteredList.length) {
         setCurrentIndex((i) => i + 1);
@@ -304,6 +378,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     setSelectedSide(null);
     setIsGameOver(false);
     setShowExplanation(false);
+    if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+    if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+    if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
+    if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
   };
 
   const categories = [
@@ -429,13 +507,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                   : 'border-[#16A34A] hover:bg-emerald-50/50 hover:shadow-md'
               }`}
             >
-              {/* Detection progress bar */}
-              {leftHoldProgress > 0 && (
-                <div
-                  className="absolute bottom-0 left-0 right-0 bg-emerald-500/20 transition-all"
-                  style={{ height: `${leftHoldProgress * 100}%` }}
-                />
-              )}
+              {/* GPU-Accelerated Detection progress bar */}
+              <div
+                ref={leftProgressRef}
+                className="absolute bottom-0 left-0 right-0 h-full bg-emerald-500/25 origin-bottom pointer-events-none will-change-transform"
+                style={{ transform: 'scaleY(0)' }}
+              />
 
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-[#16A34A] mb-1">
                 <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#16A34A] stroke-[2.2]" />
@@ -471,13 +548,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                   : 'border-[#EA580C] hover:bg-orange-50/50 hover:shadow-md'
               }`}
             >
-              {/* Detection progress bar */}
-              {rightHoldProgress > 0 && (
-                <div
-                  className="absolute bottom-0 left-0 right-0 bg-orange-500/20 transition-all"
-                  style={{ height: `${rightHoldProgress * 100}%` }}
-                />
-              )}
+              {/* GPU-Accelerated Detection progress bar */}
+              <div
+                ref={rightProgressRef}
+                className="absolute bottom-0 left-0 right-0 h-full bg-orange-500/25 origin-bottom pointer-events-none will-change-transform"
+                style={{ transform: 'scaleY(0)' }}
+              />
 
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-[#EA580C] mb-1">
                 <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#EA580C] stroke-[2.2]" />
@@ -530,13 +606,19 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             <div className="absolute bottom-3 right-3 w-6 h-6 border-b-3 border-r-3 border-[#6EE7B7] rounded-br-lg pointer-events-none" />
 
             {/* Live Hand Pose Indicator Hints */}
-            <div className="absolute top-2.5 left-4 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 text-emerald-300 text-[10px] font-bold backdrop-blur-xs">
-              <span className={`w-2 h-2 rounded-full ${detectedHand === 'left' ? 'bg-emerald-400 animate-ping' : 'bg-emerald-600'}`} />
+            <div className="absolute top-2.5 left-4 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 text-emerald-300 text-[10px] font-bold">
+              <span
+                ref={leftHudDotRef}
+                className="w-2 h-2 rounded-full bg-emerald-600 transition-colors"
+              />
               <span>โซนซ้าย (ใช่)</span>
             </div>
-            <div className="absolute top-2.5 right-4 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 text-orange-300 text-[10px] font-bold backdrop-blur-xs">
+            <div className="absolute top-2.5 right-4 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 text-orange-300 text-[10px] font-bold">
               <span>โซนขวา (ไม่)</span>
-              <span className={`w-2 h-2 rounded-full ${detectedHand === 'right' ? 'bg-orange-400 animate-ping' : 'bg-orange-600'}`} />
+              <span
+                ref={rightHudDotRef}
+                className="w-2 h-2 rounded-full bg-orange-600 transition-colors"
+              />
             </div>
 
             {/* Bottom White Pill Banner (ตรงตามภาพ: "ยืนให้เห็นมือทั้งสองข้าง") */}
