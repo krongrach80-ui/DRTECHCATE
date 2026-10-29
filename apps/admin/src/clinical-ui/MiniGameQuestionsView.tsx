@@ -181,7 +181,7 @@ export const MiniGameQuestionsView: React.FC = () => {
             icon={<Play className="w-4 h-4 text-emerald-600" />}
             onClick={() => setIsPreviewOpen(true)}
           >
-            <span>🎮 ทดลองเล่นการ์ดกายภาพ</span>
+            <span>🎮 ทดลองเล่นการ์ดกายภาพ (10 ข้อ/รอบ)</span>
           </SmoothButton>
 
           <div className="relative w-72">
@@ -376,7 +376,7 @@ export const MiniGameQuestionsView: React.FC = () => {
       {isPreviewOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-4xl h-[92vh] bg-[#EDF7F1] rounded-3xl overflow-hidden shadow-2xl relative border border-emerald-300/40">
-            <PhysicalCardGame onExit={() => setIsPreviewOpen(false)} />
+            <PhysicalCardGame maxQuestions={10} onExit={() => setIsPreviewOpen(false)} />
           </div>
         </div>
       )}

@@ -14,12 +14,12 @@ import {
   ALL_99_PHYSICAL_CARD_QUESTIONS,
 } from './PhysicalCardGameData.js';
 import { PhysicalCardVisual } from './PhysicalCardVisuals.js';
+import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
   Volume2,
   VolumeX,
   RotateCcw,
   Trophy,
-  ArrowRight,
   Hand,
   CheckCircle2,
   XCircle,
@@ -28,11 +28,14 @@ import {
   Camera,
 } from 'lucide-react';
 
+export const QUESTIONS_PER_ROUND = 10;
+
 export interface PhysicalCardGameProps {
   onComplete?: (finalScore: number, totalQuestions: number) => void;
   onExit?: () => void;
   initialCategory?: string;
   maxQuestions?: number;
+  patientId?: string;
 }
 
 export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
@@ -40,22 +43,33 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   onExit,
   initialCategory = 'ทั้งหมด',
   maxQuestions,
+  patientId,
 }) => {
   // Category state
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [sessionSeed, setSessionSeed] = useState<number>(0);
 
-  // Filtered Question list
-  const filteredList = React.useMemo(() => {
+  // Filtered Question list (สุ่ม 10 ข้อจากคลังคำถามต่อรอบ)
+  const [filteredList, setFilteredList] = useState<PhysicalCardQuestion[]>(() => {
+    let list = ALL_99_PHYSICAL_CARD_QUESTIONS;
+    if (initialCategory !== 'ทั้งหมด') {
+      list = list.filter((q) => q.category === initialCategory);
+    }
+    const shuffled = [...list].sort(() => Math.random() - 0.5);
+    const limit = maxQuestions && maxQuestions > 0 ? maxQuestions : QUESTIONS_PER_ROUND;
+    return shuffled.slice(0, Math.min(limit, shuffled.length));
+  });
+
+  useEffect(() => {
     let list = ALL_99_PHYSICAL_CARD_QUESTIONS;
     if (selectedCategory !== 'ทั้งหมด') {
       list = list.filter((q) => q.category === selectedCategory);
     }
-    if (maxQuestions && maxQuestions > 0) {
-      list = list.slice(0, maxQuestions);
-    }
-    return list;
-  }, [selectedCategory, maxQuestions]);
+    const shuffled = [...list].sort(() => Math.random() - 0.5);
+    const limit = maxQuestions && maxQuestions > 0 ? maxQuestions : QUESTIONS_PER_ROUND;
+    setFilteredList(shuffled.slice(0, Math.min(limit, shuffled.length)));
+  }, [selectedCategory, maxQuestions, sessionSeed]);
 
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [score, setScore] = useState<number>(0);
@@ -199,6 +213,110 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     };
   }, []);
 
+  // Save score to database if patient is logged in
+  const saveSessionScore = useCallback(
+    async (finalScore: number, totalQuestions: number) => {
+      try {
+        const activePatientId =
+          patientId ||
+          (typeof window !== 'undefined'
+            ? sessionStorage.getItem('active_patient_id') ||
+              sessionStorage.getItem('patient_id') ||
+              localStorage.getItem('active_patient_id') ||
+              localStorage.getItem('patient_id') ||
+              ''
+            : '');
+
+        if (activePatientId) {
+          const calculatedPoints = Math.round((finalScore / totalQuestions) * 100);
+          await defaultApiClient.smartOnboarding.saveRehabScore({
+            patient_id: activePatientId,
+            score: {
+              timestamp: new Date().toISOString(),
+              completion_rate: 100,
+              exercises_completed: 0,
+              minigame_score: calculatedPoints,
+              total_score: calculatedPoints,
+            },
+          });
+        }
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(
+            'last_physical_card_score',
+            JSON.stringify({
+              score: finalScore,
+              total: totalQuestions,
+              percentage: Math.round((finalScore / totalQuestions) * 100),
+              timestamp: new Date().toISOString(),
+            })
+          );
+        }
+      } catch {
+        // Non-blocking save
+      }
+    },
+    [patientId]
+  );
+
+  // Handle user's answer (via gesture or direct click)
+  const handleAnswer = useCallback(
+    (choice: 'yes' | 'no') => {
+      if (answerState !== 'idle') return;
+
+      setSelectedSide(choice);
+      const isCorrect = choice === activeQuestion.correctAnswer;
+
+      if (isCorrect) {
+        setAnswerState('correct');
+        setScore((prev) => prev + 1);
+        playSound('correct');
+      } else {
+        setAnswerState('wrong');
+        playSound('wrong');
+      }
+
+      setShowExplanation(true);
+
+      // Auto transition to next question after 1.4s
+      setTimeout(() => {
+        setShowExplanation(false);
+        setAnswerState('idle');
+        setSelectedSide(null);
+        if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+        if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+        if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
+        if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+
+        if (currentIndex + 1 < filteredList.length) {
+          setCurrentIndex((i) => i + 1);
+        } else {
+          const finalScore = score + (isCorrect ? 1 : 0);
+          setIsGameOver(true);
+          if (onComplete) {
+            onComplete(finalScore, filteredList.length);
+          }
+          saveSessionScore(finalScore, filteredList.length);
+        }
+      }, 1400);
+    },
+    [
+      answerState,
+      activeQuestion.correctAnswer,
+      currentIndex,
+      filteredList.length,
+      onComplete,
+      playSound,
+      saveSessionScore,
+      score,
+    ]
+  );
+
+  const handleAnswerRef = useRef(handleAnswer);
+  useEffect(() => {
+    handleAnswerRef.current = handleAnswer;
+  }, [handleAnswer]);
+
   // Motion Detection Loop for raising left / right hand in front of camera
   useEffect(() => {
     if (!cameraActive || isGameOver || answerState !== 'idle') {
@@ -307,11 +425,11 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             if (leftAccumulator >= 75) {
               leftAccumulator = 0;
               if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-              handleAnswer('yes');
+              handleAnswerRef.current('yes');
             } else if (rightAccumulator >= 75) {
               rightAccumulator = 0;
               if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-              handleAnswer('no');
+              handleAnswerRef.current('no');
             }
 
             // Reuse pre-allocated buffer (Zero memory allocation in loop)
@@ -328,50 +446,11 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     return () => {
       cancelAnimationFrame(animFrame);
       if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
     };
   }, [cameraActive, isGameOver, answerState]);
 
-  // Handle user's answer (via gesture or direct click)
-  const handleAnswer = (choice: 'yes' | 'no') => {
-    if (answerState !== 'idle') return;
-
-    setSelectedSide(choice);
-    const isCorrect = choice === activeQuestion.correctAnswer;
-
-    if (isCorrect) {
-      setAnswerState('correct');
-      setScore((prev) => prev + 1);
-      playSound('correct');
-    } else {
-      setAnswerState('wrong');
-      playSound('wrong');
-    }
-
-    setShowExplanation(true);
-
-    // Auto transition to next question after 1.4s
-    setTimeout(() => {
-      setShowExplanation(false);
-      setAnswerState('idle');
-      setSelectedSide(null);
-      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-      if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
-      if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
-
-      if (currentIndex + 1 < filteredList.length) {
-        setCurrentIndex((i) => i + 1);
-      } else {
-        setIsGameOver(true);
-        if (onComplete) {
-          onComplete(score + (isCorrect ? 1 : 0), filteredList.length);
-        }
-      }
-    }, 1400);
-  };
-
   const handleRestart = () => {
+    setSessionSeed((s) => s + 1);
     setCurrentIndex(0);
     setScore(0);
     setAnswerState('idle');
@@ -399,17 +478,17 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     <div className="w-full h-full flex flex-col justify-between p-4 sm:p-6 bg-[#EDF7F1] text-slate-800 select-none overflow-y-auto font-sans relative">
       {/* Top Header Bar */}
       <div className="w-full max-w-3xl mx-auto flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl font-black text-[#134E43] tracking-normal">
             การ์ดกายภาพ
           </h1>
-          <span className="text-[11px] font-semibold text-emerald-800/80 bg-emerald-100/70 border border-emerald-300/60 px-2.5 py-0.5 rounded-full">
+          <span className="text-xs font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300/80 px-3 py-1 rounded-full shadow-xs">
             ข้อ {currentIndex + 1} / {filteredList.length}
           </span>
         </div>
 
-        {/* Right Controls: Category filter, Sound, Exit & Score Pill */}
-        <div className="flex items-center gap-2">
+        {/* Right Controls: Sound, Exit & Score Pill */}
+        <div className="flex items-center gap-2 shrink-0">
           {/* Sound Toggle */}
           <button
             type="button"
@@ -441,21 +520,25 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         </div>
       </div>
 
-      {/* Category Pills (ช่วยให้เลือกฝึกเฉพาะหมวดหมู่ได้สะดวก) */}
-      <div className="w-full max-w-3xl mx-auto flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none">
+      {/* Category Pills (แถบเลือกหมวดหมู่ - ปรับ padding-top และ line-height ไม่ให้อักษรไทยด้านบนถูกตัดขอบแหว่ง) */}
+      <div className="w-full max-w-3xl mx-auto flex items-center gap-2 overflow-x-auto pt-3 pb-2.5 px-1 scrollbar-none shrink-0">
         {categories.map((cat) => (
           <button
             key={cat}
             type="button"
             onClick={() => {
               setSelectedCategory(cat);
+              setSessionSeed((s) => s + 1);
               setCurrentIndex(0);
               setScore(0);
+              setAnswerState('idle');
+              setSelectedSide(null);
+              setIsGameOver(false);
             }}
-            className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold leading-normal whitespace-nowrap transition cursor-pointer shadow-xs ${
               selectedCategory === cat
-                ? 'bg-[#134E43] text-white shadow-sm'
-                : 'bg-white/80 hover:bg-white text-emerald-900 border border-emerald-200/60'
+                ? 'bg-[#134E43] text-white shadow-sm ring-2 ring-[#134E43]/20'
+                : 'bg-white/90 hover:bg-white text-emerald-900 border border-emerald-200/80 hover:border-emerald-300'
             }`}
           >
             {cat}
@@ -579,25 +662,25 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             </div>
           )}
 
-          {/* Bottom Camera Viewport (ตามภาพต้นฉบับ: พื้นหลังเขียวเข้ม มีกรอบมุม HUD และรูปเงาคน) */}
+          {/* Bottom Camera Viewport (กล้องเต็มจอ ไม่มีรูปคนบัง) */}
           <div className="w-full h-44 sm:h-52 bg-[#0F2D24] rounded-3xl relative overflow-hidden border-2 border-emerald-900/60 shadow-lg flex items-center justify-center">
-            {/* Live Video Feed */}
+            {/* Live Video Feed (ไม่โดนไอคอนคนบัง ชัดเจน 100%) */}
             <video
               ref={videoRef}
               playsInline
               muted
               className={`absolute inset-0 w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-500 ${
-                cameraActive ? 'opacity-70' : 'opacity-0'
+                cameraActive ? 'opacity-100' : 'opacity-0'
               }`}
             />
 
-            {/* Silhouette Person (แสดงตามแบบในภาพ) */}
-            <div className="relative z-10 flex flex-col items-center justify-end h-full pb-8 pointer-events-none opacity-85">
-              {/* Head */}
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#244C3F] border border-emerald-600/30 mb-1.5 shadow-inner" />
-              {/* Shoulders / Torso */}
-              <div className="w-28 h-16 sm:w-36 sm:h-20 rounded-t-full bg-[#244C3F] border-t border-x border-emerald-600/30" />
-            </div>
+            {/* When camera is connecting / permission not active */}
+            {!cameraActive && (
+              <div className="relative z-10 flex flex-col items-center justify-center gap-1.5 text-emerald-300/70 pointer-events-none">
+                <Camera className="w-6 h-6 opacity-60 animate-pulse" />
+                <span className="text-xs font-semibold">กำลังเชื่อมต่อกล้อง หรือแตะการ์ดบนจอเพื่อตอบ</span>
+              </div>
+            )}
 
             {/* Corner Viewfinder HUD Brackets (กรอบ 4 มุมสีเขียวมิ้นต์ตามภาพ) */}
             <div className="absolute top-3 left-3 w-6 h-6 border-t-3 border-l-3 border-[#6EE7B7] rounded-tl-lg pointer-events-none" />
@@ -630,24 +713,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             </div>
           </div>
 
-          {/* Quick Simulation Buttons for Accessibility / Testing without camera */}
-          <div className="flex items-center justify-center gap-2 pt-1 text-xs text-slate-500">
-            <span>แตะการ์ดบนหน้าจอ หรือยกมือซ้าย/ขวาเพื่อตอบ</span>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={() => handleAnswer('yes')}
-              className="text-emerald-700 hover:underline font-semibold cursor-pointer"
-            >
-              [จำลองยกมือซ้าย]
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAnswer('no')}
-              className="text-orange-700 hover:underline font-semibold cursor-pointer"
-            >
-              [จำลองยกมือขวา]
-            </button>
+          {/* Assistive Hint */}
+          <div className="flex items-center justify-center gap-2 pt-1 text-xs text-slate-500 font-medium">
+            <span>แตะการ์ดบนหน้าจอ หรือยกมือซ้าย/ขวาผ่านกล้องเพื่อตอบ</span>
           </div>
         </div>
       ) : (
@@ -660,37 +728,37 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
           <div>
             <h3 className="text-2xl font-black text-slate-900">ยอดเยี่ยมมาก! จบรอบฝึกแล้ว</h3>
             <p className="text-xs text-slate-500 mt-1">
-              ฝึกประสาทสัมผัส การรับรู้ และการเคลื่อนไหวร่างกายส่วนบน
+              ฝึกประสาทสัมผัส การรับรู้ และการเคลื่อนไหวร่างกายครบ {filteredList.length} ข้อ
             </p>
           </div>
 
           <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200/80">
-            <div className="text-xs font-semibold text-emerald-800">คะแนนที่ได้</div>
-            <div className="text-4xl font-black text-emerald-600 my-1 font-mono">
-              {score} / {filteredList.length}
+            <div className="text-xs font-semibold text-emerald-800">ผลการประเมิน</div>
+            <div className="text-xl sm:text-2xl font-black text-emerald-700 my-1 font-mono">
+              คะแนนที่ได้: {score} / {filteredList.length} คะแนน
             </div>
-            <div className="text-xs text-emerald-700 font-medium">
-              ความแม่นยำ {Math.round((score / filteredList.length) * 100)}%
+            <div className="text-xs text-emerald-700 font-semibold">
+              ความถูกต้อง {Math.round((score / filteredList.length) * 100)}%
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 pt-2">
+          <div className="flex flex-col gap-2.5 pt-2">
             <button
               type="button"
               onClick={handleRestart}
               className="w-full py-3.5 rounded-xl bg-[#134E43] hover:bg-[#0f3d34] text-white font-bold text-sm shadow-md transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>เริ่มเล่นใหม่อีกครั้ง</span>
+              <span>🔄 เล่นรอบใหม่ (สุ่ม 10 ข้อใหม่)</span>
             </button>
 
             {onExit && (
               <button
                 type="button"
                 onClick={onExit}
-                className="w-full py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+                className="w-full py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
               >
-                ออกจากมินิเกม
+                <span>✅ เสร็จสิ้น / ปิดหน้าต่าง</span>
               </button>
             )}
           </div>

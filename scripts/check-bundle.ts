@@ -71,7 +71,11 @@ function buildIfRequested(): void {
       env: { ...process.env, NODE_ENV: 'production' },
       stdio: 'inherit',
     });
-    console.log('✓ Vite build completed successfully.\n');
+    execSync('npm run copy:apps', {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+    });
+    console.log('✓ Vite build and copy completed successfully.\n');
   } catch {
     console.error('❌ Vite build failed during compilation!');
     process.exit(1);
