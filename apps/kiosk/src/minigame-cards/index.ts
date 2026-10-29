@@ -5,4 +5,5 @@
 
 export * from './PhysicalCardGameData.js';
 export * from './PhysicalCardVisuals.js';
+export * from './HandGestureVerifier.js';
 export * from './PhysicalCardGame.js';

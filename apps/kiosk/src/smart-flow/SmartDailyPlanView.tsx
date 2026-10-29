@@ -16,8 +16,8 @@ import {
   RefreshCw,
   Sun,
   Brain,
-  ChevronRight,
-  Gamepad2,
+  ChevronRight as _ChevronRight,
+  Gamepad2 as _Gamepad2,
 } from 'lucide-react';
 import { PhysicalCardGame } from '../minigame-cards/index.js';
 
@@ -122,8 +122,8 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     }
   };
 
-  // Minigame Answer click
-  const handleAnswerQuiz = (selectedOptionIndex: number) => {
+  // Minigame Answer click (fallback quiz mode)
+  const _handleAnswerQuiz = (selectedOptionIndex: number) => {
     const isCorrect = selectedOptionIndex === quizQuestions[quizQuestionIndex].answerIndex;
     const addedScore = isCorrect ? 35 : 10;
     const newTotal = quizScore + addedScore;

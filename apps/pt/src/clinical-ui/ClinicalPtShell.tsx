@@ -280,8 +280,8 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
 
       {/* Physical Cards Minigame Modal */}
       {isPhysicalCardGameOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 flex items-center justify-center p-2 sm:p-4">
-          <div className="w-full max-w-4xl h-[94vh] bg-[#EDF7F1] rounded-3xl overflow-hidden shadow-2xl relative border-2 border-emerald-500/40">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 flex items-center justify-center p-3 sm:p-6 pt-4 sm:pt-6">
+          <div className="w-full max-w-4xl h-[92vh] sm:h-[94vh] bg-[#EDF7F1] rounded-3xl overflow-hidden shadow-2xl relative border-2 border-emerald-500/40">
             <PhysicalCardGame maxQuestions={10} onExit={() => setIsPhysicalCardGameOpen(false)} />
           </div>
         </div>

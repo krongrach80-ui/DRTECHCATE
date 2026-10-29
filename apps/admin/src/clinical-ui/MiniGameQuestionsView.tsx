@@ -374,8 +374,8 @@ export const MiniGameQuestionsView: React.FC = () => {
 
       {/* Live Physical Card Game Preview Modal */}
       {isPreviewOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl h-[92vh] bg-[#EDF7F1] rounded-3xl overflow-hidden shadow-2xl relative border border-emerald-300/40">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 pt-4 sm:pt-6">
+          <div className="w-full max-w-4xl h-[92vh] sm:h-[94vh] bg-[#EDF7F1] rounded-3xl overflow-hidden shadow-2xl relative border border-emerald-300/40">
             <PhysicalCardGame maxQuestions={10} onExit={() => setIsPreviewOpen(false)} />
           </div>
         </div>

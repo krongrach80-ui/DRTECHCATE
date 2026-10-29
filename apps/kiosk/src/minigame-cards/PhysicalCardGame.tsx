@@ -14,6 +14,11 @@ import {
   ALL_99_PHYSICAL_CARD_QUESTIONS,
 } from './PhysicalCardGameData.js';
 import { PhysicalCardVisual } from './PhysicalCardVisuals.js';
+import {
+  verifyRealHandGesture,
+  drawHandSkeleton,
+  HandLandmarkPoint,
+} from './HandGestureVerifier.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
   Volume2,
@@ -85,9 +90,13 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const rightHudDotRef = useRef<HTMLSpanElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // Camera & Motion Detection
+  // Camera & Real Hand Landmarker Detection
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const handLandmarkerRef = useRef<any>(null);
+  const neutralGateRef = useRef<boolean>(false);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
+  const [isModelLoading, setIsModelLoading] = useState<boolean>(true);
 
   const activeQuestion: PhysicalCardQuestion =
     filteredList[currentIndex] || ALL_99_PHYSICAL_CARD_QUESTIONS[0];
@@ -317,135 +326,293 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     handleAnswerRef.current = handleAnswer;
   }, [handleAnswer]);
 
-  // Motion Detection Loop for raising left / right hand in front of camera
+  // 1. Initialize MediaPipe HandLandmarker (Local Task and Wasm)
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function initLandmarker() {
+      try {
+        setIsModelLoading(true);
+        const vision = await import('@mediapipe/tasks-vision');
+        const { HandLandmarker, FilesetResolver } = vision;
+
+        const wasmPath = '/models/wasm';
+        const fileset = await FilesetResolver.forVisionTasks(wasmPath);
+
+        if (isCancelled) return;
+
+        let landmarker: any = null;
+        try {
+          landmarker = await HandLandmarker.createFromOptions(fileset, {
+            baseOptions: {
+              modelAssetPath: '/models/hand_landmarker.task',
+              delegate: 'GPU',
+            },
+            runningMode: 'VIDEO',
+            numHands: 2,
+            minHandDetectionConfidence: 0.7,
+            minHandPresenceConfidence: 0.7,
+            minTrackingConfidence: 0.7,
+          });
+        } catch (gpuErr) {
+          console.warn('MediaPipe HandLandmarker GPU delegate failed, falling back to CPU:', gpuErr);
+          if (isCancelled) return;
+          landmarker = await HandLandmarker.createFromOptions(fileset, {
+            baseOptions: {
+              modelAssetPath: '/models/hand_landmarker.task',
+              delegate: 'CPU',
+            },
+            runningMode: 'VIDEO',
+            numHands: 2,
+            minHandDetectionConfidence: 0.7,
+            minHandPresenceConfidence: 0.7,
+            minTrackingConfidence: 0.7,
+          });
+        }
+
+        if (!isCancelled) {
+          handLandmarkerRef.current = landmarker;
+          setIsModelLoading(false);
+        } else {
+          landmarker?.close();
+        }
+      } catch (err) {
+        console.warn('Failed to load MediaPipe HandLandmarker:', err);
+        if (!isCancelled) {
+          setIsModelLoading(false);
+        }
+      }
+    }
+
+    initLandmarker();
+
+    return () => {
+      isCancelled = true;
+      if (handLandmarkerRef.current) {
+        try {
+          handLandmarkerRef.current.close();
+        } catch {
+          // cleanup safe
+        }
+        handLandmarkerRef.current = null;
+      }
+    };
+  }, []);
+
+  // 2. Strict Real Hand Detection Loop with 4-Layer Verification Gate, 600ms Dwell Time, & Neutral Reset
   useEffect(() => {
     if (!cameraActive || isGameOver || answerState !== 'idle') {
-      // Clear progress bars when not actively scanning
       if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
       if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
       if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
       if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+      if (overlayCanvasRef.current) {
+        const ctx = overlayCanvasRef.current.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+      }
       return;
     }
 
     let animFrame: number;
-    let lastTime = 0;
-    const TARGET_INTERVAL_MS = 36; // ~28 FPS: buttery-smooth response with minimal CPU usage
+    let lastDetectTime = 0;
+    const TARGET_INTERVAL_MS = 36; // ~28 FPS: buttery-smooth real-time tracking
+    const HOLD_DWELL_MS = 600; // 0.6 seconds continuous hold requirement
 
-    // Lightweight 80x60 canvas for motion detection (75% fewer pixels than 160x120)
-    const canvas = document.createElement('canvas');
-    canvas.width = 80;
-    canvas.height = 60;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let activeZone: 'LEFT' | 'RIGHT' | null = null;
+    let zoneHoldStart = 0;
+    let handNeutralFrames = 0;
 
-    let prevBuffer: Uint8ClampedArray | null = null;
-    let leftAccumulator = 0;
-    let rightAccumulator = 0;
+    const detectHands = (timestamp: number) => {
+      const video = videoRef.current;
+      const landmarker = handLandmarkerRef.current;
+      const canvas = overlayCanvasRef.current;
 
-    const checkMotion = (timestamp: number) => {
-      if (timestamp - lastTime >= TARGET_INTERVAL_MS) {
-        lastTime = timestamp;
+      if (
+        video &&
+        landmarker &&
+        canvas &&
+        video.readyState >= 2 &&
+        !video.paused &&
+        timestamp - lastDetectTime >= TARGET_INTERVAL_MS
+      ) {
+        lastDetectTime = timestamp;
 
-        if (videoRef.current && ctx && videoRef.current.readyState === 4) {
-          // Mirror horizontally on canvas to strictly align with mirrored camera preview:
-          ctx.save();
-          ctx.translate(80, 0);
-          ctx.scale(-1, 1);
-          ctx.drawImage(videoRef.current, 0, 0, 80, 60);
-          ctx.restore();
+        // Auto-fit canvas dimensions to video feed
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+        }
 
-          const currentData = ctx.getImageData(0, 0, 80, 60).data;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
 
-          if (prevBuffer) {
-            let leftMotion = 0;
-            let rightMotion = 0;
+        try {
+          const result = landmarker.detectForVideo(video, timestamp);
+          const hands = result?.landmarks || [];
+          const handedness = result?.handedness || [];
 
-            // Screen Left Zone (Screen Left: x: 6 to 32, y: 6 to 36, step: 2) -> Left hand ("ใช่")
-            // Screen Right Zone (Screen Right: x: 48 to 74, y: 6 to 36, step: 2) -> Right hand ("ไม่")
-            for (let y = 6; y < 36; y += 2) {
-              const rowOffset = y * 80;
-              for (let x = 6; x < 32; x += 2) {
-                const i = (rowOffset + x) * 4;
-                const diff =
-                  Math.abs(currentData[i] - prevBuffer[i]) +
-                  Math.abs(currentData[i + 1] - prevBuffer[i + 1]) +
-                  Math.abs(currentData[i + 2] - prevBuffer[i + 2]);
-                if (diff > 50) leftMotion++;
-              }
-              for (let x = 48; x < 74; x += 2) {
-                const i = (rowOffset + x) * 4;
-                const diff =
-                  Math.abs(currentData[i] - prevBuffer[i]) +
-                  Math.abs(currentData[i + 1] - prevBuffer[i + 1]) +
-                  Math.abs(currentData[i + 2] - prevBuffer[i + 2]);
-                if (diff > 50) rightMotion++;
-              }
+          let bestVerification: ReturnType<typeof verifyRealHandGesture> | null = null;
+          let bestLandmarks: HandLandmarkPoint[] | null = null;
+
+          // Check each detected hand
+          for (let i = 0; i < hands.length; i++) {
+            const handPts = hands[i] as HandLandmarkPoint[];
+            const conf = handedness[i]?.[0]?.score ?? 0.85;
+            const verification = verifyRealHandGesture(handPts, conf, {
+              isMirrored: true,
+              minConfidence: 0.75,
+            });
+
+            // Prioritize hand in active answer zone (LEFT or RIGHT)
+            if (verification.isValidHand && verification.side) {
+              bestVerification = verification;
+              bestLandmarks = handPts;
+              break;
             }
 
-            // Hysteresis calculation
-            if (leftMotion > 12) {
-              leftAccumulator = Math.min(100, leftAccumulator + 22);
-              rightAccumulator = Math.max(0, rightAccumulator - 18);
-            } else {
-              leftAccumulator = Math.max(0, leftAccumulator - 10);
+            // Otherwise, keep neutral hand for skeleton rendering feedback
+            if (!bestVerification && verification.isHandDetected) {
+              bestVerification = verification;
+              bestLandmarks = handPts;
             }
-
-            if (rightMotion > 12) {
-              rightAccumulator = Math.min(100, rightAccumulator + 22);
-              leftAccumulator = Math.max(0, leftAccumulator - 18);
-            } else {
-              rightAccumulator = Math.max(0, rightAccumulator - 10);
-            }
-
-            // Direct GPU transform update on progress bars (Zero React re-renders)
-            const leftScale = (leftAccumulator / 100).toFixed(3);
-            const rightScale = (rightAccumulator / 100).toFixed(3);
-            if (leftProgressRef.current) {
-              leftProgressRef.current.style.transform = `scaleY(${leftScale})`;
-            }
-            if (rightProgressRef.current) {
-              rightProgressRef.current.style.transform = `scaleY(${rightScale})`;
-            }
-
-            // HUD indicators update
-            if (leftHudDotRef.current) {
-              leftHudDotRef.current.className =
-                leftAccumulator > 30
-                  ? 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse'
-                  : 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
-            }
-            if (rightHudDotRef.current) {
-              rightHudDotRef.current.className =
-                rightAccumulator > 30
-                  ? 'w-2 h-2 rounded-full bg-orange-400 animate-pulse'
-                  : 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
-            }
-
-            // Trigger Answer when hold reaches 75%
-            if (leftAccumulator >= 75) {
-              leftAccumulator = 0;
-              if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-              handleAnswerRef.current('yes');
-            } else if (rightAccumulator >= 75) {
-              rightAccumulator = 0;
-              if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-              handleAnswerRef.current('no');
-            }
-
-            // Reuse pre-allocated buffer (Zero memory allocation in loop)
-            prevBuffer.set(currentData);
-          } else {
-            prevBuffer = new Uint8ClampedArray(currentData);
           }
+
+          if (bestVerification && bestLandmarks && ctx) {
+            // Neutral Hand Reset Gate Check:
+            // After answering 1 question, player must lower their hand before answering again
+            if (neutralGateRef.current) {
+              const isLowered =
+                !bestVerification.isOpenPalm ||
+                bestVerification.mirroredY > 0.70 ||
+                bestVerification.zone === 'CENTER' ||
+                bestVerification.zone === 'NONE';
+
+              if (isLowered) {
+                handNeutralFrames++;
+                if (handNeutralFrames >= 5) {
+                  neutralGateRef.current = false;
+                  handNeutralFrames = 0;
+                }
+              } else {
+                handNeutralFrames = 0;
+              }
+
+              // Clear progress bars while awaiting hand reset
+              activeZone = null;
+              zoneHoldStart = 0;
+              if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+              if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+
+              // Draw neutral cyan skeleton to show camera still tracks their hand
+              drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, 'CENTER', 0);
+            } else {
+              // Active Answer Verification Mode
+              if (bestVerification.isValidHand && bestVerification.side) {
+                const zone = bestVerification.zone as 'LEFT' | 'RIGHT';
+
+                if (activeZone === zone) {
+                  const elapsed = timestamp - zoneHoldStart;
+                  const progress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
+
+                  // Update GPU-accelerated progress bars
+                  const progressScale = progress.toFixed(3);
+                  if (zone === 'LEFT' && leftProgressRef.current) {
+                    leftProgressRef.current.style.transform = `scaleY(${progressScale})`;
+                    if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                  } else if (zone === 'RIGHT' && rightProgressRef.current) {
+                    rightProgressRef.current.style.transform = `scaleY(${progressScale})`;
+                    if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                  }
+
+                  // HUD indicator dots
+                  if (leftHudDotRef.current) {
+                    leftHudDotRef.current.className =
+                      zone === 'LEFT'
+                        ? 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse'
+                        : 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
+                  }
+                  if (rightHudDotRef.current) {
+                    rightHudDotRef.current.className =
+                      zone === 'RIGHT'
+                        ? 'w-2 h-2 rounded-full bg-orange-400 animate-pulse'
+                        : 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+                  }
+
+                  // Draw 21-point hand skeleton with dynamic hold dwell progress ring
+                  drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, zone, progress);
+
+                  // Trigger answer after holding for 600ms continuously
+                  if (progress >= 1.0) {
+                    activeZone = null;
+                    zoneHoldStart = 0;
+                    neutralGateRef.current = true; // Lock until player lowers hand
+                    handNeutralFrames = 0;
+
+                    if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                    if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+
+                    handleAnswerRef.current(bestVerification.side);
+                  }
+                } else {
+                  // Switched to a new zone
+                  activeZone = zone;
+                  zoneHoldStart = timestamp;
+
+                  if (zone === 'LEFT' && rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                  if (zone === 'RIGHT' && leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+
+                  drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, zone, 0);
+                }
+              } else {
+                // Hand in center neutral zone or not fully meeting open-palm criteria
+                activeZone = null;
+                zoneHoldStart = 0;
+                if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
+                if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+
+                drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, bestVerification.zone, 0);
+              }
+            }
+          } else {
+            // No real hand detected (face, body, shirt motion or background pixels completely ignored)
+            activeZone = null;
+            zoneHoldStart = 0;
+            handNeutralFrames++;
+            if (handNeutralFrames >= 5) {
+              neutralGateRef.current = false;
+            }
+
+            if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+            if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+            if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
+            if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+          }
+        } catch {
+          // Graceful skip on frame error
         }
       }
-      animFrame = requestAnimationFrame(checkMotion);
+
+      animFrame = requestAnimationFrame(detectHands);
     };
 
-    animFrame = requestAnimationFrame(checkMotion);
+    animFrame = requestAnimationFrame(detectHands);
+
+    const leftEl = leftProgressRef.current;
+    const rightEl = rightProgressRef.current;
+    const canvasEl = overlayCanvasRef.current;
+
     return () => {
       cancelAnimationFrame(animFrame);
-      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+      if (leftEl) leftEl.style.transform = 'scaleY(0)';
+      if (rightEl) rightEl.style.transform = 'scaleY(0)';
+      if (canvasEl) {
+        const ctx = canvasEl.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      }
     };
   }, [cameraActive, isGameOver, answerState]);
 
@@ -475,9 +642,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   ];
 
   return (
-    <div className="w-full h-full flex flex-col justify-between p-4 sm:p-6 bg-[#EDF7F1] text-slate-800 select-none overflow-y-auto font-sans relative">
-      {/* Top Header Bar */}
-      <div className="w-full max-w-3xl mx-auto flex items-center justify-between gap-2">
+    <div className="w-full h-full flex flex-col justify-between pt-5 pb-5 px-3 sm:pt-6 sm:pb-6 sm:px-6 bg-[#EDF7F1] text-slate-800 select-none overflow-y-auto font-sans relative">
+      {/* Top Header Bar (Safe top margin to prevent clipping against modal border) */}
+      <div className="w-full max-w-3xl mx-auto flex items-center justify-between gap-2 shrink-0 pt-1">
         <div className="flex items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl font-black text-[#134E43] tracking-normal">
             การ์ดกายภาพ
@@ -549,29 +716,31 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
       {/* Main Game Screen */}
       {!isGameOver ? (
         <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col justify-between gap-3 sm:gap-4 my-auto">
-          {/* Question Banner (ตามแบบภาพ: กล่องขาวมน ข้อความใหญ่ตรงกลาง) */}
-          <div className="w-full bg-white rounded-3xl p-4 sm:p-5 text-center shadow-sm border border-emerald-100/80 transition animate-fade-in relative overflow-hidden">
+          {/* Question Banner (ตามแบบภาพ: กล่องขาวมน ข้อความใหญ่ตรงกลาง พร้อม safe margins ไม่ให้ตัวหนังสือถูกตัดทับ) */}
+          <div className="w-full bg-white rounded-3xl p-4 sm:p-5 text-center shadow-sm border border-emerald-100/80 transition animate-fade-in relative overflow-hidden min-h-[76px] sm:min-h-[86px] flex items-center justify-center my-1">
             <h2 className="text-xl sm:text-3xl font-extrabold text-[#113C34] tracking-normal leading-tight">
               {activeQuestion.prompt}
             </h2>
 
-            {/* Answer Result Banner Alert */}
+            {/* Answer Result Banner Alert - safe padding to ensure no text clipping */}
             {answerState !== 'idle' && (
               <div
-                className={`absolute inset-0 flex items-center justify-center gap-2 text-base sm:text-lg font-bold text-white transition animate-scale-up ${
+                className={`absolute inset-0 flex items-center justify-center gap-2 text-base sm:text-lg font-bold text-white transition animate-scale-up px-4 py-3 z-10 ${
                   answerState === 'correct' ? 'bg-emerald-600' : 'bg-rose-600'
                 }`}
               >
                 {answerState === 'correct' ? (
-                  <>
-                    <CheckCircle2 className="w-6 h-6 animate-bounce" />
-                    <span>ถูกต้อง! ยอดเยี่ยมมาก 🎉</span>
-                  </>
+                  <div className="flex items-center justify-center gap-2 py-1">
+                    <CheckCircle2 className="w-6 h-6 animate-bounce shrink-0" />
+                    <span className="leading-normal tracking-wide">ถูกต้อง! ยอดเยี่ยมมาก 🎉</span>
+                  </div>
                 ) : (
-                  <>
-                    <XCircle className="w-6 h-6" />
-                    <span>ยังไม่ถูกต้อง (คำตอบคือ: {activeQuestion.correctAnswer === 'yes' ? 'ใช่' : 'ไม่'})</span>
-                  </>
+                  <div className="flex items-center justify-center gap-2 py-1">
+                    <XCircle className="w-6 h-6 shrink-0" />
+                    <span className="leading-normal tracking-wide">
+                      ยังไม่ถูกต้อง (คำตอบคือ: {activeQuestion.correctAnswer === 'yes' ? 'ใช่' : 'ไม่'})
+                    </span>
+                  </div>
                 )}
               </div>
             )}
@@ -674,6 +843,20 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               }`}
             />
 
+            {/* Real Hand Skeleton & Dwell Progress Ring Overlay */}
+            <canvas
+              ref={overlayCanvasRef}
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+            />
+
+            {/* Model Loading Status Badge */}
+            {cameraActive && isModelLoading && (
+              <div className="absolute top-2.5 z-20 px-3 py-1 rounded-full bg-emerald-950/80 text-emerald-200 border border-emerald-700/50 text-[10px] font-bold flex items-center gap-1.5 shadow-md">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <span>กำลังเตรียมระบบตรวจจับมือจริง...</span>
+              </div>
+            )}
+
             {/* When camera is connecting / permission not active */}
             {!cameraActive && (
               <div className="relative z-10 flex flex-col items-center justify-center gap-1.5 text-emerald-300/70 pointer-events-none">
@@ -708,7 +891,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             <div className="absolute bottom-3 z-20">
               <div className="px-5 py-1.5 rounded-full bg-white text-[#0F2D24] text-xs sm:text-sm font-extrabold shadow-md flex items-center gap-2">
                 <Camera className="w-3.5 h-3.5 text-emerald-700" />
-                <span>ยืนให้เห็นมือทั้งสองข้าง</span>
+                <span>ยืนให้เห็นมือทั้งสองข้าง (ค้างมือ 0.6 วินาทีเพื่อตอบ)</span>
               </div>
             </div>
           </div>
