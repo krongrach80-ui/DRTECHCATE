@@ -185,16 +185,23 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
     const checkMotion = () => {
       if (videoRef.current && ctx && videoRef.current.readyState === 4) {
+        // Mirror horizontally on canvas to strictly align with mirrored camera preview and user perspective:
+        // Screen Left (User Left hand) -> canvas x: 10 to 65 -> Left Zone ("ใช่")
+        // Screen Right (User Right hand) -> canvas x: 95 to 150 -> Right Zone ("ไม่")
+        ctx.save();
+        ctx.translate(160, 0);
+        ctx.scale(-1, 1);
         ctx.drawImage(videoRef.current, 0, 0, 160, 120);
+        ctx.restore();
+
         const currentData = ctx.getImageData(0, 0, 160, 120).data;
 
         if (prevFrameData) {
           let leftMotion = 0;
           let rightMotion = 0;
 
-          // Mirror mode: Left hand of person in front of mirror is on the left side of video
-          // Zone Top Left (0 to 60 x, 0 to 60 y) -> Left hand raise ("ใช่")
-          // Zone Top Right (100 to 160 x, 0 to 60 y) -> Right hand raise ("ไม่")
+          // Screen Left Zone (10 to 65 x, 10 to 65 y) -> ยกมือฝั่งซ้าย ตอบข้อทางซ้าย ("ใช่")
+          // Screen Right Zone (95 to 150 x, 10 to 65 y) -> ยกมือฝั่งขวา ตอบข้อทางขวา ("ไม่")
           for (let y = 10; y < 65; y += 4) {
             for (let x = 10; x < 65; x += 4) {
               const i = (y * 160 + x) * 4;
