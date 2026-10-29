@@ -17,7 +17,10 @@ import {
   ChevronLeft,
   RefreshCw,
   Layers,
+  Sliders,
+  Sparkles,
 } from 'lucide-react';
+import { PatientPrescriptionOverrideModal } from './PatientPrescriptionOverrideModal';
 
 interface PrescribedExerciseInput {
   exercise_id: string;
@@ -26,6 +29,10 @@ interface PrescribedExerciseInput {
   sets: number;
   reps: number;
   demo_url?: string;
+  hold_duration_sec?: number;
+  target_min_deg?: number;
+  target_max_deg?: number;
+  detection_config?: any;
 }
 
 interface SmartScheduleWizardModalProps {
@@ -48,6 +55,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
   preselectedPatientId,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [overrideModalIdx, setOverrideModalIdx] = useState<number | null>(null);
 
   // STEP 1 State: Select Patient
   const [patients, setPatients] = useState<PatientRecord[]>([]);
@@ -467,6 +475,16 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
 
                         <button
                           type="button"
+                          onClick={() => setOverrideModalIdx(idx)}
+                          className="px-2 py-1 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-medium flex items-center gap-1 transition"
+                          title="ปรับแต่งมุมและเวลาเฉพาะบุคคล (AI Override)"
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                          <span>ปรับมุม AI</span>
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => removeExercise(idx)}
                           className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 transition"
                         >
@@ -479,9 +497,9 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
 
                 {/* Add new individual exercise dropdown with in-development notice */}
                 <div className="flex flex-col gap-2">
-                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
-                    <span className="font-bold shrink-0">⚠️ สถานะระบบ:</span>
-                    <span>ท่ากายภาพมาตรฐาน &quot;อยู่ระหว่างพัฒนา&quot; (สามารถมอบหมายมินิเกมฝึกสมองและการตอบสนองต่อท้าย)</span>
+                  <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-300 text-xs flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 shrink-0 text-teal-400" />
+                    <span>ระบบ AI Biomechanical Pose Engine พร้อมตรวจจับมุม 3D & Circular Pendulum แบบอัตโนมัติ (สามารถกด &quot;ปรับมุม AI&quot; เฉพาะบุคคลได้)</span>
                   </div>
                   <select
                     onChange={(e) => {
@@ -493,11 +511,11 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
                     defaultValue=""
                   >
                     <option value="" disabled>
-                      + เพิ่มท่าฝึกจากคลัง (ท่ามาตรฐาน: อยู่ระหว่างพัฒนา)...
+                      + เพิ่มท่าฝึกจากคลัง (ตรวจจับอัตโนมัติด้วย AI)...
                     </option>
                     {availableExercises.map((x) => (
                       <option key={x.id} value={x.id}>
-                        {x.name} ({x.target_joint}) • [อยู่ระหว่างพัฒนา]
+                        {x.name} ({x.target_joint}) • [AI Ready]
                       </option>
                     ))}
                   </select>
@@ -689,6 +707,36 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
           </div>
         </div>
       </div>
+
+      {/* Per-Patient Prescription Override Modal */}
+      {overrideModalIdx !== null && prescribedExercises[overrideModalIdx] && (
+        <PatientPrescriptionOverrideModal
+          isOpen={true}
+          onClose={() => setOverrideModalIdx(null)}
+          exercise={prescribedExercises[overrideModalIdx]}
+          patientName={
+            selectedPatient
+              ? formatCleanName(selectedPatient.first_name, selectedPatient.last_name)
+              : 'คนไข้'
+          }
+          patientHn={selectedPatient?.hn || undefined}
+          onSaveOverride={(overridden) => {
+            setPrescribedExercises((prev) =>
+              prev.map((it, i) =>
+                i === overrideModalIdx
+                  ? {
+                      ...it,
+                      sets: overridden.sets || it.sets,
+                      reps: overridden.reps || it.reps,
+                      detection_config: overridden.detection_config || it.detection_config,
+                    }
+                  : it
+              )
+            );
+            setOverrideModalIdx(null);
+          }}
+        />
+      )}
     </div>
   );
 };

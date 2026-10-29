@@ -10,7 +10,10 @@ import {
   X,
   RefreshCw,
   HelpCircle,
-  Sparkles
+  Sparkles,
+  Sliders,
+  Copy,
+  Video
 } from 'lucide-react';
 import {
   ExerciseRecord,
@@ -21,7 +24,8 @@ import {
 } from '../../../../packages/api-client/src/index.js';
 import {
   SmartExerciseLibraryModal,
-  SmartModpackModal
+  SmartModpackModal,
+  ExerciseBuilderModal
 } from '../smart-portal/index.js';
 import { ALL_99_PHYSICAL_CARD_QUESTIONS } from '../../../kiosk/src/minigame-cards/index.js';
 
@@ -121,6 +125,11 @@ export const LibraryView: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [isSmartExerciseModalOpen, setIsSmartExerciseModalOpen] = useState<boolean>(false);
   const [isSmartModpackModalOpen, setIsSmartModpackModalOpen] = useState<boolean>(false);
+
+  // AI Pose Studio State
+  const [isExerciseBuilderOpen, setIsExerciseBuilderOpen] = useState<boolean>(false);
+  const [selectedExerciseForAi, setSelectedExerciseForAi] = useState<ExerciseRecord | null>(null);
+  const [isCloneMode, setIsCloneMode] = useState<boolean>(false);
 
   // Modals
   const [isExerciseModalOpen, setIsExerciseModalOpen] = useState<boolean>(false);
@@ -377,6 +386,17 @@ export const LibraryView: React.FC = () => {
           {activeTab === 'exercises' && (
             <div className="flex items-center gap-2">
               <button
+                onClick={() => {
+                  setSelectedExerciseForAi(null);
+                  setIsCloneMode(false);
+                  setIsExerciseBuilderOpen(true);
+                }}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 via-cyan-600 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+              >
+                <Video className="w-4 h-4" />
+                <span>🎯 AI Pose Studio (No-Code & Webcam)</span>
+              </button>
+              <button
                 onClick={() => setIsSmartExerciseModalOpen(true)}
                 className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
               >
@@ -537,19 +557,48 @@ export const LibraryView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="pt-4 mt-4 border-t border-slate-800 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-500">ID: {ex.id.slice(0, 8)}...</span>
-                    <button
-                      onClick={() => handleDeleteExercise(ex.id, ex.title)}
-                      className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
-                      title="ลบท่านี้"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="pt-4 mt-4 border-t border-slate-800 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setSelectedExerciseForAi(ex);
+                            setIsCloneMode(false);
+                            setIsExerciseBuilderOpen(true);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-medium flex items-center gap-1 transition"
+                          title="ตั้งค่า AI ตรวจจับมุม & Calibrate"
+                        >
+                          <Sliders className="w-3 h-3" />
+                          <span>AI Setup</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedExerciseForAi(ex);
+                            setIsCloneMode(true);
+                            setIsExerciseBuilderOpen(true);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1 transition"
+                          title="โคลนท่านี้เป็นท่าใหม่"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>โคลน</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-500">ID: {ex.id.slice(0, 8)}...</span>
+                        <button
+                          onClick={() => handleDeleteExercise(ex.id, ex.title)}
+                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                          title="ลบท่านี้"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
+                ))
+              )}
           </div>
         </div>
       )}
@@ -1049,6 +1098,23 @@ export const LibraryView: React.FC = () => {
         onSuccess={() => {
           setIsSmartModpackModalOpen(false);
           fetchData();
+        }}
+      />
+
+      {/* Dynamic AI Biomechanical Exercise Builder & Webcam Calibrator Modal */}
+      <ExerciseBuilderModal
+        isOpen={isExerciseBuilderOpen}
+        onClose={() => {
+          setIsExerciseBuilderOpen(false);
+          setSelectedExerciseForAi(null);
+          setIsCloneMode(false);
+        }}
+        exerciseToEdit={selectedExerciseForAi}
+        isClone={isCloneMode}
+        onSuccess={async (savedConfig) => {
+          setIsExerciseBuilderOpen(false);
+          setSuccessMsg(`บันทึกการตั้งค่า AI สำหรับท่า "${savedConfig?.nameTh || 'ใหม่'}" เรียบร้อย`);
+          await fetchData();
         }}
       />
     </div>

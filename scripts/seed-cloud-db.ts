@@ -218,6 +218,63 @@ async function seedCloudDatabase() {
       suitable_for: 'ข้อไหล่ติด, ผู้ป่วยหลังผ่าตัดไหล่',
       is_active: true,
       created_by: creatorId,
+      detection_config: {
+        id: 'ex-shoulder-pendulum',
+        exerciseId: 'e1000000-0000-0000-0000-000000000001',
+        nameTh: 'Shoulder Pendulum (แกว่งแขนวงกลมผ่อนคลายหัวไหล่)',
+        nameEn: 'Codman Shoulder Pendulum',
+        description: 'โน้มลำตัวไปข้างหน้า ปล่อยแขนห้อยลงตามแรงโน้มถ่วง และแกว่งเป็นวงกลมเบาๆ เพื่อผ่อนคลายข้อต่อและเพิ่มการไหลเวียนเลือด',
+        mediaUrl: '/assets/exercises/shoulder_pendulum.mp4',
+        evaluationMode: 'pendulum_circular',
+        side: 'right',
+        targetJoint: 'shoulder',
+        cameraGuide: {
+          recommendedView: 'side_45',
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: 'กรุณายืนหันข้างเฉียง 45° ถึง 90° ระยะห่าง 1.5 - 2.5 เมตรจากกล้อง โน้มตัวไปข้างหน้าเล็กน้อย และปล่อยแขนข้างที่ต้องการฝึกให้ห้อยลงอย่างผ่อนคลาย',
+        },
+        pendulumMechanics: {
+          minTrunkForwardTiltDeg: 18.0,
+          maxTrunkForwardTiltDeg: 65.0,
+          minElbowStraightnessDeg: 145.0,
+          minCircleRadiusRatio: 0.07,
+          maxCircleRadiusRatio: 0.35,
+          minCycleDurationSec: 1.2,
+          maxCycleDurationSec: 5.0,
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30,
+        },
+        compensationRules: [
+          {
+            ruleId: 'pendulum_trunk_lean',
+            type: 'trunk_lean',
+            thresholdValue: 0.25,
+            warningMessageTh: 'ลำตัวเอียงหรือไม่นิ่ง โน้มตัวให้มั่นคงและปล่อยให้แขนแกว่งเป็นอิสระ',
+            severity: 'warning',
+          },
+          {
+            ruleId: 'pendulum_elbow_flexion',
+            type: 'elbow_flexion',
+            thresholdValue: 140.0,
+            warningMessageTh: 'ปล่อยแขนให้ตรง อย่าเกร็งหรืองอข้อศอกขณะแกว่ง',
+            severity: 'warning',
+          },
+          {
+            ruleId: 'pendulum_speed',
+            type: 'excessive_speed',
+            thresholdValue: 240.0,
+            warningMessageTh: 'แกว่งแขนเร็วเกินไป ค่อยๆ แกว่งช้าๆ เพื่อผ่อนคลายข้อไหล่',
+            severity: 'warning',
+          },
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: 'หากมีอาการเจ็บแปลบบริเวณข้อไหล่หรือแขน ให้หยุดทันทีและแจ้งนักกายภาพบำบัด',
+          maxSafeAngleCapDeg: 90,
+        },
+      },
     },
     {
       id: 'e1000000-0000-0000-0000-000000000002',
@@ -264,7 +321,7 @@ async function seedCloudDatabase() {
   ];
 
   for (const ex of exerciseSeeds) {
-    const { error: exErr } = await supabase.from('exercises').upsert(ex, { onConflict: 'id' });
+    const { error: exErr } = await supabase.from('exercises').upsert(ex as any, { onConflict: 'id' });
     if (exErr) {
       console.warn(`  ⚠️ ซิงค์ท่า '${ex.title}' ไม่สำเร็จ:`, exErr.message);
     } else {

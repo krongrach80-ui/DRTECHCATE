@@ -775,6 +775,7 @@ export class FakeDirectoryRepository implements IDirectoryRepository {
       difficulty: input.difficulty || 'beginner',
       created_by: createdBy,
       is_active: true,
+      detection_config: input.detection_config || null,
       created_at: now,
       updated_at: now,
     };

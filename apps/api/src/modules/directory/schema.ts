@@ -28,6 +28,7 @@ export const CreateExerciseSchema = z.object({
   default_sets: z.coerce.number().int().min(1).max(20).default(3),
   default_reps: z.coerce.number().int().min(1).max(100).default(10),
   difficulty: ExerciseDifficultySchema.optional().default('beginner'),
+  detection_config: z.any().optional().nullable(),
 });
 
 export type CreateExerciseInput = z.infer<typeof CreateExerciseSchema>;
@@ -56,6 +57,7 @@ export interface ExerciseRecord {
   difficulty: ExerciseDifficulty;
   created_by: string;
   is_active: boolean;
+  detection_config?: any | null;
   created_at: string;
   updated_at: string;
 }

@@ -3081,6 +3081,7 @@ var init_repository7 = __esm({
             default_sets: input.default_sets ?? 3,
             default_reps: input.default_reps ?? 10,
             difficulty: input.difficulty ?? "beginner",
+            detection_config: input.detection_config || null,
             created_by: createdBy,
             is_active: true,
             created_at: nowIso,
@@ -7843,6 +7844,7 @@ var init_fakeRepositories = __esm({
           difficulty: input.difficulty || "beginner",
           created_by: createdBy,
           is_active: true,
+          detection_config: input.detection_config || null,
           created_at: now,
           updated_at: now
         };
@@ -11220,7 +11222,8 @@ var CreateExerciseSchema = import_zod11.z.object({
   warnings: import_zod11.z.string().trim().max(500).optional().nullable(),
   default_sets: import_zod11.z.coerce.number().int().min(1).max(20).default(3),
   default_reps: import_zod11.z.coerce.number().int().min(1).max(100).default(10),
-  difficulty: ExerciseDifficultySchema.optional().default("beginner")
+  difficulty: ExerciseDifficultySchema.optional().default("beginner"),
+  detection_config: import_zod11.z.any().optional().nullable()
 });
 var UpdateExerciseSchema = CreateExerciseSchema.partial();
 var ExerciseQuerySchema = import_zod11.z.object({

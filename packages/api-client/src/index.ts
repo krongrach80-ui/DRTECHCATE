@@ -100,6 +100,7 @@ export interface ExerciseRecord {
   duration_seconds?: number;
   difficulty: 'beginner' | 'intermediate' | 'advanced' | 'easy' | 'medium' | 'hard' | string;
   created_by?: string;
+  detection_config?: any | null;
   created_at?: string;
 }
 

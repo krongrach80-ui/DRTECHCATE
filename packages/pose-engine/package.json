@@ -1,0 +1,14 @@
+{
+  "name": "@hospital-pt-system/pose-engine",
+  "version": "0.1.0",
+  "description": "DrTech.Care Dynamic AI Biomechanical Exercise Detection Engine & Shoulder Pendulum Circular Analyzer",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

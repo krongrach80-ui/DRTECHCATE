@@ -20,6 +20,14 @@ import {
   Gamepad2 as _Gamepad2,
 } from 'lucide-react';
 import { PhysicalCardGame } from '../minigame-cards/index.js';
+import {
+  findPresetForExercise,
+  ExerciseDetectionConfig,
+  ExerciseSessionTelemetry,
+} from '../../../../packages/pose-engine/src/index';
+import { CameraPositionGuideModal } from '../components/CameraPositionGuideModal';
+import { UnconfiguredExerciseFallbackModal } from '../components/UnconfiguredExerciseFallbackModal';
+import { DynamicExerciseSessionView } from '../views/DynamicExerciseSessionView';
 
 interface SmartDailyPlanViewProps {
   patient: PatientRecordFile;
@@ -39,6 +47,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   // Exercise tracking
   const [completedExerciseIds, setCompletedExerciseIds] = useState<Set<string>>(new Set());
 
+  // Dynamic AI Session & Guided Modals
+  const [activeGuideConfig, setActiveGuideConfig] = useState<{ exercise: any; config: ExerciseDetectionConfig } | null>(null);
+  const [activeSession, setActiveSession] = useState<{ exercise: any; config: ExerciseDetectionConfig } | null>(null);
+  const [unconfiguredExercise, setUnconfiguredExercise] = useState<any | null>(null);
+
   // Minigame states
   const [isPlayingQuiz, setIsPlayingQuiz] = useState(false);
   const [quizQuestionIndex, setQuizQuestionIndex] = useState(0);
@@ -46,7 +59,6 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   // Final session completed state
   const [isSessionCompleted, setIsSessionCompleted] = useState(false);
-  const [activePtNoticeExercise, setActivePtNoticeExercise] = useState<any | null>(null);
   const [autoResetSeconds, setAutoResetSeconds] = useState(8);
 
   const isMountedRef = useRef(true);
@@ -120,6 +132,73 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         handleFinalSessionCompletion(100, 0);
       }
     }
+  };
+
+  // Launch AI Exercise Detection with Pre-Session Camera Guide
+  const handleStartExercise = (exerciseItem: any) => {
+    const exName = exerciseItem.name || exerciseItem.exercise_name || exerciseItem.title || '';
+    const config: ExerciseDetectionConfig | null =
+      exerciseItem.detection_config ||
+      findPresetForExercise(exName) ||
+      findPresetForExercise(exerciseItem.exercise_id || exerciseItem.id);
+
+    if (config) {
+      setActiveGuideConfig({ exercise: exerciseItem, config });
+    } else {
+      setUnconfiguredExercise(exerciseItem);
+    }
+  };
+
+  const handleGuideReady = () => {
+    if (activeGuideConfig) {
+      setActiveSession(activeGuideConfig);
+      setActiveGuideConfig(null);
+    }
+  };
+
+  const handleSessionCompleted = async (telemetry: ExerciseSessionTelemetry) => {
+    const exId = activeSession?.exercise?.exercise_id || activeSession?.exercise?.id || 'ex';
+    try {
+      await defaultApiClient.kiosk.recordStep({
+        patient_id: patient.patient_id || patient.hn || '',
+        course_id: (patient.schedule as any)?.course_id || (patient.schedule as any)?.id || 'course',
+        step_type: 'exercise',
+        ref_id: exId,
+        score: {
+          reps: telemetry.completedReps,
+          sets: telemetry.totalSetsCompleted,
+          completion_mode: telemetry.completionMode,
+          pain_reported: telemetry.painReported,
+        },
+      });
+    } catch {
+      // non-blocking
+    }
+    toggleExerciseComplete(exId);
+    setActiveSession(null);
+  };
+
+  const handleSkipUnverified = async () => {
+    if (!unconfiguredExercise) return;
+    const exId = unconfiguredExercise.exercise_id || unconfiguredExercise.id || 'ex';
+    try {
+      await defaultApiClient.kiosk.recordStep({
+        patient_id: patient.patient_id || patient.hn || '',
+        course_id: (patient.schedule as any)?.course_id || (patient.schedule as any)?.id || 'course',
+        step_type: 'exercise',
+        ref_id: exId,
+        score: {
+          reps: unconfiguredExercise.reps || 10,
+          sets: unconfiguredExercise.sets || 3,
+          completion_mode: 'skipped_unverified',
+          pain_reported: false,
+        },
+      });
+    } catch {
+      // non-blocking
+    }
+    toggleExerciseComplete(exId);
+    setUnconfiguredExercise(null);
   };
 
   // Minigame Answer click (fallback quiz mode)
@@ -417,9 +496,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setActivePtNoticeExercise(item)}
-                  className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                  title="เริ่มตรวจจับท่าทางกายภาพบำบัด"
+                  id={`kiosk-start-scan-btn-${idx}`}
+                  data-testid={`kiosk-start-scan-btn-${idx}`}
+                  onClick={() => handleStartExercise(item)}
+                  className="px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/50 hover:to-teal-600/50 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition active:scale-95 flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-950/40"
+                  title="เริ่มตรวจจับท่าทางกายภาพบำบัดด้วย AI"
                 >
                   <Activity className="w-4 h-4 text-emerald-400" />
                   <span>เริ่มสแกนท่าฝึก</span>
@@ -465,39 +546,33 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         </button>
       </div>
 
-      {/* Modal: PT Joint Detection Under Development Notice */}
-      {activePtNoticeExercise && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl bg-slate-900 border-2 border-amber-500/50 shadow-2xl p-6 text-center animate-scale-up">
-            <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4 text-2xl">
-              ⚠️
-            </div>
-            <h3 className="text-xl font-bold text-white">ยังไม่ได้เพิ่มระบบดีเทคกายภาพ โปรดรอการพัฒนา</h3>
-            <p className="text-xs text-slate-300 mt-2 leading-relaxed">
-              ระบบ AI ตรวจจับข้อต่อและประเมินมุมการเคลื่อนไหวของท่า &quot;{activePtNoticeExercise.name || activePtNoticeExercise.exercise_name || 'ท่ากายภาพบำบัด'}&quot; อยู่ระหว่างการพัฒนาโดยทีมวิศวกรชีวการแพทย์
-            </p>
+      {/* 1. Camera & Posture Positioning Guide Modal */}
+      {activeGuideConfig && (
+        <CameraPositionGuideModal
+          config={activeGuideConfig.config}
+          onReadyToStart={handleGuideReady}
+          onCancel={() => setActiveGuideConfig(null)}
+        />
+      )}
 
-            <div className="mt-6 flex flex-col gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  toggleExerciseComplete(activePtNoticeExercise.exercise_id || activePtNoticeExercise.id || 'ex');
-                  setActivePtNoticeExercise(null);
-                }}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/40 cursor-pointer"
-              >
-                รับทราบและบันทึกว่าทำเสร็จแล้ว (ข้ามไปยังรายการถัดไป)
-              </button>
-              <button
-                type="button"
-                onClick={() => setActivePtNoticeExercise(null)}
-                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-semibold cursor-pointer"
-              >
-                ปิดหน้าต่าง
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* 2. Fullscreen Dynamic AI Exercise Session View */}
+      {activeSession && (
+        <DynamicExerciseSessionView
+          patient={patient}
+          exercise={activeSession.exercise}
+          config={activeSession.config}
+          onSessionCompleted={handleSessionCompleted}
+          onExit={() => setActiveSession(null)}
+        />
+      )}
+
+      {/* 3. Conditional Unconfigured Exercise Fallback (ONLY if detection_config === null and no preset) */}
+      {unconfiguredExercise && (
+        <UnconfiguredExerciseFallbackModal
+          exercise={unconfiguredExercise}
+          onSkipUnverified={handleSkipUnverified}
+          onClose={() => setUnconfiguredExercise(null)}
+        />
       )}
     </div>
   );

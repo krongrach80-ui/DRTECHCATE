@@ -9,3 +9,6 @@ export * from './SmartScheduleWizardModal';
 export * from './SmartScheduleView';
 export * from './SmartExerciseLibraryModal';
 export * from './SmartModpackModal';
+export * from './LiveMotionCaptureCalibrator';
+export * from './ExerciseBuilderModal';
+export * from './PatientPrescriptionOverrideModal';

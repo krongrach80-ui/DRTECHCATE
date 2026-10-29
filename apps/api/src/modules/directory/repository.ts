@@ -101,6 +101,7 @@ export class DirectoryRepository implements IDirectoryRepository {
           default_sets: input.default_sets ?? 3,
           default_reps: input.default_reps ?? 10,
           difficulty: input.difficulty ?? 'beginner',
+          detection_config: input.detection_config || null,
           created_by: createdBy,
           is_active: true,
           created_at: nowIso,
