@@ -50,12 +50,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   maxQuestions,
   patientId,
 }) => {
-  // Category state
-  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [sessionSeed, setSessionSeed] = useState<number>(0);
 
-  // Filtered Question list (สุ่ม 10 ข้อจากคลังคำถามต่อรอบ)
+  // Filtered Question list (สุ่ม 10 ข้อจากคลังคำถามทั้งหมดต่อรอบ)
   const [filteredList, setFilteredList] = useState<PhysicalCardQuestion[]>(() => {
     let list = ALL_99_PHYSICAL_CARD_QUESTIONS;
     if (initialCategory !== 'ทั้งหมด') {
@@ -68,13 +66,13 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
   useEffect(() => {
     let list = ALL_99_PHYSICAL_CARD_QUESTIONS;
-    if (selectedCategory !== 'ทั้งหมด') {
-      list = list.filter((q) => q.category === selectedCategory);
+    if (initialCategory !== 'ทั้งหมด') {
+      list = list.filter((q) => q.category === initialCategory);
     }
     const shuffled = [...list].sort(() => Math.random() - 0.5);
     const limit = maxQuestions && maxQuestions > 0 ? maxQuestions : QUESTIONS_PER_ROUND;
     setFilteredList(shuffled.slice(0, Math.min(limit, shuffled.length)));
-  }, [selectedCategory, maxQuestions, sessionSeed]);
+  }, [initialCategory, maxQuestions, sessionSeed]);
 
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [score, setScore] = useState<number>(0);
@@ -683,17 +681,6 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
   };
 
-  const categories = [
-    'ทั้งหมด',
-    'อาหาร & ผลไม้',
-    'สิ่งของเครื่องใช้',
-    'สัตว์ & ธรรมชาติ',
-    'การนับจำนวน',
-    'ความปลอดภัย & กิจวัตร',
-    'สี รูปทรง & เวลา',
-    'ตำแหน่ง & มโนทัศน์',
-  ];
-
   return (
     <div className="w-full h-full flex flex-col justify-between pt-3 pb-3 px-3 sm:pt-4 sm:pb-4 sm:px-5 md:px-6 bg-[#EDF7F1] text-slate-800 select-none overflow-hidden font-sans relative">
       {/* Top Header Bar (Safe top margin to prevent clipping against modal border) */}
@@ -738,32 +725,6 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             </button>
           )}
         </div>
-      </div>
-
-      {/* Category Pills (แถบเลือกหมวดหมู่ - ปรับ padding-top และ line-height ไม่ให้อักษรไทยด้านบนถูกตัดขอบแหว่ง) */}
-      <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex items-center gap-2 overflow-x-auto pt-2 pb-2 px-1 scrollbar-none shrink-0">
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            type="button"
-            onClick={() => {
-              setSelectedCategory(cat);
-              setSessionSeed((s) => s + 1);
-              setCurrentIndex(0);
-              setScore(0);
-              setAnswerState('idle');
-              setSelectedSide(null);
-              setIsGameOver(false);
-            }}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold leading-normal whitespace-nowrap transition cursor-pointer shadow-xs ${
-              selectedCategory === cat
-                ? 'bg-[#134E43] text-white shadow-sm ring-2 ring-[#134E43]/20'
-                : 'bg-white/90 hover:bg-white text-emerald-900 border border-emerald-200/80 hover:border-emerald-300'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
       </div>
 
       {/* Main Game Screen */}
@@ -877,30 +838,24 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               />
 
               {/* Left Hand Zone Guide (mirrored x < 0.42) */}
-              <div className="absolute top-0 bottom-0 left-0 w-[42%] border-r-2 border-dashed border-emerald-400/40 bg-emerald-500/5 pointer-events-none z-15 flex flex-col justify-between p-2.5 sm:p-3">
-                <div className="self-start flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-emerald-300 border border-emerald-500/40 text-[10px] sm:text-xs font-black shadow-md">
+              <div className="absolute top-0 bottom-0 left-0 w-[42%] border-r-2 border-dashed border-emerald-400/40 bg-emerald-500/5 pointer-events-none z-15 p-2.5 sm:p-3">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-emerald-300 border border-emerald-500/40 text-[10px] sm:text-xs font-black shadow-md">
                   <span
                     ref={leftHudDotRef}
                     className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-500 transition-colors"
                   />
                   <span>โซนซ้าย (ใช่)</span>
                 </div>
-                <div className="self-start text-[10px] sm:text-xs text-emerald-300/80 font-bold drop-shadow-sm pl-1">
-                  ✋ ยกมือซ้ายตรงนี้
-                </div>
               </div>
 
               {/* Right Hand Zone Guide (mirrored x > 0.58) */}
-              <div className="absolute top-0 bottom-0 right-0 w-[42%] border-l-2 border-dashed border-orange-400/40 bg-orange-500/5 pointer-events-none z-15 flex flex-col justify-between p-2.5 sm:p-3">
-                <div className="self-end flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-orange-300 border border-orange-500/40 text-[10px] sm:text-xs font-black shadow-md">
+              <div className="absolute top-0 bottom-0 right-0 w-[42%] border-l-2 border-dashed border-orange-400/40 bg-orange-500/5 pointer-events-none z-15 p-2.5 sm:p-3 flex justify-end">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-orange-300 border border-orange-500/40 text-[10px] sm:text-xs font-black shadow-md">
                   <span>โซนขวา (ไม่)</span>
                   <span
                     ref={rightHudDotRef}
                     className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-500 transition-colors"
                   />
-                </div>
-                <div className="self-end text-[10px] sm:text-xs text-orange-300/80 font-bold drop-shadow-sm pr-1">
-                  ✋ ยกมือขวาตรงนี้
                 </div>
               </div>
 
