@@ -367,14 +367,6 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             <span>รายการท่าฝึกประจำวันนี้</span>
           </h2>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsPlayingQuiz(true)}
-              className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-md shadow-emerald-950/40 cursor-pointer"
-            >
-              <Gamepad2 className="w-4 h-4 text-emerald-200" />
-              <span>🎮 การ์ดกายภาพ (99 ข้อ)</span>
-            </button>
             {includeMinigame && (
               <span className="text-xs px-2.5 py-1 rounded-full bg-purple-950/60 border border-purple-500/30 text-purple-300 font-medium flex items-center gap-1.5">
                 <Brain className="w-3.5 h-3.5" />

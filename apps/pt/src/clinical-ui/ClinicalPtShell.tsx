@@ -20,6 +20,7 @@ import { ClinicalRecordsView } from '../views/ClinicalRecordsView';
 import { ExerciseCatalogView } from '../views/ExerciseCatalogView';
 import { PtScheduleView } from '../views/PtScheduleView';
 import { ProfileView } from '../views/ProfileView';
+import { PhysicalCardGame } from '../../../kiosk/src/minigame-cards/index.js';
 
 import {
   hospitalTheme,
@@ -53,6 +54,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
   const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>(initialStaffCalls || []);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isPhysicalCardGameOpen, setIsPhysicalCardGameOpen] = useState(false);
 
   const currentUserId = currentUser?.id || 'pt-01';
 
@@ -263,6 +265,27 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
           setActiveTab('patients');
         }}
       />
+
+      {/* Floating Quick Launcher for Physical Cards Minigame in PT Admin */}
+      <button
+        type="button"
+        id="pt-physical-cards-btn"
+        onClick={() => setIsPhysicalCardGameOpen(true)}
+        className="fixed bottom-6 right-6 z-40 px-4 py-2.5 rounded-2xl bg-[#063932] hover:bg-[#084c43] border border-emerald-400/40 text-emerald-100 font-bold text-xs shadow-2xl flex items-center gap-2 transition active:scale-95 cursor-pointer backdrop-blur-md"
+        title="เปิดคลังแบบฝึกหัดการ์ดกายภาพ 99 ข้อ"
+      >
+        <span className="text-base">🎮</span>
+        <span>การ์ดกายภาพ (99 ข้อ)</span>
+      </button>
+
+      {/* Physical Cards Minigame Modal */}
+      {isPhysicalCardGameOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div className="w-full max-w-4xl h-[94vh] bg-[#EDF7F1] rounded-3xl overflow-hidden shadow-2xl relative border-2 border-emerald-500/40">
+            <PhysicalCardGame onExit={() => setIsPhysicalCardGameOpen(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
