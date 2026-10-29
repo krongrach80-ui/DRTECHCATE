@@ -12,7 +12,9 @@ import {
   LivenessTelemetryBadge,
   LivenessVerificationResult,
   checkFaceROIInCircle,
+  SpatialIdentityAnchor,
 } from '../../../../packages/face-client/src/index.js';
+import { useRaiseBothHandsConfirm } from '../hooks/useRaiseBothHandsConfirm';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import { getFaceClientServices } from '../services/faceClientService';
 import {
@@ -55,6 +57,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [statusText, setStatusText] = useState<string>('กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น');
   const [unrecognizedAlert, setUnrecognizedAlert] = useState<string | null>(null);
   const [matchedPatient, setMatchedPatient] = useState<PatientRecordFile | null>(null);
+  const [identityAnchor, setIdentityAnchor] = useState<SpatialIdentityAnchor | null>(null);
   const [similarityInfo, setSimilarityInfo] = useState<{ percent: number; distance: number } | null>(null);
   const [livenessResult, setLivenessResult] = useState<LivenessVerificationResult | null>(null);
   const [cameraRotation, setCameraRotation] = useState<0 | 90 | 180 | 270>(0);
@@ -72,6 +75,25 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const isScanningPaused = Boolean(isPaused || isAboutModalOpen || isPinModalOpen || userDisabledCamera);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Touchless "Raise-Both-Hands" Readiness Confirmation Hook (Reuses active video stream)
+  const {
+    progress: gestureProgress,
+    status: gestureStatus,
+    thaiMessage: gestureMessage,
+    showAccessibilityFallbackHint,
+    handleManualConfirm,
+    resetConfirmation,
+  } = useRaiseBothHandsConfirm({
+    videoRef,
+    isOpen: Boolean(matchedPatient),
+    anchor: identityAnchor,
+    onConfirm: () => {
+      if (matchedPatient) {
+        onLoginSuccess(matchedPatient);
+      }
+    },
+  });
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const isMountedRef = useRef<boolean>(true);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -299,6 +321,15 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         console.log(
           `[Liveness Status: PASSED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Blink/Motion Verified: ${liv.blinkVerified || liv.motionVerified}] [Calculated Distance: ${distance.toFixed(3)}] [Matched Patient Name: ${patient.first_name} ${patient.last_name}] [Similarity %: ${similarityPercent}%]`
         );
+        const fw = rawFrame.width || 640;
+        const fh = rawFrame.height || 480;
+        const anchorNose = detection?.landmarks?.noseTip
+          ? { x: detection.landmarks.noseTip.x / fw, y: detection.landmarks.noseTip.y / fh }
+          : detection?.box
+          ? { x: (detection.box.x + detection.box.width / 2) / fw, y: (detection.box.y + detection.box.height * 0.4) / fh }
+          : { x: 0.5, y: 0.35 };
+
+        setIdentityAnchor({ anchorNoseXY: anchorNose });
         setMatchedPatient(patient);
         setSimilarityInfo({
           percent: similarityPercent,
@@ -606,6 +637,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   ]);
 
   const handleResetScan = () => {
+    resetConfirmation();
+    setIdentityAnchor(null);
     setUnrecognizedAlert(null);
     setMatchedPatient(null);
     setLivenessResult(null);
@@ -1125,24 +1158,103 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               HN: <span className="font-mono text-blue-600">{matchedPatient.hn}</span> • อายุ: {matchedPatient.age} ปี
             </p>
 
-            {/* Gesture Prompt */}
-            <div className="my-4 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center gap-2 text-emerald-800 text-xs font-bold">
-              <span className="text-xl">🙌</span>
-              <span>คุณพร้อมจะกายภาพรึยัง? ยก 2 มือขึ้นเพื่อเริ่ม</span>
+            {/* Gesture Prompt & Real-time Thai Feedback */}
+            <div
+              className={`my-4 p-3.5 rounded-2xl border transition-all duration-200 relative overflow-hidden ${
+                gestureProgress > 0
+                  ? 'bg-emerald-50/90 border-emerald-400 shadow-sm'
+                  : gestureStatus === 'single_hand_detected'
+                    ? 'bg-amber-50 border-amber-300 text-amber-900'
+                    : gestureStatus === 'low_visibility_or_out_of_frame'
+                      ? 'bg-blue-50 border-blue-200 text-blue-900'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              }`}
+            >
+              {/* Dynamic Progress Fill for Status Box */}
+              {gestureProgress > 0 && (
+                <div
+                  className="absolute inset-y-0 left-0 bg-emerald-200/50 transition-all duration-75 pointer-events-none"
+                  style={{ width: `${Math.round(gestureProgress * 100)}%` }}
+                />
+              )}
+
+              <div className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold">
+                <span className={`text-xl ${gestureProgress > 0 ? 'animate-pulse' : ''}`}>
+                  {gestureStatus === 'holding'
+                    ? '⏳'
+                    : gestureStatus === 'single_hand_detected'
+                      ? '🙋'
+                      : gestureStatus === 'low_visibility_or_out_of_frame'
+                        ? '📐'
+                        : gestureStatus === 'confirmed'
+                          ? '✅'
+                          : '🙌'}
+                </span>
+                <span className="leading-snug text-center">{gestureMessage}</span>
+              </div>
             </div>
 
-            <div className="mt-4 flex flex-col gap-3">
+            {/* Clinical Accessibility Fallback (Frozen Shoulder / Hemiparesis) */}
+            {showAccessibilityFallbackHint && (
+              <div className="mb-3 p-3 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-900 text-xs font-medium text-left flex items-start gap-2 animate-fade-in shadow-xs">
+                <span className="text-base leading-none shrink-0 mt-0.5">💡</span>
+                <span className="leading-relaxed">
+                  หากยกมือไม่สะดวก กดปุ่มสีเขียวด้านล่างเพื่อเริ่มได้ทันที (ไม่จำเป็นต้องฝืนยกแขน)
+                </span>
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-col gap-3">
+              {/* Interactive Primary Button with Real-time Progress Ring & Fill */}
               <button
                 type="button"
-                onClick={() => onLoginSuccess(matchedPatient)}
-                className="touch-btn w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-base shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer"
+                id="kiosk-confirm-ready-btn"
+                data-testid="kiosk-confirm-ready-btn"
+                onClick={handleManualConfirm}
+                className="touch-btn relative overflow-hidden w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-base shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.99] transition select-none"
               >
-                <span>🙌 ยก 2 มือขึ้น หรือ กดที่นี่เพื่อเริ่มฝึก ➔</span>
+                {/* Visual Progress Bar Fill Layer */}
+                <div
+                  className="absolute inset-y-0 left-0 bg-emerald-400/40 backdrop-brightness-110 pointer-events-none transition-all duration-100 ease-out"
+                  style={{ width: `${Math.round(gestureProgress * 100)}%` }}
+                />
+
+                {/* Progress Ring / Percentage Display */}
+                {gestureProgress > 0 ? (
+                  <div className="relative z-10 flex items-center gap-2">
+                    <svg className="w-5 h-5 -rotate-90" viewBox="0 0 36 36">
+                      <path
+                        className="text-emerald-800/40"
+                        strokeWidth="4"
+                        stroke="currentColor"
+                        fill="none"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                      <path
+                        className="text-white transition-all duration-75"
+                        strokeDasharray={`${Math.round(gestureProgress * 100)}, 100`}
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        stroke="currentColor"
+                        fill="none"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                    </svg>
+                    <span>ค้างไว้อีกนิด... ({Math.round(gestureProgress * 100)}%)</span>
+                  </div>
+                ) : (
+                  <span className="relative z-10 flex items-center gap-2">
+                    <span>👐 ยก 2 มือขึ้น หรือ กดที่นี่เพื่อเริ่มฝึก ➔</span>
+                  </span>
+                )}
               </button>
+
               <button
                 type="button"
+                id="kiosk-reset-scan-btn"
+                data-testid="kiosk-reset-scan-btn"
                 onClick={handleResetScan}
-                className="text-xs text-slate-500 hover:text-slate-700 underline"
+                className="text-xs text-slate-500 hover:text-slate-700 underline py-1 transition cursor-pointer"
               >
                 ไม่ใช่ฉัน (สแกนใหม่)
               </button>

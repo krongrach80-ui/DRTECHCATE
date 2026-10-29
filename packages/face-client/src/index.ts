@@ -12,3 +12,4 @@ export * from './embed';
 export * from './liveness';
 export * from './flow';
 export * from './ring';
+export * from './gesture/raiseBothHandsDetector';
