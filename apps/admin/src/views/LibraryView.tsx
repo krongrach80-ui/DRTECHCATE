@@ -23,6 +23,7 @@ import {
   SmartExerciseLibraryModal,
   SmartModpackModal
 } from '../smart-portal/index.js';
+import { ALL_99_PHYSICAL_CARD_QUESTIONS } from '../../../kiosk/src/minigame-cards/index.js';
 
 const DEMO_EXERCISES: ExerciseRecord[] = [
   {
@@ -92,6 +93,12 @@ const DEMO_MODPACKS: ModpackRecord[] = [
 ];
 
 const DEMO_MINIGAMES: MinigameRecord[] = [
+  {
+    id: 'mg-physical-cards',
+    title: 'การ์ดกายภาพ (Physical Rehab Card Game - 99 ข้อ)',
+    description: 'ฝึกการรับรู้และตอบคำถามโดยยกมือซ้าย (ใช่) หรือยกมือขวา (ไม่) ผ่านกล้อง หรือแตะหน้าจอ',
+    type: 'physical_cards',
+  },
   {
     id: 'mg-memory-cards',
     title: 'เกมจับคู่การ์ดความจำ (Cognitive Memory Match)',
@@ -231,6 +238,17 @@ export const LibraryView: React.FC = () => {
 
   const openMinigameQuestions = async (game: MinigameRecord) => {
     setSelectedMinigame(game);
+    if (game.id === 'mg-physical-cards') {
+      const mapped = ALL_99_PHYSICAL_CARD_QUESTIONS.map((q) => ({
+        id: q.id,
+        prompt: `[${q.category}] ภาพ: ${q.imageDescription} — ${q.prompt}`,
+        choices: ['ใช่ (ยกมือซ้าย)', 'ไม่ (ยกมือขวา)'],
+        answer: q.correctAnswer === 'yes' ? 'ใช่ (ยกมือซ้าย)' : 'ไม่ (ยกมือขวา)',
+        minigame_id: 'mg-physical-cards',
+      }));
+      setQuestions(mapped);
+      return;
+    }
     try {
       const qList = await defaultApiClient.minigames.listQuestions(game.id);
       setQuestions(qList);

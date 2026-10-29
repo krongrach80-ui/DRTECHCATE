@@ -17,7 +17,9 @@ import {
   Sun,
   Brain,
   ChevronRight,
+  Gamepad2,
 } from 'lucide-react';
+import { PhysicalCardGame } from '../minigame-cards/index.js';
 
 interface SmartDailyPlanViewProps {
   patient: PatientRecordFile;
@@ -307,53 +309,18 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     );
   }
 
-  // 3. Interactive Quiz Minigame Screen (Cognitive Reflex)
+  // 3. Interactive Physical Card Minigame Screen (การ์ดกายภาพ 99 ข้อ)
   if (isPlayingQuiz) {
-    const currentQ = quizQuestions[quizQuestionIndex];
     return (
-      <div className="w-full h-full flex flex-col justify-between p-8 bg-slate-950 text-white select-none">
-        {/* Header */}
-        <div className="max-w-2xl mx-auto w-full flex items-center justify-between border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-2">
-            <Brain className="w-6 h-6 text-purple-400" />
-            <div>
-              <div className="text-base font-bold text-white">มินิเกมฝึกสมอง (Interactive Quiz)</div>
-              <div className="text-xs text-purple-300">เสริมสร้างการตอบสนองและพัฒนาการทำงานของสมอง</div>
-            </div>
-          </div>
-          <div className="text-xs font-semibold px-3 py-1.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">
-            ข้อ {quizQuestionIndex + 1}/{quizQuestions.length}
-          </div>
-        </div>
-
-        {/* Question Card */}
-        <div className="max-w-2xl mx-auto w-full my-auto flex flex-col gap-5">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-            <div className="text-xs uppercase font-semibold text-purple-400 mb-2">คำถามวัดการรับรู้</div>
-            <div className="text-lg font-bold text-white leading-relaxed">
-              {currentQ.prompt}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {currentQ.options.map((option, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleAnswerQuiz(idx)}
-                className="w-full text-left p-5 rounded-2xl bg-slate-900 hover:bg-purple-900/40 border border-slate-800 hover:border-purple-500/60 text-slate-100 font-medium text-base transition active:scale-[0.98] flex items-center justify-between group"
-              >
-                <span>{option}</span>
-                <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-purple-400 transition" />
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="max-w-2xl mx-auto w-full text-center text-xs text-slate-500">
-          ตอบคำถามเพื่อเสริมสร้างความจำและการฟื้นตัวของระบบประสาท
-        </div>
+      <div className="w-full h-full flex flex-col justify-between bg-[#EDF7F1] text-slate-800 select-none overflow-hidden">
+        <PhysicalCardGame
+          maxQuestions={10}
+          onComplete={(finalScore, totalQuestions) => {
+            const calculatedPoints = Math.round((finalScore / totalQuestions) * 100);
+            handleFinalSessionCompletion(100, calculatedPoints);
+          }}
+          onExit={() => setIsPlayingQuiz(false)}
+        />
       </div>
     );
   }
@@ -399,12 +366,22 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             <Activity className="w-4 h-4 text-emerald-400" />
             <span>รายการท่าฝึกประจำวันนี้</span>
           </h2>
-          {includeMinigame && (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-purple-950/60 border border-purple-500/30 text-purple-300 font-medium flex items-center gap-1.5">
-              <Brain className="w-3.5 h-3.5" />
-              <span>มีมินิเกมฝึกสมองต่อท้าย</span>
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsPlayingQuiz(true)}
+              className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-md shadow-emerald-950/40 cursor-pointer"
+            >
+              <Gamepad2 className="w-4 h-4 text-emerald-200" />
+              <span>🎮 การ์ดกายภาพ (99 ข้อ)</span>
+            </button>
+            {includeMinigame && (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-purple-950/60 border border-purple-500/30 text-purple-300 font-medium flex items-center gap-1.5">
+                <Brain className="w-3.5 h-3.5" />
+                <span>มีมินิเกมฝึกสมองต่อท้าย</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {exercises.map((item, idx) => {

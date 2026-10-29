@@ -9,12 +9,17 @@ import {
   XCircle,
   X,
   AlertCircle,
+  Play,
 } from 'lucide-react';
 import {
   MedicalCard,
   SmoothButton,
 } from '../../../../packages/hospital-ui-kit/src/index.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
+import {
+  ALL_99_PHYSICAL_CARD_QUESTIONS,
+  PhysicalCardGame,
+} from '../../../kiosk/src/minigame-cards/index.js';
 
 interface QuestionItem {
   id: string;
@@ -24,6 +29,26 @@ interface QuestionItem {
   correctAnswer: 'yes' | 'no';
   explanation: string;
 }
+
+const INITIAL_99_QUESTIONS: QuestionItem[] = ALL_99_PHYSICAL_CARD_QUESTIONS.map((q) => {
+  const catEmojiMap: Record<string, string> = {
+    'อาหาร & ผลไม้': '🍎 อาหาร & ผลไม้',
+    'สิ่งของเครื่องใช้': '🥄 สิ่งของเครื่องใช้',
+    'สัตว์ & ธรรมชาติ': '🐶 สัตว์',
+    'การนับจำนวน': '🔢 การนับจำนวน',
+    'ความปลอดภัย & กิจวัตร': '🏠 ชีวิตประจำวัน',
+    'สี รูปทรง & เวลา': '😊 สีและรูปทรง',
+    'ตำแหน่ง & มโนทัศน์': '🧭 ทิศทาง & ตำแหน่ง',
+  };
+  return {
+    id: q.id,
+    category: catEmojiMap[q.category] || q.category,
+    icon: q.iconEmoji || '💡',
+    prompt: `ภาพ: ${q.imageDescription} — ${q.prompt}`,
+    correctAnswer: q.correctAnswer,
+    explanation: q.explanation,
+  };
+});
 
 export const MiniGameQuestionsView: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('ทั้งหมด');
@@ -49,57 +74,10 @@ export const MiniGameQuestionsView: React.FC = () => {
     '🧭 ทิศทาง & ตำแหน่ง',
   ];
 
-  // Default Clinical Cognitive Rehabilitation Questions
-  const [questions, setQuestions] = useState<QuestionItem[]>([
-    {
-      id: 'q-1',
-      category: '🍎 อาหาร & ผลไม้',
-      icon: '🍌',
-      prompt: 'กล้วยเป็นผลไม้ที่มีรสหวานและให้พลังงานโพแทสเซียมสูง ใช่หรือไม่?',
-      correctAnswer: 'yes',
-      explanation: 'ใช่ กล้วยอุดมด้วยโพแทสเซียมช่วยเสริมสร้างการทำงานของกล้ามเนื้อ',
-    },
-    {
-      id: 'q-2',
-      category: '🥄 สิ่งของเครื่องใช้',
-      icon: '🥣',
-      prompt: 'ช้อนส้อมใช้สำหรับรับประทานอาหาร ใช่หรือไม่?',
-      correctAnswer: 'yes',
-      explanation: 'ใช่ เป็นอุปกรณ์พื้นฐานในการรับประทานอาหาร',
-    },
-    {
-      id: 'q-3',
-      category: '🐶 สัตว์',
-      icon: '🐱',
-      prompt: 'แมวสามารถว่ายน้ำและหายใจในน้ำได้เหมือนปลา ใช่หรือไม่?',
-      correctAnswer: 'no',
-      explanation: 'ไม่ใช่ แมวเป็นสัตว์เลี้ยงลูกด้วยนมที่หายใจด้วยปอด',
-    },
-    {
-      id: 'q-4',
-      category: '🔢 การนับจำนวน',
-      icon: '🖐️',
-      prompt: 'มือข้างหนึ่งของมนุษย์มีทั้งหมด 5 นิ้ว ใช่หรือไม่?',
-      correctAnswer: 'yes',
-      explanation: 'ใช่ มนุษย์มี 5 นิ้วในแต่ละข้าง (โป้ง, ชี้, กลาง, นาง, ก้อย)',
-    },
-    {
-      id: 'q-5',
-      category: '🏠 ชีวิตประจำวัน',
-      icon: '🪥',
-      prompt: 'แปรงสีฟันใช้สำหรับหวีผมให้เรียบ ใช่หรือไม่?',
-      correctAnswer: 'no',
-      explanation: 'ไม่ใช่ แปรงสีฟันใช้สำหรับทำความสะอาดช่องปาก',
-    },
-    {
-      id: 'q-6',
-      category: '😊 สีและรูปทรง',
-      icon: '🔴',
-      prompt: 'ผลสตรอว์เบอร์รีสุกตามธรรมชาติมีสีแดง ใช่หรือไม่?',
-      correctAnswer: 'yes',
-      explanation: 'ใช่ สตรอว์เบอร์รีสุกจะมีสีแดงสด',
-    },
-  ]);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // Default Clinical Cognitive Rehabilitation Questions (Includes all 99 questions)
+  const [questions, setQuestions] = useState<QuestionItem[]>(INITIAL_99_QUESTIONS);
 
   const fetchQuestions = async () => {
     try {
@@ -118,7 +96,7 @@ export const MiniGameQuestionsView: React.FC = () => {
             correctAnswer: (q.answer === 'yes' || q.answer === 'no') ? q.answer : 'yes',
             explanation: q.choices?.join(', ') || 'คำถามฝึกสมองทางคลินิก',
           }));
-          setQuestions(mapped);
+          setQuestions([...mapped, ...INITIAL_99_QUESTIONS]);
         }
       }
     } catch {
@@ -197,6 +175,15 @@ export const MiniGameQuestionsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <SmoothButton
+            variant="secondary"
+            size="md"
+            icon={<Play className="w-4 h-4 text-emerald-600" />}
+            onClick={() => setIsPreviewOpen(true)}
+          >
+            <span>🎮 ทดลองเล่นการ์ดกายภาพ</span>
+          </SmoothButton>
+
           <div className="relative w-72">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -384,6 +371,15 @@ export const MiniGameQuestionsView: React.FC = () => {
           </MedicalCard>
         ))}
       </div>
+
+      {/* Live Physical Card Game Preview Modal */}
+      {isPreviewOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl h-[92vh] bg-[#EDF7F1] rounded-3xl overflow-hidden shadow-2xl relative border border-emerald-300/40">
+            <PhysicalCardGame onExit={() => setIsPreviewOpen(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
