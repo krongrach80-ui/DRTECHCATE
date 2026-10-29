@@ -15,7 +15,7 @@ export const MinigameStepView: React.FC<MinigameStepViewProps> = ({
   return (
     <div className="w-full h-full flex flex-col items-center justify-center select-none bg-[#EDF7F1]">
       <PhysicalCardGame
-        maxQuestions={5}
+        maxQuestions={10}
         onComplete={(_finalScore, _totalQuestions) => {
           onAnswer('yes');
         }}

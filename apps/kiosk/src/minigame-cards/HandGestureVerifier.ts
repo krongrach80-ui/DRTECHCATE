@@ -48,6 +48,8 @@ export interface HandVerificationOptions {
   rightZoneThreshold?: number;
   /** Maximum Y coordinate allowed for palm center (Default: 0.70) */
   maxYThreshold?: number;
+  /** Minimum vertical margin fingertips must be higher than wrist (tip.y < wrist.y - margin) (Default: 0.07) */
+  raisedTipMargin?: number;
 }
 
 /**
@@ -77,8 +79,8 @@ export const HAND_CONNECTIONS: [number, number][] = [
  *    - If no hand or only head/body/clothing detected => Reject.
  *
  * 2. Layer 2 — Raised Open-Palm Gesture Check:
- *    - Hand pointing upward: tips of middle (12) & index (8) must be higher than wrist (0) by at least 0.08
- *      (tip.y < wrist.y - 0.08).
+ *    - Hand pointing upward: tips of middle (12) & index (8) must be higher than wrist (0) by at least 0.07
+ *      (tip.y < wrist.y - 0.07).
  *    - Open Palm Check: at least 3 fingers extended
  *      (distance from TIP [8, 12, 16, 20] to WRIST [0] > 1.3 * distance from MCP [5, 9, 13, 17] to WRIST).
  *    - Palm center (MCP 9) y <= 0.70 (not resting at bottom of frame).
@@ -99,6 +101,7 @@ export function verifyRealHandGesture(
     leftZoneThreshold = 0.42,
     rightZoneThreshold = 0.58,
     maxYThreshold = 0.70,
+    raisedTipMargin = 0.07,
   } = options;
 
   // Base fallback result
@@ -172,9 +175,9 @@ export function verifyRealHandGesture(
   // --- LAYER 2: Raised Open-Palm Gesture Check ---
 
   // Check 2.1: Hand orientation upward (fingertips must be significantly higher than wrist)
-  // In screen coordinates, y=0 is top and y=1 is bottom, so tip.y < wrist.y - 0.08 means tip is higher
-  const isIndexRaised = indexTip.y < wrist.y - 0.08;
-  const isMiddleRaised = middleTip.y < wrist.y - 0.08;
+  // In screen coordinates, y=0 is top and y=1 is bottom, so tip.y < wrist.y - 0.07 means tip is higher
+  const isIndexRaised = indexTip.y < wrist.y - raisedTipMargin;
+  const isMiddleRaised = middleTip.y < wrist.y - raisedTipMargin;
 
   if (!isIndexRaised || !isMiddleRaised) {
     return {

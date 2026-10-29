@@ -86,6 +86,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   // High-performance DOM Refs (Zero React re-renders during motion detection)
   const leftProgressRef = useRef<HTMLDivElement | null>(null);
   const rightProgressRef = useRef<HTMLDivElement | null>(null);
+  const leftProgressBarInnerRef = useRef<HTMLDivElement | null>(null);
+  const rightProgressBarInnerRef = useRef<HTMLDivElement | null>(null);
+  const leftProgressPercentRef = useRef<HTMLSpanElement | null>(null);
+  const rightProgressPercentRef = useRef<HTMLSpanElement | null>(null);
   const leftHudDotRef = useRef<HTMLSpanElement | null>(null);
   const rightHudDotRef = useRef<HTMLSpanElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -294,6 +298,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         setSelectedSide(null);
         if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
         if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+        if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+        if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+        if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+        if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
         if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
         if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
 
@@ -504,6 +512,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               zoneHoldStart = 0;
               if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
               if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+              if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+              if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+              if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+              if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
 
               // Draw neutral cyan skeleton to show camera still tracks their hand
               drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, 'CENTER', 0);
@@ -516,28 +528,37 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                   const elapsed = timestamp - zoneHoldStart;
                   const progress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
 
-                  // Update GPU-accelerated progress bars
+                  // Update GPU-accelerated progress bars and horizontal inner indicators
                   const progressScale = progress.toFixed(3);
+                  const percentStr = `${Math.round(progress * 100)}%`;
                   if (zone === 'LEFT' && leftProgressRef.current) {
                     leftProgressRef.current.style.transform = `scaleY(${progressScale})`;
+                    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = percentStr;
+                    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = percentStr;
                     if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+                    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
                   } else if (zone === 'RIGHT' && rightProgressRef.current) {
                     rightProgressRef.current.style.transform = `scaleY(${progressScale})`;
+                    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = percentStr;
+                    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = percentStr;
                     if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+                    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
                   }
 
                   // HUD indicator dots
                   if (leftHudDotRef.current) {
                     leftHudDotRef.current.className =
                       zone === 'LEFT'
-                        ? 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse'
-                        : 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
+                        ? 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-400 animate-pulse'
+                        : 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-600 transition-colors';
                   }
                   if (rightHudDotRef.current) {
                     rightHudDotRef.current.className =
                       zone === 'RIGHT'
-                        ? 'w-2 h-2 rounded-full bg-orange-400 animate-pulse'
-                        : 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+                        ? 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-400 animate-pulse'
+                        : 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-600 transition-colors';
                   }
 
                   // Draw 21-point hand skeleton with dynamic hold dwell progress ring
@@ -552,6 +573,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
                     if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
                     if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+                    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+                    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+                    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
 
                     handleAnswerRef.current(bestVerification.side);
                   }
@@ -560,8 +585,16 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                   activeZone = zone;
                   zoneHoldStart = timestamp;
 
-                  if (zone === 'LEFT' && rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                  if (zone === 'RIGHT' && leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                  if (zone === 'LEFT') {
+                    if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+                    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+                  }
+                  if (zone === 'RIGHT') {
+                    if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+                    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+                  }
 
                   drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, zone, 0);
                 }
@@ -571,8 +604,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 zoneHoldStart = 0;
                 if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
                 if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
-                if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+                if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+                if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+                if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+                if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+                if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-600 transition-colors';
+                if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-600 transition-colors';
 
                 drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, bestVerification.zone, 0);
               }
@@ -588,8 +625,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
             if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
             if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-            if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
-            if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+            if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+            if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+            if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+            if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+            if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-600 transition-colors';
+            if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-600 transition-colors';
           }
         } catch {
           // Graceful skip on frame error
@@ -603,12 +644,20 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
     const leftEl = leftProgressRef.current;
     const rightEl = rightProgressRef.current;
+    const leftInnerEl = leftProgressBarInnerRef.current;
+    const rightInnerEl = rightProgressBarInnerRef.current;
+    const leftPercentEl = leftProgressPercentRef.current;
+    const rightPercentEl = rightProgressPercentRef.current;
     const canvasEl = overlayCanvasRef.current;
 
     return () => {
       cancelAnimationFrame(animFrame);
       if (leftEl) leftEl.style.transform = 'scaleY(0)';
       if (rightEl) rightEl.style.transform = 'scaleY(0)';
+      if (leftInnerEl) leftInnerEl.style.width = '0%';
+      if (rightInnerEl) rightInnerEl.style.width = '0%';
+      if (leftPercentEl) leftPercentEl.textContent = '0%';
+      if (rightPercentEl) rightPercentEl.textContent = '0%';
       if (canvasEl) {
         const ctx = canvasEl.getContext('2d');
         if (ctx) ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
@@ -626,6 +675,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     setShowExplanation(false);
     if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
     if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
     if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
     if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
   };
@@ -642,9 +695,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   ];
 
   return (
-    <div className="w-full h-full flex flex-col justify-between pt-5 pb-5 px-3 sm:pt-6 sm:pb-6 sm:px-6 bg-[#EDF7F1] text-slate-800 select-none overflow-y-auto font-sans relative">
+    <div className="w-full h-full flex flex-col justify-between pt-3 pb-3 px-3 sm:pt-4 sm:pb-4 sm:px-5 md:px-6 bg-[#EDF7F1] text-slate-800 select-none overflow-hidden font-sans relative">
       {/* Top Header Bar (Safe top margin to prevent clipping against modal border) */}
-      <div className="w-full max-w-3xl mx-auto flex items-center justify-between gap-2 shrink-0 pt-1">
+      <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex items-center justify-between gap-2 shrink-0 pt-0.5">
         <div className="flex items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl font-black text-[#134E43] tracking-normal">
             การ์ดกายภาพ
@@ -688,7 +741,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
       </div>
 
       {/* Category Pills (แถบเลือกหมวดหมู่ - ปรับ padding-top และ line-height ไม่ให้อักษรไทยด้านบนถูกตัดขอบแหว่ง) */}
-      <div className="w-full max-w-3xl mx-auto flex items-center gap-2 overflow-x-auto pt-3 pb-2.5 px-1 scrollbar-none shrink-0">
+      <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex items-center gap-2 overflow-x-auto pt-2 pb-2 px-1 scrollbar-none shrink-0">
         {categories.map((cat) => (
           <button
             key={cat}
@@ -715,17 +768,17 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
       {/* Main Game Screen */}
       {!isGameOver ? (
-        <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col justify-between gap-3 sm:gap-4 my-auto">
+        <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex-1 flex flex-col justify-between gap-2.5 sm:gap-3 my-auto min-h-0">
           {/* Question Banner (ตามแบบภาพ: กล่องขาวมน ข้อความใหญ่ตรงกลาง พร้อม safe margins ไม่ให้ตัวหนังสือถูกตัดทับ) */}
-          <div className="w-full bg-white rounded-3xl p-4 sm:p-5 text-center shadow-sm border border-emerald-100/80 transition animate-fade-in relative overflow-hidden min-h-[76px] sm:min-h-[86px] flex items-center justify-center my-1">
-            <h2 className="text-xl sm:text-3xl font-extrabold text-[#113C34] tracking-normal leading-tight">
+          <div className="w-full bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-4 text-center shadow-xs border border-emerald-100/90 transition animate-fade-in relative overflow-hidden min-h-[64px] sm:min-h-[72px] flex items-center justify-center shrink-0">
+            <h2 className="text-xl sm:text-2xl xl:text-3xl font-extrabold text-[#113C34] tracking-normal leading-tight">
               {activeQuestion.prompt}
             </h2>
 
             {/* Answer Result Banner Alert - safe padding to ensure no text clipping */}
             {answerState !== 'idle' && (
               <div
-                className={`absolute inset-0 flex items-center justify-center gap-2 text-base sm:text-lg font-bold text-white transition animate-scale-up px-4 py-3 z-10 ${
+                className={`absolute inset-0 flex items-center justify-center gap-2 text-base sm:text-lg font-bold text-white transition animate-scale-up px-4 py-3 z-30 ${
                   answerState === 'correct' ? 'bg-emerald-600' : 'bg-rose-600'
                 }`}
               >
@@ -746,17 +799,25 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             )}
           </div>
 
-          {/* 3 Interactive Cards Row (ตามภาพ: ซ้าย=ใช่, กลาง=รูปภาพ, ขวา=ไม่) */}
-          <div className="grid grid-cols-3 gap-2.5 sm:gap-4 items-stretch">
-            {/* Card 1: ใช่ (ยกมือซ้าย) */}
+          {/* Explanation Tooltip (แสดงเมื่อตอบแล้ว) */}
+          {showExplanation && (
+            <div className="p-2 rounded-xl bg-white border border-emerald-200 text-center text-xs font-semibold text-emerald-900 shadow-xs animate-fade-in flex items-center justify-center gap-1.5 shrink-0">
+              <HelpCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{activeQuestion.explanation}</span>
+            </div>
+          )}
+
+          {/* 3-Column Zero-Scroll Layout (Left: ใช่ | Center: Full Camera Viewport | Right: ไม่) */}
+          <div className="w-full flex-1 min-h-0 grid grid-cols-12 gap-2.5 sm:gap-4 items-stretch my-auto">
+            {/* Card 1 (Column 1): ใช่ (ยกมือซ้าย) - cols 3 */}
             <div
               onClick={() => handleAnswer('yes')}
-              className={`bg-white rounded-3xl border-3 flex flex-col items-center justify-between p-3 sm:p-5 text-center cursor-pointer transition-all duration-200 active:scale-95 shadow-sm relative overflow-hidden ${
+              className={`col-span-3 bg-white rounded-3xl border-3 flex flex-col items-center justify-between p-3 sm:p-5 text-center cursor-pointer transition-all duration-200 active:scale-98 shadow-sm relative overflow-hidden select-none hover:shadow-md ${
                 selectedSide === 'yes'
                   ? answerState === 'correct'
-                    ? 'border-emerald-500 bg-emerald-50 ring-4 ring-emerald-400/30'
+                    ? 'border-emerald-500 bg-emerald-50 ring-4 ring-emerald-400/40'
                     : 'border-rose-500 bg-rose-50'
-                  : 'border-[#16A34A] hover:bg-emerald-50/50 hover:shadow-md'
+                  : 'border-[#16A34A] hover:bg-emerald-50/40'
               }`}
             >
               {/* GPU-Accelerated Detection progress bar */}
@@ -766,38 +827,140 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 style={{ transform: 'scaleY(0)' }}
               />
 
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-[#16A34A] mb-1">
-                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#16A34A] stroke-[2.2]" />
+              <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-[#DCFCE7] flex items-center justify-center text-[#16A34A] shadow-inner mb-1 sm:mb-2 shrink-0">
+                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#16A34A] stroke-[2.3]" />
               </div>
 
-              <div className="text-3xl sm:text-5xl font-black text-[#16A34A] tracking-tight my-1 sm:my-2">
-                ใช่
+              <div className="flex-1 flex flex-col items-center justify-center my-1 sm:my-2">
+                <div className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#16A34A] tracking-tight">
+                  ใช่
+                </div>
               </div>
 
-              <div className="w-full mt-1">
-                <span className="inline-block w-full py-1 sm:py-1.5 px-2 rounded-full bg-[#DCFCE7] text-[#15803D] text-[11px] sm:text-xs font-bold shadow-xs">
-                  ยกมือซ้าย
+              <div className="w-full mt-auto space-y-2 shrink-0 z-10">
+                <span className="inline-block w-full py-1.5 sm:py-2 px-2.5 rounded-full bg-[#DCFCE7] text-[#15803D] text-xs sm:text-sm font-black shadow-xs tracking-wide">
+                  ✋ ยกมือซ้าย
                 </span>
+                {/* Horizontal Mini Progress Track with Percent Indicator */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-[#15803D] px-1">
+                    <span>ค้างมือเพื่อตอบ</span>
+                    <span ref={leftProgressPercentRef} className="font-mono font-black">0%</span>
+                  </div>
+                  <div className="w-full bg-emerald-100/90 rounded-full h-2 sm:h-2.5 overflow-hidden border border-emerald-200">
+                    <div
+                      ref={leftProgressBarInnerRef}
+                      className="h-full bg-[#16A34A] rounded-full transition-all duration-75"
+                      style={{ width: '0%' }}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Card 2: รูปภาพประกอบ (แสดงกราฟิกสวยงาม ตรงตามโจทย์) */}
-            <div className="bg-white rounded-3xl border border-emerald-100 flex flex-col items-center justify-center p-3 sm:p-4 text-center shadow-sm relative overflow-hidden">
-              <PhysicalCardVisual
-                visualKey={activeQuestion.visualKey}
-                imageDescription={activeQuestion.imageDescription}
+            {/* Column 2: Full Center Camera Viewport - cols 6 */}
+            <div className="col-span-6 bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center">
+              {/* Live Video Feed */}
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                className={`absolute inset-0 w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-500 ${
+                  cameraActive ? 'opacity-100' : 'opacity-0'
+                }`}
               />
+
+              {/* Real Hand Skeleton & Dwell Progress Ring Overlay */}
+              <canvas
+                ref={overlayCanvasRef}
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+              />
+
+              {/* Left Hand Zone Guide (mirrored x < 0.42) */}
+              <div className="absolute top-0 bottom-0 left-0 w-[42%] border-r-2 border-dashed border-emerald-400/40 bg-emerald-500/5 pointer-events-none z-15 flex flex-col justify-between p-2.5 sm:p-3">
+                <div className="self-start flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-emerald-300 border border-emerald-500/40 text-[10px] sm:text-xs font-black shadow-md">
+                  <span
+                    ref={leftHudDotRef}
+                    className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-500 transition-colors"
+                  />
+                  <span>โซนซ้าย (ใช่)</span>
+                </div>
+                <div className="self-start text-[10px] sm:text-xs text-emerald-300/80 font-bold drop-shadow-sm pl-1">
+                  ✋ ยกมือซ้ายตรงนี้
+                </div>
+              </div>
+
+              {/* Right Hand Zone Guide (mirrored x > 0.58) */}
+              <div className="absolute top-0 bottom-0 right-0 w-[42%] border-l-2 border-dashed border-orange-400/40 bg-orange-500/5 pointer-events-none z-15 flex flex-col justify-between p-2.5 sm:p-3">
+                <div className="self-end flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-orange-300 border border-orange-500/40 text-[10px] sm:text-xs font-black shadow-md">
+                  <span>โซนขวา (ไม่)</span>
+                  <span
+                    ref={rightHudDotRef}
+                    className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-500 transition-colors"
+                  />
+                </div>
+                <div className="self-end text-[10px] sm:text-xs text-orange-300/80 font-bold drop-shadow-sm pr-1">
+                  ✋ ยกมือขวาตรงนี้
+                </div>
+              </div>
+
+              {/* Center Floating Question Illustration Badge (อยู่ตรงกลางด้านบน ไม่บังหน้าและมือ) */}
+              <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-2xl bg-white/95 backdrop-blur-md border border-emerald-200/90 shadow-xl flex items-center gap-2.5 pointer-events-none max-w-[85%]">
+                <div className="w-9 h-9 sm:w-11 sm:h-11 shrink-0 bg-emerald-50/80 rounded-xl flex items-center justify-center p-0.5 border border-emerald-100 overflow-hidden">
+                  <PhysicalCardVisual
+                    visualKey={activeQuestion.visualKey}
+                    imageDescription={activeQuestion.imageDescription}
+                    compact
+                  />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">ภาพประกอบโจทย์</span>
+                  <span className="text-xs sm:text-sm font-extrabold text-slate-800 line-clamp-1 leading-snug">
+                    {activeQuestion.imageDescription || activeQuestion.prompt}
+                  </span>
+                </div>
+              </div>
+
+              {/* Model Loading Status Badge */}
+              {cameraActive && isModelLoading && (
+                <div className="absolute top-16 z-20 px-3 py-1 rounded-full bg-emerald-950/85 text-emerald-200 border border-emerald-700/60 text-[10px] sm:text-xs font-bold flex items-center gap-1.5 shadow-md">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span>กำลังเตรียมระบบตรวจจับมือจริง...</span>
+                </div>
+              )}
+
+              {/* When camera is connecting / permission not active */}
+              {!cameraActive && (
+                <div className="relative z-10 flex flex-col items-center justify-center gap-1.5 text-emerald-300/70 pointer-events-none">
+                  <Camera className="w-7 h-7 opacity-60 animate-pulse" />
+                  <span className="text-xs sm:text-sm font-semibold">กำลังเชื่อมต่อกล้อง หรือแตะการ์ดบนจอเพื่อตอบ</span>
+                </div>
+              )}
+
+              {/* Corner Viewfinder HUD Brackets (กรอบ 4 มุมสีเขียวมิ้นต์ตามภาพ) */}
+              <div className="absolute top-3 left-3 w-6 h-6 border-t-3 border-l-3 border-[#6EE7B7] rounded-tl-lg pointer-events-none z-15" />
+              <div className="absolute top-3 right-3 w-6 h-6 border-t-3 border-r-3 border-[#6EE7B7] rounded-tr-lg pointer-events-none z-15" />
+              <div className="absolute bottom-3 left-3 w-6 h-6 border-b-3 border-l-3 border-[#6EE7B7] rounded-bl-lg pointer-events-none z-15" />
+              <div className="absolute bottom-3 right-3 w-6 h-6 border-b-3 border-r-3 border-[#6EE7B7] rounded-br-lg pointer-events-none z-15" />
+
+              {/* Bottom White Pill Banner */}
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 whitespace-nowrap">
+                <div className="px-4 sm:px-5 py-1.5 rounded-full bg-white text-[#0F2D24] text-xs sm:text-sm font-extrabold shadow-lg flex items-center gap-2 border border-emerald-100">
+                  <Camera className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                  <span>ยืนให้เห็นมือทั้งสองข้าง (ค้างมือ 0.6 วินาทีเพื่อตอบ)</span>
+                </div>
+              </div>
             </div>
 
-            {/* Card 3: ไม่ (ยกมือขวา) */}
+            {/* Card 3 (Column 3): ไม่ (ยกมือขวา) - cols 3 */}
             <div
               onClick={() => handleAnswer('no')}
-              className={`bg-white rounded-3xl border-3 flex flex-col items-center justify-between p-3 sm:p-5 text-center cursor-pointer transition-all duration-200 active:scale-95 shadow-sm relative overflow-hidden ${
+              className={`col-span-3 bg-white rounded-3xl border-3 flex flex-col items-center justify-between p-3 sm:p-5 text-center cursor-pointer transition-all duration-200 active:scale-98 shadow-sm relative overflow-hidden select-none hover:shadow-md ${
                 selectedSide === 'no'
                   ? answerState === 'correct'
-                    ? 'border-emerald-500 bg-emerald-50 ring-4 ring-emerald-400/30'
+                    ? 'border-emerald-500 bg-emerald-50 ring-4 ring-emerald-400/40'
                     : 'border-rose-500 bg-rose-50'
-                  : 'border-[#EA580C] hover:bg-orange-50/50 hover:shadow-md'
+                  : 'border-[#EA580C] hover:bg-orange-50/40'
               }`}
             >
               {/* GPU-Accelerated Detection progress bar */}
@@ -807,98 +970,41 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 style={{ transform: 'scaleY(0)' }}
               />
 
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-[#EA580C] mb-1">
-                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#EA580C] stroke-[2.2]" />
+              <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-[#FFEDD5] flex items-center justify-center text-[#EA580C] shadow-inner mb-1 sm:mb-2 shrink-0">
+                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#EA580C] stroke-[2.3]" />
               </div>
 
-              <div className="text-3xl sm:text-5xl font-black text-[#EA580C] tracking-tight my-1 sm:my-2">
-                ไม่
+              <div className="flex-1 flex flex-col items-center justify-center my-1 sm:my-2">
+                <div className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#EA580C] tracking-tight">
+                  ไม่
+                </div>
               </div>
 
-              <div className="w-full mt-1">
-                <span className="inline-block w-full py-1 sm:py-1.5 px-2 rounded-full bg-[#FFEDD5] text-[#C2410C] text-[11px] sm:text-xs font-bold shadow-xs">
-                  ยกมือขวา
+              <div className="w-full mt-auto space-y-2 shrink-0 z-10">
+                <span className="inline-block w-full py-1.5 sm:py-2 px-2.5 rounded-full bg-[#FFEDD5] text-[#C2410C] text-xs sm:text-sm font-black shadow-xs tracking-wide">
+                  ✋ ยกมือขวา
                 </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Explanation Tooltip (แสดงเมื่อตอบแล้ว) */}
-          {showExplanation && (
-            <div className="p-2.5 rounded-2xl bg-white border border-emerald-200 text-center text-xs font-semibold text-emerald-900 shadow-sm animate-fade-in flex items-center justify-center gap-1.5">
-              <HelpCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{activeQuestion.explanation}</span>
-            </div>
-          )}
-
-          {/* Bottom Camera Viewport (กล้องเต็มจอ ไม่มีรูปคนบัง) */}
-          <div className="w-full h-44 sm:h-52 bg-[#0F2D24] rounded-3xl relative overflow-hidden border-2 border-emerald-900/60 shadow-lg flex items-center justify-center">
-            {/* Live Video Feed (ไม่โดนไอคอนคนบัง ชัดเจน 100%) */}
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className={`absolute inset-0 w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-500 ${
-                cameraActive ? 'opacity-100' : 'opacity-0'
-              }`}
-            />
-
-            {/* Real Hand Skeleton & Dwell Progress Ring Overlay */}
-            <canvas
-              ref={overlayCanvasRef}
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
-            />
-
-            {/* Model Loading Status Badge */}
-            {cameraActive && isModelLoading && (
-              <div className="absolute top-2.5 z-20 px-3 py-1 rounded-full bg-emerald-950/80 text-emerald-200 border border-emerald-700/50 text-[10px] font-bold flex items-center gap-1.5 shadow-md">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                <span>กำลังเตรียมระบบตรวจจับมือจริง...</span>
-              </div>
-            )}
-
-            {/* When camera is connecting / permission not active */}
-            {!cameraActive && (
-              <div className="relative z-10 flex flex-col items-center justify-center gap-1.5 text-emerald-300/70 pointer-events-none">
-                <Camera className="w-6 h-6 opacity-60 animate-pulse" />
-                <span className="text-xs font-semibold">กำลังเชื่อมต่อกล้อง หรือแตะการ์ดบนจอเพื่อตอบ</span>
-              </div>
-            )}
-
-            {/* Corner Viewfinder HUD Brackets (กรอบ 4 มุมสีเขียวมิ้นต์ตามภาพ) */}
-            <div className="absolute top-3 left-3 w-6 h-6 border-t-3 border-l-3 border-[#6EE7B7] rounded-tl-lg pointer-events-none" />
-            <div className="absolute top-3 right-3 w-6 h-6 border-t-3 border-r-3 border-[#6EE7B7] rounded-tr-lg pointer-events-none" />
-            <div className="absolute bottom-3 left-3 w-6 h-6 border-b-3 border-l-3 border-[#6EE7B7] rounded-bl-lg pointer-events-none" />
-            <div className="absolute bottom-3 right-3 w-6 h-6 border-b-3 border-r-3 border-[#6EE7B7] rounded-br-lg pointer-events-none" />
-
-            {/* Live Hand Pose Indicator Hints */}
-            <div className="absolute top-2.5 left-4 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 text-emerald-300 text-[10px] font-bold">
-              <span
-                ref={leftHudDotRef}
-                className="w-2 h-2 rounded-full bg-emerald-600 transition-colors"
-              />
-              <span>โซนซ้าย (ใช่)</span>
-            </div>
-            <div className="absolute top-2.5 right-4 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 text-orange-300 text-[10px] font-bold">
-              <span>โซนขวา (ไม่)</span>
-              <span
-                ref={rightHudDotRef}
-                className="w-2 h-2 rounded-full bg-orange-600 transition-colors"
-              />
-            </div>
-
-            {/* Bottom White Pill Banner (ตรงตามภาพ: "ยืนให้เห็นมือทั้งสองข้าง") */}
-            <div className="absolute bottom-3 z-20">
-              <div className="px-5 py-1.5 rounded-full bg-white text-[#0F2D24] text-xs sm:text-sm font-extrabold shadow-md flex items-center gap-2">
-                <Camera className="w-3.5 h-3.5 text-emerald-700" />
-                <span>ยืนให้เห็นมือทั้งสองข้าง (ค้างมือ 0.6 วินาทีเพื่อตอบ)</span>
+                {/* Horizontal Mini Progress Track with Percent Indicator */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-[#C2410C] px-1">
+                    <span>ค้างมือเพื่อตอบ</span>
+                    <span ref={rightProgressPercentRef} className="font-mono font-black">0%</span>
+                  </div>
+                  <div className="w-full bg-orange-100/90 rounded-full h-2 sm:h-2.5 overflow-hidden border border-orange-200">
+                    <div
+                      ref={rightProgressBarInnerRef}
+                      className="h-full bg-[#EA580C] rounded-full transition-all duration-75"
+                      style={{ width: '0%' }}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Assistive Hint */}
-          <div className="flex items-center justify-center gap-2 pt-1 text-xs text-slate-500 font-medium">
-            <span>แตะการ์ดบนหน้าจอ หรือยกมือซ้าย/ขวาผ่านกล้องเพื่อตอบ</span>
+          <div className="flex items-center justify-center gap-2 pt-1 text-xs text-slate-500 font-medium shrink-0">
+            <span>แตะการ์ดบนหน้าจอ หรือยกมือซ้าย/ขวาผ่านกล้องค้างไว้ 0.6 วินาทีเพื่อตอบ</span>
           </div>
         </div>
       ) : (
@@ -950,3 +1056,4 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     </div>
   );
 };
+

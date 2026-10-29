@@ -10,12 +10,14 @@ interface PhysicalCardVisualProps {
   visualKey: string;
   imageDescription: string;
   className?: string;
+  compact?: boolean;
 }
 
 export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(({
   visualKey,
   imageDescription,
   className = '',
+  compact = false,
 }) => {
   // Helper to render distinct vector illustrations
   const renderGraphic = () => {
@@ -514,6 +516,16 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
         );
     }
   };
+
+  if (compact) {
+    return (
+      <div className={`relative flex items-center justify-center w-full h-full ${className}`}>
+        <div className="w-full h-full flex items-center justify-center p-0.5">
+          {renderGraphic()}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`relative flex flex-col items-center justify-center w-full h-full ${className}`}>

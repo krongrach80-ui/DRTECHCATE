@@ -106,6 +106,21 @@ describe('verifyRealHandGesture — 4-Layer Hand Verification Gate', () => {
       expect(res.isValidHand).toBe(false);
       expect(res.rejectionReason).toContain('CORRUPTED_LANDMARK_AT_INDEX_8');
     });
+
+    it('should strictly reject face, head, shoulders, clothing or pixel motion when no hand landmarks are present', () => {
+      // Mock points from non-hand tracker (e.g. 4 face/shoulder points only)
+      const faceOrShoulderPoints = [
+        { x: 0.50, y: 0.25 }, // nose
+        { x: 0.45, y: 0.35 }, // left shoulder
+        { x: 0.55, y: 0.35 }, // right shoulder
+      ];
+      const res = verifyRealHandGesture(faceOrShoulderPoints as any, 0.99);
+      expect(res.isValidHand).toBe(false);
+      expect(res.isHandDetected).toBe(false);
+      expect(res.side).toBeNull();
+      expect(res.zone).toBe('NONE');
+      expect(res.rejectionReason).toBe('NO_HAND_LANDMARKS_DETECTED');
+    });
   });
 
   describe('Layer 2: Raised Open-Palm Gesture Check', () => {
