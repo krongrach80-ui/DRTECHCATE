@@ -30,7 +30,7 @@ import {
 import {
   HolographicReplayViewer,
   KinematicReplaySnapshot,
-  createClinicalReplaySnapshot,
+  synthesizeClinicalPainReplaySnapshot,
 } from '../../../../packages/kinematic-replay-3d/src/index';
 
 interface MyPatientsViewProps {
@@ -792,7 +792,7 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
             attendingPtLicense: 'PT-10245',
           }}
           sessionHistory={DEFAULT_DEMO_SESSIONS}
-          replaySnapshot={createClinicalReplaySnapshot({
+          replaySnapshot={synthesizeClinicalPainReplaySnapshot({
             patientId: selectedAnalyticsPatient.hn,
             exerciseName: selectedAnalyticsPatient.injury ? `ฟื้นฟู${selectedAnalyticsPatient.injury}` : 'Shoulder Abduction (กางข้อไหล่)',
           })}

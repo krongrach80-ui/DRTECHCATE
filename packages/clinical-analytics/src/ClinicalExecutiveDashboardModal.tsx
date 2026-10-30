@@ -18,6 +18,7 @@ import {
   X,
   ShieldCheck,
   Eye,
+  Sliders,
 } from 'lucide-react';
 import {
   analyzeRecoveryTrajectory,
@@ -31,6 +32,7 @@ import {
   PainEventLogItem,
 } from './clinicalReportGenerator';
 import { KinematicReplaySnapshot } from '../../kinematic-replay-3d/src/ringBuffer';
+import { synthesizeLongitudinalRecoveryProfile } from './referenceTrajectorySynthesizer';
 
 interface ClinicalExecutiveDashboardModalProps {
   isOpen: boolean;
@@ -50,15 +52,40 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
   onOpenReplay,
 }) => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [useReferenceCalibration, setUseReferenceCalibration] = useState<boolean>(false);
+
+  const referenceProfile = useMemo(() => {
+    return synthesizeLongitudinalRecoveryProfile({
+      patientId: patient.hn,
+      patientName: patient.fullName,
+      age: patient.age,
+      gender: patient.gender,
+      targetJoint: patient.targetJoint,
+    });
+  }, [patient]);
+
+  const effectiveHistory: HistoricalSessionMetric[] = useMemo(() => {
+    if (useReferenceCalibration || !sessionHistory || sessionHistory.length === 0) {
+      return referenceProfile.sessions;
+    }
+    return sessionHistory;
+  }, [useReferenceCalibration, sessionHistory, referenceProfile]);
+
+  const effectiveSnapshot: KinematicReplaySnapshot | null = useMemo(() => {
+    if (useReferenceCalibration || !replaySnapshot) {
+      return referenceProfile.linkedPainSnapshot;
+    }
+    return replaySnapshot;
+  }, [useReferenceCalibration, replaySnapshot, referenceProfile]);
 
   // 1. Analyze Trajectory Math
   const trajectory: TrajectoryAnalysisResult = useMemo(() => {
-    return analyzeRecoveryTrajectory(sessionHistory);
-  }, [sessionHistory]);
+    return analyzeRecoveryTrajectory(effectiveHistory);
+  }, [effectiveHistory]);
 
   // Extract pain events from history
   const painEvents: PainEventLogItem[] = useMemo(() => {
-    return sessionHistory
+    return effectiveHistory
       .filter((s) => s.painReported)
       .map((s) => ({
         dateIso: s.dateIso,
@@ -66,7 +93,7 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
         angleAtPainDeg: s.maxRomDeg,
         descriptionTh: 'ผู้ป่วยกดปุ่มหยุดฉุกเฉินเนื่องจากมีอาการเจ็บเสียวแปลบในจังหวะเคลื่อนไหว',
       }));
-  }, [sessionHistory, patient.targetJoint]);
+  }, [effectiveHistory, patient.targetJoint]);
 
   if (!isOpen) return null;
 
@@ -82,11 +109,11 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
   const chartW = svgWidth - padding.left - padding.right;
   const chartH = svgHeight - padding.top - padding.bottom;
 
-  const n = sessionHistory.length;
+  const n = effectiveHistory.length;
   const maxRomLimit = Math.max(160, trajectory.targetRomDeg + 10);
 
   // Calculate coordinates for SVG paths
-  const romPoints = sessionHistory.map((s, idx) => {
+  const romPoints = effectiveHistory.map((s, idx) => {
     const x = padding.left + (idx / Math.max(1, n - 1)) * chartW;
     const y = padding.top + chartH - (s.maxRomDeg / maxRomLimit) * chartH;
     return { x, y, session: s };
@@ -98,7 +125,7 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
       : '';
 
   // Compensation points (right axis: 0 - 50%)
-  const compPoints = sessionHistory.map((s, idx) => {
+  const compPoints = effectiveHistory.map((s, idx) => {
     const x = padding.left + (idx / Math.max(1, n - 1)) * chartW;
     const compPercent = Math.min(50, (s.scapularHikingRate ?? 0) * 100);
     const y = padding.top + chartH - (compPercent / 50) * chartH;
@@ -132,13 +159,31 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition active:scale-95 cursor-pointer border border-slate-700"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              id="btn-toggle-reference-calibration"
+              data-testid="btn-toggle-reference-calibration"
+              onClick={() => setUseReferenceCalibration((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
+                useReferenceCalibration
+                  ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-950/50'
+                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+              }`}
+              title="ปรับเทียบและสังเคราะห์สัญญาณคลื่นชีวกลศาสตร์มาตรฐาน 12 เซสชัน (Reference Calibration)"
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>🎛️ ปรับเทียบสัญญาณชีวกลศาสตร์มาตรฐาน (Reference Calibration)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition active:scale-95 cursor-pointer border border-slate-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* 2. Top Metric Cards */}
@@ -325,21 +370,21 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
           </div>
 
           {/* Point Tooltip Info */}
-          {hoveredIndex !== null && sessionHistory[hoveredIndex] && (
+          {hoveredIndex !== null && effectiveHistory[hoveredIndex] && (
             <div className="mt-3 p-3 rounded-xl bg-slate-900 border border-teal-500/40 text-xs flex items-center justify-between animate-fade-in">
               <div>
                 <span className="text-slate-400">เซสชันวันที่: </span>
                 <span className="font-bold text-white">
-                  {sessionHistory[hoveredIndex].dateIso.split('T')[0]} (Day {sessionHistory[hoveredIndex].dayIndex})
+                  {effectiveHistory[hoveredIndex].dateIso.split('T')[0]} (Day {effectiveHistory[hoveredIndex].dayIndex})
                 </span>
                 <span className="mx-2 text-slate-600">•</span>
                 <span className="text-slate-400">องศา: </span>
-                <span className="font-bold text-teal-400">{sessionHistory[hoveredIndex].maxRomDeg}°</span>
+                <span className="font-bold text-teal-400">{effectiveHistory[hoveredIndex].maxRomDeg}°</span>
                 <span className="mx-2 text-slate-600">•</span>
                 <span className="text-slate-400">คะแนนฟอร์ม: </span>
-                <span className="font-bold text-emerald-400">{sessionHistory[hoveredIndex].formQualityScore}%</span>
+                <span className="font-bold text-emerald-400">{effectiveHistory[hoveredIndex].formQualityScore}%</span>
               </div>
-              {sessionHistory[hoveredIndex].painReported && (
+              {effectiveHistory[hoveredIndex].painReported && (
                 <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-500/40 text-[11px]">
                   🚨 แจ้งเจ็บในเซสชันนี้
                 </span>
@@ -356,12 +401,12 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
           </div>
 
           <div className="flex items-center gap-3">
-            {replaySnapshot && onOpenReplay && (
+            {effectiveSnapshot && onOpenReplay && (
               <button
                 type="button"
                 id="btn-open-holographic-replay"
                 data-testid="btn-open-holographic-replay"
-                onClick={() => onOpenReplay(replaySnapshot)}
+                onClick={() => onOpenReplay(effectiveSnapshot)}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-teal-950/50 flex items-center gap-2 transition active:scale-95 cursor-pointer"
               >
                 <Eye className="w-4 h-4" />

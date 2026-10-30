@@ -8,3 +8,4 @@
 export * from './recoveryTrajectory';
 export * from './clinicalReportGenerator';
 export * from './ClinicalExecutiveDashboardModal';
+export * from './referenceTrajectorySynthesizer';

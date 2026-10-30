@@ -8,3 +8,4 @@
 export * from './ringBuffer';
 export * from './biomechanicalAnomalyFinder';
 export * from './HolographicReplayViewer';
+export * from './referenceSynthesizer';

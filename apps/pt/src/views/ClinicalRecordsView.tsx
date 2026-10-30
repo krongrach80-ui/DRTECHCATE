@@ -27,7 +27,7 @@ import {
 import {
   HolographicReplayViewer,
   KinematicReplaySnapshot,
-  createClinicalReplaySnapshot,
+  synthesizeClinicalPainReplaySnapshot,
 } from '../../../../packages/kinematic-replay-3d/src/index';
 
 interface ClinicalRecordsViewProps {
@@ -197,7 +197,7 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
 
   const sampleSnapshot = useMemo(() => {
     if (!selectedPatient) return null;
-    return createClinicalReplaySnapshot({
+    return synthesizeClinicalPainReplaySnapshot({
       patientId: selectedPatient.hn,
       exerciseName: selectedPatient.injury ? `ฟื้นฟู${selectedPatient.injury}` : 'Shoulder Abduction (กางข้อไหล่)',
     });
