@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx apps/api/src/server.ts",
-    "build": "npm run build:apps && npm run copy:apps && npm run build:api",
+    "build": "node scripts/neutralize-odml.js && npm run build:apps && npm run copy:apps && npm run build:api",
     "build:types": "tsc -p tsconfig.build.json",
     "start": "tsx apps/api/src/server.ts",
     "lint": "eslint",

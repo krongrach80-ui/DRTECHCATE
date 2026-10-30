@@ -33,6 +33,7 @@ import {
 } from './clinicalReportGenerator';
 import { KinematicReplaySnapshot } from '../../kinematic-replay-3d/src/ringBuffer';
 import { synthesizeLongitudinalRecoveryProfile } from './referenceTrajectorySynthesizer';
+import { useClinicalI18n, LanguageSwitcher } from '../../clinical-i18n/src/index';
 
 interface ClinicalExecutiveDashboardModalProps {
   isOpen: boolean;
@@ -51,6 +52,7 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
   replaySnapshot,
   onOpenReplay,
 }) => {
+  const { t } = useClinicalI18n();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [useReferenceCalibration, setUseReferenceCalibration] = useState<boolean>(false);
 
@@ -148,18 +150,20 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
             </div>
             <div>
               <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
-                <span>แดชบอร์ดชีวกลศาสตร์และการฟื้นฟูระยะยาว</span>
+                <span>{t('dashboard_title')}</span>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-teal-950 border border-teal-500/40 text-teal-300 font-medium">
                   Clinical Intelligence
                 </span>
               </h2>
               <div className="text-xs text-slate-400 mt-1">
-                ผู้ป่วย: {patient.fullName} • HN: {patient.hn} • วินิจฉัย: {patient.diagnosis} ({patient.icd10Code || 'ICD-10 M75.1'})
+                {t('patient_name')}: {patient.fullName} • {t('patient_hn')}: {patient.hn} • {t('clinical_diagnosis')}: {patient.diagnosis} ({patient.icd10Code || 'ICD-10 M75.1'})
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <LanguageSwitcher variant="dark" />
+
             <button
               type="button"
               id="btn-toggle-reference-calibration"
@@ -170,16 +174,17 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
                   ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-950/50'
                   : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
               }`}
-              title="ปรับเทียบและสังเคราะห์สัญญาณคลื่นชีวกลศาสตร์มาตรฐาน 12 เซสชัน (Reference Calibration)"
+              title="Reference Calibration"
             >
               <Sliders className="w-3.5 h-3.5" />
-              <span>🎛️ ปรับเทียบสัญญาณชีวกลศาสตร์มาตรฐาน (Reference Calibration)</span>
+              <span>{t('reference_calibration')}</span>
             </button>
 
             <button
               type="button"
               onClick={onClose}
               className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition active:scale-95 cursor-pointer border border-slate-700"
+              title={t('close_window')}
             >
               <X className="w-5 h-5" />
             </button>
@@ -189,27 +194,27 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
         {/* 2. Top Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-            <div className="text-[11px] text-slate-400 uppercase font-semibold">องศาปัจจุบัน / เป้าหมาย</div>
+            <div className="text-[11px] text-slate-400 uppercase font-semibold">{t('current_target_angle')}</div>
             <div className="text-xl sm:text-2xl font-black text-teal-400 mt-1">
               {trajectory.currentRomDeg}° <span className="text-xs text-slate-400 font-normal">/ {trajectory.targetRomDeg}°</span>
             </div>
             <div className="text-[11px] text-emerald-400 mt-1 font-medium">
-              ฟื้นตัวแล้ว {trajectory.percentRecovery}%
+              {t('recovery_progress')} {trajectory.percentRecovery}%
             </div>
           </div>
 
           <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-            <div className="text-[11px] text-slate-400 uppercase font-semibold">อัตราพัฒนาการ (Slope)</div>
+            <div className="text-[11px] text-slate-400 uppercase font-semibold">Slope (°/Day)</div>
             <div className="text-xl sm:text-2xl font-black text-emerald-400 mt-1">
-              +{trajectory.slopeDegPerDay}° <span className="text-xs text-slate-400 font-normal">/ วัน</span>
+              +{trajectory.slopeDegPerDay}° <span className="text-xs text-slate-400 font-normal">/ d</span>
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
-              ความแม่นยำโมเดล R² = {trajectory.rSquared}
+              R² = {trajectory.rSquared}
             </div>
           </div>
 
           <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-            <div className="text-[11px] text-slate-400 uppercase font-semibold">ดัชนีความนิ่ง (JSSI)</div>
+            <div className="text-[11px] text-slate-400 uppercase font-semibold">{t('joint_stability_index')}</div>
             <div className="text-xl sm:text-2xl font-black text-sky-400 mt-1">
               {trajectory.jointStabilityIndex} <span className="text-xs text-slate-400 font-normal">/ 100</span>
             </div>
@@ -219,12 +224,12 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
           </div>
 
           <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-            <div className="text-[11px] text-slate-400 uppercase font-semibold">พยากรณ์วันฟื้นฟูเต็มเป้า</div>
+            <div className="text-[11px] text-slate-400 uppercase font-semibold">{t('estimated_recovery')}</div>
             <div className="text-lg sm:text-xl font-black text-emerald-300 mt-1 truncate">
-              {trajectory.estimatedFullRecoveryDate || 'ติดตามตามรอบ'}
+              {trajectory.estimatedFullRecoveryDate || 'Follow-up'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
-              {trajectory.daysToFullRecovery !== null ? `อีกประมาณ ${trajectory.daysToFullRecovery} วัน` : 'อยู่ในเกณฑ์คงที่'}
+              {trajectory.daysToFullRecovery !== null ? `~${trajectory.daysToFullRecovery} days` : 'Stable range'}
             </div>
           </div>
         </div>
@@ -235,15 +240,15 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1.5 font-bold text-teal-400">
                 <span className="w-3 h-3 rounded-full bg-teal-400 inline-block" />
-                <span>องศาข้อต่อสูงสุด (Max ROM)</span>
+                <span>{t('rom')}</span>
               </div>
               <div className="flex items-center gap-1.5 font-bold text-rose-400">
                 <span className="w-3 h-3 rounded-full bg-rose-400 inline-block" />
-                <span>อัตราการชดเชยท่า (Compensation %)</span>
+                <span>{t('scapular_hiking')}</span>
               </div>
             </div>
             <div className="text-slate-400 text-[11px]">
-              {n} เซสชันการรักษาล่าสุด
+              {n} Sessions
             </div>
           </div>
 
@@ -373,20 +378,20 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
           {hoveredIndex !== null && effectiveHistory[hoveredIndex] && (
             <div className="mt-3 p-3 rounded-xl bg-slate-900 border border-teal-500/40 text-xs flex items-center justify-between animate-fade-in">
               <div>
-                <span className="text-slate-400">เซสชันวันที่: </span>
+                <span className="text-slate-400">Date: </span>
                 <span className="font-bold text-white">
                   {effectiveHistory[hoveredIndex].dateIso.split('T')[0]} (Day {effectiveHistory[hoveredIndex].dayIndex})
                 </span>
                 <span className="mx-2 text-slate-600">•</span>
-                <span className="text-slate-400">องศา: </span>
+                <span className="text-slate-400">{t('rom')}: </span>
                 <span className="font-bold text-teal-400">{effectiveHistory[hoveredIndex].maxRomDeg}°</span>
                 <span className="mx-2 text-slate-600">•</span>
-                <span className="text-slate-400">คะแนนฟอร์ม: </span>
+                <span className="text-slate-400">{t('form_quality_score')}: </span>
                 <span className="font-bold text-emerald-400">{effectiveHistory[hoveredIndex].formQualityScore}%</span>
               </div>
               {effectiveHistory[hoveredIndex].painReported && (
                 <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-500/40 text-[11px]">
-                  🚨 แจ้งเจ็บในเซสชันนี้
+                  {t('pain_detected_in_session')}
                 </span>
               )}
             </div>
@@ -396,8 +401,8 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
         {/* 4. Action Buttons Footer */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
           <div className="flex items-center gap-2 text-xs text-slate-400">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>มาตรฐานรายงานทางการแพทย์ SaMD Class II & HIPAA Zero-Video</span>
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="font-medium text-emerald-300">{t('pipl_compliance')}</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -410,7 +415,7 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-teal-950/50 flex items-center gap-2 transition active:scale-95 cursor-pointer"
               >
                 <Eye className="w-4 h-4" />
-                <span>หมุนดู 3D Holographic Replay</span>
+                <span>{t('open_3d_replay')}</span>
               </button>
             )}
 
@@ -422,7 +427,7 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
               className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition active:scale-95 cursor-pointer border border-slate-700"
             >
               <Printer className="w-4 h-4 text-slate-300" />
-              <span>🖨️ พิมพ์รายงานแพทย์ (A4 / PDF)</span>
+              <span>{t('print_report')}</span>
             </button>
           </div>
         </div>
@@ -430,3 +435,4 @@ export const ClinicalExecutiveDashboardModal: React.FC<ClinicalExecutiveDashboar
     </div>
   );
 };
+

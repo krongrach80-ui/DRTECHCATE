@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, Bell, Wifi } from 'lucide-react';
+import { LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
 
 interface HeaderProps {
   kioskId?: string;
@@ -56,6 +57,8 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Terminal Info & Live Clock */}
       <div className="flex items-center gap-6">
+        <LanguageSwitcher variant="dark" />
+
         <button
           onClick={onOpenPairing}
           className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 hover:border-slate-700 transition"

@@ -18,17 +18,36 @@ async function initLandmarker(wasmPath: string, modelAssetPath: string) {
   const vision = await import('@mediapipe/tasks-vision');
   const { FaceLandmarker, FilesetResolver } = vision;
 
-  const fileset = await FilesetResolver.forVisionTasks(wasmPath);
-  landmarker = await FaceLandmarker.createFromOptions(fileset, {
-    baseOptions: {
-      modelAssetPath,
-      delegate: 'GPU',
-    },
-    runningMode: 'IMAGE',
-    numFaces: 2,
-    outputFaceBlendshapes: true,
-    outputFacialTransformationMatrixes: true,
-  });
+  let fileset: any;
+  try {
+    fileset = await FilesetResolver.forVisionTasks(wasmPath);
+  } catch {
+    fileset = await FilesetResolver.forVisionTasks('/wasm');
+  }
+
+  try {
+    landmarker = await FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath,
+        delegate: 'GPU',
+      },
+      runningMode: 'IMAGE',
+      numFaces: 2,
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: true,
+    });
+  } catch {
+    landmarker = await FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath,
+        delegate: 'CPU',
+      },
+      runningMode: 'IMAGE',
+      numFaces: 2,
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: true,
+    });
+  }
 }
 
 function processDetection(

@@ -57,24 +57,22 @@ async function getSharedPoseLandmarker(): Promise<any> {
     const vision = await import('@mediapipe/tasks-vision');
     const { PoseLandmarker, FilesetResolver } = vision;
 
-    // Use local WASM if available, fallback to unpkg/jsdelivr CDN
+    // Enforce self-hosted WASM and local models for China GFW immunity
     let fileset: any;
     try {
       fileset = await FilesetResolver.forVisionTasks('/models/wasm');
     } catch {
-      fileset = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
-      );
+      fileset = await FilesetResolver.forVisionTasks('/wasm');
     }
 
-    const cdnModelAssetPath =
-      'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task';
+    const localModelAssetPath = '/models/pose_landmarker.task';
+    const fallbackLiteAssetPath = '/models/pose_landmarker_lite.task';
 
     let landmarker: any;
     try {
       landmarker = await PoseLandmarker.createFromOptions(fileset, {
         baseOptions: {
-          modelAssetPath: '/models/pose_landmarker.task',
+          modelAssetPath: localModelAssetPath,
           delegate: 'GPU',
         },
         runningMode: 'VIDEO',
@@ -87,20 +85,7 @@ async function getSharedPoseLandmarker(): Promise<any> {
       try {
         landmarker = await PoseLandmarker.createFromOptions(fileset, {
           baseOptions: {
-            modelAssetPath: cdnModelAssetPath,
-            delegate: 'GPU',
-          },
-          runningMode: 'VIDEO',
-          numPoses: 2,
-          minPoseDetectionConfidence: 0.55,
-          minPosePresenceConfidence: 0.55,
-          minTrackingConfidence: 0.55,
-        });
-      } catch (gpuErr) {
-        console.warn('PoseLandmarker GPU delegate failed, falling back to CPU:', gpuErr);
-        landmarker = await PoseLandmarker.createFromOptions(fileset, {
-          baseOptions: {
-            modelAssetPath: cdnModelAssetPath,
+            modelAssetPath: fallbackLiteAssetPath,
             delegate: 'CPU',
           },
           runningMode: 'VIDEO',
@@ -109,6 +94,8 @@ async function getSharedPoseLandmarker(): Promise<any> {
           minPosePresenceConfidence: 0.55,
           minTrackingConfidence: 0.55,
         });
+      } catch (delegateErr) {
+        console.warn('PoseLandmarker initialization fallback:', delegateErr);
       }
     }
 

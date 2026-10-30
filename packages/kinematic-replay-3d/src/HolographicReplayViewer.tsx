@@ -29,9 +29,11 @@ import {
   Compass,
   Activity,
   Flame,
+  ShieldCheck,
 } from 'lucide-react';
 import { KinematicReplaySnapshot } from './ringBuffer';
 import { detectBiomechanicalAnomalies, AnomalyDetectionResult } from './biomechanicalAnomalyFinder';
+import { useClinicalI18n, LanguageSwitcher } from '../../clinical-i18n/src/index';
 
 interface HolographicReplayViewerProps {
   snapshot: KinematicReplaySnapshot;
@@ -54,6 +56,7 @@ export const HolographicReplayViewer: React.FC<HolographicReplayViewerProps> = (
   onClose,
   title,
 }) => {
+  const { t } = useClinicalI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Playback states
@@ -276,18 +279,20 @@ export const HolographicReplayViewer: React.FC<HolographicReplayViewerProps> = (
           </div>
           <div>
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              <span>{title || 'โครงร่างกระดูกชีวกลศาสตร์ 3 มิติ (3D Kinematic Holographic Replay)'}</span>
+              <span>{title || t('3d_kinematic_replay')}</span>
               <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-teal-950 border border-teal-500/40 text-teal-300 font-mono">
-                100% Vector HIPAA
+                {t('pipl_short_badge')}
               </span>
             </h2>
             <div className="text-xs text-slate-400 mt-0.5">
-              ท่า: {snapshot.exerciseName} • รวม {snapshot.totalFrames} เฟรม ({snapshot.fps} FPS)
+              {snapshot.exerciseName} • {snapshot.totalFrames} Frames ({snapshot.fps} FPS)
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          <LanguageSwitcher variant="dark" />
+
           {anomalyResult.hasAnomaly && (
             <button
               type="button"
@@ -295,7 +300,7 @@ export const HolographicReplayViewer: React.FC<HolographicReplayViewerProps> = (
               className="px-3.5 py-2 rounded-xl bg-rose-950/90 hover:bg-rose-900 border border-rose-500/60 text-rose-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-lg shadow-rose-950/50"
             >
               <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>ข้ามไปยังจังหวะที่เจ็บ (Jump to Anomaly)</span>
+              <span>{t('jump_to_anomaly')}</span>
             </button>
           )}
 
@@ -303,7 +308,7 @@ export const HolographicReplayViewer: React.FC<HolographicReplayViewerProps> = (
             type="button"
             onClick={onClose}
             className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition active:scale-95 cursor-pointer border border-slate-700"
-            title="ปิดหน้าต่าง Replay"
+            title={t('close_window')}
           >
             <X className="w-5 h-5" />
           </button>
@@ -326,7 +331,7 @@ export const HolographicReplayViewer: React.FC<HolographicReplayViewerProps> = (
 
         {/* 3D Orbit Controls Floating Hint */}
         <div className="absolute top-4 left-6 pointer-events-none text-[11px] text-slate-400 bg-slate-950/70 border border-slate-800 px-3 py-1.5 rounded-xl backdrop-blur-md">
-          🖱️ ลากเมาส์หมุนมุมมอง 360° | หมุนลูกกลิ้งเพื่อซูมเข้า-ออก
+          {t('rotate_360_hint')}
         </div>
 
         {/* Zoom Controls Floating Bar */}
@@ -392,7 +397,7 @@ export const HolographicReplayViewer: React.FC<HolographicReplayViewerProps> = (
             <div className="mt-2.5 p-2.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-[11px] text-rose-200">
               <div className="font-bold flex items-center gap-1.5 text-rose-400">
                 <Flame className="w-3.5 h-3.5" />
-                <span>ตรวจพบจุดกระชาก (Jerk Spike):</span>
+                <span>{t('angular_jerk_anomaly')}:</span>
               </div>
               <p className="mt-1 leading-snug">{anomalyResult.descriptionTh}</p>
             </div>
@@ -458,6 +463,11 @@ export const HolographicReplayViewer: React.FC<HolographicReplayViewerProps> = (
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-[11px] text-emerald-300 font-medium">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span>{t('pipl_compliance')}</span>
           </div>
 
           <div className="font-mono text-slate-400">

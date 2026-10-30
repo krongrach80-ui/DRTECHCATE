@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { StaffLoginModal } from '../../../admin/src/clinical-ui/StaffLoginModal';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
+import { LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
 
 interface KioskClinicalHeaderProps {
   kioskId?: string;
@@ -77,6 +78,9 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
 
         {/* Right Controls */}
         <div className="flex items-center gap-2.5">
+          {/* Trilingual Language Switcher (zh-CN, th-TH, en-US) */}
+          <LanguageSwitcher variant="dark" />
+
           {/* Cloud Online Status */}
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-[11px] font-bold text-emerald-300">
             <Wifi className="w-3.5 h-3.5 text-emerald-400" />

@@ -230,23 +230,54 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           await videoRef.current.play();
         }
 
-        // Dynamically import MediaPipe Vision tasks
+        // Enforce self-hosted WASM and local models for China GFW immunity
         const vision = await import('@mediapipe/tasks-vision');
-        const filesetResolver = await vision.FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-        );
+        let filesetResolver: any;
+        try {
+          filesetResolver = await vision.FilesetResolver.forVisionTasks('/models/wasm');
+        } catch {
+          filesetResolver = await vision.FilesetResolver.forVisionTasks('/wasm');
+        }
 
-        landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
-          baseOptions: {
-            modelAssetPath: '/models/pose_landmarker.task',
-            delegate: 'GPU',
-          },
-          runningMode: 'VIDEO',
-          numPoses: 1,
-          minPoseDetectionConfidence: 0.5,
-          minPosePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
+        try {
+          landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+            baseOptions: {
+              modelAssetPath: '/models/pose_landmarker.task',
+              delegate: 'GPU',
+            },
+            runningMode: 'VIDEO',
+            numPoses: 1,
+            minPoseDetectionConfidence: 0.5,
+            minPosePresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+          });
+        } catch {
+          try {
+            landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+              baseOptions: {
+                modelAssetPath: '/models/pose_landmarker.task',
+                delegate: 'CPU',
+              },
+              runningMode: 'VIDEO',
+              numPoses: 1,
+              minPoseDetectionConfidence: 0.5,
+              minPosePresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            });
+          } catch {
+            landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+              baseOptions: {
+                modelAssetPath: '/models/pose_landmarker_lite.task',
+                delegate: 'CPU',
+              },
+              runningMode: 'VIDEO',
+              numPoses: 1,
+              minPoseDetectionConfidence: 0.5,
+              minPosePresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            });
+          }
+        }
 
         startProcessingLoop(landmarker);
       } catch (err) {

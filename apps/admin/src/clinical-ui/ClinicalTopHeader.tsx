@@ -14,6 +14,7 @@ import {
   Monitor,
 } from 'lucide-react';
 import { SmoothButton } from '../../../../packages/hospital-ui-kit/src/index.js';
+import { LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
 
 interface ClinicalTopHeaderProps {
   title: string;
@@ -67,6 +68,9 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
 
       {/* Right Action Bar */}
       <div className="flex items-center gap-3.5">
+        {/* Trilingual Language Switcher (zh-CN, th-TH, en-US) */}
+        <LanguageSwitcher />
+
         {/* Supabase Status Pill */}
         <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-[11px] font-bold text-emerald-800 select-none">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />

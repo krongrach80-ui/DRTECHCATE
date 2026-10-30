@@ -32,6 +32,18 @@ const FORBIDDEN_MOCK_PATTERNS = [
   /simulate/i,
 ];
 
+// Great Firewall (GFW) & Production URL Immunity Constraints
+const FORBIDDEN_GFW_PATTERNS = [
+  /fonts\.googleapis\.com/,
+  /fonts\.gstatic\.com/,
+  /storage\.googleapis\.com/,
+  /https?:\/\/[a-zA-Z0-9.-]*googleapis\.com/,
+  /cdn\.jsdelivr\.net/,
+  /unpkg\.com/,
+  /https?:\/\/localhost(:\d+)?/,
+  /https?:\/\/127\.0\.0\.1(:\d+)?/,
+];
+
 const DIST_DIR = path.resolve(process.cwd(), 'dist');
 
 const APPS = [
@@ -66,6 +78,10 @@ function buildIfRequested(): void {
 
   console.log('>>> 2. Building Vite frontend apps (admin, pt, kiosk)...');
   try {
+    execSync('node scripts/neutralize-odml.js', {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+    });
     execSync('npm run build:apps', {
       cwd: process.cwd(),
       env: { ...process.env, NODE_ENV: 'production' },
@@ -155,6 +171,7 @@ function runCiBundleVerification(): void {
       const scan = scanDirectoryForPatterns(appDistDir, [
         ...FORBIDDEN_CLIENT_LEAKS,
         ...FORBIDDEN_MOCK_PATTERNS,
+        ...FORBIDDEN_GFW_PATTERNS,
       ]);
       console.log(`  - ${app.name} (${app.system}): สแกนแล้ว ${scan.fileCount} ไฟล์ (พบข้อผิดพลาด: ${scan.violations.length})`);
       allViolations = allViolations.concat(scan.violations);
@@ -182,6 +199,7 @@ function runCiBundleVerification(): void {
         const pubScan = scanDirectoryForPatterns(appPublicDir, [
           ...FORBIDDEN_CLIENT_LEAKS,
           ...FORBIDDEN_MOCK_PATTERNS,
+          ...FORBIDDEN_GFW_PATTERNS,
         ]);
         console.log(`  - public/${app.dirName}: สแกนแล้ว ${pubScan.fileCount} ไฟล์ (พบข้อผิดพลาด: ${pubScan.violations.length})`);
         allViolations = allViolations.concat(pubScan.violations);

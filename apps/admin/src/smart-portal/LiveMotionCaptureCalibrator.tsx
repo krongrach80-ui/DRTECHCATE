@@ -98,18 +98,43 @@ export const LiveMotionCaptureCalibrator: React.FC<LiveMotionCaptureCalibratorPr
         }
 
         const vision = await import('@mediapipe/tasks-vision');
-        const filesetResolver = await vision.FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-        );
+        let filesetResolver: any;
+        try {
+          filesetResolver = await vision.FilesetResolver.forVisionTasks('/models/wasm');
+        } catch {
+          filesetResolver = await vision.FilesetResolver.forVisionTasks('/wasm');
+        }
 
-        landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
-          baseOptions: {
-            modelAssetPath: '/models/pose_landmarker.task',
-            delegate: 'GPU',
-          },
-          runningMode: 'VIDEO',
-          numPoses: 1,
-        });
+        try {
+          landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+            baseOptions: {
+              modelAssetPath: '/models/pose_landmarker.task',
+              delegate: 'GPU',
+            },
+            runningMode: 'VIDEO',
+            numPoses: 1,
+          });
+        } catch {
+          try {
+            landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+              baseOptions: {
+                modelAssetPath: '/models/pose_landmarker.task',
+                delegate: 'CPU',
+              },
+              runningMode: 'VIDEO',
+              numPoses: 1,
+            });
+          } catch {
+            landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+              baseOptions: {
+                modelAssetPath: '/models/pose_landmarker_lite.task',
+                delegate: 'CPU',
+              },
+              runningMode: 'VIDEO',
+              numPoses: 1,
+            });
+          }
+        }
 
         startLoop(landmarker);
       } catch (err) {

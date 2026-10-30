@@ -34,15 +34,44 @@ for (const app of apps) {
   copyDirSync(src, dest);
 }
 
-// Single-App Unification: Copy the unified kiosk app index.html to public/index.html,
-// public/admin/index.html, and public/pt/index.html so all legacy direct paths and root
-// URL serve the unified application SPA unconditionally.
+// Root URL Single Page App entry: Copy kiosk index.html to public/index.html
 const kioskIndexHtml = path.join(root, 'dist', 'apps', 'kiosk', 'index.html');
 if (fs.existsSync(kioskIndexHtml)) {
   fs.copyFileSync(kioskIndexHtml, path.join(root, 'public', 'index.html'));
-  fs.copyFileSync(kioskIndexHtml, path.join(root, 'public', 'admin', 'index.html'));
-  fs.copyFileSync(kioskIndexHtml, path.join(root, 'public', 'pt', 'index.html'));
-  console.log('✓ Unified SPA index.html copied to public/, public/admin/, and public/pt/');
+  console.log('✓ Root SPA entry index.html copied to public/');
 }
 
-console.log('Successfully copied all apps to public/');
+// Ensure Self-Hosted Models & WASM (China GFW Immunity)
+const srcWasm = path.resolve(root, 'node_modules', '@mediapipe', 'tasks-vision', 'wasm');
+const publicModels = path.resolve(root, 'public', 'models');
+const publicWasm = path.resolve(root, 'public', 'wasm');
+
+// 1. Create pose_landmarker_lite.task alias if needed
+const poseModel = path.join(publicModels, 'pose_landmarker.task');
+const poseLiteModel = path.join(publicModels, 'pose_landmarker_lite.task');
+if (fs.existsSync(poseModel) && !fs.existsSync(poseLiteModel)) {
+  fs.copyFileSync(poseModel, poseLiteModel);
+  console.log('✓ Created pose_landmarker_lite.task alias from pose_landmarker.task');
+}
+
+// 2. Ensure /wasm exists in public
+if (fs.existsSync(srcWasm)) {
+  copyDirSync(srcWasm, publicWasm);
+  copyDirSync(srcWasm, path.join(publicModels, 'wasm'));
+} else if (fs.existsSync(path.join(publicModels, 'wasm'))) {
+  copyDirSync(path.join(publicModels, 'wasm'), publicWasm);
+}
+
+// 3. Mirror models and wasm into portal directories
+for (const app of apps) {
+  const appModels = path.join(root, 'public', app, 'models');
+  const appWasm = path.join(root, 'public', app, 'wasm');
+  if (fs.existsSync(publicModels)) {
+    copyDirSync(publicModels, appModels);
+  }
+  if (fs.existsSync(publicWasm)) {
+    copyDirSync(publicWasm, appWasm);
+  }
+}
+
+console.log('✓ Successfully assembled all multi-portal production bundles and local GFW assets in public/');
