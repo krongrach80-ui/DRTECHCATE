@@ -138,6 +138,13 @@ export const AdminApp: React.FC = () => {
     await fetchStaffCalls();
   };
 
+  const spaNavigate = (path: string) => {
+    if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', path);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  };
+
   // Enforce authentication: If not authenticated, display login screen exclusively
   if (!currentUser) {
     return (
@@ -145,11 +152,11 @@ export const AdminApp: React.FC = () => {
         <StaffLoginModal
           isOpen={true}
           onClose={() => {
-            window.location.href = '/';
+            spaNavigate('/');
           }}
           onLogin={handleDirectLogin}
           onReturnToKiosk={() => {
-            window.location.href = '/';
+            spaNavigate('/');
           }}
         />
       </div>
@@ -163,7 +170,7 @@ export const AdminApp: React.FC = () => {
         currentUser={currentUser}
         onLogout={handleLogout}
         onReturnToKiosk={() => {
-          window.location.href = '/';
+          spaNavigate('/');
         }}
         onLogin={handleDirectLogin}
       />

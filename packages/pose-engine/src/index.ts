@@ -6,10 +6,12 @@
  */
 
 export * from './types/exerciseConfig';
+export * from './types';
 export * from './math/filters';
 export * from './math/geometry3d';
 export * from './math/pendulumAnalyzer';
-export * from './engine/compensationDetector';
+export * from './compensation';
 export * from './engine/calibrationRecorder';
 export * from './engine/repStateMachine';
 export * from './presets/shoulderPendulumPreset';
+export * from './privacy';

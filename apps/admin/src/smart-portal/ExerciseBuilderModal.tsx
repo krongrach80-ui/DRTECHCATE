@@ -9,15 +9,10 @@
 import React, { useState } from 'react';
 import {
   X,
-  Activity,
   Camera,
   Save,
-  CheckCircle2,
-  Copy,
   Sliders,
   ShieldAlert,
-  Flame,
-  ArrowRight,
 } from 'lucide-react';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
@@ -86,7 +81,7 @@ export const ExerciseBuilderModal: React.FC<ExerciseBuilderModalProps> = ({
     exerciseToEdit ? (isClone ? `${exerciseToEdit.title} (คัดลอก)` : exerciseToEdit.title) : ''
   );
   const [nameEn, setNameEn] = useState(exerciseToEdit?.nameEn || '');
-  const [description, setDescription] = useState(exerciseToEdit?.description || '');
+  const [description, _setDescription] = useState(exerciseToEdit?.description || '');
   const [targetJoint, setTargetJoint] = useState<TargetJoint>(
     (exerciseToEdit?.target_joint as TargetJoint) || 'shoulder'
   );
@@ -96,10 +91,10 @@ export const ExerciseBuilderModal: React.FC<ExerciseBuilderModalProps> = ({
   );
 
   // Camera Guide
-  const [recommendedView, setRecommendedView] = useState<CameraViewOrientation>('side_45');
-  const [minDistance, setMinDistance] = useState<number>(1.5);
-  const [maxDistance, setMaxDistance] = useState<number>(2.5);
-  const [instructionTextTh, setInstructionTextTh] = useState<string>(
+  const [recommendedView, _setRecommendedView] = useState<CameraViewOrientation>('side_45');
+  const [minDistance, _setMinDistance] = useState<number>(1.5);
+  const [maxDistance, _setMaxDistance] = useState<number>(2.5);
+  const [instructionTextTh, _setInstructionTextTh] = useState<string>(
     'ยืนหันข้างเฉียง 45° ถึง 90° ระยะห่าง 1.5 - 2.5 เมตรจากกล้อง'
   );
 

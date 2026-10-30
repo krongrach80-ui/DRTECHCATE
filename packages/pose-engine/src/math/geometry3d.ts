@@ -122,3 +122,78 @@ export function calculateBoneLengthSanity(
   const upperBound = expectedLength * (1.0 + toleranceRatio);
   return measured >= lowerBound && measured <= upperBound;
 }
+
+/**
+ * Calculates trunk lateral flexion (side tilt) relative to the vertical plumb line in the frontal plane.
+ * @param midShoulder Center point between left and right shoulders
+ * @param midHip Center point between left and right hips
+ * @returns Lateral tilt angle in degrees [0°, 90°]. 0° = perfectly upright.
+ */
+export function calculateTrunkLateralTilt(
+  midShoulder: Point3DLike,
+  midHip: Point3DLike
+): number {
+  const dx = Math.abs(midShoulder.x - midHip.x);
+  const dy = Math.abs(midShoulder.y - midHip.y);
+
+  if (dy < 1e-4) {
+    return 90.0;
+  }
+
+  const tiltRad = Math.atan2(dx, dy);
+  return (tiltRad * 180.0) / Math.PI;
+}
+
+/**
+ * Calculates Bi-acromial Width (distance between left and right shoulder landmarks).
+ */
+export function calculateBiAcromialWidth(
+  leftShoulder: Point3DLike,
+  rightShoulder: Point3DLike
+): number {
+  return distance3D(leftShoulder, rightShoulder);
+}
+
+/**
+ * Monocular Depth Normalization
+ * Uses Bi-acromial width (and hip width) to compute a scale factor that mitigates
+ * perspective lens distortion and Z-axis drift for consistent joint angle tracking.
+ */
+export function normalizeLandmarksDepth<T extends Point3DLike>(
+  landmarks: T[],
+  referenceBiAcromialWidth: number = 0.35
+): T[] {
+  if (landmarks.length < 25) return landmarks;
+
+  const leftShoulder = landmarks[11];
+  const rightShoulder = landmarks[12];
+  const leftHip = landmarks[23];
+  const rightHip = landmarks[24];
+
+  if (!leftShoulder || !rightShoulder || !leftHip || !rightHip) {
+    return landmarks;
+  }
+
+  const measuredShoulderWidth = distance3D(leftShoulder, rightShoulder);
+  if (measuredShoulderWidth < 1e-3) return landmarks;
+
+  const scaleFactor = referenceBiAcromialWidth / measuredShoulderWidth;
+
+  // Anchor centroid at mid-hip
+  const anchorX = (leftHip.x + rightHip.x) / 2.0;
+  const anchorY = (leftHip.y + rightHip.y) / 2.0;
+  const anchorZ = ((leftHip.z ?? 0) + (rightHip.z ?? 0)) / 2.0;
+
+  return landmarks.map((lm) => {
+    const normX = anchorX + (lm.x - anchorX) * scaleFactor;
+    const normY = anchorY + (lm.y - anchorY) * scaleFactor;
+    const normZ = anchorZ + ((lm.z ?? 0) - anchorZ) * scaleFactor;
+
+    return {
+      ...lm,
+      x: normX,
+      y: normY,
+      z: normZ,
+    };
+  });
+}

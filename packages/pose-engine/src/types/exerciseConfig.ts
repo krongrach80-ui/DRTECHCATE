@@ -65,9 +65,12 @@ export interface PrescriptionConfig {
 
 export type CompensationType =
   | 'trunk_lean'
+  | 'trunk_lateral_flexion'
+  | 'scapular_hiking'
   | 'shoulder_shrug'
   | 'elbow_flexion'
-  | 'excessive_speed';
+  | 'excessive_speed'
+  | 'tempo_violation';
 
 export interface CompensationRule {
   ruleId: string;
@@ -80,6 +83,8 @@ export interface CompensationRule {
 export interface SafetyContraindications {
   stopOnPainMessageTh: string;
   maxSafeAngleCapDeg: number; // Hard ceiling beyond which engine instructs patient to lower arm
+  maxSafeVelocityDegPerSec?: number; // Angular velocity cap (e.g. 180°/s) to prevent uncontrolled joint jerking
+  minTempoDurationSec?: number;      // Minimum tempo duration for a clean concentric/eccentric rep
 }
 
 export interface ExerciseDetectionConfig {
@@ -98,6 +103,7 @@ export interface ExerciseDetectionConfig {
   defaultPrescription: PrescriptionConfig;
   compensationRules: CompensationRule[];
   safetyContraindications: SafetyContraindications;
+  maxSafeVelocityDegPerSec?: number; // Shortcut or per-exercise velocity ceiling
 }
 
 /**
@@ -150,6 +156,11 @@ export interface RepEvaluationResult {
   activeWarnings: ActiveCompensationWarning[];
   formRating: 'good' | 'warning' | 'error';
   instantaneousVelocity: number;
+  angularVelocityDegPerSec?: number;
+  trunkLateralTiltDeg?: number;
+  scapularHikingRatio?: number;
+  isRepRejected?: boolean;
+  repRejectionReasonTh?: string;
   filteredLandmarks: PoseEngineLandmark[];
 }
 
@@ -166,6 +177,9 @@ export interface ExerciseSessionTelemetry {
   averageHoldDurationSec: number;
   consistencyScorePercent: number; // 0 to 100
   compensationEventsCount: number;
+  scapularHikingRate?: number;
+  trunkCompensationIndex?: number;
+  averageVelocityDegPerSec?: number;
   completionMode: 'ai_verified' | 'skipped_unverified' | 'stopped_pain';
   painReported: boolean;
   sessionDurationSec: number;

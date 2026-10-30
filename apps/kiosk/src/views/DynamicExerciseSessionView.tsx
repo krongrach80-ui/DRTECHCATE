@@ -367,12 +367,17 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       averageHoldDurationSec: config.angleMechanics?.holdDurationSec || 2.0,
       consistencyScorePercent: evalResult?.completedReps ? Math.min(100, Math.round((evalResult.completedReps / (evalResult.completedReps + (evalResult.incorrectReps || 0))) * 100)) : 100,
       compensationEventsCount: evalResult?.activeWarnings?.length || 0,
+      scapularHikingRate: evalResult?.scapularHikingRatio || 0,
+      trunkCompensationIndex: evalResult?.trunkLateralTiltDeg || 0,
+      averageVelocityDegPerSec: evalResult?.angularVelocityDegPerSec || 0,
       completionMode: mode,
       painReported: mode === 'stopped_pain',
       sessionDurationSec: totalDurationSec,
       timestamp: new Date().toISOString(),
     };
 
+    // Zero-flicker in-memory reset for pose engine buffer without reloading page
+    stateMachineRef.current.reset();
     onSessionCompleted(telemetry);
   };
 
@@ -380,6 +385,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const handleReportPainStop = async () => {
     setPainReportedState(true);
     setIsPaused(true);
+    // Instant in-memory reset of kinematics state buffer
+    stateMachineRef.current.reset();
     speakThai('หยุดการฝึกแล้วค่ะ ระบบกำลังแจ้งนักกายภาพบำบัด');
 
     try {

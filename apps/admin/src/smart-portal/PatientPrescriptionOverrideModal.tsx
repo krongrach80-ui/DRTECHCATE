@@ -6,9 +6,13 @@
  * reps, and sets specifically for an individual patient without modifying the global exercise template.
  */
 
-import React, { useState } from 'react';
-import { X, Sliders, CheckCircle2, Activity } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, Sliders, CheckCircle2, Activity, Sparkles, ShieldCheck } from 'lucide-react';
 import { ExerciseDetectionConfig } from '../../../../packages/pose-engine/src/types/exerciseConfig';
+import {
+  evaluateAdaptiveProgression,
+  SessionHistoryRecord,
+} from '../../../../packages/prescription-engine/src/index.js';
 
 interface PatientPrescriptionOverrideModalProps {
   isOpen: boolean;
@@ -24,6 +28,7 @@ interface PatientPrescriptionOverrideModalProps {
     reps?: number;
     detection_config?: ExerciseDetectionConfig | null;
   };
+  patientHistory?: SessionHistoryRecord[];
   onSaveOverride: (overriddenExercise: any) => void;
 }
 
@@ -33,6 +38,7 @@ export const PatientPrescriptionOverrideModal: React.FC<PatientPrescriptionOverr
   patientName,
   patientHn,
   exercise,
+  patientHistory = [],
   onSaveOverride,
 }) => {
   const existingConfig = exercise.detection_config;
@@ -48,6 +54,27 @@ export const PatientPrescriptionOverrideModal: React.FC<PatientPrescriptionOverr
   const [holdDurationSec, setHoldDurationSec] = useState<number>(
     existingConfig?.angleMechanics?.holdDurationSec || 2.0
   );
+  const [isAiSuggestionApplied, setIsAiSuggestionApplied] = useState<boolean>(false);
+
+  // Compute adaptive AI progression suggestion
+  const aiProgression = useMemo(() => {
+    return evaluateAdaptiveProgression(patientHistory, {
+      targetMinDeg: existingConfig?.angleMechanics?.targetMinDeg || 80,
+      targetMaxDeg: existingConfig?.angleMechanics?.targetMaxDeg || 100,
+      holdDurationSec: existingConfig?.angleMechanics?.holdDurationSec || 2.0,
+      maxSafeAngleCapDeg: existingConfig?.safetyContraindications?.maxSafeAngleCapDeg || 140,
+    });
+  }, [patientHistory, existingConfig]);
+
+  const handleApplyAiSuggestion = () => {
+    if (aiProgression.suggestedTargetMaxDeg) {
+      setTargetMaxDeg(aiProgression.suggestedTargetMaxDeg);
+    }
+    if (aiProgression.suggestedHoldDurationSec) {
+      setHoldDurationSec(aiProgression.suggestedHoldDurationSec);
+    }
+    setIsAiSuggestionApplied(true);
+  };
 
   if (!isOpen) return null;
 
@@ -151,6 +178,43 @@ export const PatientPrescriptionOverrideModal: React.FC<PatientPrescriptionOverr
               </div>
             </div>
           </div>
+
+          {/* AI Clinical Copilot Suggestion Card */}
+          {aiProgression.isEligibleForProgression && (
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/60 to-purple-950/40 border border-indigo-500/40 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
+                  <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                  <span>คำแนะนำจาก AI Clinical Copilot (Progressive Overload)</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-200 border border-indigo-700/50">
+                  Form Score &ge; 90%
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {aiProgression.clinicalRationaleTh}
+              </p>
+              <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-400">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>รอการอนุมัติจากนักกายภาพบำบัด</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApplyAiSuggestion}
+                  disabled={isAiSuggestionApplied}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+                    isAiSuggestionApplied
+                      ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 cursor-default'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-950/40'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{isAiSuggestionApplied ? 'อนุมัติคำแนะนำแล้ว ✓' : 'อนุมัติคำแนะนำ AI'}</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

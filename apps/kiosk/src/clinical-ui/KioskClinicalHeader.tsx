@@ -36,8 +36,12 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
       if (onStaffLoginSuccess) {
         onStaffLoginSuccess();
       } else {
-        // Open admin portal in window or navigate
-        window.location.href = res.role === 'admin' ? '/admin' : '/pt';
+        // Open admin portal in window or navigate via client-side SPA routing
+        const targetPath = res.role === 'admin' ? '/admin' : '/pt';
+        if (typeof window !== 'undefined') {
+          window.history.pushState(null, '', targetPath);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }
       }
     }
   };

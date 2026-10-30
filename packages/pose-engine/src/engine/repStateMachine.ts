@@ -15,10 +15,10 @@ import {
   RepPhase,
   ActiveCompensationWarning,
 } from '../types/exerciseConfig';
-import { calculateAngle3D, calculateAngle2D } from '../math/geometry3d';
+import { calculateAngle3D, calculateAngle2D, normalizeLandmarksDepth } from '../math/geometry3d';
 import { PoseSkeletonFilter } from '../math/filters';
 import { ShoulderPendulumAnalyzer } from '../math/pendulumAnalyzer';
-import { CompensationDetector } from './compensationDetector';
+import { CompensationDetector } from '../compensation';
 
 export class RepStateMachine {
   private config: ExerciseDetectionConfig;
@@ -41,7 +41,8 @@ export class RepStateMachine {
     this.config = config;
     this.skeletonFilter = new PoseSkeletonFilter(1.2, 0.04);
     this.pendulumAnalyzer = new ShoulderPendulumAnalyzer(config.pendulumMechanics);
-    this.compensationDetector = new CompensationDetector(config.compensationRules);
+    const maxSafeVelocity = config.safetyContraindications?.maxSafeVelocityDegPerSec;
+    this.compensationDetector = new CompensationDetector(config.compensationRules, maxSafeVelocity);
   }
 
   public updateConfig(config: ExerciseDetectionConfig): void {
@@ -49,6 +50,8 @@ export class RepStateMachine {
     if (config.pendulumMechanics) {
       this.pendulumAnalyzer = new ShoulderPendulumAnalyzer(config.pendulumMechanics);
     }
+    const maxSafeVelocity = config.safetyContraindications?.maxSafeVelocityDegPerSec;
+    this.compensationDetector.setMaxSafeVelocity(maxSafeVelocity);
     this.compensationDetector.setRules(config.compensationRules);
   }
 
@@ -82,19 +85,22 @@ export class RepStateMachine {
       return this.createDefaultResult(landmarks, 'ยังไม่ได้กำหนดค่ามุมสำหรับท่านี้');
     }
 
+    // Normalize landmarks for monocular depth invariance
+    const normalizedLandmarks = normalizeLandmarksDepth(landmarks);
+
     // Resolve side triplet
     const triplet =
       this.config.side === 'right' ? angleCfg.landmarks.right : angleCfg.landmarks.left;
 
     let currentAngle = 0;
     if (
-      landmarks.length > triplet.pointA &&
-      landmarks.length > triplet.vertex &&
-      landmarks.length > triplet.pointB
+      normalizedLandmarks.length > triplet.pointA &&
+      normalizedLandmarks.length > triplet.vertex &&
+      normalizedLandmarks.length > triplet.pointB
     ) {
-      const pA = landmarks[triplet.pointA];
-      const pV = landmarks[triplet.vertex];
-      const pB = landmarks[triplet.pointB];
+      const pA = normalizedLandmarks[triplet.pointA];
+      const pV = normalizedLandmarks[triplet.vertex];
+      const pB = normalizedLandmarks[triplet.pointB];
 
       currentAngle = triplet.use3DWorld
         ? calculateAngle3D(pA, pV, pB)
@@ -123,16 +129,19 @@ export class RepStateMachine {
       currentAngle >= targetMin - tolerance && currentAngle <= targetMax + tolerance;
     const isAtStartZone = Math.abs(currentAngle - startAngle) <= tolerance + 5;
 
-    // Check compensation rules
-    const activeWarnings = this.compensationDetector.evaluate(
-      landmarks,
+    // Check compensation rules with normalized landmarks
+    const compResult = this.compensationDetector.evaluate(
+      normalizedLandmarks,
       currentAngle,
       timestampMs
     );
+    const activeWarnings = [...compResult.warnings];
 
     let coachingMessage = 'เริ่มขยับข้อต่อเข้าสู่มุมเป้าหมาย';
     let holdProgressRatio = 0.0;
     let formRating: 'good' | 'warning' | 'error' = 'good';
+    let isRepRejected = false;
+    let repRejectionReasonTh: string | undefined = undefined;
 
     if (isExceedingSafetyCap) {
       formRating = 'error';
@@ -145,9 +154,15 @@ export class RepStateMachine {
         currentValue: Math.round(currentAngle),
         thresholdValue: safetyCap,
       });
+    } else if (compResult.isVelocityViolated) {
+      formRating = 'error';
+      coachingMessage = 'เคลื่อนไหวช้าลง ควบคุมจังหวะให้สม่ำเสมอ';
     } else if (activeWarnings.some((w) => w.severity === 'error')) {
       formRating = 'error';
       coachingMessage = activeWarnings[0].messageTh;
+    } else if (compResult.lateralTiltDeg > 12.0) {
+      formRating = 'warning';
+      coachingMessage = 'รักษาลำตัวให้ตั้งตรง อย่าเอียงตัวช่วยยก';
     } else if (activeWarnings.length > 0) {
       formRating = 'warning';
       coachingMessage = activeWarnings[0].messageTh;
@@ -206,15 +221,25 @@ export class RepStateMachine {
 
       case 'RETURNING_TO_START': {
         if (isAtStartZone) {
-          // Rep completed successfully!
-          this.completedReps++;
-          this.phase = 'REP_COMPLETED';
-          coachingMessage = `ครบ 1 ครั้ง! (${this.completedReps}/${targetReps})`;
+          if (this.compensationDetector.getVelocityGuard().hasRepViolation()) {
+            // Rep rejected due to excessive velocity / jerky movement!
+            this.incorrectReps++;
+            this.phase = 'REP_COMPLETED';
+            isRepRejected = true;
+            repRejectionReasonTh = 'เคลื่อนไหวช้าลง ควบคุมจังหวะให้สม่ำเสมอ';
+            coachingMessage = '⚠️ ท่าไม่ผ่าน: เคลื่อนไหวช้าลง ควบคุมจังหวะให้สม่ำเสมอ';
+            this.compensationDetector.getVelocityGuard().resetRepViolation();
+          } else {
+            // Rep completed successfully!
+            this.completedReps++;
+            this.phase = 'REP_COMPLETED';
+            coachingMessage = `ครบ 1 ครั้ง! (${this.completedReps}/${targetReps})`;
 
-          if (this.completedReps >= targetReps) {
-            this.isSetCompleted = true;
-            if (this.currentSet >= totalSets) {
-              this.isExerciseCompleted = true;
+            if (this.completedReps >= targetReps) {
+              this.isSetCompleted = true;
+              if (this.currentSet >= totalSets) {
+                this.isExerciseCompleted = true;
+              }
             }
           }
         } else {
@@ -224,14 +249,17 @@ export class RepStateMachine {
       }
 
       case 'REP_COMPLETED': {
+        this.compensationDetector.getVelocityGuard().resetRepViolation();
         this.phase = 'MOVING_TO_TARGET';
         break;
       }
     }
 
-    // Safety cap and error warnings ALWAYS take precedence over phase coaching
+    // Safety cap and velocity errors ALWAYS take precedence over phase coaching
     if (isExceedingSafetyCap) {
       coachingMessage = '⚠️ สูงเกินไปแล้ว ค่อยๆ ลดระดับลงเพื่อความปลอดภัย';
+    } else if (compResult.isVelocityViolated) {
+      coachingMessage = 'เคลื่อนไหวช้าลง ควบคุมจังหวะให้สม่ำเสมอ';
     } else if (activeWarnings.some((w) => w.severity === 'error')) {
       coachingMessage = activeWarnings.find((w) => w.severity === 'error')!.messageTh;
     }
@@ -254,8 +282,13 @@ export class RepStateMachine {
       coachingMessageTh: coachingMessage,
       activeWarnings,
       formRating,
-      instantaneousVelocity: 0,
-      filteredLandmarks: landmarks,
+      instantaneousVelocity: compResult.angularVelocityDegPerSec,
+      angularVelocityDegPerSec: compResult.angularVelocityDegPerSec,
+      trunkLateralTiltDeg: compResult.lateralTiltDeg,
+      scapularHikingRatio: compResult.scapularHikingRatio,
+      isRepRejected,
+      repRejectionReasonTh,
+      filteredLandmarks: normalizedLandmarks,
     };
   }
 
