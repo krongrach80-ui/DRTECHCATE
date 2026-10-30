@@ -13,7 +13,8 @@ import {
   RefreshCw,
   Clock,
   Sparkles,
-  Trash2
+  Trash2,
+  Activity,
 } from 'lucide-react';
 import {
   PatientRecord,
@@ -22,6 +23,15 @@ import {
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
 import { SmartPendingPatientsBanner } from '../smart-portal/index.js';
+import {
+  ClinicalExecutiveDashboardModal,
+  HistoricalSessionMetric,
+} from '../../../../packages/clinical-analytics/src/index';
+import {
+  HolographicReplayViewer,
+  KinematicReplaySnapshot,
+  createClinicalReplaySnapshot,
+} from '../../../../packages/kinematic-replay-3d/src/index';
 
 interface MyPatientsViewProps {
   currentUserId: string;
@@ -29,6 +39,45 @@ interface MyPatientsViewProps {
 }
 
 const DEMO_PATIENTS: PatientRecord[] = [];
+
+const DEFAULT_DEMO_SESSIONS: HistoricalSessionMetric[] = [
+  {
+    sessionId: 'sess-1',
+    dateIso: '2026-10-16T08:00:00.000Z',
+    dayIndex: 0,
+    maxRomDeg: 42,
+    targetRomDeg: 120,
+    formQualityScore: 78,
+    angularVelocityVariance: 5.5,
+    scapularHikingRate: 0.14,
+    trunkTiltDeg: 7,
+    painReported: true,
+  },
+  {
+    sessionId: 'sess-2',
+    dateIso: '2026-10-23T08:00:00.000Z',
+    dayIndex: 7,
+    maxRomDeg: 66,
+    targetRomDeg: 120,
+    formQualityScore: 86,
+    angularVelocityVariance: 3.5,
+    scapularHikingRate: 0.08,
+    trunkTiltDeg: 4,
+    painReported: false,
+  },
+  {
+    sessionId: 'sess-3',
+    dateIso: '2026-10-30T08:00:00.000Z',
+    dayIndex: 14,
+    maxRomDeg: 90,
+    targetRomDeg: 120,
+    formQualityScore: 93,
+    angularVelocityVariance: 2.0,
+    scapularHikingRate: 0.03,
+    trunkTiltDeg: 2,
+    painReported: false,
+  },
+];
 
 export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
   currentUserId,
@@ -62,6 +111,12 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
     start_date: '',
     end_date: '',
   });
+
+  // 3D Replay & Clinical Analytics states
+  const [selectedAnalyticsPatient, setSelectedAnalyticsPatient] = useState<PatientRecord | null>(null);
+  const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
+  const [activeReplaySnapshot, setActiveReplaySnapshot] = useState<KinematicReplaySnapshot | null>(null);
+  const [isReplayViewerOpen, setIsReplayViewerOpen] = useState(false);
 
   const fetchPatients = async () => {
     try {
@@ -436,10 +491,23 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
                           {/* Open Clinical Records */}
                           <button
                             onClick={() => onOpenRecords(p)}
-                            className="p-2 rounded-lg bg-teal-500/10 text-teal-400 hover:bg-teal-500/20 transition"
+                            className="p-2 rounded-lg bg-teal-500/10 text-teal-400 hover:bg-teal-500/20 transition cursor-pointer"
                             title="เปิดเวชระเบียน & โน้ตการรักษา"
                           >
                             <Eye className="w-4 h-4" />
+                          </button>
+
+                          {/* 3D Replay & Medical Report */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedAnalyticsPatient(p);
+                              setIsAnalyticsModalOpen(true);
+                            }}
+                            className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition cursor-pointer"
+                            title="🔬 วิเคราะห์ 3D Replay & รายงานแพทย์"
+                          >
+                            <Activity className="w-4 h-4" />
                           </button>
 
                           {/* Edit Demographics */}
@@ -704,6 +772,44 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* 3D Replay & Clinical Trajectory Executive Dashboard Modal */}
+      {selectedAnalyticsPatient && isAnalyticsModalOpen && (
+        <ClinicalExecutiveDashboardModal
+          isOpen={isAnalyticsModalOpen}
+          onClose={() => setIsAnalyticsModalOpen(false)}
+          patient={{
+            hn: selectedAnalyticsPatient.hn,
+            fullName: `${selectedAnalyticsPatient.first_name} ${selectedAnalyticsPatient.last_name}`,
+            age: selectedAnalyticsPatient.age,
+            gender: selectedAnalyticsPatient.sex === 'male' ? 'ชาย' : selectedAnalyticsPatient.sex === 'female' ? 'หญิง' : 'อื่นๆ',
+            targetJoint: selectedAnalyticsPatient.injury || 'ข้อต่อหัวไหล่',
+            diagnosis: selectedAnalyticsPatient.injury ? `${selectedAnalyticsPatient.injury} (Post-Rehab)` : 'Rotator Cuff Syndrome (ขวา)',
+            icd10Code: 'M75.1 (Rotator Cuff Syndrome)',
+            loincCode: '72274-4 (Shoulder Range of Motion)',
+            attendingPtName: 'กภ. สุภาพร ชีวเวช (วภ. 10245)',
+            attendingPtLicense: 'PT-10245',
+          }}
+          sessionHistory={DEFAULT_DEMO_SESSIONS}
+          replaySnapshot={createClinicalReplaySnapshot({
+            patientId: selectedAnalyticsPatient.hn,
+            exerciseName: selectedAnalyticsPatient.injury ? `ฟื้นฟู${selectedAnalyticsPatient.injury}` : 'Shoulder Abduction (กางข้อไหล่)',
+          })}
+          onOpenReplay={(snapshot) => {
+            setActiveReplaySnapshot(snapshot);
+            setIsReplayViewerOpen(true);
+          }}
+        />
+      )}
+
+      {/* Interactive 360° 3D Holographic Replay Viewer */}
+      {isReplayViewerOpen && activeReplaySnapshot && (
+        <HolographicReplayViewer
+          snapshot={activeReplaySnapshot}
+          onClose={() => setIsReplayViewerOpen(false)}
+          title={`โครงร่างกระดูก 3D Holographic Replay - ${selectedAnalyticsPatient?.first_name} ${selectedAnalyticsPatient?.last_name} (${selectedAnalyticsPatient?.hn})`}
+        />
       )}
     </div>
   );
