@@ -149,10 +149,15 @@ export class AuthService {
         _authError = res.error;
       } else {
         const authClient = getAuthClient();
-        const res = await authClient.auth.signInWithPassword({
-          email: internalEmail,
-          password,
-        });
+        const res = await Promise.race([
+          authClient.auth.signInWithPassword({
+            email: internalEmail,
+            password,
+          }),
+          new Promise<{ data: null; error: Error }>((_, reject) =>
+            setTimeout(() => reject(new Error('Supabase Auth connection timed out')), 2000)
+          ),
+        ]).catch((err) => ({ data: null, error: err }));
         authData = res.data;
         _authError = res.error;
       }

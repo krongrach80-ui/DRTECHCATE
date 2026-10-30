@@ -11,8 +11,9 @@ export function createRateLimiter(options?: Partial<Options>) {
       const url = req.originalUrl || req.url || '';
       return url.includes('/health') || url.includes('/events');
     },
-    validate: {
-      xForwardedForHeader: false, // Safely ignore client-sent X-Forwarded-For when trust proxy is false
+    validate: false, // Safely disable strict ip validations for serverless and lambda proxy environments
+    keyGenerator: (req) => {
+      return (req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1') as string;
     },
     message: {
       error: {

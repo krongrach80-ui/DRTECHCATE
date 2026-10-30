@@ -74,4 +74,21 @@ for (const app of apps) {
   }
 }
 
-console.log('✓ Successfully assembled all multi-portal production bundles and local GFW assets in public/');
+// 4. Ensure _redirects and _headers in public and dist
+const redirectsContent = `/api/*    /.netlify/functions/api/:splat  200!
+/admin/*  /admin/index.html               200
+/pt/*     /pt/index.html                  200
+/kiosk/*  /kiosk/index.html               200
+/*        /index.html                     200
+`;
+
+fs.writeFileSync(path.join(root, 'public', '_redirects'), redirectsContent, 'utf8');
+if (fs.existsSync(path.join(root, 'dist'))) {
+  fs.writeFileSync(path.join(root, 'dist', '_redirects'), redirectsContent, 'utf8');
+  if (fs.existsSync(path.join(root, 'public', '_headers'))) {
+    fs.copyFileSync(path.join(root, 'public', '_headers'), path.join(root, 'dist', '_headers'));
+  }
+}
+
+console.log('✓ Successfully assembled all multi-portal production bundles, redirects, and local GFW assets in public/');
+

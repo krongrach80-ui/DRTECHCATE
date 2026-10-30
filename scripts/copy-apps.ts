@@ -31,4 +31,20 @@ for (const app of apps) {
   copyDirSync(src, dest);
 }
 
-console.log('Successfully copied all apps to public/');
+const redirectsContent = `/api/*    /.netlify/functions/api/:splat  200!
+/admin/*  /admin/index.html               200
+/pt/*     /pt/index.html                  200
+/kiosk/*  /kiosk/index.html               200
+/*        /index.html                     200
+`;
+
+fs.writeFileSync(path.join(root, 'public', '_redirects'), redirectsContent, 'utf8');
+if (fs.existsSync(path.join(root, 'dist'))) {
+  fs.writeFileSync(path.join(root, 'dist', '_redirects'), redirectsContent, 'utf8');
+  if (fs.existsSync(path.join(root, 'public', '_headers'))) {
+    fs.copyFileSync(path.join(root, 'public', '_headers'), path.join(root, 'dist', '_headers'));
+  }
+}
+
+console.log('Successfully copied all apps and redirects to public/');
+

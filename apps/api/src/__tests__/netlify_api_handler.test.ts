@@ -1,0 +1,146 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { handler } from '../../../../netlify/functions/api';
+
+describe('Netlify Serverless Function Handler (/api/* -> /.netlify/functions/api)', () => {
+  const NETLIFY_ORIGIN = 'https://storied-basbousa-42f3be.netlify.app';
+
+  beforeAll(async () => {
+    process.env.ALLOW_BEARER_IN_PROD = 'true';
+    process.env.USE_LOCAL_STORAGE = 'true';
+    const { activateLocalPersistenceEngine } = await import('../lib/localStorage/localPersistenceEngine');
+    activateLocalPersistenceEngine();
+  });
+
+  it('1. POST /api/auth/login - Successfully logs in Director and returns 200 OK with session and CORS', async () => {
+    const event = {
+      httpMethod: 'POST',
+      path: '/api/auth/login',
+      headers: {
+        'content-type': 'application/json',
+        'origin': NETLIFY_ORIGIN,
+        'x-requested-with': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({
+        username: 'director',
+        password: 'Admin12345678!',
+      }),
+    };
+
+    const res = await handler(event, {});
+    expect(res.statusCode).toBe(200);
+
+    const data = JSON.parse(res.body);
+    expect(data.ok).toBe(true);
+    expect(data.user).toBeDefined();
+    expect(data.user.role).toBe('admin');
+    expect(data.token || data.accessToken).toBeDefined();
+
+    // Check CORS
+    const headers = res.headers || {};
+    const allowOrigin = headers['Access-Control-Allow-Origin'] || headers['access-control-allow-origin'];
+    expect(allowOrigin).toBe(NETLIFY_ORIGIN);
+  });
+
+  it('2. POST /api/smart-onboarding/register - Registers new patient with 10 biometric frames and returns 200/201', async () => {
+    // 10 biometric frames (4 front, 2 left, 2 right, 2 nod)
+    const normalizedVector = Array.from({ length: 512 }, (_, i) => Math.sin(i * 0.1) * (1 / Math.sqrt(512)));
+    const frames = [
+      { pose: 'front', embedding: normalizedVector, jpeg_base64: 'mock_front1' },
+      { pose: 'front', embedding: normalizedVector, jpeg_base64: 'mock_front2' },
+      { pose: 'front', embedding: normalizedVector, jpeg_base64: 'mock_front3' },
+      { pose: 'front', embedding: normalizedVector, jpeg_base64: 'mock_front4' },
+      { pose: 'left', embedding: normalizedVector, jpeg_base64: 'mock_left1' },
+      { pose: 'left', embedding: normalizedVector, jpeg_base64: 'mock_left2' },
+      { pose: 'right', embedding: normalizedVector, jpeg_base64: 'mock_right1' },
+      { pose: 'right', embedding: normalizedVector, jpeg_base64: 'mock_right2' },
+      { pose: 'nod', embedding: normalizedVector, jpeg_base64: 'mock_nod1' },
+      { pose: 'nod', embedding: normalizedVector, jpeg_base64: 'mock_nod2' },
+    ];
+
+    const testHn = `TEST-NETLIFY-${Date.now()}`;
+    const event = {
+      httpMethod: 'POST',
+      path: '/.netlify/functions/api/smart-onboarding/register', // Test rewrite path
+      headers: {
+        'content-type': 'application/json',
+        'origin': NETLIFY_ORIGIN,
+        'x-requested-with': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({
+        hn: testHn,
+        first_name: 'กิตติศักดิ์',
+        last_name: 'มั่นคง',
+        age: 52,
+        sex: 'male',
+        injury: 'ข้อเข่าเสื่อมระยะที่ 2',
+        pin: '5678',
+        frames,
+        model_version: 'w600k_r50',
+      }),
+    };
+
+    const res = await handler(event, {});
+    expect([200, 201]).toContain(res.statusCode);
+
+    const data = JSON.parse(res.body);
+    expect(data.ok).toBe(true);
+    expect(data.patient_id).toBeDefined();
+    expect(data.hn).toBe(testHn);
+  });
+
+  it('3. POST /api/smart-onboarding/scan-login - Matches scanned face and returns 200 OK', async () => {
+    const probe = Array.from({ length: 512 }, (_, i) => Math.sin(i * 0.1) * (1 / Math.sqrt(512)));
+
+    const event = {
+      httpMethod: 'POST',
+      path: '/api/smart-onboarding/scan-login',
+      headers: {
+        'content-type': 'application/json',
+        'origin': NETLIFY_ORIGIN,
+        'x-requested-with': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({
+        probe,
+      }),
+    };
+
+    const res = await handler(event, {});
+    expect(res.statusCode).toBe(200);
+
+    const data = JSON.parse(res.body);
+    expect(data.ok).toBe(true);
+  });
+
+  it('4. GET /.netlify/functions/api/health - Normalizes path to /api/health and returns 200 OK', async () => {
+    const event = {
+      httpMethod: 'GET',
+      path: '/.netlify/functions/api/health',
+      headers: {
+        'origin': NETLIFY_ORIGIN,
+      },
+    };
+
+    const res = await handler(event, {});
+    expect(res.statusCode).toBe(200);
+
+    const data = JSON.parse(res.body);
+    expect(['ok', 'healthy']).toContain(data.status);
+  });
+
+  it('5. OPTIONS /api/* - Fast preflight returns 204 No Content with CORS allow headers', async () => {
+    const event = {
+      httpMethod: 'OPTIONS',
+      path: '/api/auth/login',
+      headers: {
+        'origin': NETLIFY_ORIGIN,
+      },
+    };
+
+    const res = await handler(event, {});
+    expect(res.statusCode).toBe(204);
+
+    const headers = res.headers || {};
+    expect(headers['Access-Control-Allow-Origin']).toBe(NETLIFY_ORIGIN);
+    expect(headers['Access-Control-Allow-Credentials']).toBe('true');
+  });
+});

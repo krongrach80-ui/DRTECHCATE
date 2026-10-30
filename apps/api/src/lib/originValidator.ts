@@ -15,15 +15,15 @@ export function isAllowedOrigin(
   const trimmed = originStr.trim();
   if (!trimmed) return false;
 
-  // 1. Exact or prefix match with configured allowedOrigins
-  if (allowedOrigins.some((allowed) => trimmed === allowed || trimmed.startsWith(allowed + '/'))) {
+  // 1. Exact or prefix match with configured allowedOrigins, or wildcard allowlist
+  if (allowedOrigins.includes('*') || allowedOrigins.some((allowed) => trimmed === allowed || trimmed.startsWith(allowed + '/'))) {
     return true;
   }
 
   try {
     const parsed = new URL(trimmed);
-    const originHost = parsed.host.toLowerCase(); // e.g. "drtechcarev2-d784cq5kk-lym5.vercel.app" or "localhost:3000"
-    const originHostname = parsed.hostname.toLowerCase(); // e.g. "drtechcarev2-d784cq5kk-lym5.vercel.app" or "localhost"
+    const originHost = parsed.host.toLowerCase(); // e.g. "storied-basbousa-42f3be.netlify.app" or "localhost:3000"
+    const originHostname = parsed.hostname.toLowerCase(); // e.g. "storied-basbousa-42f3be.netlify.app" or "localhost"
 
     // 2. Same-Origin Check: Matches current request Host or X-Forwarded-Host
     if (reqHost) {
@@ -39,7 +39,13 @@ export function isAllowedOrigin(
       }
     }
 
-    // 3. Vercel deployment domains for DrTech.Care
+    // 3. Netlify deployment domains for DrTech.Care
+    // Any *.netlify.app domain or matching Netlify runtime env
+    if (originHostname.endsWith('.netlify.app')) {
+      return true;
+    }
+
+    // 4. Vercel deployment domains for DrTech.Care
     // Any *.vercel.app domain belonging to drtechcarev2 or matching Vercel runtime env
     if (originHostname.endsWith('.vercel.app')) {
       const vercelUrl = (process.env.VERCEL_URL || '').toLowerCase();
@@ -55,7 +61,7 @@ export function isAllowedOrigin(
       }
     }
 
-    // 4. Local development / Loopback
+    // 5. Local development / Loopback
     if (originHostname === 'localhost' || originHostname === '127.0.0.1' || originHostname === '::1') {
       return true;
     }

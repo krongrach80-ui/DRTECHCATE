@@ -3,11 +3,18 @@
   publish = "public"
   functions = "netlify/functions"
 
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["@supabase/supabase-js"]
+
+# 1. Forward all /api/* requests directly to Netlify Serverless Function
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200
+  force = true
 
+# 2. SPA Deep-Linking for Clinical Portals
 [[redirects]]
   from = "/admin/*"
   to = "/admin/index.html"
@@ -23,6 +30,7 @@
   to = "/kiosk/index.html"
   status = 200
 
+# 3. Root SPA Fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
