@@ -28,6 +28,7 @@ import {
 import { CameraPositionGuideModal } from '../components/CameraPositionGuideModal';
 import { UnconfiguredExerciseFallbackModal } from '../components/UnconfiguredExerciseFallbackModal';
 import { DynamicExerciseSessionView } from '../views/DynamicExerciseSessionView';
+import { ClinicalErrorBoundary } from '../../../../packages/hospital-ui-kit/src/index';
 
 interface SmartDailyPlanViewProps {
   patient: PatientRecordFile;
@@ -555,15 +556,20 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         />
       )}
 
-      {/* 2. Fullscreen Dynamic AI Exercise Session View */}
+      {/* 2. Fullscreen Dynamic AI Exercise Session View with Clinical Error Boundary */}
       {activeSession && (
-        <DynamicExerciseSessionView
-          patient={patient}
-          exercise={activeSession.exercise}
-          config={activeSession.config}
-          onSessionCompleted={handleSessionCompleted}
+        <ClinicalErrorBoundary
+          fallbackTitle="ระบบตรวจจับกายภาพบำบัดพบข้อขัดข้องชั่วคราว"
           onExit={() => setActiveSession(null)}
-        />
+        >
+          <DynamicExerciseSessionView
+            patient={patient}
+            exercise={activeSession.exercise}
+            config={activeSession.config}
+            onSessionCompleted={handleSessionCompleted}
+            onExit={() => setActiveSession(null)}
+          />
+        </ClinicalErrorBoundary>
       )}
 
       {/* 3. Conditional Unconfigured Exercise Fallback (ONLY if detection_config === null and no preset) */}

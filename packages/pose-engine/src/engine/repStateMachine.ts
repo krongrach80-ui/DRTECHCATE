@@ -19,6 +19,7 @@ import { calculateAngle3D, calculateAngle2D, normalizeLandmarksDepth } from '../
 import { PoseSkeletonFilter } from '../math/filters';
 import { ShoulderPendulumAnalyzer } from '../math/pendulumAnalyzer';
 import { CompensationDetector } from '../compensation';
+import { ForegroundSubjectLocker, SubjectLockResult } from '../subjectLock';
 
 export class RepStateMachine {
   private config: ExerciseDetectionConfig;
@@ -26,11 +27,15 @@ export class RepStateMachine {
   private skeletonFilter: PoseSkeletonFilter;
   private pendulumAnalyzer: ShoulderPendulumAnalyzer;
   private compensationDetector: CompensationDetector;
+  private subjectLocker: ForegroundSubjectLocker;
 
   private completedReps: number = 0;
   private incorrectReps: number = 0;
   private currentSet: number = 1;
   private holdStartTimeMs: number | null = null;
+  private holdPauseStartMs: number | null = null;
+  private totalHoldPausedDurationMs: number = 0;
+  private lastEvaluationResult: RepEvaluationResult | null = null;
   private maxAngleAchievedDeg: number = 0;
   private recordedAnglesSum: number = 0;
   private recordedAnglesCount: number = 0;
@@ -43,6 +48,7 @@ export class RepStateMachine {
     this.pendulumAnalyzer = new ShoulderPendulumAnalyzer(config.pendulumMechanics);
     const maxSafeVelocity = config.safetyContraindications?.maxSafeVelocityDegPerSec;
     this.compensationDetector = new CompensationDetector(config.compensationRules, maxSafeVelocity);
+    this.subjectLocker = new ForegroundSubjectLocker();
   }
 
   public updateConfig(config: ExerciseDetectionConfig): void {
@@ -59,15 +65,30 @@ export class RepStateMachine {
     rawLandmarks: PoseEngineLandmark[],
     timestampMs: number = Date.now()
   ): RepEvaluationResult {
+    // 0. Anti-hijack & foreground subject lock evaluation
+    const lockResult = this.subjectLocker.processFrame(rawLandmarks, timestampMs);
+
+    if (lockResult.isFrameDropped && this.lastEvaluationResult) {
+      return {
+        ...this.lastEvaluationResult,
+        isFrameDropped: true,
+        frameDropReason: lockResult.frameDropReason,
+      };
+    }
+
     // 1. Filter raw landmarks using 1€ filter
     const filteredLandmarks = this.skeletonFilter.filterSkeleton(rawLandmarks, timestampMs);
 
     // Branch based on evaluationMode
+    let result: RepEvaluationResult;
     if (this.config.evaluationMode === 'pendulum_circular') {
-      return this.evaluatePendulumCircular(filteredLandmarks, timestampMs);
+      result = this.evaluatePendulumCircular(filteredLandmarks, timestampMs, lockResult);
     } else {
-      return this.evaluateAngleRepHold(filteredLandmarks, timestampMs);
+      result = this.evaluateAngleRepHold(filteredLandmarks, timestampMs, lockResult);
     }
+
+    this.lastEvaluationResult = result;
+    return result;
   }
 
   /**
@@ -75,7 +96,8 @@ export class RepStateMachine {
    */
   private evaluateAngleRepHold(
     landmarks: PoseEngineLandmark[],
-    timestampMs: number
+    timestampMs: number,
+    lockResult?: SubjectLockResult
   ): RepEvaluationResult {
     const angleCfg = this.config.angleMechanics;
     const targetReps = this.config.defaultPrescription?.repsPerSet || 10;
@@ -174,6 +196,8 @@ export class RepStateMachine {
         if (isInsideTargetZone) {
           this.phase = 'HOLDING_TARGET';
           this.holdStartTimeMs = timestampMs;
+          this.holdPauseStartMs = null;
+          this.totalHoldPausedDurationMs = 0;
           coachingMessage = `ถึงมุมเป้าหมายแล้ว ค้างไว้ ${holdDurationSec} วินาที`;
         } else if (isAtStartZone) {
           coachingMessage = 'อยู่ในตำแหน่งเริ่มต้น พร้อมแล้วเริ่มเคลื่อนไหวได้เลย';
@@ -188,6 +212,8 @@ export class RepStateMachine {
         if (isInsideTargetZone) {
           this.phase = 'HOLDING_TARGET';
           this.holdStartTimeMs = timestampMs;
+          this.holdPauseStartMs = null;
+          this.totalHoldPausedDurationMs = 0;
           coachingMessage = `ถึงมุมเป้าหมายแล้ว ค้างไว้ ${holdDurationSec} วินาที`;
         } else if (currentAngle < targetMin - tolerance) {
           coachingMessage = 'ขยับเพิ่มอีกนิด ให้ถึงแถบสีเขียว';
@@ -201,19 +227,43 @@ export class RepStateMachine {
         if (!isInsideTargetZone) {
           // Patient fell out of target zone before finishing hold
           this.holdStartTimeMs = null;
+          this.holdPauseStartMs = null;
+          this.totalHoldPausedDurationMs = 0;
           this.phase = 'MOVING_TO_TARGET';
           coachingMessage = 'หลุดออกจากมุมเป้าหมาย ขยับกลับเข้าแถบสีเขียว';
         } else {
-          const elapsedSec = (timestampMs - (this.holdStartTimeMs || timestampMs)) / 1000.0;
-          holdProgressRatio = Math.min(1.0, elapsedSec / Math.max(0.1, holdDurationSec));
+          // Pause hold timer if subject is occluded
+          const isOccluded = lockResult?.isOccluded ?? false;
+          if (isOccluded) {
+            if (this.holdPauseStartMs === null) {
+              this.holdPauseStartMs = timestampMs;
+            }
+          } else {
+            if (this.holdPauseStartMs !== null) {
+              this.totalHoldPausedDurationMs += timestampMs - this.holdPauseStartMs;
+              this.holdPauseStartMs = null;
+            }
+          }
 
-          if (elapsedSec >= holdDurationSec) {
+          const currentPauseDuration =
+            this.holdPauseStartMs !== null ? timestampMs - this.holdPauseStartMs : 0;
+          const totalPaused = this.totalHoldPausedDurationMs + currentPauseDuration;
+          const rawElapsedMs = timestampMs - (this.holdStartTimeMs || timestampMs);
+          const activeElapsedSec = Math.max(0, rawElapsedMs - totalPaused) / 1000.0;
+
+          holdProgressRatio = Math.min(1.0, activeElapsedSec / Math.max(0.1, holdDurationSec));
+
+          if (activeElapsedSec >= holdDurationSec) {
             this.phase = 'RETURNING_TO_START';
             this.holdStartTimeMs = null;
+            this.holdPauseStartMs = null;
+            this.totalHoldPausedDurationMs = 0;
             coachingMessage = 'ยอดเยี่ยม! ค่อยๆ ผ่อนกลับสู่ตำแหน่งเริ่มต้น';
           } else {
-            const remainingSec = Math.max(0, holdDurationSec - elapsedSec).toFixed(1);
-            coachingMessage = `ค้างไว้อีก ${remainingSec} วินาที...`;
+            const remainingSec = Math.max(0, holdDurationSec - activeElapsedSec).toFixed(1);
+            coachingMessage = isOccluded
+              ? 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน'
+              : `ค้างไว้อีก ${remainingSec} วินาที...`;
           }
         }
         break;
@@ -255,6 +305,20 @@ export class RepStateMachine {
       }
     }
 
+    // Occlusion warning check
+    if (lockResult?.isOccluded) {
+      formRating = 'warning';
+      coachingMessage = 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน';
+      activeWarnings.push({
+        ruleId: 'subject_occlusion_guard',
+        type: 'trunk_lean',
+        messageTh: 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน',
+        severity: 'warning',
+        currentValue: lockResult.averageVisibility,
+        thresholdValue: 0.65,
+      });
+    }
+
     // Safety cap and velocity errors ALWAYS take precedence over phase coaching
     if (isExceedingSafetyCap) {
       coachingMessage = '⚠️ สูงเกินไปแล้ว ค่อยๆ ลดระดับลงเพื่อความปลอดภัย';
@@ -288,6 +352,11 @@ export class RepStateMachine {
       scapularHikingRatio: compResult.scapularHikingRatio,
       isRepRejected,
       repRejectionReasonTh,
+      isOccluded: lockResult?.isOccluded ?? false,
+      occlusionReasonTh: lockResult?.occlusionReasonTh,
+      isSubjectLocked: lockResult?.isSubjectLocked ?? true,
+      isFrameDropped: lockResult?.isFrameDropped ?? false,
+      frameDropReason: lockResult?.frameDropReason,
       filteredLandmarks: normalizedLandmarks,
     };
   }
@@ -297,7 +366,8 @@ export class RepStateMachine {
    */
   private evaluatePendulumCircular(
     landmarks: PoseEngineLandmark[],
-    timestampMs: number
+    timestampMs: number,
+    lockResult?: SubjectLockResult
   ): RepEvaluationResult {
     const targetReps = this.config.defaultPrescription?.repsPerSet || 10;
     const totalSets = this.config.defaultPrescription?.totalSets || 3;
@@ -342,7 +412,18 @@ export class RepStateMachine {
     let formRating: 'good' | 'warning' | 'error' = 'good';
     const activeWarnings: ActiveCompensationWarning[] = [];
 
-    if (result.warningTh) {
+    if (lockResult?.isOccluded) {
+      formRating = 'warning';
+      coachingMessage = 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน';
+      activeWarnings.push({
+        ruleId: 'pendulum_occlusion_guard',
+        type: 'trunk_lean',
+        messageTh: 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน',
+        severity: 'warning',
+        currentValue: lockResult.averageVisibility,
+        thresholdValue: 0.65,
+      });
+    } else if (result.warningTh) {
       coachingMessage = result.warningTh;
       formRating = 'warning';
       activeWarnings.push({
@@ -376,6 +457,11 @@ export class RepStateMachine {
       activeWarnings,
       formRating,
       instantaneousVelocity: 0,
+      isOccluded: lockResult?.isOccluded ?? false,
+      occlusionReasonTh: lockResult?.occlusionReasonTh,
+      isSubjectLocked: lockResult?.isSubjectLocked ?? true,
+      isFrameDropped: lockResult?.isFrameDropped ?? false,
+      frameDropReason: lockResult?.frameDropReason,
       filteredLandmarks: landmarks,
     };
   }
@@ -413,6 +499,8 @@ export class RepStateMachine {
     this.isSetCompleted = false;
     this.phase = 'IDLE';
     this.holdStartTimeMs = null;
+    this.holdPauseStartMs = null;
+    this.totalHoldPausedDurationMs = 0;
     this.pendulumAnalyzer.reset();
   }
 
@@ -422,6 +510,9 @@ export class RepStateMachine {
     this.incorrectReps = 0;
     this.currentSet = 1;
     this.holdStartTimeMs = null;
+    this.holdPauseStartMs = null;
+    this.totalHoldPausedDurationMs = 0;
+    this.lastEvaluationResult = null;
     this.maxAngleAchievedDeg = 0;
     this.recordedAnglesSum = 0;
     this.recordedAnglesCount = 0;
@@ -430,5 +521,6 @@ export class RepStateMachine {
     this.skeletonFilter.reset();
     this.pendulumAnalyzer.reset();
     this.compensationDetector.reset();
+    this.subjectLocker.reset();
   }
 }

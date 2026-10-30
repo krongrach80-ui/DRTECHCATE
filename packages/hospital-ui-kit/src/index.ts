@@ -10,6 +10,8 @@ export * from './components/FluidProgressBar';
 export * from './components/SmoothStepper';
 export * from './components/StatusBadge';
 export * from './components/MedicalCard';
+export * from './components/ClinicalErrorBoundary';
+export * from './VoiceFeedbackController';
 export * from './syncCoordinator';
 export * from './responsive/viewportAdapter';
 export * from './responsive/ResponsiveShellWrapper';

@@ -161,6 +161,11 @@ export interface RepEvaluationResult {
   scapularHikingRatio?: number;
   isRepRejected?: boolean;
   repRejectionReasonTh?: string;
+  isOccluded?: boolean;
+  occlusionReasonTh?: string;
+  isSubjectLocked?: boolean;
+  isFrameDropped?: boolean;
+  frameDropReason?: string;
   filteredLandmarks: PoseEngineLandmark[];
 }
 
@@ -184,4 +189,5 @@ export interface ExerciseSessionTelemetry {
   painReported: boolean;
   sessionDurationSec: number;
   timestamp: string;
+  idempotencyKey?: string;
 }

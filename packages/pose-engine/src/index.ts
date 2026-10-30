@@ -15,3 +15,5 @@ export * from './engine/calibrationRecorder';
 export * from './engine/repStateMachine';
 export * from './presets/shoulderPendulumPreset';
 export * from './privacy';
+export * from './subjectLock';
+export * from './hardwareWatchdog';

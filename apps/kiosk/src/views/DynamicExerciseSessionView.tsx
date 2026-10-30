@@ -18,6 +18,8 @@ import {
   RepEvaluationResult,
 } from '../../../../packages/pose-engine/src/types/exerciseConfig';
 import { RepStateMachine } from '../../../../packages/pose-engine/src/engine/repStateMachine';
+import { CameraStreamWatchdog, WatchdogHealthStatus } from '../../../../packages/pose-engine/src/hardwareWatchdog';
+import { VoiceFeedbackController } from '../../../../packages/hospital-ui-kit/src/VoiceFeedbackController';
 import { PainStopEmergencyBar } from '../components/PainStopEmergencyBar';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
@@ -26,6 +28,8 @@ import {
   Clock,
   ArrowRight,
   ShieldAlert,
+  AlertTriangle,
+  Cpu,
 } from 'lucide-react';
 
 interface DynamicExerciseSessionViewProps {
@@ -69,13 +73,31 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stateMachineRef = useRef<RepStateMachine>(new RepStateMachine(config));
+  const watchdogRef = useRef<CameraStreamWatchdog>(
+    new CameraStreamWatchdog({
+      maxFrozenFrames: 60,
+      minFpsThreshold: 15.0,
+      maxReconnectAttempts: 3,
+      baseReconnectDelayMs: 1000,
+    })
+  );
+  const voiceFeedbackRef = useRef<VoiceFeedbackController>(
+    new VoiceFeedbackController({
+      minCooldownMs: 3500,
+      lang: 'th-TH',
+      rate: 1.05,
+    })
+  );
   const isMountedRef = useRef(true);
   const animFrameIdRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sessionStartTimeRef = useRef<number>(0);
+  const isFinalizingRef = useRef(false);
+  const isReportingPainRef = useRef(false);
 
   const [isPaused, setIsPaused] = useState(false);
   const [evalResult, setEvalResult] = useState<RepEvaluationResult | null>(null);
+  const [watchdogStatus, setWatchdogStatus] = useState<WatchdogHealthStatus | null>(null);
   const [isResting, setIsResting] = useState(false);
   const [restCountdown, setRestCountdown] = useState(config.defaultPrescription.restBetweenSetsSec || 30);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
@@ -115,24 +137,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
   }, []);
 
-  // Web Speech Thai TTS announcement
-  const speakThai = useCallback((text: string) => {
-    try {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'th-TH';
-        utterance.rate = 1.05;
-        window.speechSynthesis.speak(utterance);
-      }
-    } catch {
-      // safe fallback
-    }
+  // Web Speech Thai TTS announcement with >= 3500ms cooldown guard
+  const speakThai = useCallback((text: string, category?: string, overrideCooldownMs?: number) => {
+    voiceFeedbackRef.current.speak(text, category, overrideCooldownMs);
   }, []);
 
-  // Canvas Skeleton Rendering
+  // Canvas Skeleton Rendering with lowPerformanceMode throttling support
   const renderSkeleton = useCallback(
-    (landmarks: PoseEngineLandmark[], formRating: 'good' | 'warning' | 'error') => {
+    (landmarks: PoseEngineLandmark[], formRating: 'good' | 'warning' | 'error', isLowPerf: boolean = false) => {
       const canvas = canvasRef.current;
       const video = videoRef.current;
       if (!canvas || !video) return;
@@ -154,7 +166,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           ? '#f59e0b' // Amber 500
           : '#ef4444'; // Red 500
 
-      ctx.lineWidth = 4;
+      ctx.lineWidth = isLowPerf ? 2.5 : 4;
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
       ctx.lineCap = 'round';
@@ -174,16 +186,19 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         }
       }
 
-      // Draw joint nodes
+      // Draw joint nodes (in lowPerformanceMode, skip outer ring strokes to prevent lag)
+      const radius = isLowPerf ? 4 : 6;
       for (let i = 0; i < landmarks.length; i++) {
         const lm = landmarks[i];
         if ((lm.visibility ?? 1.0) >= 0.5) {
           ctx.beginPath();
-          ctx.arc(lm.x * w, lm.y * h, 6, 0, 2 * Math.PI);
+          ctx.arc(lm.x * w, lm.y * h, radius, 0, 2 * Math.PI);
           ctx.fill();
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
-          ctx.stroke();
+          if (!isLowPerf) {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
         }
       }
     },
@@ -243,6 +258,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
     let lastCompletedReps = 0;
     let lastInferenceTime = 0;
+    let lastWatchdogStatusCheck = 0;
 
     const startProcessingLoop = (detector: any) => {
       const processFrame = () => {
@@ -272,6 +288,37 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               }));
             }
 
+            // 1. Hardware Watchdog Check (Frozen detection & FPS throttling)
+            const wdStatus = watchdogRef.current.update(rawLandmarks, now);
+            if (now - lastWatchdogStatusCheck > 600) {
+              lastWatchdogStatusCheck = now;
+              setWatchdogStatus(wdStatus);
+            }
+
+            // Auto-Reconnect on stream freeze
+            if (wdStatus.needsReconnect && !wdStatus.isReconnecting) {
+              watchdogRef.current.attemptReconnect(async () => {
+                if (stream) {
+                  stream.getTracks().forEach((t) => t.stop());
+                }
+                const newStream = await navigator.mediaDevices.getUserMedia({
+                  video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: 'user',
+                  },
+                  audio: false,
+                });
+                if (videoRef.current && isMountedRef.current) {
+                  videoRef.current.srcObject = newStream;
+                  await videoRef.current.play();
+                }
+                stream = newStream;
+                return newStream;
+              });
+            }
+
+            // 2. Biomechanical Rep & Compensation Evaluation
             const evalRes = stateMachineRef.current.evaluate(rawLandmarks, now);
             setEvalResult(evalRes);
 
@@ -279,20 +326,27 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             if (evalRes.completedReps > lastCompletedReps) {
               lastCompletedReps = evalRes.completedReps;
               playRepChime();
-              speakThai(`ครั้งที่ ${evalRes.completedReps}`);
+              speakThai(`ครั้งที่ ${evalRes.completedReps}`, 'rep_count', 1200);
+            }
+
+            // Occlusion / Subject Lock Warning with >= 3500ms cooldown
+            if (evalRes.isOccluded && evalRes.occlusionReasonTh) {
+              speakThai(evalRes.occlusionReasonTh, 'occlusion_warning', 3500);
+            } else if (evalRes.coachingMessageTh && evalRes.formRating !== 'good') {
+              speakThai(evalRes.coachingMessageTh, 'coaching_warning', 4000);
             }
 
             // Set completion check
             if (evalRes.isSetCompleted && !evalRes.isExerciseCompleted && !isResting) {
               setIsResting(true);
-              speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`);
+              speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`, 'set_complete', 2500);
             } else if (evalRes.isExerciseCompleted) {
               setIsSummaryOpen(true);
-              speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว');
+              speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว', 'exercise_complete', 2500);
             }
 
-            // Render skeleton overlay
-            renderSkeleton(rawLandmarks, evalRes.formRating);
+            // 3. Render skeleton overlay (adaptive lowPerformanceMode)
+            renderSkeleton(rawLandmarks, evalRes.formRating, wdStatus.lowPerformanceMode);
           } catch {
             // non-blocking frame error
           }
@@ -314,17 +368,39 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       animFrameIdRef.current = requestAnimationFrame(loop);
     };
 
+    const activeVoice = voiceFeedbackRef.current;
+    const activeWatchdog = watchdogRef.current;
+    const activeCanvas = canvasRef.current;
+
     initCameraAndDetector();
 
+    // Strict Resource Disposal Cleanup
     return () => {
       isMountedRef.current = false;
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+      activeVoice.cancel();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
+      }
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
       }
       if (landmarker && typeof landmarker.close === 'function') {
-        landmarker.close();
+        try {
+          landmarker.close();
+        } catch {
+          // ignore
+        }
       }
+      if (activeCanvas) {
+        const ctx = activeCanvas.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
+      }
+      activeWatchdog.reset();
     };
   }, [isPaused, isResting, isSummaryOpen, playRepChime, speakThai, renderSkeleton]);
 
@@ -351,9 +427,17 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     return () => clearInterval(interval);
   }, [isResting, handleNextSet, config.defaultPrescription.restBetweenSetsSec]);
 
-  // Final Session Telemetry Submission
+  // Final Session Telemetry Submission with Idempotency Guard
   const handleFinalizeSession = (mode: 'ai_verified' | 'stopped_pain') => {
+    if (isFinalizingRef.current) return;
+    isFinalizingRef.current = true;
+
     const totalDurationSec = Math.round((Date.now() - sessionStartTimeRef.current) / 1000);
+    const idempotencyKey =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `kiosk-sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
     const telemetry: ExerciseSessionTelemetry = {
       exerciseId: exercise.id || exercise.exercise_id || config.id || 'ex',
       exerciseName: config.nameTh,
@@ -365,7 +449,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       maxAngleAchievedDeg: evalResult?.currentAngleDeg || 0,
       averageAngleDeg: evalResult?.currentAngleDeg || 0,
       averageHoldDurationSec: config.angleMechanics?.holdDurationSec || 2.0,
-      consistencyScorePercent: evalResult?.completedReps ? Math.min(100, Math.round((evalResult.completedReps / (evalResult.completedReps + (evalResult.incorrectReps || 0))) * 100)) : 100,
+      consistencyScorePercent: evalResult?.completedReps
+        ? Math.min(100, Math.round((evalResult.completedReps / (evalResult.completedReps + (evalResult.incorrectReps || 0))) * 100))
+        : 100,
       compensationEventsCount: evalResult?.activeWarnings?.length || 0,
       scapularHikingRate: evalResult?.scapularHikingRatio || 0,
       trunkCompensationIndex: evalResult?.trunkLateralTiltDeg || 0,
@@ -374,25 +460,48 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       painReported: mode === 'stopped_pain',
       sessionDurationSec: totalDurationSec,
       timestamp: new Date().toISOString(),
+      idempotencyKey,
     };
 
     // Zero-flicker in-memory reset for pose engine buffer without reloading page
     stateMachineRef.current.reset();
+    voiceFeedbackRef.current.cancel();
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
     onSessionCompleted(telemetry);
   };
 
-  // Emergency Pain Stop Handler
+  // Emergency Pain Stop Handler with Idempotency Lock
   const handleReportPainStop = async () => {
+    if (isReportingPainRef.current) return;
+    isReportingPainRef.current = true;
+
     setPainReportedState(true);
     setIsPaused(true);
+
     // Instant in-memory reset of kinematics state buffer
     stateMachineRef.current.reset();
-    speakThai('หยุดการฝึกแล้วค่ะ ระบบกำลังแจ้งนักกายภาพบำบัด');
+
+    // Immediate audio purge & high-priority emergency speech
+    voiceFeedbackRef.current.cancel();
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+    speakThai('หยุดการฝึกแล้วค่ะ ระบบกำลังแจ้งนักกายภาพบำบัด', 'emergency_pain_stop', 0);
 
     try {
-      await defaultApiClient.kiosk.callStaff({
+      const idempotencyKey =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `pain-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+      await (defaultApiClient.kiosk.callStaff as any)({
         kiosk_id: 'kiosk-01',
         reason: `🚨 ผู้ป่วยแจ้งว่ามีอาการเจ็บขณะฝึกท่า: "${config.nameTh}" (HN: ${patient.hn || patient.patient_id})`,
+        idempotency_key: idempotencyKey,
       });
     } catch {
       // safe fallback
@@ -458,6 +567,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           height={720}
           className="absolute inset-0 w-full h-full object-cover -scale-x-100 pointer-events-none z-10"
         />
+
+        {/* Watchdog Hardware Status Alert Badge */}
+        {watchdogStatus && (watchdogStatus.isFrozen || watchdogStatus.lowPerformanceMode) && (
+          <div className="absolute top-4 right-4 z-20 flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900/90 border border-amber-500/50 text-amber-300 text-xs font-semibold backdrop-blur-md shadow-lg animate-pulse">
+            {watchdogStatus.isFrozen ? (
+              <AlertTriangle className="w-4 h-4 text-rose-400" />
+            ) : (
+              <Cpu className="w-4 h-4 text-amber-400" />
+            )}
+            <span>{watchdogStatus.statusMessageTh}</span>
+          </div>
+        )}
 
         {/* Floating Coaching Banner Overlay */}
         <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-xl">
