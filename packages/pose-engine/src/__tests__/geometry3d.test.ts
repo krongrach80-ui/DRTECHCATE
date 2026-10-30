@@ -13,6 +13,7 @@ import {
   distance2D,
   distance3D,
 } from '../math/geometry3d';
+import { OneEuroScalarFilter } from '../math/filters';
 
 describe('Biomechanical Geometry & Kinematics Math', () => {
   it('1. calculates exact 2D planar angles (0°, 90°, 180°)', () => {
@@ -37,6 +38,11 @@ describe('Biomechanical Geometry & Kinematics Math', () => {
     const p45 = { x: 1, y: 1 };
     const angle45 = calculateAngle2D(pA, vertex, p45);
     expect(Math.round(angle45)).toBe(45);
+
+    // 135 degrees angle: (1, 0) -> (0, 0) -> (-1, 1)
+    const p135 = { x: -1, y: 1 };
+    const angle135 = calculateAngle2D(pA, vertex, p135);
+    expect(Math.round(angle135)).toBe(135);
   });
 
   it('2. calculates exact 3D spatial angles with depth z', () => {
@@ -97,4 +103,24 @@ describe('Biomechanical Geometry & Kinematics Math', () => {
     const d = { x: 3, y: 4, z: 12 };
     expect(distance3D(a, d)).toBe(13);
   });
+
+  it('6. applies 1-Euro Filter smoothing to reduce noisy landmark jitter', () => {
+    const filter = new OneEuroScalarFilter(1.2, 0.04);
+    let t = 1000;
+    // Base signal around 0.5 with high-frequency noise +/- 0.05
+    const rawSignals = [0.5, 0.55, 0.45, 0.54, 0.46, 0.53, 0.47];
+    const smoothedValues: number[] = [];
+
+    for (const val of rawSignals) {
+      smoothedValues.push(filter.filter(val, t));
+      t += 33; // 30 FPS
+    }
+
+    // Filtered values should have significantly lower variance than raw jitter
+    const rawSpread = Math.max(...rawSignals) - Math.min(...rawSignals); // 0.10
+    const filteredSpread = Math.max(...smoothedValues.slice(2)) - Math.min(...smoothedValues.slice(2));
+    expect(filteredSpread).toBeLessThan(rawSpread);
+    expect(smoothedValues[smoothedValues.length - 1]).toBeCloseTo(0.5, 1);
+  });
 });
+

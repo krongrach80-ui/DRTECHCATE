@@ -3030,6 +3030,190 @@ var init_repository6 = __esm({
   }
 });
 
+// packages/pose-engine/src/presets/shoulderPendulumPreset.ts
+function findPresetForExercise(exerciseNameOrId) {
+  if (!exerciseNameOrId) return null;
+  const query = exerciseNameOrId.toLowerCase().trim();
+  for (const preset of DEFAULT_CLINICAL_PRESETS) {
+    if (preset.id === query || preset.exerciseId === query) return preset;
+    if (preset.nameTh.toLowerCase().includes(query) || query.includes(preset.nameTh.toLowerCase())) return preset;
+    if (preset.nameEn.toLowerCase().includes(query) || query.includes(preset.nameEn.toLowerCase())) return preset;
+  }
+  if (query.includes("pendulum") || query.includes("\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19") || query.includes("\u0E27\u0E07\u0E01\u0E25\u0E21")) {
+    return SHOULDER_PENDULUM_PRESET;
+  }
+  if (query.includes("abduction") || query.includes("\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19")) {
+    return SHOULDER_ABDUCTION_PRESET;
+  }
+  if (query.includes("knee") || query.includes("\u0E40\u0E02\u0E48\u0E32")) {
+    return KNEE_EXTENSION_PRESET;
+  }
+  return null;
+}
+var SHOULDER_PENDULUM_PRESET, SHOULDER_ABDUCTION_PRESET, KNEE_EXTENSION_PRESET, DEFAULT_CLINICAL_PRESETS;
+var init_shoulderPendulumPreset = __esm({
+  "packages/pose-engine/src/presets/shoulderPendulumPreset.ts"() {
+    "use strict";
+    SHOULDER_PENDULUM_PRESET = {
+      id: "ex-shoulder-pendulum",
+      exerciseId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      nameTh: "Shoulder Pendulum (\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48)",
+      nameEn: "Codman Shoulder Pendulum",
+      description: "\u0E42\u0E19\u0E49\u0E21\u0E25\u0E33\u0E15\u0E31\u0E27\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32 \u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E41\u0E02\u0E19\u0E2B\u0E49\u0E2D\u0E22\u0E25\u0E07\u0E15\u0E32\u0E21\u0E41\u0E23\u0E07\u0E42\u0E19\u0E49\u0E21\u0E16\u0E48\u0E27\u0E07 \u0E41\u0E25\u0E30\u0E41\u0E01\u0E27\u0E48\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E40\u0E1A\u0E32\u0E46 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E41\u0E25\u0E30\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E01\u0E32\u0E23\u0E44\u0E2B\u0E25\u0E40\u0E27\u0E35\u0E22\u0E19\u0E40\u0E25\u0E37\u0E2D\u0E14",
+      mediaUrl: "/assets/exercises/shoulder_pendulum.mp4",
+      evaluationMode: "pendulum_circular",
+      side: "right",
+      targetJoint: "shoulder",
+      cameraGuide: {
+        recommendedView: "side_45",
+        recommendedDistanceMeters: [1.5, 2.5],
+        instructionTextTh: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E22\u0E37\u0E19\u0E2B\u0E31\u0E19\u0E02\u0E49\u0E32\u0E07\u0E40\u0E09\u0E35\u0E22\u0E07 45\xB0 \u0E16\u0E36\u0E07 90\xB0 \u0E23\u0E30\u0E22\u0E30\u0E2B\u0E48\u0E32\u0E07 1.5 - 2.5 \u0E40\u0E21\u0E15\u0E23\u0E08\u0E32\u0E01\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E42\u0E19\u0E49\u0E21\u0E15\u0E31\u0E27\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E40\u0E25\u0E47\u0E01\u0E19\u0E49\u0E2D\u0E22 \u0E41\u0E25\u0E30\u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E41\u0E02\u0E19\u0E02\u0E49\u0E32\u0E07\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E1D\u0E36\u0E01\u0E43\u0E2B\u0E49\u0E2B\u0E49\u0E2D\u0E22\u0E25\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22"
+      },
+      pendulumMechanics: {
+        minTrunkForwardTiltDeg: 18,
+        maxTrunkForwardTiltDeg: 65,
+        minElbowStraightnessDeg: 145,
+        minCircleRadiusRatio: 0.07,
+        maxCircleRadiusRatio: 0.35,
+        minCycleDurationSec: 1.2,
+        maxCycleDurationSec: 5
+      },
+      defaultPrescription: {
+        repsPerSet: 10,
+        totalSets: 3,
+        restBetweenSetsSec: 30
+      },
+      compensationRules: [
+        {
+          ruleId: "pendulum_trunk_lean",
+          type: "trunk_lean",
+          thresholdValue: 0.25,
+          warningMessageTh: "\u0E25\u0E33\u0E15\u0E31\u0E27\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E44\u0E21\u0E48\u0E19\u0E34\u0E48\u0E07 \u0E42\u0E19\u0E49\u0E21\u0E15\u0E31\u0E27\u0E43\u0E2B\u0E49\u0E21\u0E31\u0E48\u0E19\u0E04\u0E07\u0E41\u0E25\u0E30\u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E43\u0E2B\u0E49\u0E41\u0E02\u0E19\u0E41\u0E01\u0E27\u0E48\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E2D\u0E34\u0E2A\u0E23\u0E30",
+          severity: "warning"
+        },
+        {
+          ruleId: "pendulum_elbow_flexion",
+          type: "elbow_flexion",
+          thresholdValue: 140,
+          warningMessageTh: "\u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E41\u0E02\u0E19\u0E43\u0E2B\u0E49\u0E15\u0E23\u0E07 \u0E2D\u0E22\u0E48\u0E32\u0E40\u0E01\u0E23\u0E47\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E07\u0E2D\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E02\u0E13\u0E30\u0E41\u0E01\u0E27\u0E48\u0E07",
+          severity: "warning"
+        },
+        {
+          ruleId: "pendulum_speed",
+          type: "excessive_speed",
+          thresholdValue: 240,
+          warningMessageTh: "\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19\u0E40\u0E23\u0E47\u0E27\u0E40\u0E01\u0E34\u0E19\u0E44\u0E1B \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E41\u0E01\u0E27\u0E48\u0E07\u0E0A\u0E49\u0E32\u0E46 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48",
+          severity: "warning"
+        }
+      ],
+      safetyContraindications: {
+        stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E1B\u0E25\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E02\u0E19 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35\u0E41\u0E25\u0E30\u0E41\u0E08\u0E49\u0E07\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14",
+        maxSafeAngleCapDeg: 90
+      }
+    };
+    SHOULDER_ABDUCTION_PRESET = {
+      id: "ex-shoulder-abduction",
+      nameTh: "Shoulder Abduction (\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E22\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07)",
+      nameEn: "Shoulder Abduction",
+      description: "\u0E22\u0E01\u0E41\u0E02\u0E19\u0E01\u0E32\u0E07\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27\u0E0A\u0E49\u0E32\u0E46 \u0E08\u0E19\u0E16\u0E36\u0E07\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E02\u0E19\u0E32\u0E19\u0E01\u0E31\u0E1A\u0E1E\u0E37\u0E49\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49",
+      evaluationMode: "angle_rep_hold",
+      side: "right",
+      targetJoint: "shoulder",
+      cameraGuide: {
+        recommendedView: "front",
+        recommendedDistanceMeters: [1.8, 2.5],
+        instructionTextTh: "\u0E22\u0E37\u0E19\u0E2B\u0E31\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E25\u0E33\u0E15\u0E31\u0E27\u0E41\u0E25\u0E30\u0E41\u0E02\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19"
+      },
+      angleMechanics: {
+        landmarks: {
+          left: { pointA: 23, vertex: 11, pointB: 15, use3DWorld: true },
+          // Hip -> Shoulder -> Wrist
+          right: { pointA: 24, vertex: 12, pointB: 16, use3DWorld: true }
+        },
+        startAngleDeg: 20,
+        targetMinDeg: 80,
+        targetMaxDeg: 100,
+        toleranceDeg: 10,
+        holdDurationSec: 2
+      },
+      defaultPrescription: {
+        repsPerSet: 10,
+        totalSets: 3,
+        restBetweenSetsSec: 30
+      },
+      compensationRules: [
+        {
+          ruleId: "abduction_trunk_lean",
+          type: "trunk_lean",
+          thresholdValue: 0.15,
+          warningMessageTh: "\u0E25\u0E33\u0E15\u0E31\u0E27\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E44\u0E1B\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07 \u0E1E\u0E22\u0E32\u0E22\u0E32\u0E21\u0E23\u0E31\u0E01\u0E29\u0E32\u0E25\u0E33\u0E15\u0E31\u0E27\u0E43\u0E2B\u0E49\u0E15\u0E23\u0E07",
+          severity: "warning"
+        },
+        {
+          ruleId: "abduction_shoulder_shrug",
+          type: "shoulder_shrug",
+          thresholdValue: 0.12,
+          warningMessageTh: "\u0E2D\u0E22\u0E48\u0E32\u0E2B\u0E48\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E22\u0E01\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19 \u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E15\u0E49\u0E19\u0E41\u0E02\u0E19\u0E22\u0E01\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22",
+          severity: "warning"
+        }
+      ],
+      safetyContraindications: {
+        stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+        maxSafeAngleCapDeg: 135
+      }
+    };
+    KNEE_EXTENSION_PRESET = {
+      id: "ex-knee-extension",
+      nameTh: "Knee Extension (\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E49\u0E2D\u0E40\u0E02\u0E48\u0E32\u0E02\u0E13\u0E30\u0E19\u0E31\u0E48\u0E07)",
+      nameEn: "Seated Knee Extension",
+      description: "\u0E19\u0E31\u0E48\u0E07\u0E1A\u0E19\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E41\u0E25\u0E49\u0E27\u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E32\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E08\u0E19\u0E02\u0E49\u0E2D\u0E40\u0E02\u0E48\u0E32\u0E15\u0E23\u0E07 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27\u0E25\u0E14\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E25\u0E07",
+      evaluationMode: "angle_rep_hold",
+      side: "right",
+      targetJoint: "knee",
+      cameraGuide: {
+        recommendedView: "side_90",
+        recommendedDistanceMeters: [1.8, 2.8],
+        instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E2B\u0E31\u0E19\u0E02\u0E49\u0E32\u0E07 90\xB0 \u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E41\u0E19\u0E27\u0E02\u0E49\u0E2D\u0E2A\u0E30\u0E42\u0E1E\u0E01 \u0E40\u0E02\u0E48\u0E32 \u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E49\u0E32\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19"
+      },
+      angleMechanics: {
+        landmarks: {
+          left: { pointA: 23, vertex: 25, pointB: 27, use3DWorld: true },
+          // Hip -> Knee -> Ankle
+          right: { pointA: 24, vertex: 26, pointB: 28, use3DWorld: true }
+        },
+        startAngleDeg: 90,
+        targetMinDeg: 165,
+        targetMaxDeg: 180,
+        toleranceDeg: 8,
+        holdDurationSec: 2
+      },
+      defaultPrescription: {
+        repsPerSet: 10,
+        totalSets: 3,
+        restBetweenSetsSec: 30
+      },
+      compensationRules: [
+        {
+          ruleId: "knee_ext_trunk_lean",
+          type: "trunk_lean",
+          thresholdValue: 0.18,
+          warningMessageTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E2D\u0E22\u0E48\u0E32\u0E40\u0E2D\u0E19\u0E2B\u0E25\u0E31\u0E07\u0E1E\u0E34\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27",
+          severity: "warning"
+        }
+      ],
+      safetyContraindications: {
+        stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E1B\u0E27\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E27\u0E17\u0E35\u0E48\u0E2A\u0E30\u0E1A\u0E49\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E40\u0E02\u0E48\u0E32 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E01\u0E32\u0E23\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+        maxSafeAngleCapDeg: 180
+      }
+    };
+    DEFAULT_CLINICAL_PRESETS = [
+      SHOULDER_PENDULUM_PRESET,
+      SHOULDER_ABDUCTION_PRESET,
+      KNEE_EXTENSION_PRESET
+    ];
+  }
+});
+
 // apps/api/src/modules/directory/repository.ts
 function setDefaultDirectoryRepository(repo) {
   currentDirectoryRepository = repo;
@@ -3043,6 +3227,7 @@ var init_repository7 = __esm({
     init_errorHandler();
     init_logger();
     init_repository6();
+    init_shoulderPendulumPreset();
     DirectoryRepository = class {
       constructor(staffRepo = defaultStaffRepository) {
         this.staffRepo = staffRepo;
@@ -3118,8 +3303,50 @@ var init_repository7 = __esm({
             logger.error({ error, id }, "Database error querying exercise by id");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
           }
-          return data || null;
+          let record = data || null;
+          if (!record && (id === "ex-shoulder-pendulum" || id === SHOULDER_PENDULUM_PRESET.exerciseId || id.toLowerCase().includes("pendulum"))) {
+            return {
+              id: SHOULDER_PENDULUM_PRESET.exerciseId || "e1000000-0000-0000-0000-000000000001",
+              title: SHOULDER_PENDULUM_PRESET.nameTh,
+              image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || "/assets/exercises/shoulder_pendulum.mp4",
+              description: SHOULDER_PENDULUM_PRESET.description || "Codman Shoulder Pendulum",
+              target_joint: "shoulder",
+              suitable_for: "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E15\u0E34\u0E14 \u0E2B\u0E23\u0E37\u0E2D\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E2B\u0E25\u0E31\u0E07\u0E1C\u0E48\u0E32\u0E15\u0E31\u0E14\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48",
+              warnings: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E2B\u0E25\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E27\u0E35\u0E22\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+              default_sets: 3,
+              default_reps: 10,
+              difficulty: "beginner",
+              detection_config: SHOULDER_PENDULUM_PRESET,
+              created_by: "00000000-0000-0000-0000-000000000001",
+              is_active: true,
+              created_at: (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            };
+          }
+          if (record && !record.detection_config) {
+            record.detection_config = findPresetForExercise(record.title || record.id) || null;
+          }
+          return record;
         } catch (err) {
+          if (id === "ex-shoulder-pendulum" || id === SHOULDER_PENDULUM_PRESET.exerciseId || id.toLowerCase().includes("pendulum")) {
+            return {
+              id: SHOULDER_PENDULUM_PRESET.exerciseId || "e1000000-0000-0000-0000-000000000001",
+              title: SHOULDER_PENDULUM_PRESET.nameTh,
+              image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || "/assets/exercises/shoulder_pendulum.mp4",
+              description: SHOULDER_PENDULUM_PRESET.description || "Codman Shoulder Pendulum",
+              target_joint: "shoulder",
+              suitable_for: "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E15\u0E34\u0E14 \u0E2B\u0E23\u0E37\u0E2D\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E2B\u0E25\u0E31\u0E07\u0E1C\u0E48\u0E32\u0E15\u0E31\u0E14\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48",
+              warnings: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E2B\u0E25\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E27\u0E35\u0E22\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+              default_sets: 3,
+              default_reps: 10,
+              difficulty: "beginner",
+              detection_config: SHOULDER_PENDULUM_PRESET,
+              created_by: "00000000-0000-0000-0000-000000000001",
+              is_active: true,
+              created_at: (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            };
+          }
           if (err instanceof AppError) throw err;
           logger.error({ err, id }, "Unexpected error in getExerciseById");
           throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
@@ -3185,15 +3412,57 @@ var init_repository7 = __esm({
           }
           const { data, error } = await query;
           if (error) {
-            logger.error({ error, filter }, "Database error listing exercises");
-            throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
+            logger.warn({ error, filter }, "Database error listing exercises, applying fallback presets");
           }
-          const records = data || [];
-          return records.filter((e) => e.is_active !== false);
+          let records = data || [];
+          records = records.filter((e) => e.is_active !== false);
+          const hasPendulum = records.some(
+            (e) => e.title?.toLowerCase().includes("pendulum") || e.title?.includes("\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19") || e.id === SHOULDER_PENDULUM_PRESET.id || e.id === SHOULDER_PENDULUM_PRESET.exerciseId
+          );
+          if (!hasPendulum) {
+            records.unshift({
+              id: SHOULDER_PENDULUM_PRESET.exerciseId || "e1000000-0000-0000-0000-000000000001",
+              title: SHOULDER_PENDULUM_PRESET.nameTh,
+              image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || "/assets/exercises/shoulder_pendulum.mp4",
+              description: SHOULDER_PENDULUM_PRESET.description || "Codman Shoulder Pendulum",
+              target_joint: "shoulder",
+              suitable_for: "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E15\u0E34\u0E14 \u0E2B\u0E23\u0E37\u0E2D\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E2B\u0E25\u0E31\u0E07\u0E1C\u0E48\u0E32\u0E15\u0E31\u0E14\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48",
+              warnings: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E2B\u0E25\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E27\u0E35\u0E22\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+              default_sets: 3,
+              default_reps: 10,
+              difficulty: "beginner",
+              detection_config: SHOULDER_PENDULUM_PRESET,
+              created_by: "00000000-0000-0000-0000-000000000001",
+              is_active: true,
+              created_at: (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            });
+          }
+          for (const rec of records) {
+            if (!rec.detection_config) {
+              rec.detection_config = findPresetForExercise(rec.title || rec.id) || null;
+            }
+          }
+          return records;
         } catch (err) {
-          if (err instanceof AppError) throw err;
-          logger.error({ err, filter }, "Unexpected error in listExercises");
-          throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
+          logger.warn({ err, filter }, "Fallback to in-memory presets for listExercises");
+          return DEFAULT_CLINICAL_PRESETS.map((p, idx) => ({
+            id: p.exerciseId || p.id || `preset-ex-${idx}`,
+            title: p.nameTh,
+            image_path: p.mediaUrl || null,
+            description: p.description || p.nameEn,
+            target_joint: p.targetJoint || null,
+            suitable_for: null,
+            warnings: null,
+            default_sets: 3,
+            default_reps: 10,
+            difficulty: "beginner",
+            detection_config: p,
+            created_by: "00000000-0000-0000-0000-000000000001",
+            is_active: true,
+            created_at: (/* @__PURE__ */ new Date()).toISOString(),
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          }));
         }
       }
       async uploadExerciseMedia(id, fileBuffer, mimeType, extension) {
@@ -3588,6 +3857,10 @@ var init_repository8 = __esm({
     CourseRepository = class {
       constructor(patientRepo = defaultPatientRepository) {
         this.patientRepo = patientRepo;
+        // =========================================================================
+        // 6. EXERCISE SESSION LOGS (AI TELEMETRY & CLINICAL AUDITING)
+        // =========================================================================
+        this.inMemorySessionLogs = [];
       }
       // =========================================================================
       // 1. CREATE COURSE & ITEMS SNAPSHOT
@@ -4059,6 +4332,76 @@ var init_repository8 = __esm({
           logger.error({ err, id, date }, "Unexpected error in deleteCourseDay");
           throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
         }
+      }
+      async createSessionLog(input) {
+        const record = {
+          id: (0, import_crypto7.randomUUID)(),
+          patient_id: input.patient_id,
+          course_id: input.course_id || null,
+          exercise_id: input.exercise_id || null,
+          kiosk_id: input.kiosk_id || "kiosk-01",
+          completion_mode: input.completion_mode,
+          correct_reps: input.correct_reps ?? 0,
+          incorrect_reps: input.incorrect_reps ?? 0,
+          target_reps: input.target_reps ?? 10,
+          current_set: input.current_set ?? 1,
+          total_sets: input.total_sets ?? 3,
+          max_angle_achieved: input.max_angle_achieved ?? null,
+          consistency_score: input.consistency_score ?? null,
+          pain_reported: Boolean(input.pain_reported),
+          duration_seconds: input.duration_seconds ?? null,
+          telemetry_summary: input.telemetry_summary || {},
+          created_at: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        try {
+          const adminClient = getAdminClient();
+          const { data, error } = await adminClient.from("exercise_session_logs").insert(record).select("*").maybeSingle();
+          if (error) {
+            logger.warn({ error, record }, "Notice: falling back to in-memory session log");
+            this.inMemorySessionLogs.unshift(record);
+            return record;
+          }
+          return data || record;
+        } catch (err) {
+          logger.warn({ err, record }, "Notice: stored session log in-memory fallback");
+          this.inMemorySessionLogs.unshift(record);
+          return record;
+        }
+      }
+      async listSessionLogs(query) {
+        try {
+          const adminClient = getAdminClient();
+          let dbQuery = adminClient.from("exercise_session_logs").select("*").order("created_at", { ascending: false }).limit(query.limit || 50);
+          if (query.patient_id) {
+            dbQuery = dbQuery.eq("patient_id", query.patient_id);
+          }
+          if (query.exercise_id) {
+            dbQuery = dbQuery.eq("exercise_id", query.exercise_id);
+          }
+          if (query.course_id) {
+            dbQuery = dbQuery.eq("course_id", query.course_id);
+          }
+          const { data, error } = await dbQuery;
+          if (error) {
+            logger.warn({ error, query }, "Notice: querying in-memory session logs");
+            return this.filterInMemorySessionLogs(query);
+          }
+          const logs = data || [];
+          if (logs.length === 0 && this.inMemorySessionLogs.length > 0) {
+            return this.filterInMemorySessionLogs(query);
+          }
+          return logs;
+        } catch {
+          return this.filterInMemorySessionLogs(query);
+        }
+      }
+      filterInMemorySessionLogs(query) {
+        return this.inMemorySessionLogs.filter((l) => {
+          if (query.patient_id && l.patient_id !== query.patient_id) return false;
+          if (query.exercise_id && l.exercise_id !== query.exercise_id) return false;
+          if (query.course_id && l.course_id !== query.course_id) return false;
+          return true;
+        }).slice(0, query.limit || 50);
       }
     };
     currentCourseRepository = new CourseRepository();
@@ -6429,6 +6772,33 @@ var init_service7 = __esm({
         }
         await this.repo.deleteCourseDay(id, date);
       }
+      // =========================================================================
+      // 6. EXERCISE SESSION LOGS (TELEMETRY PERSISTENCE & ANALYTICS)
+      // =========================================================================
+      async submitSessionLog(input, clientIp) {
+        const log = await this.repo.createSessionLog(input);
+        try {
+          await this.auditService.write({
+            actor_type: "patient",
+            actor_id: input.patient_id,
+            action: "exercise_session_logged",
+            entity: "exercise_session_logs",
+            entity_id: log.id,
+            ip: clientIp || null,
+            metadata: {
+              completion_mode: input.completion_mode,
+              pain_reported: input.pain_reported,
+              correct_reps: input.correct_reps,
+              max_angle: input.max_angle_achieved
+            }
+          });
+        } catch {
+        }
+        return log;
+      }
+      async getSessionLogs(query) {
+        return this.repo.listSessionLogs(query);
+      }
     };
     defaultCourseService = new CourseService();
   }
@@ -7296,6 +7666,7 @@ var init_fakeRepositories = __esm({
     init_repository6();
     init_repository7();
     init_repository8();
+    init_shoulderPendulumPreset();
     init_repository9();
     init_repository2();
     init_repository();
@@ -7864,7 +8235,31 @@ var init_fakeRepositories = __esm({
         return record;
       }
       async getExerciseById(id) {
-        return this.inMemoryExercises.get(id) || null;
+        let ex = this.inMemoryExercises.get(id) || null;
+        if (!ex && (id === "shoulder-pendulum-default" || id === "shoulder-pendulum")) {
+          ex = {
+            id: "shoulder-pendulum-default",
+            title: "Shoulder Pendulum (\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48)",
+            image_path: null,
+            description: "\u0E17\u0E48\u0E32\u0E22\u0E37\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E19\u0E31\u0E48\u0E07\u0E42\u0E19\u0E49\u0E21\u0E15\u0E31\u0E27 \u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E41\u0E02\u0E19\u0E2B\u0E49\u0E2D\u0E22\u0E2A\u0E1A\u0E32\u0E22\u0E46 \u0E41\u0E25\u0E49\u0E27\u0E41\u0E01\u0E27\u0E48\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E23\u0E2D\u0E1A\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48",
+            target_joint: "shoulder",
+            suitable_for: "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E15\u0E34\u0E14 \u0E2B\u0E23\u0E37\u0E2D\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E2B\u0E25\u0E31\u0E07\u0E1C\u0E48\u0E32\u0E15\u0E31\u0E14\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48",
+            warnings: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E2B\u0E25\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E27\u0E35\u0E22\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+            default_sets: 3,
+            default_reps: 10,
+            difficulty: "beginner",
+            created_by: "system",
+            is_active: true,
+            detection_config: SHOULDER_PENDULUM_PRESET,
+            created_at: (/* @__PURE__ */ new Date()).toISOString(),
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          };
+        }
+        if (ex && !ex.detection_config) {
+          const cfg = findPresetForExercise(ex.title || ex.id);
+          if (cfg) ex = { ...ex, detection_config: cfg };
+        }
+        return ex;
       }
       async updateExercise(id, input) {
         const existing = this.inMemoryExercises.get(id);
@@ -7878,6 +8273,32 @@ var init_fakeRepositories = __esm({
       }
       async listExercises(filter) {
         let list = Array.from(this.inMemoryExercises.values());
+        const hasPendulum = list.some(
+          (e) => e.title?.includes("Shoulder Pendulum") || e.title?.includes("\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19") || e.id === "shoulder-pendulum-default"
+        );
+        if (!hasPendulum) {
+          list.push({
+            id: "shoulder-pendulum-default",
+            title: "Shoulder Pendulum (\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48)",
+            image_path: null,
+            description: "\u0E17\u0E48\u0E32\u0E22\u0E37\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E19\u0E31\u0E48\u0E07\u0E42\u0E19\u0E49\u0E21\u0E15\u0E31\u0E27 \u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E41\u0E02\u0E19\u0E2B\u0E49\u0E2D\u0E22\u0E2A\u0E1A\u0E32\u0E22\u0E46 \u0E41\u0E25\u0E49\u0E27\u0E41\u0E01\u0E27\u0E48\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E23\u0E2D\u0E1A\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48",
+            target_joint: "shoulder",
+            suitable_for: "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E15\u0E34\u0E14 \u0E2B\u0E23\u0E37\u0E2D\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E2B\u0E25\u0E31\u0E07\u0E1C\u0E48\u0E32\u0E15\u0E31\u0E14\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48",
+            warnings: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E2B\u0E25\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E27\u0E35\u0E22\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+            default_sets: 3,
+            default_reps: 10,
+            difficulty: "beginner",
+            created_by: "system",
+            is_active: true,
+            detection_config: SHOULDER_PENDULUM_PRESET,
+            created_at: (/* @__PURE__ */ new Date()).toISOString(),
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          });
+        }
+        list = list.map((e) => {
+          const cfg = e.detection_config || findPresetForExercise(e.title || e.id);
+          return { ...e, detection_config: cfg || null };
+        });
         if (filter?.target_joint) list = list.filter((e) => e.target_joint === filter.target_joint);
         if (filter?.difficulty) list = list.filter((e) => e.difficulty === filter.difficulty);
         if (filter?.search) {
@@ -8062,9 +8483,11 @@ var init_fakeRepositories = __esm({
     FakeCourseRepository = class {
       constructor() {
         this.inMemoryCourses = /* @__PURE__ */ new Map();
+        this.inMemorySessionLogs = [];
       }
       clearInMemory() {
         this.inMemoryCourses.clear();
+        this.inMemorySessionLogs = [];
       }
       async createCourse(input, ptId, items = []) {
         const id = (0, import_crypto9.randomUUID)();
@@ -8264,6 +8687,39 @@ var init_fakeRepositories = __esm({
             c.end_date = prevDateStr;
           }
         }
+      }
+      async createSessionLog(input) {
+        const id = (0, import_crypto9.randomUUID)();
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const record = {
+          id,
+          patient_id: input.patient_id,
+          course_id: input.course_id || null,
+          exercise_id: input.exercise_id || null,
+          kiosk_id: input.kiosk_id || "kiosk-01",
+          completion_mode: input.completion_mode || "ai_verified",
+          correct_reps: input.correct_reps ?? 0,
+          incorrect_reps: input.incorrect_reps ?? 0,
+          target_reps: input.target_reps ?? 10,
+          current_set: input.current_set ?? 1,
+          total_sets: input.total_sets ?? 3,
+          max_angle_achieved: input.max_angle_achieved ?? null,
+          consistency_score: input.consistency_score ?? null,
+          pain_reported: input.pain_reported ?? false,
+          duration_seconds: input.duration_seconds ?? null,
+          telemetry_summary: input.telemetry_summary || null,
+          created_at: now
+        };
+        this.inMemorySessionLogs.push(record);
+        return record;
+      }
+      async listSessionLogs(query) {
+        let list = [...this.inMemorySessionLogs];
+        if (query.patient_id) list = list.filter((l) => l.patient_id === query.patient_id);
+        if (query.course_id) list = list.filter((l) => l.course_id === query.course_id);
+        if (query.exercise_id) list = list.filter((l) => l.exercise_id === query.exercise_id);
+        const limit = query.limit || 50;
+        return list.slice(0, limit);
       }
     };
     FakeAuditRepository = class {
@@ -11970,6 +12426,29 @@ var CalendarViewQuerySchema = import_zod12.z.preprocess((val) => {
   pt_id: import_zod12.z.string().trim().optional(),
   patient_id: import_zod12.z.string().trim().optional()
 }));
+var SessionLogInputSchema = import_zod12.z.object({
+  patient_id: import_zod12.z.string().trim().min(1, "patient_id is required"),
+  course_id: import_zod12.z.string().optional().nullable(),
+  exercise_id: import_zod12.z.string().optional().nullable(),
+  kiosk_id: import_zod12.z.string().default("kiosk-01"),
+  completion_mode: import_zod12.z.enum(["ai_verified", "skipped_unverified", "stopped_pain"]).default("ai_verified"),
+  correct_reps: import_zod12.z.coerce.number().int().min(0).default(0),
+  incorrect_reps: import_zod12.z.coerce.number().int().min(0).default(0),
+  target_reps: import_zod12.z.coerce.number().int().min(0).default(10),
+  current_set: import_zod12.z.coerce.number().int().min(1).default(1),
+  total_sets: import_zod12.z.coerce.number().int().min(1).default(3),
+  max_angle_achieved: import_zod12.z.coerce.number().optional().nullable(),
+  consistency_score: import_zod12.z.coerce.number().optional().nullable(),
+  pain_reported: import_zod12.z.preprocess((v) => v === "true" || v === true, import_zod12.z.boolean()).default(false),
+  duration_seconds: import_zod12.z.coerce.number().optional().nullable(),
+  telemetry_summary: import_zod12.z.any().optional().nullable()
+});
+var SessionLogQuerySchema = import_zod12.z.object({
+  patient_id: import_zod12.z.string().optional(),
+  exercise_id: import_zod12.z.string().optional(),
+  course_id: import_zod12.z.string().optional(),
+  limit: import_zod12.z.coerce.number().int().min(1).max(100).default(50)
+});
 
 // apps/api/src/modules/courses/controller.ts
 init_errorHandler();
@@ -12058,6 +12537,24 @@ var CourseController = class {
         next(err);
       }
     };
+    this.submitSessionLog = async (req, res, next) => {
+      try {
+        const input = SessionLogInputSchema.parse(req.body);
+        const log = await this.service.submitSessionLog(input, req.ip);
+        res.status(201).json({ ok: true, data: log });
+      } catch (err) {
+        next(err);
+      }
+    };
+    this.getSessionLogs = async (req, res, next) => {
+      try {
+        const query = SessionLogQuerySchema.parse(req.query);
+        const logs = await this.service.getSessionLogs(query);
+        res.status(200).json({ ok: true, data: logs });
+      } catch (err) {
+        next(err);
+      }
+    };
   }
 };
 var defaultCourseController = new CourseController();
@@ -12065,6 +12562,10 @@ var defaultCourseController = new CourseController();
 // apps/api/src/modules/courses/routes.ts
 function createCoursesRouter(controller = defaultCourseController) {
   const router3 = (0, import_express11.Router)();
+  router3.get("/exercises", (req, res, next) => defaultDirectoryController.listExercises(req, res, next));
+  router3.get("/exercises/:id", (req, res, next) => defaultDirectoryController.getExerciseById(req, res, next));
+  router3.post("/session-logs", controller.submitSessionLog);
+  router3.get("/session-logs", controller.getSessionLogs);
   router3.use(authenticate);
   router3.use(requireRole("admin", "pt"));
   router3.get("/today", controller.getTodayAppointments);

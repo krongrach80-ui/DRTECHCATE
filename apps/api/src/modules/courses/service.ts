@@ -9,6 +9,9 @@ import {
   TodayAppointmentsFilter,
   CalendarViewFilter,
   CourseItemInput,
+  SessionLogInput,
+  SessionLogRecord,
+  SessionLogQuery,
 } from './schema';
 import { defaultCourseRepository, ICourseRepository } from './repository';
 import { defaultPatientRepository, IPatientRepository } from '../patients/repository';
@@ -269,6 +272,36 @@ export class CourseService {
       }
     }
     await this.repo.deleteCourseDay(id, date);
+  }
+
+  // =========================================================================
+  // 6. EXERCISE SESSION LOGS (TELEMETRY PERSISTENCE & ANALYTICS)
+  // =========================================================================
+  async submitSessionLog(input: SessionLogInput, clientIp?: string): Promise<SessionLogRecord> {
+    const log = await this.repo.createSessionLog(input);
+    try {
+      await this.auditService.write({
+        actor_type: 'patient',
+        actor_id: input.patient_id,
+        action: 'exercise_session_logged',
+        entity: 'exercise_session_logs',
+        entity_id: log.id,
+        ip: clientIp || null,
+        metadata: {
+          completion_mode: input.completion_mode,
+          pain_reported: input.pain_reported,
+          correct_reps: input.correct_reps,
+          max_angle: input.max_angle_achieved,
+        },
+      });
+    } catch {
+      // audit logging should not block clinical session submission
+    }
+    return log;
+  }
+
+  async getSessionLogs(query: SessionLogQuery): Promise<SessionLogRecord[]> {
+    return this.repo.listSessionLogs(query);
   }
 }
 

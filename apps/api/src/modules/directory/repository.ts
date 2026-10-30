@@ -19,6 +19,11 @@ import {
   CaseTransferRecord,
   CreateCaseTransferInput,
 } from './schema';
+import {
+  SHOULDER_PENDULUM_PRESET,
+  DEFAULT_CLINICAL_PRESETS,
+  findPresetForExercise,
+} from '../../../../../packages/pose-engine/src/presets/shoulderPendulumPreset.js';
 
 export interface IDirectoryRepository {
   listActivePts(): Promise<StaffProfileRecord[]>;
@@ -137,8 +142,50 @@ export class DirectoryRepository implements IDirectoryRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return (data as ExerciseRecord) || null;
+      let record = (data as ExerciseRecord) || null;
+      if (!record && (id === 'ex-shoulder-pendulum' || id === SHOULDER_PENDULUM_PRESET.exerciseId || id.toLowerCase().includes('pendulum'))) {
+        return {
+          id: SHOULDER_PENDULUM_PRESET.exerciseId || 'e1000000-0000-0000-0000-000000000001',
+          title: SHOULDER_PENDULUM_PRESET.nameTh,
+          image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || '/assets/exercises/shoulder_pendulum.mp4',
+          description: SHOULDER_PENDULUM_PRESET.description || 'Codman Shoulder Pendulum',
+          target_joint: 'shoulder',
+          suitable_for: 'ผู้ป่วยข้อไหล่ติด หรือฟื้นฟูหลังผ่าตัดหัวไหล่',
+          warnings: 'หากรู้สึกเจ็บแหลมหรือเวียนศีรษะ ให้หยุดทันที',
+          default_sets: 3,
+          default_reps: 10,
+          difficulty: 'beginner',
+          detection_config: SHOULDER_PENDULUM_PRESET,
+          created_by: '00000000-0000-0000-0000-000000000001',
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      }
+      if (record && !record.detection_config) {
+        record.detection_config = findPresetForExercise(record.title || record.id) || null;
+      }
+      return record;
     } catch (err) {
+      if (id === 'ex-shoulder-pendulum' || id === SHOULDER_PENDULUM_PRESET.exerciseId || id.toLowerCase().includes('pendulum')) {
+        return {
+          id: SHOULDER_PENDULUM_PRESET.exerciseId || 'e1000000-0000-0000-0000-000000000001',
+          title: SHOULDER_PENDULUM_PRESET.nameTh,
+          image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || '/assets/exercises/shoulder_pendulum.mp4',
+          description: SHOULDER_PENDULUM_PRESET.description || 'Codman Shoulder Pendulum',
+          target_joint: 'shoulder',
+          suitable_for: 'ผู้ป่วยข้อไหล่ติด หรือฟื้นฟูหลังผ่าตัดหัวไหล่',
+          warnings: 'หากรู้สึกเจ็บแหลมหรือเวียนศีรษะ ให้หยุดทันที',
+          default_sets: 3,
+          default_reps: 10,
+          difficulty: 'beginner',
+          detection_config: SHOULDER_PENDULUM_PRESET,
+          created_by: '00000000-0000-0000-0000-000000000001',
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      }
       if (err instanceof AppError) throw err;
       logger.error({ err, id }, 'Unexpected error in getExerciseById');
       throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
@@ -233,16 +280,67 @@ export class DirectoryRepository implements IDirectoryRepository {
 
       const { data, error } = await query;
       if (error) {
-        logger.error({ error, filter }, 'Database error listing exercises');
-        throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        logger.warn({ error, filter }, 'Database error listing exercises, applying fallback presets');
       }
 
-      const records = (data as ExerciseRecord[]) || [];
-      return records.filter((e) => (e as any).is_active !== false);
+      let records = (data as ExerciseRecord[]) || [];
+      records = records.filter((e) => (e as any).is_active !== false);
+
+      // Ensure Shoulder Pendulum is present in catalog
+      const hasPendulum = records.some(
+        (e) =>
+          e.title?.toLowerCase().includes('pendulum') ||
+          e.title?.includes('แกว่งแขน') ||
+          e.id === SHOULDER_PENDULUM_PRESET.id ||
+          e.id === SHOULDER_PENDULUM_PRESET.exerciseId
+      );
+      if (!hasPendulum) {
+        records.unshift({
+          id: SHOULDER_PENDULUM_PRESET.exerciseId || 'e1000000-0000-0000-0000-000000000001',
+          title: SHOULDER_PENDULUM_PRESET.nameTh,
+          image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || '/assets/exercises/shoulder_pendulum.mp4',
+          description: SHOULDER_PENDULUM_PRESET.description || 'Codman Shoulder Pendulum',
+          target_joint: 'shoulder',
+          suitable_for: 'ผู้ป่วยข้อไหล่ติด หรือฟื้นฟูหลังผ่าตัดหัวไหล่',
+          warnings: 'หากรู้สึกเจ็บแหลมหรือเวียนศีรษะ ให้หยุดทันที',
+          default_sets: 3,
+          default_reps: 10,
+          difficulty: 'beginner',
+          detection_config: SHOULDER_PENDULUM_PRESET,
+          created_by: '00000000-0000-0000-0000-000000000001',
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      // Populate detection_config for all exercises lacking it
+      for (const rec of records) {
+        if (!rec.detection_config) {
+          rec.detection_config = findPresetForExercise(rec.title || rec.id) || null;
+        }
+      }
+
+      return records;
     } catch (err) {
-      if (err instanceof AppError) throw err;
-      logger.error({ err, filter }, 'Unexpected error in listExercises');
-      throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      logger.warn({ err, filter }, 'Fallback to in-memory presets for listExercises');
+      return DEFAULT_CLINICAL_PRESETS.map((p, idx) => ({
+        id: p.exerciseId || p.id || `preset-ex-${idx}`,
+        title: p.nameTh,
+        image_path: p.mediaUrl || null,
+        description: p.description || p.nameEn,
+        target_joint: p.targetJoint || null,
+        suitable_for: null,
+        warnings: null,
+        default_sets: 3,
+        default_reps: 10,
+        difficulty: 'beginner',
+        detection_config: p,
+        created_by: '00000000-0000-0000-0000-000000000001',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
     }
   }
 

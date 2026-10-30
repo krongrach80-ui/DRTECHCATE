@@ -9,6 +9,9 @@ import {
   UpdateCourseInput,
   CourseQueryFilter,
   CourseItemInput,
+  SessionLogInput,
+  SessionLogRecord,
+  SessionLogQuery,
 } from './schema';
 import { IPatientRepository, defaultPatientRepository } from '../patients/repository';
 
@@ -45,6 +48,8 @@ export interface ICourseRepository {
     ptId?: string,
     accessiblePatientIds?: string[] | null
   ): Promise<CourseRecord[]>;
+  createSessionLog(input: SessionLogInput): Promise<SessionLogRecord>;
+  listSessionLogs(query: SessionLogQuery): Promise<SessionLogRecord[]>;
 }
 
 export class CourseRepository implements ICourseRepository {
@@ -701,6 +706,100 @@ export class CourseRepository implements ICourseRepository {
       logger.error({ err, id, date }, 'Unexpected error in deleteCourseDay');
       throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
     }
+  }
+
+  // =========================================================================
+  // 6. EXERCISE SESSION LOGS (AI TELEMETRY & CLINICAL AUDITING)
+  // =========================================================================
+  private inMemorySessionLogs: SessionLogRecord[] = [];
+
+  async createSessionLog(input: SessionLogInput): Promise<SessionLogRecord> {
+    const record: SessionLogRecord = {
+      id: randomUUID(),
+      patient_id: input.patient_id,
+      course_id: input.course_id || null,
+      exercise_id: input.exercise_id || null,
+      kiosk_id: input.kiosk_id || 'kiosk-01',
+      completion_mode: input.completion_mode,
+      correct_reps: input.correct_reps ?? 0,
+      incorrect_reps: input.incorrect_reps ?? 0,
+      target_reps: input.target_reps ?? 10,
+      current_set: input.current_set ?? 1,
+      total_sets: input.total_sets ?? 3,
+      max_angle_achieved: input.max_angle_achieved ?? null,
+      consistency_score: input.consistency_score ?? null,
+      pain_reported: Boolean(input.pain_reported),
+      duration_seconds: input.duration_seconds ?? null,
+      telemetry_summary: input.telemetry_summary || {},
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      const adminClient = getAdminClient();
+      const { data, error } = await adminClient
+        .from('exercise_session_logs')
+        .insert(record)
+        .select('*')
+        .maybeSingle();
+
+      if (error) {
+        logger.warn({ error, record }, 'Notice: falling back to in-memory session log');
+        this.inMemorySessionLogs.unshift(record);
+        return record;
+      }
+
+      return (data as SessionLogRecord) || record;
+    } catch (err) {
+      logger.warn({ err, record }, 'Notice: stored session log in-memory fallback');
+      this.inMemorySessionLogs.unshift(record);
+      return record;
+    }
+  }
+
+  async listSessionLogs(query: SessionLogQuery): Promise<SessionLogRecord[]> {
+    try {
+      const adminClient = getAdminClient();
+      let dbQuery = adminClient
+        .from('exercise_session_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(query.limit || 50);
+
+      if (query.patient_id) {
+        dbQuery = dbQuery.eq('patient_id', query.patient_id);
+      }
+      if (query.exercise_id) {
+        dbQuery = dbQuery.eq('exercise_id', query.exercise_id);
+      }
+      if (query.course_id) {
+        dbQuery = dbQuery.eq('course_id', query.course_id);
+      }
+
+      const { data, error } = await dbQuery;
+      if (error) {
+        logger.warn({ error, query }, 'Notice: querying in-memory session logs');
+        return this.filterInMemorySessionLogs(query);
+      }
+
+      const logs = (data as SessionLogRecord[]) || [];
+      if (logs.length === 0 && this.inMemorySessionLogs.length > 0) {
+        return this.filterInMemorySessionLogs(query);
+      }
+      return logs;
+    } catch {
+      return this.filterInMemorySessionLogs(query);
+    }
+  }
+
+  private filterInMemorySessionLogs(query: SessionLogQuery): SessionLogRecord[] {
+    return this.inMemorySessionLogs
+      .filter((l) => {
+        if (query.patient_id && l.patient_id !== query.patient_id) return false;
+        if (query.exercise_id && l.exercise_id !== query.exercise_id) return false;
+        if (query.course_id && l.course_id !== query.course_id) return false;
+        return true;
+      })
+      .slice(0, query.limit || 50);
   }
 }
 

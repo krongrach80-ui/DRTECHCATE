@@ -6,6 +6,8 @@ import {
   CourseQuerySchema,
   TodayAppointmentsQuerySchema,
   CalendarViewQuerySchema,
+  SessionLogInputSchema,
+  SessionLogQuerySchema,
 } from './schema';
 import { AppError } from '../../middleware/errorHandler';
 
@@ -97,6 +99,26 @@ export class CourseController {
       const filter = CalendarViewQuerySchema.parse(req.query);
       const calendarData = await this.service.getCalendarView(filter, req.user);
       res.status(200).json({ ok: true, data: calendarData });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  submitSessionLog = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const input = SessionLogInputSchema.parse(req.body);
+      const log = await this.service.submitSessionLog(input, req.ip);
+      res.status(201).json({ ok: true, data: log });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getSessionLogs = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const query = SessionLogQuerySchema.parse(req.query);
+      const logs = await this.service.getSessionLogs(query);
+      res.status(200).json({ ok: true, data: logs });
     } catch (err) {
       next(err);
     }

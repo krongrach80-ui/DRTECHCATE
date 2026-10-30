@@ -70,7 +70,14 @@ import {
   CourseQueryFilter,
   CourseItemRecord,
   CourseItemInput,
+  SessionLogInput,
+  SessionLogRecord,
+  SessionLogQuery,
 } from '../../modules/courses/schema';
+import {
+  SHOULDER_PENDULUM_PRESET,
+  findPresetForExercise,
+} from '../../../../../packages/pose-engine/src/presets/shoulderPendulumPreset.js';
 import {
   IKioskRepository,
   setDefaultKioskRepository,
@@ -784,7 +791,31 @@ export class FakeDirectoryRepository implements IDirectoryRepository {
   }
 
   async getExerciseById(id: string): Promise<ExerciseRecord | null> {
-    return this.inMemoryExercises.get(id) || null;
+    let ex = this.inMemoryExercises.get(id) || null;
+    if (!ex && (id === 'shoulder-pendulum-default' || id === 'shoulder-pendulum')) {
+      ex = {
+        id: 'shoulder-pendulum-default',
+        title: 'Shoulder Pendulum (แกว่งแขนวงกลมผ่อนคลายหัวไหล่)',
+        image_path: null,
+        description: 'ท่ายืนหรือนั่งโน้มตัว ปล่อยแขนห้อยสบายๆ แล้วแกว่งเป็นวงกลมผ่อนคลายกล้ามเนื้อรอบข้อต่อหัวไหล่',
+        target_joint: 'shoulder',
+        suitable_for: 'ผู้ป่วยข้อไหล่ติด หรือฟื้นฟูหลังผ่าตัดหัวไหล่',
+        warnings: 'หากรู้สึกเจ็บแหลมหรือเวียนศีรษะ ให้หยุดทันที',
+        default_sets: 3,
+        default_reps: 10,
+        difficulty: 'beginner',
+        created_by: 'system',
+        is_active: true,
+        detection_config: SHOULDER_PENDULUM_PRESET,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    }
+    if (ex && !ex.detection_config) {
+      const cfg = findPresetForExercise(ex.title || ex.id);
+      if (cfg) ex = { ...ex, detection_config: cfg };
+    }
+    return ex;
   }
 
   async updateExercise(id: string, input: UpdateExerciseInput): Promise<ExerciseRecord> {
@@ -801,6 +832,34 @@ export class FakeDirectoryRepository implements IDirectoryRepository {
 
   async listExercises(filter?: ExerciseQueryFilter): Promise<ExerciseRecord[]> {
     let list = Array.from(this.inMemoryExercises.values());
+    const hasPendulum = list.some(
+      (e) => e.title?.includes('Shoulder Pendulum') || e.title?.includes('แกว่งแขน') || e.id === 'shoulder-pendulum-default'
+    );
+    if (!hasPendulum) {
+      list.push({
+        id: 'shoulder-pendulum-default',
+        title: 'Shoulder Pendulum (แกว่งแขนวงกลมผ่อนคลายหัวไหล่)',
+        image_path: null,
+        description: 'ท่ายืนหรือนั่งโน้มตัว ปล่อยแขนห้อยสบายๆ แล้วแกว่งเป็นวงกลมผ่อนคลายกล้ามเนื้อรอบข้อต่อหัวไหล่',
+        target_joint: 'shoulder',
+        suitable_for: 'ผู้ป่วยข้อไหล่ติด หรือฟื้นฟูหลังผ่าตัดหัวไหล่',
+        warnings: 'หากรู้สึกเจ็บแหลมหรือเวียนศีรษะ ให้หยุดทันที',
+        default_sets: 3,
+        default_reps: 10,
+        difficulty: 'beginner',
+        created_by: 'system',
+        is_active: true,
+        detection_config: SHOULDER_PENDULUM_PRESET,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    list = list.map((e) => {
+      const cfg = e.detection_config || findPresetForExercise(e.title || e.id);
+      return { ...e, detection_config: cfg || null };
+    });
+
     if (filter?.target_joint) list = list.filter((e) => e.target_joint === filter.target_joint);
     if (filter?.difficulty) list = list.filter((e) => e.difficulty === filter.difficulty);
     if (filter?.search) {
@@ -1012,9 +1071,11 @@ export class FakeDirectoryRepository implements IDirectoryRepository {
 
 export class FakeCourseRepository implements ICourseRepository {
   public inMemoryCourses = new Map<string, CourseRecord>();
+  public inMemorySessionLogs: SessionLogRecord[] = [];
 
   clearInMemory(): void {
     this.inMemoryCourses.clear();
+    this.inMemorySessionLogs = [];
   }
 
   async createCourse(
@@ -1259,6 +1320,41 @@ export class FakeCourseRepository implements ICourseRepository {
         c.end_date = prevDateStr;
       }
     }
+  }
+
+  async createSessionLog(input: SessionLogInput): Promise<SessionLogRecord> {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const record: SessionLogRecord = {
+      id,
+      patient_id: input.patient_id,
+      course_id: input.course_id || null,
+      exercise_id: input.exercise_id || null,
+      kiosk_id: input.kiosk_id || 'kiosk-01',
+      completion_mode: input.completion_mode || 'ai_verified',
+      correct_reps: input.correct_reps ?? 0,
+      incorrect_reps: input.incorrect_reps ?? 0,
+      target_reps: input.target_reps ?? 10,
+      current_set: input.current_set ?? 1,
+      total_sets: input.total_sets ?? 3,
+      max_angle_achieved: input.max_angle_achieved ?? null,
+      consistency_score: input.consistency_score ?? null,
+      pain_reported: input.pain_reported ?? false,
+      duration_seconds: input.duration_seconds ?? null,
+      telemetry_summary: (input.telemetry_summary as Record<string, unknown>) || null,
+      created_at: now,
+    };
+    this.inMemorySessionLogs.push(record);
+    return record;
+  }
+
+  async listSessionLogs(query: SessionLogQuery): Promise<SessionLogRecord[]> {
+    let list = [...this.inMemorySessionLogs];
+    if (query.patient_id) list = list.filter((l) => l.patient_id === query.patient_id);
+    if (query.course_id) list = list.filter((l) => l.course_id === query.course_id);
+    if (query.exercise_id) list = list.filter((l) => l.exercise_id === query.exercise_id);
+    const limit = query.limit || 50;
+    return list.slice(0, limit);
   }
 }
 

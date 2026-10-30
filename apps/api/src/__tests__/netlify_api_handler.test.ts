@@ -143,4 +143,78 @@ describe('Netlify Serverless Function Handler (/api/* -> /.netlify/functions/api
     expect(headers['Access-Control-Allow-Origin']).toBe(NETLIFY_ORIGIN);
     expect(headers['Access-Control-Allow-Credentials']).toBe('true');
   });
+
+  it('6. GET /api/courses/exercises - Returns catalog containing Shoulder Pendulum with pendulum_circular', async () => {
+    const event = {
+      httpMethod: 'GET',
+      path: '/api/courses/exercises',
+      headers: {
+        'origin': NETLIFY_ORIGIN,
+      },
+    };
+
+    const res = await handler(event, {});
+    if (res.statusCode !== 200) {
+      console.log('TEST 6 FAILURE BODY:', res.body);
+    }
+    expect(res.statusCode).toBe(200);
+
+    const data = JSON.parse(res.body);
+    expect(data.ok).toBe(true);
+    expect(Array.isArray(data.data)).toBe(true);
+
+    const pendulum = data.data.find(
+      (e: any) =>
+        e.title?.toLowerCase().includes('pendulum') ||
+        e.title?.includes('แกว่งแขน') ||
+        e.detection_config?.evaluationMode === 'pendulum_circular'
+    );
+    expect(pendulum).toBeDefined();
+    expect(pendulum.detection_config).toBeDefined();
+    expect(pendulum.detection_config.evaluationMode).toBe('pendulum_circular');
+  });
+
+  it('7. POST /api/courses/session-logs - Persists session telemetry and returns 201 Created', async () => {
+    const event = {
+      httpMethod: 'POST',
+      path: '/api/courses/session-logs',
+      headers: {
+        'content-type': 'application/json',
+        'origin': NETLIFY_ORIGIN,
+        'x-requested-with': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({
+        patient_id: 'd1000000-0000-0000-0000-000000000001',
+        exercise_id: 'e1000000-0000-0000-0000-000000000001',
+        kiosk_id: 'kiosk-01',
+        completion_mode: 'ai_verified',
+        correct_reps: 10,
+        incorrect_reps: 1,
+        target_reps: 10,
+        current_set: 3,
+        total_sets: 3,
+        max_angle_achieved: 92.5,
+        consistency_score: 91.0,
+        pain_reported: false,
+        duration_seconds: 145,
+        telemetry_summary: {
+          test: true,
+          scapular_hiking_rate: 0.02,
+        },
+      }),
+    };
+
+    const res = await handler(event, {});
+    if (![200, 201].includes(res.statusCode)) {
+      console.log('TEST 7 FAILURE STATUS:', res.statusCode, 'BODY:', res.body);
+    }
+    expect([200, 201]).toContain(res.statusCode);
+
+    const data = JSON.parse(res.body);
+    expect(data.ok).toBe(true);
+    expect(data.data).toBeDefined();
+    expect(data.data.completion_mode).toBe('ai_verified');
+    expect(data.data.correct_reps).toBe(10);
+  });
 });
+

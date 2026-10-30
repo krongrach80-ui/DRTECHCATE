@@ -224,3 +224,56 @@ export interface CourseRecord {
     username: string;
   } | null;
 }
+
+// =========================================================================
+// 7. EXERCISE SESSION LOGS (AI TELEMETRY & CLINICAL AUDITING)
+// =========================================================================
+export const SessionLogInputSchema = z.object({
+  patient_id: z.string().trim().min(1, 'patient_id is required'),
+  course_id: z.string().optional().nullable(),
+  exercise_id: z.string().optional().nullable(),
+  kiosk_id: z.string().default('kiosk-01'),
+  completion_mode: z.enum(['ai_verified', 'skipped_unverified', 'stopped_pain']).default('ai_verified'),
+  correct_reps: z.coerce.number().int().min(0).default(0),
+  incorrect_reps: z.coerce.number().int().min(0).default(0),
+  target_reps: z.coerce.number().int().min(0).default(10),
+  current_set: z.coerce.number().int().min(1).default(1),
+  total_sets: z.coerce.number().int().min(1).default(3),
+  max_angle_achieved: z.coerce.number().optional().nullable(),
+  consistency_score: z.coerce.number().optional().nullable(),
+  pain_reported: z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false),
+  duration_seconds: z.coerce.number().optional().nullable(),
+  telemetry_summary: z.any().optional().nullable(),
+});
+
+export type SessionLogInput = z.infer<typeof SessionLogInputSchema>;
+
+export interface SessionLogRecord {
+  id: string;
+  patient_id: string;
+  course_id: string | null;
+  exercise_id: string | null;
+  kiosk_id: string;
+  completion_mode: 'ai_verified' | 'skipped_unverified' | 'stopped_pain';
+  correct_reps: number;
+  incorrect_reps: number;
+  target_reps: number;
+  current_set: number;
+  total_sets: number;
+  max_angle_achieved: number | null;
+  consistency_score: number | null;
+  pain_reported: boolean;
+  duration_seconds: number | null;
+  telemetry_summary: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export const SessionLogQuerySchema = z.object({
+  patient_id: z.string().optional(),
+  exercise_id: z.string().optional(),
+  course_id: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export type SessionLogQuery = z.infer<typeof SessionLogQuerySchema>;
+

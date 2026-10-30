@@ -117,6 +117,37 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
   const [activeReplaySnapshot, setActiveReplaySnapshot] = useState<KinematicReplaySnapshot | null>(null);
   const [isReplayViewerOpen, setIsReplayViewerOpen] = useState(false);
+  const [patientSessionHistory, setPatientSessionHistory] = useState<HistoricalSessionMetric[]>(DEFAULT_DEMO_SESSIONS);
+
+  const handleOpenAnalytics = async (p: PatientRecord) => {
+    setSelectedAnalyticsPatient(p);
+    setIsAnalyticsModalOpen(true);
+    try {
+      const logs = await (defaultApiClient.courses as any).getSessionLogs({
+        patient_id: p.id || p.hn,
+        limit: 20,
+      });
+      if (Array.isArray(logs) && logs.length > 0) {
+        const mapped: HistoricalSessionMetric[] = logs.map((log: any, idx: number) => ({
+          sessionId: log.id || `sess-${idx}`,
+          dateIso: log.created_at || new Date().toISOString(),
+          dayIndex: idx * 7,
+          maxRomDeg: Number(log.max_angle_achieved) || 45,
+          targetRomDeg: 120,
+          formQualityScore: Number(log.consistency_score) || 85,
+          angularVelocityVariance: 3.0,
+          scapularHikingRate: 0.05,
+          trunkTiltDeg: 4,
+          painReported: Boolean(log.pain_reported),
+        }));
+        setPatientSessionHistory(mapped);
+      } else {
+        setPatientSessionHistory(DEFAULT_DEMO_SESSIONS);
+      }
+    } catch {
+      setPatientSessionHistory(DEFAULT_DEMO_SESSIONS);
+    }
+  };
 
   const fetchPatients = async () => {
     try {
@@ -500,10 +531,7 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
                           {/* 3D Replay & Medical Report */}
                           <button
                             type="button"
-                            onClick={() => {
-                              setSelectedAnalyticsPatient(p);
-                              setIsAnalyticsModalOpen(true);
-                            }}
+                            onClick={() => handleOpenAnalytics(p)}
                             className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition cursor-pointer"
                             title="🔬 วิเคราะห์ 3D Replay & รายงานแพทย์"
                           >
@@ -791,7 +819,7 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
             attendingPtName: 'กภ. สุภาพร ชีวเวช (วภ. 10245)',
             attendingPtLicense: 'PT-10245',
           }}
-          sessionHistory={DEFAULT_DEMO_SESSIONS}
+          sessionHistory={patientSessionHistory}
           replaySnapshot={synthesizeClinicalPainReplaySnapshot({
             patientId: selectedAnalyticsPatient.hn,
             exerciseName: selectedAnalyticsPatient.injury ? `ฟื้นฟู${selectedAnalyticsPatient.injury}` : 'Shoulder Abduction (กางข้อไหล่)',

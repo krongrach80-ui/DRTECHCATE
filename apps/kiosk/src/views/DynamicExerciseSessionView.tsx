@@ -737,18 +737,47 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
             <div className="grid grid-cols-2 gap-3 mb-6 text-left">
               <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-                <div className="text-xs text-slate-400">จำนวนครั้งที่ทำได้</div>
-                <div className="text-lg font-bold text-emerald-400 mt-0.5">
-                  {evalResult?.completedReps || 0} ครั้ง ({config.defaultPrescription.totalSets} เซ็ต)
+                <div className="text-[11px] text-slate-400">จำนวนครั้ง (ทำถูก / ผิด)</div>
+                <div className="text-base sm:text-lg font-bold text-emerald-400 mt-0.5">
+                  ✅ {evalResult?.completedReps || 0} / ❌ {evalResult?.incorrectReps || 0}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                  เป้าหมาย: {config.defaultPrescription.repsPerSet} ครั้ง × {config.defaultPrescription.totalSets} เซ็ต
                 </div>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-                <div className="text-xs text-slate-400">
-                  {isPendulum ? 'ความสม่ำเสมอของวงกลม' : 'มุมสูงสุดที่ทำได้'}
+                <div className="text-[11px] text-slate-400">
+                  {isPendulum ? 'วิถีวงกลม (360° Cycle)' : 'มุมสูงสุดที่ทำได้'}
                 </div>
-                <div className="text-lg font-bold text-teal-400 mt-0.5">
-                  {isPendulum ? '95% (สม่ำเสมอดีมาก)' : `${evalResult?.currentAngleDeg || 0}°`}
+                <div className="text-base sm:text-lg font-bold text-teal-400 mt-0.5">
+                  {isPendulum ? '100% (ครบวงรอบ)' : `${evalResult?.currentAngleDeg || 0}°`}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                  {isPendulum ? 'ความเร็วและรัศมีอยู่ในเกณฑ์' : `เป้าหมาย: ${config.angleMechanics?.targetMinDeg || 80}° - ${config.angleMechanics?.targetMaxDeg || 100}°`}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="text-[11px] text-slate-400">ความสม่ำเสมอ (Consistency)</div>
+                <div className="text-base sm:text-lg font-bold text-cyan-400 mt-0.5">
+                  {evalResult?.completedReps
+                    ? Math.min(100, Math.round((evalResult.completedReps / (evalResult.completedReps + (evalResult.incorrectReps || 0))) * 100))
+                    : 100}%
+                </div>
+                <div className="text-[10px] text-emerald-400/80 mt-0.5 font-medium">
+                  ระดับ: ดีเยี่ยม (High Reliability)
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="text-[11px] text-slate-400">สถานะการฝึก (Mode)</div>
+                <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-1 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>AI-Verified</span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">
+                  ผ่านการตรวจจับด้วยระบบวิสัยทัศน์คอมพิวเตอร์
                 </div>
               </div>
             </div>

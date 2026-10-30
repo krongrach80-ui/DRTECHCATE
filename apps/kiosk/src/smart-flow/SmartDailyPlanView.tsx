@@ -172,6 +172,25 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           pain_reported: telemetry.painReported,
         },
       });
+
+      // Persist to public.exercise_session_logs for clinical analytics
+      await (defaultApiClient.courses as any).submitSessionLog({
+        patient_id: patient.patient_id || patient.hn || '',
+        course_id: (patient.schedule as any)?.course_id || (patient.schedule as any)?.id || null,
+        exercise_id: exId,
+        kiosk_id: 'kiosk-01',
+        completion_mode: telemetry.completionMode,
+        correct_reps: telemetry.completedReps,
+        incorrect_reps: telemetry.incorrectReps,
+        target_reps: telemetry.totalRepsTarget,
+        current_set: telemetry.totalSetsCompleted,
+        total_sets: activeSession?.config?.defaultPrescription?.totalSets || 3,
+        max_angle_achieved: telemetry.maxAngleAchievedDeg,
+        consistency_score: telemetry.consistencyScorePercent,
+        pain_reported: telemetry.painReported,
+        duration_seconds: telemetry.sessionDurationSec,
+        telemetry_summary: telemetry,
+      });
     } catch {
       // non-blocking
     }
@@ -194,6 +213,21 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           completion_mode: 'skipped_unverified',
           pain_reported: false,
         },
+      });
+
+      // Persist unverified completion log
+      await (defaultApiClient.courses as any).submitSessionLog({
+        patient_id: patient.patient_id || patient.hn || '',
+        course_id: (patient.schedule as any)?.course_id || (patient.schedule as any)?.id || null,
+        exercise_id: exId,
+        kiosk_id: 'kiosk-01',
+        completion_mode: 'skipped_unverified',
+        correct_reps: unconfiguredExercise.reps || 10,
+        incorrect_reps: 0,
+        target_reps: unconfiguredExercise.reps || 10,
+        current_set: 1,
+        total_sets: unconfiguredExercise.sets || 3,
+        pain_reported: false,
       });
     } catch {
       // non-blocking
