@@ -1,0 +1,29 @@
+[build]
+  command = "npm run build"
+  publish = "public"
+
+[[redirects]]
+  from = "/admin/*"
+  to = "/admin/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/pt/*"
+  to = "/pt/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/kiosk/*"
+  to = "/kiosk/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Data-Sovereignty = "Zero-Video-PIPL-Compliant"
+    X-China-GFW-Immunity = "Zero-External-CDN-Enforced"

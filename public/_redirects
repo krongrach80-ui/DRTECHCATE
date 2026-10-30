@@ -1,0 +1,4 @@
+/admin/*  /admin/index.html  200
+/pt/*     /pt/index.html     200
+/kiosk/*  /kiosk/index.html  200
+/*        /index.html        200
