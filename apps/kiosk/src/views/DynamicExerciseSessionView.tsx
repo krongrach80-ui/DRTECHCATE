@@ -16,6 +16,7 @@ import {
   ExerciseSessionTelemetry,
   PoseEngineLandmark,
   RepEvaluationResult,
+  BodySide,
 } from '../../../../packages/pose-engine/src/types/exerciseConfig';
 import { RepStateMachine } from '../../../../packages/pose-engine/src/engine/repStateMachine';
 import { CameraStreamWatchdog, WatchdogHealthStatus } from '../../../../packages/pose-engine/src/hardwareWatchdog';
@@ -96,6 +97,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const isReportingPainRef = useRef(false);
 
   const [isPaused, setIsPaused] = useState(false);
+  const [activeSide, setActiveSide] = useState<BodySide>(config.side || 'right');
   const [evalResult, setEvalResult] = useState<RepEvaluationResult | null>(null);
   const [watchdogStatus, setWatchdogStatus] = useState<WatchdogHealthStatus | null>(null);
   const [isResting, setIsResting] = useState(false);
@@ -141,6 +143,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const speakThai = useCallback((text: string, category?: string, overrideCooldownMs?: number) => {
     voiceFeedbackRef.current.speak(text, category, overrideCooldownMs);
   }, []);
+
+  const handleToggleSide = useCallback((newSide: BodySide) => {
+    setActiveSide(newSide);
+    stateMachineRef.current.setSide(newSide);
+    speakThai(newSide === 'right' ? 'ตรวจจับแขนขวา' : 'ตรวจจับแขนซ้าย', 'side_toggle', 0);
+  }, [speakThai]);
 
   // Canvas Skeleton Rendering with lowPerformanceMode throttling support
   const renderSkeleton = useCallback(
@@ -216,18 +224,32 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
     async function initCameraAndDetector() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: 'user',
-          },
-          audio: false,
-        });
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: 'user',
+            },
+            audio: false,
+          });
+        } catch {
+          // Seamless fallback to default video constraints to prevent OverconstrainedError
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
 
         if (videoRef.current && isMountedRef.current) {
           videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+          videoRef.current.muted = true;
+          videoRef.current.playsInline = true;
+          try {
+            await videoRef.current.play();
+          } catch (playErr) {
+            console.warn('Video play deferred or non-fatal:', playErr);
+          }
         }
 
         // Enforce self-hosted WASM and local models for China GFW immunity
@@ -523,6 +545,47 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
     speakThai('หยุดการฝึกแล้วค่ะ ระบบกำลังแจ้งนักกายภาพบำบัด', 'emergency_pain_stop', 0);
 
+    // 1. Instant telemetry persistence to cloud database without requiring user to tap modal
+    try {
+      const totalDurationSec = sessionStartTimeRef.current
+        ? Math.max(1, Math.round((Date.now() - sessionStartTimeRef.current) / 1000))
+        : 10;
+
+      await defaultApiClient.courses.submitSessionLog({
+        patient_id: patient.patient_id || patient.hn || 'unknown',
+        exercise_id: exercise.id || exercise.exercise_id || config.id || null,
+        kiosk_id: 'kiosk-01',
+        completion_mode: 'stopped_pain',
+        correct_reps: evalResult?.completedReps || 0,
+        incorrect_reps: evalResult?.incorrectReps || 0,
+        target_reps: config.defaultPrescription?.repsPerSet || 10,
+        current_set: evalResult?.currentSet || 1,
+        total_sets: config.defaultPrescription?.totalSets || 3,
+        max_angle_achieved: evalResult?.currentAngleDeg || null,
+        consistency_score: evalResult?.completedReps
+          ? Math.min(
+              100,
+              Math.round(
+                (evalResult.completedReps /
+                  (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
+                  100
+              )
+            )
+          : 0,
+        pain_reported: true,
+        duration_seconds: totalDurationSec,
+        telemetry_summary: {
+          emergency_stop: true,
+          pain_reported: true,
+          active_side: activeSide,
+          phase_at_stop: evalResult?.phase || 'IDLE',
+          warnings_at_stop: evalResult?.activeWarnings || [],
+        },
+      });
+    } catch (logErr) {
+      console.warn('Emergency pain telemetry log dispatch error:', logErr);
+    }
+
     try {
       const idempotencyKey =
         typeof crypto !== 'undefined' && crypto.randomUUID
@@ -565,8 +628,34 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           </div>
         </div>
 
-        {/* Set & Rep Badges */}
-        <div className="flex items-center gap-3">
+        {/* Side Toggle & Set/Rep Badges */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Side Toggle Selector */}
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-2xl p-1 gap-1">
+            <button
+              type="button"
+              onClick={() => handleToggleSide('right')}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                activeSide === 'right'
+                  ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>🦾 แขนขวา</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleSide('left')}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                activeSide === 'left'
+                  ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>แขนซ้าย 🦾</span>
+            </button>
+          </div>
+
           <div className="px-4 py-2 rounded-2xl bg-slate-900 border border-slate-800 text-center">
             <div className="text-[10px] text-slate-400 uppercase font-semibold">เซ็ตที่</div>
             <div className="text-sm sm:text-base font-extrabold text-teal-400">

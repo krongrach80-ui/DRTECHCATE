@@ -14,6 +14,7 @@ import {
   RepEvaluationResult,
   RepPhase,
   ActiveCompensationWarning,
+  BodySide,
 } from '../types/exerciseConfig';
 import { calculateAngle3D, calculateAngle2D, normalizeLandmarksDepth } from '../math/geometry3d';
 import { PoseSkeletonFilter } from '../math/filters';
@@ -59,6 +60,11 @@ export class RepStateMachine {
     const maxSafeVelocity = config.safetyContraindications?.maxSafeVelocityDegPerSec;
     this.compensationDetector.setMaxSafeVelocity(maxSafeVelocity);
     this.compensationDetector.setRules(config.compensationRules);
+  }
+
+  public setSide(side: BodySide): void {
+    this.config = { ...this.config, side };
+    this.reset();
   }
 
   public evaluate(
@@ -110,9 +116,19 @@ export class RepStateMachine {
     // Normalize landmarks for monocular depth invariance
     const normalizedLandmarks = normalizeLandmarksDepth(landmarks);
 
-    // Resolve side triplet
-    const triplet =
-      this.config.side === 'right' ? angleCfg.landmarks.right : angleCfg.landmarks.left;
+    // Resolve side triplet (supporting bilateral auto-selection)
+    let triplet =
+      this.config.side === 'left' ? angleCfg.landmarks.left : angleCfg.landmarks.right;
+
+    if (this.config.side === 'bilateral') {
+      const leftConf =
+        (normalizedLandmarks[angleCfg.landmarks.left.vertex]?.visibility ?? 0) +
+        (normalizedLandmarks[angleCfg.landmarks.left.pointB]?.visibility ?? 0);
+      const rightConf =
+        (normalizedLandmarks[angleCfg.landmarks.right.vertex]?.visibility ?? 0) +
+        (normalizedLandmarks[angleCfg.landmarks.right.pointB]?.visibility ?? 0);
+      triplet = rightConf >= leftConf ? angleCfg.landmarks.right : angleCfg.landmarks.left;
+    }
 
     let currentAngle = 0;
     if (
@@ -375,7 +391,13 @@ export class RepStateMachine {
     // Landmark indices for shoulder pendulum:
     // Left side: Shoulder 11, Elbow 13, Wrist 15, Hip 23
     // Right side: Shoulder 12, Elbow 14, Wrist 16, Hip 24
-    const isRight = this.config.side === 'right';
+    let isRight = this.config.side !== 'left';
+    if (this.config.side === 'bilateral' && landmarks.length > 24) {
+      const leftScore = (landmarks[11]?.visibility ?? 0) + (landmarks[15]?.visibility ?? 0);
+      const rightScore = (landmarks[12]?.visibility ?? 0) + (landmarks[16]?.visibility ?? 0);
+      isRight = rightScore >= leftScore;
+    }
+
     const sIdx = isRight ? 12 : 11;
     const eIdx = isRight ? 14 : 13;
     const wIdx = isRight ? 16 : 15;

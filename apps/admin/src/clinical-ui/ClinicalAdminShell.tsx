@@ -208,6 +208,26 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />
 
+        {/* Real-time High-Priority Emergency Pain Alert Banner */}
+        {staffCalls.filter((c) => !c.handled_at && (c.reason?.includes('เจ็บ') || c.reason?.includes('🚨'))).length > 0 && (
+          <div className="bg-rose-600 text-white px-6 py-3 flex items-center justify-between shadow-lg animate-pulse z-30">
+            <div className="flex items-center gap-3">
+              <span className="px-2 py-0.5 rounded bg-white text-rose-700 font-black text-xs uppercase tracking-wider">
+                EMERGENCY PAIN STOP
+              </span>
+              <span className="text-sm font-bold">
+                {staffCalls.find((c) => !c.handled_at && (c.reason?.includes('เจ็บ') || c.reason?.includes('🚨')))?.reason}
+              </span>
+            </div>
+            <button
+              onClick={() => setActiveTab('audit')}
+              className="px-4 py-1.5 bg-white text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold transition shadow cursor-pointer whitespace-nowrap"
+            >
+              ดูรายละเอียดใน Audit Trail / จัดการเคส ➔
+            </button>
+          </div>
+        )}
+
         {/* Sterile Mint-White Main Workspace */}
         <main
           style={{

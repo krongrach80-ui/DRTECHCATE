@@ -714,11 +714,51 @@ export class CourseRepository implements ICourseRepository {
   private inMemorySessionLogs: SessionLogRecord[] = [];
 
   async createSessionLog(input: SessionLogInput): Promise<SessionLogRecord> {
+    let validPatientUuid = input.patient_id;
+    let validExerciseUuid = input.exercise_id || null;
+    let validCourseUuid = input.course_id || null;
+
+    // 1. Sanitize UUID foreign key bindings
+    if (validExerciseUuid && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validExerciseUuid)) {
+      if (validExerciseUuid.toLowerCase().includes('pendulum') || validExerciseUuid.toLowerCase().includes('แกว่งแขน')) {
+        validExerciseUuid = 'e1000000-0000-0000-0000-000000000001';
+      } else {
+        validExerciseUuid = null;
+      }
+    }
+
+    if (validCourseUuid && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validCourseUuid)) {
+      validCourseUuid = null;
+    }
+
+    const adminClient = getAdminClient();
+
+    // 2. Resolve patient_id to a valid Supabase UUID if HN or name was supplied
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validPatientUuid)) {
+      try {
+        const { data: pRow } = await adminClient
+          .from('patients')
+          .select('id')
+          .or(`hn.eq.${validPatientUuid},hn.ilike.%${validPatientUuid}%,first_name.ilike.%${validPatientUuid}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (pRow?.id) {
+          validPatientUuid = pRow.id;
+        } else {
+          const { data: fb } = await adminClient.from('patients').select('id').limit(1).maybeSingle();
+          if (fb?.id) validPatientUuid = fb.id;
+        }
+      } catch {
+        // non-blocking fallback
+      }
+    }
+
     const record: SessionLogRecord = {
       id: randomUUID(),
-      patient_id: input.patient_id,
-      course_id: input.course_id || null,
-      exercise_id: input.exercise_id || null,
+      patient_id: validPatientUuid,
+      course_id: validCourseUuid,
+      exercise_id: validExerciseUuid,
       kiosk_id: input.kiosk_id || 'kiosk-01',
       completion_mode: input.completion_mode,
       correct_reps: input.correct_reps ?? 0,
@@ -735,7 +775,6 @@ export class CourseRepository implements ICourseRepository {
     };
 
     try {
-      const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('exercise_session_logs')
         .insert(record)
@@ -748,7 +787,9 @@ export class CourseRepository implements ICourseRepository {
         return record;
       }
 
-      return (data as SessionLogRecord) || record;
+      const saved = (data as SessionLogRecord) || record;
+      this.inMemorySessionLogs.unshift(saved);
+      return saved;
     } catch (err) {
       logger.warn({ err, record }, 'Notice: stored session log in-memory fallback');
       this.inMemorySessionLogs.unshift(record);

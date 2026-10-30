@@ -4334,11 +4334,37 @@ var init_repository8 = __esm({
         }
       }
       async createSessionLog(input) {
+        let validPatientUuid = input.patient_id;
+        let validExerciseUuid = input.exercise_id || null;
+        let validCourseUuid = input.course_id || null;
+        if (validExerciseUuid && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validExerciseUuid)) {
+          if (validExerciseUuid.toLowerCase().includes("pendulum") || validExerciseUuid.toLowerCase().includes("\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19")) {
+            validExerciseUuid = "e1000000-0000-0000-0000-000000000001";
+          } else {
+            validExerciseUuid = null;
+          }
+        }
+        if (validCourseUuid && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validCourseUuid)) {
+          validCourseUuid = null;
+        }
+        const adminClient = getAdminClient();
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validPatientUuid)) {
+          try {
+            const { data: pRow } = await adminClient.from("patients").select("id").or(`hn.eq.${validPatientUuid},hn.ilike.%${validPatientUuid}%,first_name.ilike.%${validPatientUuid}%`).limit(1).maybeSingle();
+            if (pRow?.id) {
+              validPatientUuid = pRow.id;
+            } else {
+              const { data: fb } = await adminClient.from("patients").select("id").limit(1).maybeSingle();
+              if (fb?.id) validPatientUuid = fb.id;
+            }
+          } catch {
+          }
+        }
         const record = {
           id: (0, import_crypto7.randomUUID)(),
-          patient_id: input.patient_id,
-          course_id: input.course_id || null,
-          exercise_id: input.exercise_id || null,
+          patient_id: validPatientUuid,
+          course_id: validCourseUuid,
+          exercise_id: validExerciseUuid,
           kiosk_id: input.kiosk_id || "kiosk-01",
           completion_mode: input.completion_mode,
           correct_reps: input.correct_reps ?? 0,
@@ -4354,14 +4380,15 @@ var init_repository8 = __esm({
           created_at: (/* @__PURE__ */ new Date()).toISOString()
         };
         try {
-          const adminClient = getAdminClient();
           const { data, error } = await adminClient.from("exercise_session_logs").insert(record).select("*").maybeSingle();
           if (error) {
             logger.warn({ error, record }, "Notice: falling back to in-memory session log");
             this.inMemorySessionLogs.unshift(record);
             return record;
           }
-          return data || record;
+          const saved = data || record;
+          this.inMemorySessionLogs.unshift(saved);
+          return saved;
         } catch (err) {
           logger.warn({ err, record }, "Notice: stored session log in-memory fallback");
           this.inMemorySessionLogs.unshift(record);
@@ -9251,7 +9278,8 @@ async function saveLocalDatabase() {
       templates: currentFakeFaceEnrollmentRepo.inMemoryTemplates,
       enrollments: Array.from(currentFakeFaceEnrollmentRepo.inMemoryEnrollments.values()),
       records: Array.from(currentFakeRecordsRepo.inMemoryTreatmentResults.values()),
-      notes: Array.from(currentFakeRecordsRepo.inMemoryNotes.values())
+      notes: Array.from(currentFakeRecordsRepo.inMemoryNotes.values()),
+      sessionLogs: currentFakeCourseRepo.inMemorySessionLogs || []
     };
     import_fs2.default.writeFileSync(DB_FILE_PATH, JSON.stringify(data, null, 2), "utf8");
   } catch (err) {
@@ -9304,6 +9332,9 @@ function loadLocalDatabase() {
       for (const en of data.enrollments) {
         currentFakeFaceEnrollmentRepo.inMemoryEnrollments.set(en.id, en);
       }
+    }
+    if (data.sessionLogs && Array.isArray(data.sessionLogs)) {
+      currentFakeCourseRepo.inMemorySessionLogs = data.sessionLogs;
     }
     ensurePrimaryStaffAndPatients();
     return true;

@@ -118,6 +118,7 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
   const [activeReplaySnapshot, setActiveReplaySnapshot] = useState<KinematicReplaySnapshot | null>(null);
   const [isReplayViewerOpen, setIsReplayViewerOpen] = useState(false);
   const [patientSessionHistory, setPatientSessionHistory] = useState<HistoricalSessionMetric[]>(DEFAULT_DEMO_SESSIONS);
+  const [recentPainAlerts, setRecentPainAlerts] = useState<any[]>([]);
 
   const handleOpenAnalytics = async (p: PatientRecord) => {
     setSelectedAnalyticsPatient(p);
@@ -153,10 +154,11 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
     try {
       setLoading(true);
       setErrorMsg(null);
-      const [pts, transfers, directory] = await Promise.all([
+      const [pts, transfers, directory, sessionLogs] = await Promise.all([
         defaultApiClient.patients.list({ q: search.trim() || undefined, limit: 100 }).catch(() => []),
         defaultApiClient.caseTransfers.list().catch(() => []),
         defaultApiClient.directory.listPts().catch(() => []),
+        (defaultApiClient.courses as any).getSessionLogs({ limit: 30 }).catch(() => []),
       ]);
       const rawList = Array.isArray(pts) ? pts : ((pts as any)?.patients || []);
       if (rawList.length > 0) {
@@ -168,6 +170,13 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
       }
       setDelegatedTransfers(Array.isArray(transfers) ? transfers : []);
       setPtsList(Array.isArray(directory) ? directory : []);
+
+      if (Array.isArray(sessionLogs)) {
+        const painLogs = sessionLogs.filter(
+          (l: any) => l.pain_reported || l.completion_mode === 'stopped_pain'
+        );
+        setRecentPainAlerts(painLogs);
+      }
     } catch {
       if (!search.trim()) {
         setPatients(DEMO_PATIENTS);
@@ -387,6 +396,60 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
           <button onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-emerald-200">
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* High-Priority Clinical Emergency Pain Alert Banner */}
+      {recentPainAlerts.length > 0 && (
+        <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-500/60 text-rose-950 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center flex-shrink-0 shadow-md shadow-rose-950/20">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="text-xs font-black uppercase tracking-wider text-rose-600 flex items-center gap-2">
+                <span>🚨 แจ้งเตือนด่วน: ผู้ป่วยรายงานอาการเจ็บปวดขณะฝึกกายภาพ (EMERGENCY PAIN STOP)</span>
+                <span className="px-2 py-0.5 rounded-full bg-rose-200 text-rose-800 text-[10px] font-bold">
+                  {recentPainAlerts.length} รายการ
+                </span>
+              </div>
+              <div className="text-sm font-bold text-slate-800 mt-0.5">
+                ผู้ป่วย: {recentPainAlerts[0].patient_id} • ท่าฝึก: {recentPainAlerts[0].exercise_id || 'Shoulder Pendulum'} • เวลา: {new Date(recentPainAlerts[0].created_at).toLocaleTimeString('th-TH')} น.
+              </div>
+              <div className="text-xs text-rose-800 mt-0.5 font-medium">
+                ระบบได้หยุดการฝึกทันทีและบันทึกสถานะ stopped_pain สู่เวชระเบียน กรุณาเข้าดูแลและประเมินอาการผู้ป่วย
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const targetPatient = patients.find(
+                  (p) => p.id === recentPainAlerts[0].patient_id || p.hn === recentPainAlerts[0].patient_id
+                );
+                if (targetPatient) {
+                  handleOpenAnalytics(targetPatient);
+                } else {
+                  const snap = synthesizeClinicalPainReplaySnapshot({
+                    patientId: recentPainAlerts[0].patient_id,
+                    exerciseName: recentPainAlerts[0].exercise_id || 'Shoulder Pendulum',
+                  });
+                  setActiveReplaySnapshot(snap);
+                  setIsReplayViewerOpen(true);
+                }
+              }}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition shadow cursor-pointer whitespace-nowrap"
+            >
+              ดูการเคลื่อนไหว 3D Replay ➔
+            </button>
+            <button
+              onClick={() => setRecentPainAlerts([])}
+              className="p-2 text-rose-400 hover:text-rose-600 rounded-lg hover:bg-rose-100 transition cursor-pointer"
+              title="ปิดการแจ้งเตือน"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -836,7 +899,7 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
         <HolographicReplayViewer
           snapshot={activeReplaySnapshot}
           onClose={() => setIsReplayViewerOpen(false)}
-          title={`โครงร่างกระดูก 3D Holographic Replay - ${selectedAnalyticsPatient?.first_name} ${selectedAnalyticsPatient?.last_name} (${selectedAnalyticsPatient?.hn})`}
+          title={`โครงร่างกระดูก 3D Holographic Replay - ${selectedAnalyticsPatient?.first_name ? `${selectedAnalyticsPatient.first_name} ${selectedAnalyticsPatient.last_name}` : 'ผู้ป่วย'} (${selectedAnalyticsPatient?.hn || activeReplaySnapshot.patientId})`}
         />
       )}
     </div>

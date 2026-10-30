@@ -40,6 +40,7 @@ interface LocalDbData {
   enrollments?: any[];
   records?: any[];
   notes?: any[];
+  sessionLogs?: any[];
 }
 
 const DB_FILE_PATH = process.env.VERCEL === '1'
@@ -94,6 +95,7 @@ export async function saveLocalDatabase(): Promise<void> {
       enrollments: Array.from(currentFakeFaceEnrollmentRepo.inMemoryEnrollments.values()),
       records: Array.from(currentFakeRecordsRepo.inMemoryTreatmentResults.values()),
       notes: Array.from(currentFakeRecordsRepo.inMemoryNotes.values()),
+      sessionLogs: currentFakeCourseRepo.inMemorySessionLogs || [],
     };
 
     fs.writeFileSync(DB_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
@@ -148,6 +150,9 @@ export function loadLocalDatabase(): boolean {
       for (const en of data.enrollments) {
         currentFakeFaceEnrollmentRepo.inMemoryEnrollments.set(en.id, en);
       }
+    }
+    if (data.sessionLogs && Array.isArray(data.sessionLogs)) {
+      currentFakeCourseRepo.inMemorySessionLogs = data.sessionLogs;
     }
     ensurePrimaryStaffAndPatients();
     return true;

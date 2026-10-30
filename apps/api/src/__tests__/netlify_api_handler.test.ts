@@ -216,5 +216,58 @@ describe('Netlify Serverless Function Handler (/api/* -> /.netlify/functions/api
     expect(data.data.completion_mode).toBe('ai_verified');
     expect(data.data.correct_reps).toBe(10);
   });
+
+  it('8. POST /api/courses/session-logs (Emergency Pain Stop) & GET returns telemetry', async () => {
+    const painEvent = {
+      httpMethod: 'POST',
+      path: '/api/courses/session-logs',
+      headers: {
+        'content-type': 'application/json',
+        'x-requested-with': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({
+        patient_id: 'd1000000-0000-0000-0000-000000000001',
+        exercise_id: 'e1000000-0000-0000-0000-000000000001',
+        kiosk_id: 'kiosk-01',
+        completion_mode: 'stopped_pain',
+        correct_reps: 3,
+        incorrect_reps: 0,
+        target_reps: 10,
+        current_set: 1,
+        total_sets: 3,
+        max_angle_achieved: 65.0,
+        consistency_score: 100.0,
+        pain_reported: true,
+        duration_seconds: 25,
+        telemetry_summary: {
+          emergency_stop: true,
+          pain_reported: true,
+        },
+      }),
+    };
+
+    const painRes = await handler(painEvent, {});
+    expect([200, 201]).toContain(painRes.statusCode);
+    const painData = JSON.parse(painRes.body);
+    expect(painData.ok).toBe(true);
+    expect(painData.data.completion_mode).toBe('stopped_pain');
+    expect(painData.data.pain_reported).toBe(true);
+
+    // Verify GET retrieves the pain log
+    const getEvent = {
+      httpMethod: 'GET',
+      path: '/api/courses/session-logs',
+      headers: {},
+      queryStringParameters: {
+        patient_id: 'd1000000-0000-0000-0000-000000000001',
+      },
+    };
+    const getRes = await handler(getEvent, {});
+    expect(getRes.statusCode).toBe(200);
+    const getData = JSON.parse(getRes.body);
+    expect(getData.ok).toBe(true);
+    expect(Array.isArray(getData.data)).toBe(true);
+    expect(getData.data.some((l: any) => l.completion_mode === 'stopped_pain')).toBe(true);
+  });
 });
 

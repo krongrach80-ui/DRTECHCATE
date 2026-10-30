@@ -190,4 +190,52 @@ describe('RepStateMachine Clinical Evaluation Suite', () => {
     expect(res.formRating).toBe('error');
     expect(res.coachingMessageTh).toContain('สูงเกินไปแล้ว');
   });
+
+  it('6. dynamically switches sides (setSide) and accurately tracks left arm pendulum', () => {
+    const config = {
+      ...SHOULDER_PENDULUM_PRESET,
+      side: 'right' as const,
+      defaultPrescription: { repsPerSet: 5, totalSets: 1, restBetweenSetsSec: 30 },
+      pendulumMechanics: {
+        ...SHOULDER_PENDULUM_PRESET.pendulumMechanics!,
+        minCycleDurationSec: 0.3,
+        maxCycleDurationSec: 5.0,
+      },
+    };
+
+    const machine = new RepStateMachine(config);
+    // Switch to left arm
+    machine.setSide('left');
+
+    let currentTime = 1000;
+    // Left side landmarks: Hip 23, Shoulder 11, Elbow 13, Wrist 15
+    const hip = { x: 0.5, y: 0.7, z: 0.0 };
+    const shoulder = { x: 0.32, y: 0.35, z: 0.0 };
+    const elbow = { x: 0.32, y: 0.55, z: 0.0 };
+    const centerX = 0.32;
+    const centerY = 0.75;
+    const radius = 0.08;
+
+    for (let rep = 1; rep <= 6; rep++) {
+      const steps = 16;
+      for (let s = 0; s <= steps; s++) {
+        const theta = (2 * Math.PI * s) / steps;
+        const wristX = centerX + radius * Math.cos(theta);
+        const wristY = centerY + radius * Math.sin(theta);
+
+        const skel = createMockSkeleton();
+        skel[23] = hip;
+        skel[11] = shoulder;
+        skel[13] = elbow;
+        skel[15] = { x: wristX, y: wristY, z: 0.0 };
+
+        machine.evaluate(skel, currentTime);
+        currentTime += 40;
+      }
+    }
+
+    const finalRes = machine.evaluate(createMockSkeleton(), currentTime);
+    expect(finalRes.completedReps).toBe(5);
+    expect(finalRes.isSetCompleted).toBe(true);
+  });
 });
