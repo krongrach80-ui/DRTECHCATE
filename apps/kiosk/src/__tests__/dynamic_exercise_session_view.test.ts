@@ -5,7 +5,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { DynamicExerciseSessionView, POSE_CONNECTIONS } from '../views/DynamicExerciseSessionView';
+import { DynamicExerciseSessionView, POSE_CONNECTIONS, BODY_JOINT_INDICES } from '../views/DynamicExerciseSessionView';
+import { DynamicExerciseSessionView as TrainingExerciseSessionView } from '../views/training/DynamicExerciseSessionView';
 
 describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
   beforeEach(() => {
@@ -105,6 +106,15 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
       expect((element.props as any).onComplete).toBe(onComplete);
       expect((element.props as any).onPainStop).toBe(onPainStop);
       expect((element.props as any).onExit).toBe(onExit);
+    });
+
+    it('3.2 exports BODY_JOINT_INDICES correctly and training path re-exports properly', () => {
+      expect(BODY_JOINT_INDICES).toBeDefined();
+      expect(Array.isArray(BODY_JOINT_INDICES)).toBe(true);
+      expect(BODY_JOINT_INDICES).toContain(11);
+      expect(BODY_JOINT_INDICES).toContain(24);
+      expect(BODY_JOINT_INDICES).not.toContain(0); // No facial landmarks
+      expect(TrainingExerciseSessionView).toBe(DynamicExerciseSessionView);
     });
   });
 });

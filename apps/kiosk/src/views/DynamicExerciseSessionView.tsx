@@ -82,7 +82,8 @@ export const POSE_CONNECTIONS: [number, number][] = [
   [28, 30], [28, 32], [30, 32], // Right foot
 ];
 
-const ANATOMICAL_BODY_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
+export const BODY_JOINT_INDICES = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
+export const ANATOMICAL_BODY_JOINTS = BODY_JOINT_INDICES;
 
 const _LANDMARK_NAMES: Record<number, string> = {
   0: 'Nose',
@@ -231,18 +232,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
   // 1. ตัดเสียงพูดทั้งหมดในหน้าสแกนท่าฝึก และล้างคิวเสียงค้างทันทีที่เข้าหน้า/เปลี่ยนท่า/ออกจากหน้า
   useEffect(() => {
-    const voiceFeedback = voiceFeedbackRef.current;
+    const feedbackController = voiceFeedbackRef.current;
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
-    voiceFeedback.cancel();
+    feedbackController.cancel();
     return () => {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
-      voiceFeedback.cancel();
+      feedbackController.cancel();
     };
-  }, [resolvedConfig]);
+  }, [exerciseConfig, resolvedConfig]);
 
   // 2. State สำหรับปุ่ม "แสดงเส้นลำตัว" (ค่าเริ่มต้น = false คือปิดไว้เสมอเมื่อเข้าหน้าใหม่)
   const [showSkeletonOverlay, setShowSkeletonOverlay] = useState<boolean>(false);
@@ -602,14 +603,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           // - การตรวจจับ (detector.detectForVideo) และการคำนวณนับครั้ง (stateMachineRef.current.evaluateFrame)
           //   ทำงานเบื้องหลัง 100% ทุกเฟรมแม้ showSkeletonRef.current === false
           // - จะวาดเส้นและจุดลงบน <canvas> เฉพาะเมื่อ showSkeletonRef.current === true เท่านั้น!
+          ctx.clearRect(0, 0, cEl.width, cEl.height);
+
           if (showSkeletonRef.current) {
             const isUpperBodyMode =
-              resolvedConfig.framing === 'upper' ||
-              resolvedConfig.framing === 'upper_body' ||
-              resolvedConfig.framing === 'head_shoulders' ||
-              (resolvedConfig.framing !== 'full' &&
-                resolvedConfig.framing !== 'full_body' &&
-                resolvedConfig.framing !== 'lower_body');
+              resolvedConfig.framing !== 'full_body' && resolvedConfig.framing !== 'lower_body';
             const activeConnections = isUpperBodyMode
               ? [
                   [11, 12], [11, 23], [12, 24], [23, 24], // กรอบลำตัวส่วนบน
@@ -620,25 +618,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
             const activeJointIndices = isUpperBodyMode
               ? [11, 12, 13, 14, 15, 16, 23, 24] // เฉพาะหัวไหล่ถึงสะโพก (ไม่วาดจุดใบหน้า 0-10 และไม่วาดขา 25-32)
-              : ANATOMICAL_BODY_JOINTS;
+              : BODY_JOINT_INDICES;
 
             // วาดเส้นเชื่อมด้วยสีสว่างชัดเจน (#22d3ee / #10b981 / #f59e0b)
-            ctx.lineWidth = lowPowerRef.current ? 2.5 : 4;
+            ctx.lineWidth = 4;
             ctx.strokeStyle = strokeColor;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-
             for (const [idxA, idxB] of activeConnections) {
               const ptA = projectedPoints[idxA];
               const ptB = projectedPoints[idxB];
-              if (
-                ptA &&
-                ptB &&
-                ptA.inFrame &&
-                ptB.inFrame &&
-                ptA.visibility >= 0.35 &&
-                ptB.visibility >= 0.35
-              ) {
+              if (ptA && ptB && ptA.inFrame && ptB.inFrame && ptA.visibility >= 0.35 && ptB.visibility >= 0.35) {
                 ctx.beginPath();
                 ctx.moveTo(ptA.x, ptA.y);
                 ctx.lineTo(ptB.x, ptB.y);
