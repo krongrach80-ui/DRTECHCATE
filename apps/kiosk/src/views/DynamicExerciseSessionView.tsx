@@ -70,7 +70,7 @@ export interface DynamicExerciseSessionViewProps {
   onExit: () => void;
 }
 
-const POSE_CONNECTIONS: [number, number][] = [
+export const POSE_CONNECTIONS: [number, number][] = [
   [11, 12], // Shoulders
   [11, 13], [13, 15], // Left arm
   [12, 14], [14, 16], // Right arm
@@ -84,7 +84,7 @@ const POSE_CONNECTIONS: [number, number][] = [
 
 const ANATOMICAL_BODY_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
 
-const LANDMARK_NAMES: Record<number, string> = {
+const _LANDMARK_NAMES: Record<number, string> = {
   0: 'Nose',
   11: 'L.Shoulder',
   12: 'R.Shoulder',
@@ -231,15 +231,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
   // 1. ตัดเสียงพูดทั้งหมดในหน้าสแกนท่าฝึก และล้างคิวเสียงค้างทันทีที่เข้าหน้า/เปลี่ยนท่า/ออกจากหน้า
   useEffect(() => {
+    const voiceFeedback = voiceFeedbackRef.current;
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
-    voiceFeedbackRef.current.cancel();
+    voiceFeedback.cancel();
     return () => {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
-      voiceFeedbackRef.current.cancel();
+      voiceFeedback.cancel();
     };
   }, [resolvedConfig]);
 
@@ -250,8 +251,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     showSkeletonRef.current = showSkeletonOverlay;
   }, [showSkeletonOverlay]);
 
-  // Audio Mute State with localStorage persistence
-  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => {
+  // Audio Mute State with localStorage persistence (100% silent view)
+  const [isAudioMuted, _setIsAudioMuted] = useState<boolean>(() => {
     try {
       return localStorage.getItem('drtech_voice_muted') === 'true';
     } catch {
@@ -274,41 +275,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
   }, [isAudioMuted]);
 
-  // Sound & Speech Helpers
+  // Sound & Speech Helpers (100% Permanently Silent in Exercise Scan View)
   const playRepChime = useCallback(() => {
-    if (isAudioMutedRef.current) return;
-    try {
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new AudioCtx();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, now); // D5
-      osc.frequency.exponentialRampToValueAtTime(880.0, now + 0.18); // A5
-
-      gain.gain.setValueAtTime(0.001, now);
-      gain.gain.linearRampToValueAtTime(0.3, now + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.35);
-    } catch {
-      // safe fallback
-    }
+    // Web Audio API chimes and beeps are permanently disabled in Exercise Scan View
   }, []);
 
   const speakThai = useCallback(
@@ -624,9 +593,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           const strokeColor =
             evalRes.formRating === 'error'
-              ? '#ef4444'
+              ? '#fbbf24'
               : evalRes.formRating === 'warning'
-              ? '#f59e0b'
+              ? '#00f5d4'
               : '#10b981';
 
           // 3. ในลูป requestAnimationFrame:
@@ -635,7 +604,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           // - จะวาดเส้นและจุดลงบน <canvas> เฉพาะเมื่อ showSkeletonRef.current === true เท่านั้น!
           if (showSkeletonRef.current) {
             const isUpperBodyMode =
-              resolvedConfig.framing !== 'full_body' && resolvedConfig.framing !== 'lower_body';
+              resolvedConfig.framing === 'upper' ||
+              resolvedConfig.framing === 'upper_body' ||
+              resolvedConfig.framing === 'head_shoulders' ||
+              (resolvedConfig.framing !== 'full' &&
+                resolvedConfig.framing !== 'full_body' &&
+                resolvedConfig.framing !== 'lower_body');
             const activeConnections = isUpperBodyMode
               ? [
                   [11, 12], [11, 23], [12, 24], [23, 24], // กรอบลำตัวส่วนบน
@@ -763,7 +737,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     return () => {
       cleanupResources();
     };
-  }, [cleanupResources, playRepChime, speakThai]);
+  }, [cleanupResources, playRepChime, speakThai, resolvedConfig.framing]);
 
   const handleNextSet = useCallback(() => {
     setIsResting(false);
@@ -1024,8 +998,19 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }`}
             title="เปิด/ปิดการแสดงเส้นโครงร่างลำตัว (Skeleton Overlay)"
           >
-            <span>🦴</span>
-            <span>{showSkeletonOverlay ? 'เส้นลำตัว: เปิด' : 'เส้นลำตัว: ปิด'}</span>
+            <span>
+              {showSkeletonOverlay
+                ? lang === 'zh-CN'
+                  ? '🦴 骨骼线: 开'
+                  : lang === 'en-US'
+                  ? '🦴 Skeleton: ON'
+                  : '🦴 แสดงเส้นลำตัว: เปิด'
+                : lang === 'zh-CN'
+                ? '🦴 骨骼线: 关'
+                : lang === 'en-US'
+                ? '🦴 Skeleton: OFF'
+                : '🦴 แสดงเส้นลำตัว: ปิด'}
+            </span>
           </button>
 
           {/* Diagnostic Debug HUD Toggle */}

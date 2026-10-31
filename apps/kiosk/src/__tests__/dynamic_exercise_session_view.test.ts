@@ -5,8 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { DynamicExerciseSessionView } from '../views/DynamicExerciseSessionView';
-import { POSE_CONNECTIONS } from '../../../../packages/pose-engine/src/index';
+import { DynamicExerciseSessionView, POSE_CONNECTIONS } from '../views/DynamicExerciseSessionView';
 
 describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
   beforeEach(() => {
@@ -41,7 +40,7 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
     });
 
     it('2.2 upper-body framing mode filters connections to upper-torso and arms only (excluding face & legs)', () => {
-      const framing = 'upper_body';
+      const framing: string = 'upper_body';
       const isUpperBodyMode = framing !== 'full_body' && framing !== 'lower_body';
       expect(isUpperBodyMode).toBe(true);
 
@@ -52,6 +51,7 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
             [12, 14], [14, 16],                     // Right arm
           ]
         : POSE_CONNECTIONS;
+      expect(activeConnections.length).toBeGreaterThan(0);
 
       const activeJointIndices = isUpperBodyMode
         ? [11, 12, 13, 14, 15, 16, 23, 24] // Shoulders to hips only
@@ -92,16 +92,19 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
   describe('3. DynamicExerciseSessionView React Element Contract', () => {
     it('3.1 instantiates valid React element with required callbacks', () => {
       const onComplete = vi.fn();
-      const onEmergencyStop = vi.fn();
+      const onPainStop = vi.fn();
+      const onExit = vi.fn();
       const element = React.createElement(DynamicExerciseSessionView, {
         onComplete,
-        onEmergencyStop,
+        onPainStop,
+        onExit,
       });
 
       expect(element).toBeDefined();
       expect(typeof element.type).toBe('function');
-      expect(element.props.onComplete).toBe(onComplete);
-      expect(element.props.onEmergencyStop).toBe(onEmergencyStop);
+      expect((element.props as any).onComplete).toBe(onComplete);
+      expect((element.props as any).onPainStop).toBe(onPainStop);
+      expect((element.props as any).onExit).toBe(onExit);
     });
   });
 });

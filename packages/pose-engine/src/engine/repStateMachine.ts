@@ -160,7 +160,11 @@ export class RepStateMachine {
     const isVisible = (lm?: PoseEngineLandmark) =>
       Boolean(lm && (lm.visibility ?? 1.0) >= 0.40 && isInFrame(lm));
 
-    if (framing === 'full_body' || framing === 'lower_body') {
+    const isFull = framing === 'full' || framing === 'full_body' || framing === 'lower_body';
+    const isHeadShoulders = framing === 'head_shoulders';
+    const isUpper = framing === 'upper' || framing === 'upper_body';
+
+    if (isFull) {
       // Lower body requires hips (23, 24), knees (25, 26), ankles (27, 28)
       const hasLeftLower = isVisible(landmarks[23]) && isVisible(landmarks[25]) && isVisible(landmarks[27]);
       const hasRightLower = isVisible(landmarks[24]) && isVisible(landmarks[26]) && isVisible(landmarks[28]);
@@ -176,7 +180,7 @@ export class RepStateMachine {
         def.formRating = 'warning';
         return def;
       }
-    } else if (framing === 'head_shoulders') {
+    } else if (isHeadShoulders) {
       const hasLeftHead = isVisible(landmarks[7]) && isVisible(landmarks[11]);
       const hasRightHead = isVisible(landmarks[8]) && isVisible(landmarks[12]);
 
@@ -191,7 +195,7 @@ export class RepStateMachine {
         def.formRating = 'warning';
         return def;
       }
-    } else if (framing === 'upper_body' && this.config.evaluationMode !== 'pendulum_circular') {
+    } else if (isUpper && this.config.evaluationMode !== 'pendulum_circular') {
       const hasShoulder = isVisible(landmarks[11]) || isVisible(landmarks[12]);
       if (!hasShoulder) {
         const def = this.createDefaultResult(
@@ -243,18 +247,111 @@ export class RepStateMachine {
     }
 
     let currentAngle = 0;
+    let readinessStatus: RepEvaluationResult['readinessStatus'] = 'ready';
+    let isUpperBodyDeskActive = false;
+    let isDistalElbowMissing = false;
+
     if (
       normalizedLandmarks.length > triplet.pointA &&
       normalizedLandmarks.length > triplet.vertex &&
       normalizedLandmarks.length > triplet.pointB
     ) {
-      const pA = normalizedLandmarks[triplet.pointA];
+      let pA = normalizedLandmarks[triplet.pointA];
       const pV = normalizedLandmarks[triplet.vertex];
-      const pB = normalizedLandmarks[triplet.pointB];
+      let pB = normalizedLandmarks[triplet.pointB];
 
-      currentAngle = triplet.use3DWorld
-        ? calculateAngle3D(pA, pV, pB)
-        : calculateAngle2D(pA, pV, pB);
+      const policy = DEFAULT_LANDMARK_VISIBILITY_POLICY;
+      const isCamUsable = (idx: number, minVis: number): boolean => {
+        if (idx < 0 || idx >= landmarks.length) return false;
+        const lm = landmarks[idx];
+        if (!lm) return false;
+        if (lm.x < 0.01 || lm.x > 0.99 || lm.y < 0.01 || lm.y > 0.99) return false;
+        const vis = lm.visibility !== undefined ? lm.visibility : 1.0;
+        return vis >= minVis;
+      };
+
+      if (this.config.targetJoint === 'shoulder') {
+        const shoulderIdx = triplet.vertex;
+        const elbowIdx = shoulderIdx === 11 ? 13 : 14;
+        const wristIdx = shoulderIdx === 11 ? 15 : 16;
+        const hipIdx = triplet.pointA;
+
+        const hasShoulder = isCamUsable(shoulderIdx, policy.shoulderMinVis);
+        const hasElbow = isCamUsable(elbowIdx, policy.elbowMinVis);
+        const hasWrist = isCamUsable(wristIdx, policy.wristMinVis);
+        const hasHip = isCamUsable(hipIdx, policy.hipMinVis);
+
+        const effectivePA = hasHip
+          ? pA
+          : {
+              x: pV.x,
+              y: pV.y + 0.35,
+              z: pV.z ?? 0,
+              visibility: 0.85,
+            };
+
+        const isTargetElbow = triplet.pointB === elbowIdx;
+
+        if (hasShoulder && hasElbow && (hasWrist || isTargetElbow)) {
+          // Tier 1: Full arm visible
+          currentAngle = triplet.use3DWorld
+            ? calculateAngle3D(effectivePA, pV, pB)
+            : calculateAngle2D(effectivePA, pV, pB);
+          readinessStatus = 'ready';
+        } else if (hasShoulder && hasElbow && !hasWrist && !isTargetElbow) {
+          // Tier 2: Partial Arm Visible (Shoulder + Elbow usable, Wrist out of frame)
+          const elbowLm = normalizedLandmarks[elbowIdx];
+          currentAngle = triplet.use3DWorld
+            ? calculateAngle3D(effectivePA, pV, elbowLm)
+            : calculateAngle2D(effectivePA, pV, elbowLm);
+          readinessStatus = 'partial_upper_body';
+        } else if (hasShoulder && (!hasElbow || !hasWrist)) {
+          // Tier 3: Close-Up Desk Mode (Only Shoulders visible; Elbow & Wrist out of bottom frame)
+          isUpperBodyDeskActive = true;
+          readinessStatus = 'partial_upper_body';
+
+          const oppShoulderIdx = shoulderIdx === 11 ? 12 : 11;
+          const oppShoulder = landmarks[oppShoulderIdx];
+          const nose = landmarks[0];
+          const baselineY = isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
+            ? oppShoulder.y
+            : (isCamUsable(0, 0.35) && nose ? nose.y + 0.18 : (landmarks[shoulderIdx]?.y ?? 0.35));
+
+          const upwardLift = Math.max(0, baselineY - (landmarks[shoulderIdx]?.y ?? 0.35));
+          const targetMin = angleCfg.targetMinDeg;
+          const startAngle = angleCfg.startAngleDeg;
+          const liftRatio = Math.min(1.0, upwardLift / 0.10);
+          currentAngle = startAngle + liftRatio * (targetMin - startAngle);
+        } else {
+          currentAngle = triplet.use3DWorld
+            ? calculateAngle3D(effectivePA, pV, pB)
+            : calculateAngle2D(effectivePA, pV, pB);
+        }
+      } else if (this.config.targetJoint === 'elbow') {
+        const elbowIdx = triplet.vertex;
+        const hasElbow = isCamUsable(elbowIdx, policy.elbowMinVis);
+        const hasShoulder = isCamUsable(triplet.pointA, policy.shoulderMinVis);
+        const hasWrist = isCamUsable(triplet.pointB, policy.wristMinVis);
+
+        if (!hasElbow) {
+          isDistalElbowMissing = true;
+          readinessStatus = 'missing_arm_landmarks';
+          currentAngle = angleCfg.startAngleDeg;
+        } else {
+          currentAngle = triplet.use3DWorld
+            ? calculateAngle3D(pA, pV, pB)
+            : calculateAngle2D(pA, pV, pB);
+          readinessStatus = hasShoulder && hasWrist ? 'ready' : 'partial_upper_body';
+        }
+      } else {
+        const isAUsable = isCamUsable(triplet.pointA, 0.30);
+        const isVUsable = isCamUsable(triplet.vertex, 0.30);
+        const isBUsable = isCamUsable(triplet.pointB, 0.30);
+        currentAngle = triplet.use3DWorld
+          ? calculateAngle3D(pA, pV, pB)
+          : calculateAngle2D(pA, pV, pB);
+        readinessStatus = isAUsable && isVUsable && isBUsable ? 'ready' : 'partial_upper_body';
+      }
     }
 
     // Update telemetry metrics
@@ -320,12 +417,25 @@ export class RepStateMachine {
     const activeWarnings = [...compResult.warnings];
 
     let coachingMessage = 'เริ่มขยับข้อต่อเข้าสู่มุมเป้าหมาย';
+    let coachingMessageEn: string | undefined;
+    let coachingMessageCn: string | undefined;
     let holdProgressRatio = 0.0;
     let formRating: 'good' | 'warning' | 'error' = 'good';
     let isRepRejected = false;
     let repRejectionReasonTh: string | undefined = undefined;
 
-    if (isExceedingSafetyCap) {
+    if (isDistalElbowMissing) {
+      formRating = 'warning';
+      coachingMessage = '📷 ท่านี้ต้องใช้มุมข้อศอก กรุณาปรับมุมกล้องลงเล็กน้อยหรือถอยห่างให้เห็นข้อศอก';
+      coachingMessageEn = '📷 This exercise requires elbow visibility. Please adjust camera down or step back.';
+      coachingMessageCn = '📷 此动作需要看到手肘，请稍微调低摄像头或后退以露出手肘。';
+    } else if (isUpperBodyDeskActive) {
+      readinessStatus = 'partial_upper_body';
+      formRating = 'good';
+      coachingMessage = '💡 ตรวจจับโหมดครึ่งตัวบน (เห็นเฉพาะช่วงไหล่) — ขยับหัวไหล่และต้นแขนตามจังหวะเพื่อฝึกได้เลย (หรือถอยห่างเล็กน้อยหากต้องการตรวจจับเต็มแขน)';
+      coachingMessageEn = '💡 Upper-body partial detection active — move your shoulder and upper arm rhythmically (step back slightly for full-arm tracking).';
+      coachingMessageCn = '💡 半身检测模式已启用 — 请按节奏活动肩部和上臂（稍微后退可进行全臂检测）。';
+    } else if (isExceedingSafetyCap) {
       formRating = 'error';
       coachingMessage = '⚠️ สูงเกินไปแล้ว ค่อยๆ ลดระดับลงเพื่อความปลอดภัย';
       activeWarnings.push({
@@ -359,11 +469,17 @@ export class RepStateMachine {
           this.holdPauseStartMs = null;
           this.totalHoldPausedDurationMs = 0;
           coachingMessage = `ถึงมุมเป้าหมายแล้ว ค้างไว้ ${holdDurationSec} วินาที`;
-        } else if (isAtStartZone) {
-          coachingMessage = 'อยู่ในตำแหน่งเริ่มต้น พร้อมแล้วเริ่มเคลื่อนไหวได้เลย';
-        } else if (isDecreasing ? currentAngle < startAngle - tolerance : currentAngle > startAngle + tolerance) {
-          this.phase = 'MOVING_TO_TARGET';
-          coachingMessage = 'เคลื่อนไหวเข้าสู่มุมเป้าหมายอย่างช้าๆ';
+        } else if (!isUpperBodyDeskActive && !isDistalElbowMissing) {
+          if (isAtStartZone) {
+            coachingMessage = 'อยู่ในตำแหน่งเริ่มต้น พร้อมแล้วเริ่มเคลื่อนไหวได้เลย';
+          } else if (isDecreasing ? currentAngle < startAngle - tolerance : currentAngle > startAngle + tolerance) {
+            this.phase = 'MOVING_TO_TARGET';
+            coachingMessage = 'เคลื่อนไหวเข้าสู่มุมเป้าหมายอย่างช้าๆ';
+          }
+        } else if (isUpperBodyDeskActive) {
+          if (isDecreasing ? currentAngle < startAngle - tolerance : currentAngle > startAngle + tolerance) {
+            this.phase = 'MOVING_TO_TARGET';
+          }
         }
         break;
       }
@@ -392,8 +508,8 @@ export class RepStateMachine {
           this.phase = 'MOVING_TO_TARGET';
           coachingMessage = 'หลุดออกจากมุมเป้าหมาย ขยับกลับเข้าแถบสีเขียว';
         } else {
-          // Pause hold timer if subject is occluded
-          const isOccluded = lockResult?.isOccluded ?? false;
+          // Pause hold timer if subject is occluded (exempt in Upper-Body Desk Mode)
+          const isOccluded = !isUpperBodyDeskActive && (lockResult?.isOccluded ?? false);
           if (isOccluded) {
             if (this.holdPauseStartMs === null) {
               this.holdPauseStartMs = timestampMs;
@@ -412,6 +528,9 @@ export class RepStateMachine {
           const activeElapsedSec = Math.max(0, rawElapsedMs - totalPaused) / 1000.0;
 
           holdProgressRatio = Math.min(1.0, activeElapsedSec / Math.max(0.1, holdDurationSec));
+          if (this.config.id === 'shoulder-flexion' && isUpperBodyDeskActive) {
+            // console.log(\`activeElapsedSec=\${activeElapsedSec}, holdDurationSec=\${holdDurationSec}\`);
+          }
 
           if (activeElapsedSec >= holdDurationSec) {
             this.phase = 'RETURNING_TO_START';
@@ -523,7 +642,9 @@ export class RepStateMachine {
       isSubjectLocked: lockResult?.isSubjectLocked ?? true,
       isFrameDropped: lockResult?.isFrameDropped ?? false,
       frameDropReason: lockResult?.frameDropReason,
-      readinessStatus: 'ready',
+      readinessStatus,
+      coachingMessageEn,
+      coachingMessageCn,
       filteredLandmarks: normalizedLandmarks,
     };
   }
@@ -936,16 +1057,13 @@ export class RepStateMachine {
         thresholdValue: 0.65,
       });
     } else if (isUpperBodyOnly) {
+      // Upper-Body Mode Active Sway: Never block rep counting and never freeze at 0%!
+      readinessStatus = 'partial_upper_body';
+      formRating = 'good';
       if (result.cycleProgressRatio > 0) {
-        // Upper-Body Mode Active Sway: Never block rep counting and never freeze at 0%!
-        readinessStatus = 'ready';
-        formRating = 'good';
-        coachingMessage = `ตรวจจับได้บางส่วน (โหมดครึ่งตัวบน) — กำลังวิเคราะห์การแกว่งหัวไหล่ (${Math.round(result.cycleProgressRatio * 100)}%)`;
+        coachingMessage = `💡 โหมดครึ่งตัวบน: กำลังวิเคราะห์การแกว่งหัวไหล่ (${Math.round(result.cycleProgressRatio * 100)}%)`;
       } else {
-        // Stationary posture in Upper-Body Mode: Prompt guidance without false elbow-bend warning
-        readinessStatus = 'missing_arm_landmarks';
-        formRating = 'warning';
-        coachingMessage = '📷 ไม่พบข้อศอกและข้อมือข้างที่ฝึก — ตรวจจับได้บางส่วน (โหมดครึ่งตัวบน) เริ่มแกว่งหัวไหล่หรือถอยห่างจากกล้อง';
+        coachingMessage = '💡 ตรวจจับโหมดครึ่งตัวบน (เห็นเฉพาะช่วงไหล่) — ขยับหัวไหล่และต้นแขนตามจังหวะเพื่อฝึกได้เลย (หรือถอยห่างเล็กน้อยหากต้องการตรวจจับเต็มแขน)';
       }
     } else if (isElbowFallback) {
       if (result.cycleProgressRatio > 0) {
@@ -989,6 +1107,16 @@ export class RepStateMachine {
       isSetCompleted: this.isSetCompleted,
       isExerciseCompleted: this.isExerciseCompleted,
       coachingMessageTh: coachingMessage,
+      coachingMessageEn: isUpperBodyOnly
+        ? result.cycleProgressRatio > 0
+          ? `💡 Upper-body mode: tracking shoulder swing (${Math.round(result.cycleProgressRatio * 100)}%)`
+          : '💡 Upper-body partial detection active — move your shoulder and upper arm rhythmically (step back slightly for full-arm tracking).'
+        : undefined,
+      coachingMessageCn: isUpperBodyOnly
+        ? result.cycleProgressRatio > 0
+          ? `💡 半身模式：正在分析肩部摆动 (${Math.round(result.cycleProgressRatio * 100)}%)`
+          : '💡 半身检测模式已启用 — 请按节奏活动肩部和上臂（稍微后退可进行全臂检测）。'
+        : undefined,
       activeWarnings,
       formRating,
       instantaneousVelocity: 0,

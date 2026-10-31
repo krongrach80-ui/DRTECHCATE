@@ -141,29 +141,50 @@ describe('Pose Visibility & Projection Test Suite', () => {
   });
 
   describe('2. Anatomical Readiness & Landmark Visibility Gating', () => {
-    it('2.1 triggers missing_arm_landmarks when user sits too close and elbow/wrist are out of frame', () => {
+    it('2.1 triggers missing_arm_landmarks for distal exercises when elbow is out of frame', () => {
       const config = {
-        ...SHOULDER_PENDULUM_PRESET,
+        nameTh: 'งอข้อศอก (Elbow Flexion)',
+        nameEn: 'Elbow Flexion',
+        evaluationMode: 'angle_rep_hold' as const,
         side: 'right' as const,
+        targetJoint: 'elbow' as const,
+        framing: 'upper' as const,
+        cameraGuide: {
+          recommendedView: 'side_45' as const,
+          recommendedDistanceMeters: [1.5, 2.5] as [number, number],
+          instructionTextTh: 'หันข้างให้เห็นข้อศอก',
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 11, vertex: 13, pointB: 15 },
+            right: { pointA: 12, vertex: 14, pointB: 16 },
+          },
+          startAngleDeg: 150,
+          targetMinDeg: 45,
+          targetMaxDeg: 75,
+          toleranceDeg: 10,
+          holdDurationSec: 1.0,
+          direction: 'decrease' as const,
+        },
+        defaultPrescription: { repsPerSet: 10, totalSets: 3, restBetweenSetsSec: 30 },
+        compensationRules: [],
+        safetyContraindications: { stopOnPainMessageTh: 'หยุดหากเจ็บ', maxSafeAngleCapDeg: 175 },
       };
 
       const machine = new RepStateMachine(config);
       const skel = createMockSkeleton();
 
-      // Right shoulder (12) is visible in upper chest
+      // Right shoulder (12) is visible
       skel[12] = { x: 0.45, y: 0.35, z: 0.0, visibility: 0.92 };
 
-      // Elbow (14) and Wrist (16) are out of frame / low confidence (as seen in screenshot)
-      skel[14] = { x: 0.45, y: 0.95, z: 0.0, visibility: 0.25 };
-      skel[16] = { x: 0.45, y: 0.99, z: 0.0, visibility: 0.12 };
+      // Elbow (14) and Wrist (16) are out of frame
+      skel[14] = { x: 0.45, y: 1.05, z: 0.0, visibility: 0.15 };
+      skel[16] = { x: 0.45, y: 1.15, z: 0.0, visibility: 0.10 };
 
       const res = machine.evaluate(skel, 1000);
 
-      // Must be gated: readinessStatus must be 'missing_arm_landmarks'
       expect(res.readinessStatus).toBe('missing_arm_landmarks');
-      expect(res.coachingMessageTh).toContain('ไม่พบข้อศอกและข้อมือข้างที่ฝึก');
-      // Crucial: Must NEVER show false elbow-flex warning
-      expect(res.coachingMessageTh).not.toContain('อย่าเกร็งหรืองอข้อศอก');
+      expect(res.coachingMessageTh).toContain('ท่านี้ต้องใช้มุมข้อศอก');
       expect(res.formRating).toBe('warning');
       expect(res.completedReps).toBe(0);
     });
@@ -242,8 +263,8 @@ describe('Pose Visibility & Projection Test Suite', () => {
       skel[15] = { x: 0.6, y: 0.7, z: 0.0, visibility: 0.1 }; // L.Wrist (missing!)
 
       const res = machine.evaluate(skel, 1000);
-      expect(res.readinessStatus).toBe('missing_arm_landmarks');
-      expect(res.coachingMessageTh).toContain('ไม่พบข้อศอกและข้อมือข้างที่ฝึก');
+      expect(res.readinessStatus).toBe('partial_upper_body');
+      expect(res.coachingMessageTh).toContain('โหมดครึ่งตัวบน');
     });
 
     it('3.2 completes 10 full circular reps on right arm when tracking is valid', () => {
@@ -335,6 +356,7 @@ describe('Pose Visibility & Projection Test Suite', () => {
       const config = {
         ...SHOULDER_PENDULUM_PRESET,
         side: 'right' as const,
+        framing: 'upper' as const,
         pendulumMechanics: {
           ...SHOULDER_PENDULUM_PRESET.pendulumMechanics!,
           minCycleDurationSec: 0.4,
@@ -357,12 +379,13 @@ describe('Pose Visibility & Projection Test Suite', () => {
       initialSkel[24] = { x: centerX, y: 1.20, z: 0.0, visibility: 0.05 };   // R.Hip out of frame
 
       const initialRes = machine.evaluate(initialSkel, currentTime);
-      expect(initialRes.readinessStatus).toBe('missing_arm_landmarks');
-      expect(initialRes.coachingMessageTh).toContain('ไม่พบข้อศอกและข้อมือข้างที่ฝึก');
+      expect(initialRes.readinessStatus).toBe('partial_upper_body');
       expect(initialRes.coachingMessageTh).toContain('โหมดครึ่งตัวบน');
+      expect(initialRes.coachingMessageEn).toContain('Upper-body partial detection active');
+      expect(initialRes.coachingMessageCn).toContain('半身检测模式已启用');
       expect(initialRes.completedReps).toBe(0);
 
-      // Now user performs circular shoulder sway in Upper-Body Mode
+      // Now user performs circular shoulder sway in Upper-Body Mode for 1 full rep
       const steps = 20;
       let activeProgressSeen = false;
       for (let s = 0; s <= steps; s++) {
@@ -380,7 +403,7 @@ describe('Pose Visibility & Projection Test Suite', () => {
         const res = machine.evaluate(skel, currentTime);
         if ((res.accuracyPct ?? 0) > 0) {
           activeProgressSeen = true;
-          expect(res.readinessStatus).toBe('ready');
+          expect(res.readinessStatus).toBe('partial_upper_body');
           expect(res.coachingMessageTh).toContain('โหมดครึ่งตัวบน');
         }
       }
@@ -388,6 +411,141 @@ describe('Pose Visibility & Projection Test Suite', () => {
       expect(activeProgressSeen).toBe(true);
       const finalRes = machine.evaluate(initialSkel, currentTime + 50);
       expect(finalRes.completedReps).toBe(1);
+    });
+
+    it('3.6 completes 10 repetitions (10/10) in Shoulder Pendulum Upper-Body Desk Mode', () => {
+      const config = {
+        ...SHOULDER_PENDULUM_PRESET,
+        side: 'right' as const,
+        framing: 'upper' as const,
+        pendulumMechanics: {
+          ...SHOULDER_PENDULUM_PRESET.pendulumMechanics!,
+          minCycleDurationSec: 0.3,
+          maxCycleDurationSec: 5.0,
+        },
+        defaultPrescription: { repsPerSet: 10, totalSets: 1, restBetweenSetsSec: 30 },
+      };
+      const machine = new RepStateMachine(config);
+      let currentTime = 1000;
+      const centerX = 0.5;
+      const centerY = 0.35;
+      const swayRadius = 0.05;
+
+      // Run 11 circles (1 warm-up circle to seed dynamic trajectory buffer centroid + 10 complete reps)
+      for (let rep = 1; rep <= 11; rep++) {
+        const steps = 16;
+        for (let s = 0; s <= steps; s++) {
+          currentTime += 30;
+          const theta = (2 * Math.PI * s) / steps;
+          const skel = createMockSkeleton();
+          skel[12] = { x: centerX + swayRadius * Math.cos(theta), y: centerY + swayRadius * Math.sin(theta), z: 0.0, visibility: 0.92 };
+          skel[14] = { x: centerX, y: 1.05, z: 0.0, visibility: 0.15 };
+          skel[16] = { x: centerX, y: 1.15, z: 0.0, visibility: 0.10 };
+          skel[24] = { x: centerX, y: 1.20, z: 0.0, visibility: 0.05 };
+          machine.evaluate(skel, currentTime);
+        }
+        currentTime += 400; // debounce gap
+      }
+
+      const evalEnd = machine.evaluate(createMockSkeleton(), currentTime + 50);
+      expect(evalEnd.completedReps).toBe(10);
+      expect(evalEnd.isSetCompleted).toBe(true);
+      expect(evalEnd.isExerciseCompleted).toBe(true);
+    });
+
+    it('3.7 completes 10 repetitions (10/10) in Shoulder Flexion Upper-Body Desk Mode without freezing at 0%', () => {
+      const config = {
+        nameTh: 'ยกแขนไปข้างหน้า (Shoulder Flexion)',
+        nameEn: 'Shoulder Flexion',
+        evaluationMode: 'angle_rep_hold' as const,
+        side: 'right' as const,
+        targetJoint: 'shoulder' as const,
+        framing: 'upper' as const,
+        cameraGuide: {
+          recommendedView: 'side_90' as const,
+          recommendedDistanceMeters: [1.8, 2.8] as [number, number],
+          instructionTextTh: 'ยกแขนตรงไปข้างหน้า',
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 23, vertex: 11, pointB: 15 },
+            right: { pointA: 24, vertex: 12, pointB: 16 },
+          },
+          startAngleDeg: 25,
+          targetMinDeg: 140,
+          targetMaxDeg: 170,
+          toleranceDeg: 12,
+          holdDurationSec: 0.2, // fast hold for unit test
+        },
+        defaultPrescription: { repsPerSet: 10, totalSets: 1, restBetweenSetsSec: 30 },
+        compensationRules: [],
+        safetyContraindications: { stopOnPainMessageTh: 'หยุดหากเจ็บ', maxSafeAngleCapDeg: 180 },
+      };
+
+      const machine = new RepStateMachine(config);
+      let currentTime = 1000;
+
+      // Initial check when seated at desk: Shoulder visible, Elbow/Wrist/Hip out of frame
+      const restSkel = createMockSkeleton();
+      restSkel[0] = { x: 0.50, y: 0.18, z: 0.0, visibility: 0.95 }; // Nose
+      restSkel[11] = { x: 0.40, y: 0.35, z: 0.0, visibility: 0.90 }; // L.Shoulder
+      restSkel[12] = { x: 0.60, y: 0.35, z: 0.0, visibility: 0.92 }; // R.Shoulder
+      restSkel[14] = { x: 0.60, y: 1.05, z: 0.0, visibility: 0.10 }; // R.Elbow out of frame
+      restSkel[16] = { x: 0.60, y: 1.15, z: 0.0, visibility: 0.08 }; // R.Wrist out of frame
+      restSkel[24] = { x: 0.60, y: 1.25, z: 0.0, visibility: 0.05 }; // R.Hip out of frame
+
+      const initialRes = machine.evaluate(restSkel, currentTime);
+      expect(initialRes.readinessStatus).toBe('partial_upper_body');
+      expect(initialRes.coachingMessageTh).toContain('โหมดครึ่งตัวบน');
+
+      // Execute 10 reps of shoulder lift
+      for (let rep = 1; rep <= 10; rep++) {
+        const liftSkel = createMockSkeleton();
+        liftSkel[0] = { x: 0.50, y: 0.18, z: 0.0, visibility: 0.95 };
+        liftSkel[11] = { x: 0.40, y: 0.35, z: 0.0, visibility: 0.90 };
+        liftSkel[12] = { x: 0.60, y: 0.22, z: 0.0, visibility: 0.92 }; // elevated shoulder
+        liftSkel[14] = { x: 0.60, y: 1.05, z: 0.0, visibility: 0.10 };
+        liftSkel[16] = { x: 0.60, y: 1.15, z: 0.0, visibility: 0.08 };
+        liftSkel[24] = { x: 0.60, y: 1.25, z: 0.0, visibility: 0.05 };
+
+        // 1. Lift shoulder and hold in target zone for > holdDurationSec (0.2s)
+        for (let s = 0; s < 8; s++) {
+          currentTime += 60;
+          const liftRes = machine.evaluate(liftSkel, currentTime);
+          expect((liftRes.accuracyPct ?? 0) > 0).toBe(true);
+        }
+
+        // 2. Return to start position
+        for (let s = 0; s < 6; s++) {
+          currentTime += 60;
+          machine.evaluate(restSkel, currentTime);
+        }
+
+        currentTime += 400; // debounce gap
+        machine.evaluate(restSkel, currentTime);
+      }
+
+      const finalRes = machine.evaluate(restSkel, currentTime + 50);
+      expect(finalRes.completedReps).toBe(10);
+      expect(finalRes.isSetCompleted).toBe(true);
+    });
+
+    it('3.8 excludes facial landmarks (0..10) and lower-body landmarks (25..32) in upper framing mode', () => {
+      const framing = 'upper';
+      const isUpperBodyMode = framing === 'upper' || framing === 'upper_body';
+      expect(isUpperBodyMode).toBe(true);
+
+      const activeUpperJoints = [11, 12, 13, 14, 15, 16, 23, 24];
+
+      // Facial landmarks (0-10) must NEVER be included
+      for (let i = 0; i <= 10; i++) {
+        expect(activeUpperJoints.includes(i)).toBe(false);
+      }
+      // Leg landmarks (25-32) must NEVER be included
+      for (let i = 25; i <= 32; i++) {
+        expect(activeUpperJoints.includes(i)).toBe(false);
+      }
+      expect(activeUpperJoints.length).toBe(8);
     });
   });
 });

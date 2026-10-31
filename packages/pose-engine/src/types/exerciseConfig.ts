@@ -26,7 +26,13 @@ export type TargetJoint =
 
 export type CameraViewOrientation = 'front' | 'side_45' | 'side_90';
 
-export type FramingRequirement = 'head_shoulders' | 'upper_body' | 'lower_body' | 'full_body';
+export type FramingRequirement =
+  | 'head_shoulders'
+  | 'upper_body'
+  | 'lower_body'
+  | 'full_body'
+  | 'upper'
+  | 'full';
 
 export type AngleDirection = 'increase' | 'decrease';
 
