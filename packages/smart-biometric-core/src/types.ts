@@ -37,6 +37,7 @@ export interface TherapySchedule {
   assigned_exercises?: PrescribedExercise[];
   excluded_dates?: string[];
   cancelled_dates?: string[];
+  preserve_past_dates?: boolean;
 }
 
 export interface RehabScoreEntry {

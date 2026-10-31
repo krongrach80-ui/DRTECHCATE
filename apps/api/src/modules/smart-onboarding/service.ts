@@ -1095,6 +1095,19 @@ export class SmartOnboardingService {
       };
     }
 
+    const sStart = (schedule.startDate || schedule.start_date || '').slice(0, 10);
+    const sEnd = (schedule.endDate || schedule.end_date || '').slice(0, 10);
+    if (Array.isArray(schedule.excluded_dates)) {
+      schedule.excluded_dates = schedule.excluded_dates.filter(
+        (d: string) => d !== sStart && d !== sEnd
+      );
+    }
+    if (Array.isArray(schedule.cancelled_dates)) {
+      schedule.cancelled_dates = schedule.cancelled_dates.filter(
+        (d: string) => d !== sStart && d !== sEnd
+      );
+    }
+
     const updated: PatientRecordFile = {
       ...existing,
       schedule,
@@ -1196,11 +1209,37 @@ export class SmartOnboardingService {
           };
         });
 
+        const targetPid = resolvedPatientUuid || patientId;
+        const cStart = schedule.startDate || schedule.start_date || new Date().toISOString().slice(0, 10);
+        const cEnd = schedule.endDate || schedule.end_date || new Date().toISOString().slice(0, 10);
+
+        try {
+          await adminClient
+            .from('courses')
+            .delete()
+            .eq('patient_id', targetPid)
+            .eq('start_date', cStart)
+            .eq('end_date', cEnd);
+        } catch {}
+
+        try {
+          const { currentFakeCourseRepo } = await import('../../__tests__/fixtures/fakeRepositories');
+          for (const [cId, c] of currentFakeCourseRepo.inMemoryCourses.entries()) {
+            if (
+              (c.patient_id === targetPid || c.patient_id === patientId) &&
+              c.start_date === cStart &&
+              c.end_date === cEnd
+            ) {
+              currentFakeCourseRepo.inMemoryCourses.delete(cId);
+            }
+          }
+        } catch {}
+
         await this.courseRepo.createCourse(
           {
-            patient_id: resolvedPatientUuid || patientId,
-            start_date: schedule.startDate || schedule.start_date || new Date().toISOString().slice(0, 10),
-            end_date: schedule.endDate || schedule.end_date || new Date().toISOString().slice(0, 10),
+            patient_id: targetPid,
+            start_date: cStart,
+            end_date: cEnd,
             weekdays: weekdays.length > 0 ? weekdays : [1, 3, 5],
             start_time: schedule.timeSlot || schedule.time_slot || '09:00 - 10:00',
             kiosk_id: effectiveKioskId || undefined,
@@ -1281,13 +1320,21 @@ export class SmartOnboardingService {
       try {
         const { data: expiredCourses, error: expErr } = await adminClient
           .from('courses')
-          .update({ status: 'completed', updated_at: new Date().toISOString() })
+          .select('id, patient_id, start_date, end_date')
           .eq('status', 'active')
-          .lt('end_date', todayBkk)
-          .select('id, patient_id');
+          .lt('end_date', todayBkk);
 
-        if (!expErr && expiredCourses) {
-          cleanedCourses += expiredCourses.length;
+        if (!expErr && expiredCourses && expiredCourses.length > 0) {
+          const idsToComplete = expiredCourses
+            .filter((c: any) => c.start_date !== c.end_date)
+            .map((c: any) => c.id);
+          if (idsToComplete.length > 0) {
+            await adminClient
+              .from('courses')
+              .update({ status: 'completed', updated_at: new Date().toISOString() })
+              .in('id', idsToComplete);
+            cleanedCourses += idsToComplete.length;
+          }
         }
 
         const { data: ongoingCourses } = await adminClient
@@ -1315,6 +1362,11 @@ export class SmartOnboardingService {
 
         const endDate = (s.endDate || s.end_date || '').slice(0, 10);
         const startDate = (s.startDate || s.start_date || '').slice(0, 10);
+
+        // Protect explicitly scheduled single-day appointments or schedules marked preserve_past_dates
+        if (s.preserve_past_dates || (startDate && endDate && startDate === endDate)) {
+          continue;
+        }
 
         if (endDate && endDate < todayBkk) {
           record.schedule = null;
@@ -1446,11 +1498,23 @@ export class SmartOnboardingService {
       try {
         await adminClient
           .from('courses')
-          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .delete()
           .eq('patient_id', resolvedPatientUuid)
           .eq('start_date', dateStr)
-          .eq('end_date', dateStr)
-          .eq('status', 'active');
+          .eq('end_date', dateStr);
+
+        try {
+          const { currentFakeCourseRepo } = await import('../../__tests__/fixtures/fakeRepositories');
+          for (const [cId, c] of currentFakeCourseRepo.inMemoryCourses.entries()) {
+            if (
+              (c.patient_id === resolvedPatientUuid || c.patient_id === patientId) &&
+              c.start_date === dateStr &&
+              c.end_date === dateStr
+            ) {
+              currentFakeCourseRepo.inMemoryCourses.delete(cId);
+            }
+          }
+        } catch {}
 
         const { data: matchStartCourses } = await adminClient
           .from('courses')

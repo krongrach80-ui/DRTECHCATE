@@ -59,6 +59,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [isSubmittingByDate, setIsSubmittingByDate] = useState<Record<string, boolean>>({});
 
   // Modal State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -128,6 +129,93 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     }
   }, []);
 
+  const handleAddCourseForDate = async (dateStr: string, patientId?: string) => {
+    const targetPatientId = patientId || selectedPatient?.id;
+    if (!targetPatientId) {
+      setNotification('กรุณาเลือกคนไข้ก่อนจัดคอร์ส');
+      return;
+    }
+    if (isSubmittingByDate[dateStr]) return;
+
+    setIsSubmittingByDate((prev) => ({ ...prev, [dateStr]: true }));
+    try {
+      const targetDossier = dossiers.find(
+        (d) => d.patient_id === targetPatientId || d.hn === targetPatientId
+      );
+      const curSched = targetDossier?.schedule;
+
+      const dateObj = new Date(dateStr);
+      const dayKey = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
+
+      // Clean dateStr out of excluded_dates & cancelled_dates
+      const cleanExcluded = (curSched?.excluded_dates || []).filter((d: string) => d !== dateStr);
+      const cleanCancelled = (curSched?.cancelled_dates || []).filter((d: string) => d !== dateStr);
+
+      const existingDays = curSched?.daysOfWeek || curSched?.days_of_week || [];
+      const updatedDays = Array.from(new Set([...existingDays, dayKey]));
+
+      const sStart = curSched?.startDate || curSched?.start_date;
+      const sEnd = curSched?.endDate || curSched?.end_date;
+
+      const newStart = sStart && sStart <= dateStr ? sStart : dateStr;
+      const newEnd = sEnd && sEnd >= dateStr ? sEnd : dateStr;
+
+      const prescribed = curSched?.prescribed_exercises || curSched?.assigned_exercises || [
+        {
+          exercise_id: 'shoulder-pendulum-default',
+          name: 'Shoulder Pendulum (แกว่งแขนวงกลมผ่อนคลายหัวไหล่)',
+          target_joint: 'shoulder',
+          sets: 3,
+          reps: 10,
+        },
+      ];
+
+      const newSchedule = {
+        startDate: curSched ? newStart : dateStr,
+        endDate: curSched ? newEnd : dateStr,
+        start_date: curSched ? newStart : dateStr,
+        end_date: curSched ? newEnd : dateStr,
+        daysOfWeek: curSched ? updatedDays : [dayKey],
+        days_of_week: curSched ? updatedDays : [dayKey],
+        timeSlot: curSched?.timeSlot || curSched?.time_slot || '09:00 - 10:00',
+        time_slot: curSched?.timeSlot || curSched?.time_slot || '09:00 - 10:00',
+        assigned_kiosk_id: curSched?.assigned_kiosk_id || curSched?.kioskId || 'kiosk-01',
+        kioskId: curSched?.assigned_kiosk_id || curSched?.kioskId || 'kiosk-01',
+        include_minigame: curSched?.include_minigame ?? true,
+        prescribed_exercises: prescribed,
+        assigned_exercises: prescribed,
+        excluded_dates: cleanExcluded,
+        cancelled_dates: cleanCancelled,
+        preserve_past_dates: true,
+      };
+
+      await defaultApiClient.smartOnboarding.saveSchedule({
+        patient_id: targetPatientId,
+        schedule: newSchedule,
+      });
+
+      // Instantly sync local React state
+      setDossiers((prev) =>
+        prev.map((d) => {
+          if (d.patient_id === targetPatientId || d.hn === targetPatientId) {
+            return {
+              ...d,
+              schedule: newSchedule,
+            };
+          }
+          return d;
+        })
+      );
+
+      setNotification(`จัดคอร์สวันที่ ${dateStr} เรียบร้อยแล้ว`);
+      window.dispatchEvent(new CustomEvent('schedule-updated'));
+    } catch (err) {
+      setNotification(err instanceof Error ? err.message : 'ไม่สามารถเพิ่มวันนัดได้');
+    } finally {
+      setIsSubmittingByDate((prev) => ({ ...prev, [dateStr]: false }));
+    }
+  };
+
   const handleDeleteDate = async (dateStr: string, patientId?: string) => {
     const targetPatientId = patientId || selectedPatient?.id;
     if (!targetPatientId) return;
@@ -146,8 +234,9 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
             if (!d.schedule) return d;
             const curExcluded = Array.isArray(d.schedule.excluded_dates) ? [...d.schedule.excluded_dates] : [];
             if (!curExcluded.includes(dateStr)) curExcluded.push(dateStr);
-            const isSingle = (d.schedule.startDate === dateStr || d.schedule.start_date === dateStr) &&
-              (d.schedule.endDate === dateStr || d.schedule.end_date === dateStr);
+            const sStart = (d.schedule.startDate || d.schedule.start_date || '').slice(0, 10);
+            const sEnd = (d.schedule.endDate || d.schedule.end_date || '').slice(0, 10);
+            const isSingle = sStart === dateStr && sEnd === dateStr;
             return {
               ...d,
               schedule: isSingle ? null : { ...d.schedule, excluded_dates: curExcluded },
@@ -263,7 +352,6 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         todayDay === dayNum;
 
       const dateStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-      const isPast = dateStr < todayBkkStr;
       const dateObj = new Date(currentYear, currentMonthIndex, dayNum);
       const dayKey = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
       const aliases = dayAliases[dayKey] || [dayKey];
@@ -281,16 +369,15 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           s && (s.excluded_dates?.includes(dateStr) || s.cancelled_dates?.includes(dateStr))
         );
 
-        // REQUIREMENT 1: Past dates (dateStr < todayBkkStr) or excluded dates MUST NEVER show active session card!
-        // Past days always render empty state ("พักฟื้น")!
-        if (s && !isPast && !isExcluded) {
-          const startDate = s.startDate || s.start_date || '1970-01-01';
-          const endDate = s.endDate || s.end_date || '2099-12-31';
+        if (s && !isExcluded) {
+          const startDate = (s.startDate || s.start_date || '1970-01-01').slice(0, 10);
+          const endDate = (s.endDate || s.end_date || '2099-12-31').slice(0, 10);
           const days = s.daysOfWeek || s.days_of_week || [];
           hasSession =
-            dateStr >= startDate &&
-            dateStr <= endDate &&
-            days.some((d: string) => aliases.includes(d));
+            (dateStr >= startDate &&
+              dateStr <= endDate &&
+              days.some((d: string) => aliases.includes(d))) ||
+            (startDate === dateStr && endDate === dateStr);
           timeSlot = s.timeSlot || s.time_slot || '09:00 - 10:00';
           kioskId = s.kioskId || s.assigned_kiosk_id || 'kiosk-01';
           exerciseCount =
@@ -325,31 +412,29 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           includeMinigame: boolean;
         }> = [];
 
-        // In 'all' mode: never aggregate past appointments
-        if (!isPast) {
-          dossiers.forEach((d) => {
-            const s = d.schedule;
-            if (!s) return;
-            if (s.excluded_dates?.includes(dateStr) || s.cancelled_dates?.includes(dateStr)) return;
-            const startDate = s.startDate || s.start_date || '1970-01-01';
-            const endDate = s.endDate || s.end_date || '2099-12-31';
-            const days = s.daysOfWeek || s.days_of_week || [];
-            if (
-              dateStr >= startDate &&
+        dossiers.forEach((d) => {
+          const s = d.schedule;
+          if (!s) return;
+          if (s.excluded_dates?.includes(dateStr) || s.cancelled_dates?.includes(dateStr)) return;
+          const startDate = (s.startDate || s.start_date || '1970-01-01').slice(0, 10);
+          const endDate = (s.endDate || s.end_date || '2099-12-31').slice(0, 10);
+          const days = s.daysOfWeek || s.days_of_week || [];
+          if (
+            (dateStr >= startDate &&
               dateStr <= endDate &&
-              days.some((alias: string) => aliases.includes(alias))
-            ) {
-              matchingSessions.push({
-                patientId: d.patient_id,
-                patientName: formatCleanName(d.first_name, d.last_name),
-                hn: d.hn || d.patient_id,
-                timeSlot: s.timeSlot || s.time_slot || '09:00 - 10:00',
-                kioskId: s.kioskId || s.assigned_kiosk_id || 'kiosk-01',
-                includeMinigame: Boolean(s.include_minigame),
-              });
-            }
-          });
-        }
+              days.some((alias: string) => aliases.includes(alias))) ||
+            (startDate === dateStr && endDate === dateStr)
+          ) {
+            matchingSessions.push({
+              patientId: d.patient_id,
+              patientName: formatCleanName(d.first_name, d.last_name),
+              hn: d.hn || d.patient_id,
+              timeSlot: s.timeSlot || s.time_slot || '09:00 - 10:00',
+              kioskId: s.kioskId || s.assigned_kiosk_id || 'kiosk-01',
+              includeMinigame: Boolean(s.include_minigame),
+            });
+          }
+        });
 
         const hasSession = matchingSessions.length > 0;
         const isPaused = false;
@@ -371,7 +456,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     }
 
     return map;
-  }, [calendarMode, activeDossier, dossiers, dayAliases, daysInMonth, currentYear, currentMonthIndex, todayBkkStr]);
+  }, [calendarMode, activeDossier, dossiers, dayAliases, daysInMonth, currentYear, currentMonthIndex]);
 
   // Compute 4 KPI values dynamically
   const kpiStats = useMemo(() => {
@@ -782,10 +867,14 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
                 {/* Hover Add Course Button */}
                 <button
                   type="button"
-                  onClick={() => handleOpenWizard(selectedPatient?.id)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-full py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold text-center"
+                  disabled={Boolean(isSubmittingByDate[dateStr])}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleAddCourseForDate(dateStr, selectedPatient?.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-full py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold text-center disabled:opacity-50 cursor-pointer"
                 >
-                  + จัดคอร์สวันนี้
+                  {isSubmittingByDate[dateStr] ? 'กำลังบันทึก...' : '+ จัดคอร์สวันนี้'}
                 </button>
               </div>
             );

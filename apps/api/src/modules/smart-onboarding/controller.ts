@@ -121,7 +121,9 @@ export class SmartOnboardingController {
 
   saveSchedule = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const patientId = req.body.patient_id || req.body.patientId;
+      const rawParam = req.params.patientId;
+      const paramPatientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+      const patientId = req.body.patient_id || req.body.patientId || paramPatientId;
       const schedule = req.body.schedule || req.body;
       if (!patientId || !schedule) {
         res.status(400).json({

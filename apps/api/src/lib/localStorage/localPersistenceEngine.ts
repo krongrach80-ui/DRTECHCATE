@@ -151,6 +151,11 @@ export function loadLocalDatabase(): boolean {
         currentFakeFaceEnrollmentRepo.inMemoryEnrollments.set(en.id, en);
       }
     }
+    if (data.courses && Array.isArray(data.courses)) {
+      for (const c of data.courses) {
+        currentFakeCourseRepo.inMemoryCourses.set(c.id, c);
+      }
+    }
     if (data.sessionLogs && Array.isArray(data.sessionLogs)) {
       currentFakeCourseRepo.inMemorySessionLogs = data.sessionLogs;
     }

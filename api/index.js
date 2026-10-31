@@ -9333,6 +9333,11 @@ function loadLocalDatabase() {
         currentFakeFaceEnrollmentRepo.inMemoryEnrollments.set(en.id, en);
       }
     }
+    if (data.courses && Array.isArray(data.courses)) {
+      for (const c of data.courses) {
+        currentFakeCourseRepo.inMemoryCourses.set(c.id, c);
+      }
+    }
     if (data.sessionLogs && Array.isArray(data.sessionLogs)) {
       currentFakeCourseRepo.inMemorySessionLogs = data.sessionLogs;
     }
@@ -13666,6 +13671,18 @@ var SmartOnboardingService = class {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
     }
+    const sStart = (schedule.startDate || schedule.start_date || "").slice(0, 10);
+    const sEnd = (schedule.endDate || schedule.end_date || "").slice(0, 10);
+    if (Array.isArray(schedule.excluded_dates)) {
+      schedule.excluded_dates = schedule.excluded_dates.filter(
+        (d) => d !== sStart && d !== sEnd
+      );
+    }
+    if (Array.isArray(schedule.cancelled_dates)) {
+      schedule.cancelled_dates = schedule.cancelled_dates.filter(
+        (d) => d !== sStart && d !== sEnd
+      );
+    }
     const updated = {
       ...existing,
       schedule,
@@ -13754,11 +13771,27 @@ var SmartOnboardingService = class {
             position: idx + 1
           };
         });
+        const targetPid = resolvedPatientUuid || patientId;
+        const cStart = schedule.startDate || schedule.start_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+        const cEnd = schedule.endDate || schedule.end_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+        try {
+          await adminClient.from("courses").delete().eq("patient_id", targetPid).eq("start_date", cStart).eq("end_date", cEnd);
+        } catch {
+        }
+        try {
+          const { currentFakeCourseRepo: currentFakeCourseRepo2 } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
+          for (const [cId, c] of currentFakeCourseRepo2.inMemoryCourses.entries()) {
+            if ((c.patient_id === targetPid || c.patient_id === patientId) && c.start_date === cStart && c.end_date === cEnd) {
+              currentFakeCourseRepo2.inMemoryCourses.delete(cId);
+            }
+          }
+        } catch {
+        }
         await this.courseRepo.createCourse(
           {
-            patient_id: resolvedPatientUuid || patientId,
-            start_date: schedule.startDate || schedule.start_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
-            end_date: schedule.endDate || schedule.end_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+            patient_id: targetPid,
+            start_date: cStart,
+            end_date: cEnd,
             weekdays: weekdays.length > 0 ? weekdays : [1, 3, 5],
             start_time: schedule.timeSlot || schedule.time_slot || "09:00 - 10:00",
             kiosk_id: effectiveKioskId || void 0,
@@ -13819,9 +13852,13 @@ var SmartOnboardingService = class {
     const shouldQuerySupabase = process.env.NODE_ENV !== "test" || process.env.LIVE_TESTS === "1";
     if (shouldQuerySupabase) {
       try {
-        const { data: expiredCourses, error: expErr } = await adminClient.from("courses").update({ status: "completed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("status", "active").lt("end_date", todayBkk).select("id, patient_id");
-        if (!expErr && expiredCourses) {
-          cleanedCourses += expiredCourses.length;
+        const { data: expiredCourses, error: expErr } = await adminClient.from("courses").select("id, patient_id, start_date, end_date").eq("status", "active").lt("end_date", todayBkk);
+        if (!expErr && expiredCourses && expiredCourses.length > 0) {
+          const idsToComplete = expiredCourses.filter((c) => c.start_date !== c.end_date).map((c) => c.id);
+          if (idsToComplete.length > 0) {
+            await adminClient.from("courses").update({ status: "completed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).in("id", idsToComplete);
+            cleanedCourses += idsToComplete.length;
+          }
         }
         const { data: ongoingCourses } = await adminClient.from("courses").update({ start_date: todayBkk, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("status", "active").lt("start_date", todayBkk).gte("end_date", todayBkk).select("id, patient_id");
         if (ongoingCourses) {
@@ -13838,6 +13875,9 @@ var SmartOnboardingService = class {
         if (!s) continue;
         const endDate = (s.endDate || s.end_date || "").slice(0, 10);
         const startDate = (s.startDate || s.start_date || "").slice(0, 10);
+        if (s.preserve_past_dates || startDate && endDate && startDate === endDate) {
+          continue;
+        }
         if (endDate && endDate < todayBkk) {
           record.schedule = null;
           this.vaultService.savePatientRecord(record.patient_id, record);
@@ -13937,7 +13977,16 @@ var SmartOnboardingService = class {
     }
     if (shouldQuerySupabase && resolvedPatientUuid) {
       try {
-        await adminClient.from("courses").update({ status: "cancelled", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("patient_id", resolvedPatientUuid).eq("start_date", dateStr).eq("end_date", dateStr).eq("status", "active");
+        await adminClient.from("courses").delete().eq("patient_id", resolvedPatientUuid).eq("start_date", dateStr).eq("end_date", dateStr);
+        try {
+          const { currentFakeCourseRepo: currentFakeCourseRepo2 } = await Promise.resolve().then(() => (init_fakeRepositories(), fakeRepositories_exports));
+          for (const [cId, c] of currentFakeCourseRepo2.inMemoryCourses.entries()) {
+            if ((c.patient_id === resolvedPatientUuid || c.patient_id === patientId) && c.start_date === dateStr && c.end_date === dateStr) {
+              currentFakeCourseRepo2.inMemoryCourses.delete(cId);
+            }
+          }
+        } catch {
+        }
         const { data: matchStartCourses } = await adminClient.from("courses").select("id, start_date, end_date").eq("patient_id", resolvedPatientUuid).eq("start_date", dateStr).eq("status", "active");
         if (matchStartCourses && matchStartCourses.length > 0) {
           for (const c of matchStartCourses) {
@@ -14641,7 +14690,9 @@ var SmartOnboardingController = class {
     };
     this.saveSchedule = async (req, res, next) => {
       try {
-        const patientId = req.body.patient_id || req.body.patientId;
+        const rawParam = req.params.patientId;
+        const paramPatientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+        const patientId = req.body.patient_id || req.body.patientId || paramPatientId;
         const schedule = req.body.schedule || req.body;
         if (!patientId || !schedule) {
           res.status(400).json({
@@ -14813,6 +14864,7 @@ function createSmartOnboardingRouter(controller = defaultSmartOnboardingControll
   router3.post("/complete-info", controller.completeInfo);
   router3.get("/pending-patients", controller.listPending);
   router3.post("/schedule", controller.saveSchedule);
+  router3.post("/schedule/:patientId", controller.saveSchedule);
   router3.get("/schedule/:patientId", controller.getSchedule);
   router3.delete("/schedule/:patientId/date/:dateStr", controller.deleteScheduleDate);
   router3.delete("/schedule/:patientId", controller.clearSchedule);

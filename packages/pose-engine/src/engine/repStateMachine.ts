@@ -403,20 +403,47 @@ export class RepStateMachine {
     const wIdx = isRight ? 16 : 15;
     const hIdx = isRight ? 24 : 23;
 
-    if (landmarks.length <= Math.max(sIdx, eIdx, wIdx, hIdx)) {
-      return this.createDefaultResult(landmarks, 'กำลังค้นหาตำแหน่งหัวไหล่และแขน...');
-    }
+    const isInFrame = (lm?: PoseEngineLandmark) =>
+      Boolean(lm && lm.x >= 0.02 && lm.x <= 0.98 && lm.y >= 0.02 && lm.y <= 0.98);
+    const isVisible = (lm?: PoseEngineLandmark) =>
+      Boolean(lm && (lm.visibility ?? 1.0) >= 0.50 && isInFrame(lm));
 
     const shoulder = landmarks[sIdx];
     const elbow = landmarks[eIdx];
     const wrist = landmarks[wIdx];
-    const hip = landmarks[hIdx];
+    const hip = landmarks[hIdx] || (shoulder ? { x: shoulder.x, y: shoulder.y + 0.35, z: shoulder.z ?? 0 } : undefined);
+
+    // 1. Check Shoulder readiness
+    if (!shoulder || !isVisible(shoulder)) {
+      const def = this.createDefaultResult(
+        landmarks,
+        '📷 ไม่พบหัวไหล่ในภาพ กรุณาถอยห่างจากกล้องประมาณ 1.5–2 เมตร'
+      );
+      def.readinessStatus = 'missing_shoulder';
+      def.formRating = 'warning';
+      return def;
+    }
+
+    // 2. Check Elbow & Wrist readiness (User seated too close)
+    if (!elbow || !wrist || !isVisible(elbow) || !isVisible(wrist)) {
+      const def = this.createDefaultResult(
+        landmarks,
+        '📷 ไม่พบข้อศอกและข้อมือข้างที่ฝึก กรุณาถอยห่างจากกล้องหรือปรับมุมกล้องให้เห็นแขนตั้งแต่ไหล่ถึงข้อมือ'
+      );
+      def.readinessStatus = 'missing_arm_landmarks';
+      def.formRating = 'warning';
+      return def;
+    }
+
+    const effectiveHip = (hip && isVisible(hip))
+      ? hip
+      : { x: shoulder.x, y: shoulder.y + 0.35, z: shoulder.z ?? 0, visibility: 0.9 };
 
     const result = this.pendulumAnalyzer.update({
       shoulder,
       elbow,
       wrist,
-      hip,
+      hip: effectiveHip,
       timestampMs,
     });
 
@@ -484,6 +511,7 @@ export class RepStateMachine {
       isSubjectLocked: lockResult?.isSubjectLocked ?? true,
       isFrameDropped: lockResult?.isFrameDropped ?? false,
       frameDropReason: lockResult?.frameDropReason,
+      readinessStatus: 'ready',
       filteredLandmarks: landmarks,
     };
   }

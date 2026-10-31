@@ -45,7 +45,7 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
   }, [onReportPainStop, isSubmittingPain]);
 
   return (
-    <div className="w-full bg-slate-950/90 border-t border-slate-800 backdrop-blur-md px-4 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3 z-30 select-none">
+    <div className="w-full bg-slate-950/90 border-t border-slate-800 backdrop-blur-md px-4 sm:px-8 pr-32 sm:pr-40 py-3.5 flex flex-wrap items-center justify-between gap-3 z-30 select-none">
       <div className="flex items-center gap-2">
         <button
           type="button"

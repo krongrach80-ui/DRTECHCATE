@@ -166,6 +166,7 @@ export interface RepEvaluationResult {
   isSubjectLocked?: boolean;
   isFrameDropped?: boolean;
   frameDropReason?: string;
+  readinessStatus?: 'ready' | 'missing_shoulder' | 'missing_arm_landmarks';
   filteredLandmarks: PoseEngineLandmark[];
 }
 

@@ -33,6 +33,7 @@ export function createSmartOnboardingRouter(
 
   // 5. 3-Step Wizard Therapy Schedule & Deletion
   router.post('/schedule', controller.saveSchedule);
+  router.post('/schedule/:patientId', controller.saveSchedule);
   router.get('/schedule/:patientId', controller.getSchedule);
   router.delete('/schedule/:patientId/date/:dateStr', controller.deleteScheduleDate);
   router.delete('/schedule/:patientId', controller.clearSchedule);

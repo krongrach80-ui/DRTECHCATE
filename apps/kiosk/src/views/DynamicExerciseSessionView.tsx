@@ -20,6 +20,7 @@ import {
 } from '../../../../packages/pose-engine/src/types/exerciseConfig';
 import { RepStateMachine } from '../../../../packages/pose-engine/src/engine/repStateMachine';
 import { CameraStreamWatchdog, WatchdogHealthStatus } from '../../../../packages/pose-engine/src/hardwareWatchdog';
+import { projectLandmarkToCanvas } from '../../../../packages/pose-engine/src/math/projection';
 import { VoiceFeedbackController } from '../../../../packages/hospital-ui-kit/src/VoiceFeedbackController';
 import { PainStopEmergencyBar } from '../components/PainStopEmergencyBar';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
@@ -64,6 +65,24 @@ const POSE_CONNECTIONS: [number, number][] = [
   [24, 26], [26, 28], // Right leg
 ];
 
+const ANATOMICAL_BODY_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+
+const LANDMARK_NAMES: Record<number, string> = {
+  0: 'Nose',
+  11: 'L.Shoulder',
+  12: 'R.Shoulder',
+  13: 'L.Elbow',
+  14: 'R.Elbow',
+  15: 'L.Wrist',
+  16: 'R.Wrist',
+  23: 'L.Hip',
+  24: 'R.Hip',
+  25: 'L.Knee',
+  26: 'R.Knee',
+  27: 'L.Ankle',
+  28: 'R.Ankle',
+};
+
 export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProps> = ({
   patient,
   exercise,
@@ -104,6 +123,39 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [restCountdown, setRestCountdown] = useState(config.defaultPrescription.restBetweenSetsSec || 30);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const [painReportedState, setPainReportedState] = useState(false);
+  const [isDebugOverlayOpen, setIsDebugOverlayOpen] = useState(false);
+  const isDebugOverlayRef = useRef(false);
+  useEffect(() => {
+    isDebugOverlayRef.current = isDebugOverlayOpen;
+  }, [isDebugOverlayOpen]);
+
+  // Canvas Resolution Sync with Container
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const syncCanvasSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const targetW = Math.round(rect.width);
+        const targetH = Math.round(rect.height);
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+          canvas.width = targetW;
+          canvas.height = targetH;
+        }
+      }
+    };
+
+    syncCanvasSize();
+    const ro = new ResizeObserver(() => syncCanvasSize());
+    ro.observe(canvas);
+    window.addEventListener('resize', syncCanvasSize);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', syncCanvasSize);
+    };
+  }, []);
 
   // Play synthesized harmonic chime
   const playRepChime = useCallback(() => {
@@ -150,7 +202,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     speakThai(newSide === 'right' ? 'ตรวจจับแขนขวา' : 'ตรวจจับแขนซ้าย', 'side_toggle', 0);
   }, [speakThai]);
 
-  // Canvas Skeleton Rendering with lowPerformanceMode throttling support
+  // Canvas Skeleton Rendering with exact coordinate projection and anatomical gating
   const renderSkeleton = useCallback(
     (landmarks: PoseEngineLandmark[], formRating: 'good' | 'warning' | 'error', isLowPerf: boolean = false) => {
       const canvas = canvasRef.current;
@@ -166,6 +218,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
       if (landmarks.length === 0) return;
 
+      const vW = video.videoWidth || 1280;
+      const vH = video.videoHeight || 720;
+      const isDebug = isDebugOverlayRef.current;
+
       // Pick theme color based on form
       const color =
         formRating === 'good'
@@ -180,31 +236,74 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      // Draw skeletal connections
+      // 1. Draw skeletal connections between anatomical body joints (excluding facial 0..10)
       for (const [iA, iB] of POSE_CONNECTIONS) {
-        if (landmarks[iA] && landmarks[iB]) {
-          const visA = landmarks[iA].visibility ?? 1.0;
-          const visB = landmarks[iB].visibility ?? 1.0;
-          if (visA >= 0.5 && visB >= 0.5) {
-            ctx.beginPath();
-            ctx.moveTo(landmarks[iA].x * w, landmarks[iA].y * h);
-            ctx.lineTo(landmarks[iB].x * w, landmarks[iB].y * h);
-            ctx.stroke();
+        const lmA = landmarks[iA];
+        const lmB = landmarks[iB];
+        if (lmA && lmB) {
+          const visA = lmA.visibility ?? 1.0;
+          const visB = lmB.visibility ?? 1.0;
+          if (visA >= 0.45 && visB >= 0.45) {
+            const ptA = projectLandmarkToCanvas(lmA, vW, vH, w, h, true, 'cover');
+            const ptB = projectLandmarkToCanvas(lmB, vW, vH, w, h, true, 'cover');
+            if (ptA.isWithinFrame && ptB.isWithinFrame) {
+              ctx.beginPath();
+              ctx.moveTo(ptA.x, ptA.y);
+              ctx.lineTo(ptB.x, ptB.y);
+              ctx.stroke();
+            }
           }
         }
       }
 
-      // Draw joint nodes (in lowPerformanceMode, skip outer ring strokes to prevent lag)
-      const radius = isLowPerf ? 4 : 6;
-      for (let i = 0; i < landmarks.length; i++) {
-        const lm = landmarks[i];
-        if ((lm.visibility ?? 1.0) >= 0.5) {
+      // 2. Draw joint nodes
+      if (isDebug) {
+        // Debug Inspector: Draw all 33 detected landmarks with index, name, and visibility
+        ctx.font = '10px monospace';
+        for (let i = 0; i < landmarks.length; i++) {
+          const lm = landmarks[i];
+          const vis = lm.visibility ?? 1.0;
+          if (vis < 0.2) continue; // Skip completely invisible points
+          const pt = projectLandmarkToCanvas(lm, vW, vH, w, h, true, 'cover');
+          if (!pt.isWithinFrame) continue;
+
           ctx.beginPath();
-          ctx.arc(lm.x * w, lm.y * h, radius, 0, 2 * Math.PI);
+          ctx.arc(pt.x, pt.y, 4, 0, 2 * Math.PI);
+          ctx.fillStyle = vis >= 0.5 ? '#10b981' : '#f59e0b';
           ctx.fill();
-          if (!isLowPerf) {
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
+
+          const name = LANDMARK_NAMES[i] || `#${i}`;
+          const label = `#${i} ${name} (${Math.round(vis * 100)}%)`;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(label, pt.x + 6, pt.y - 3);
+        }
+      } else {
+        // Clinical View: Only draw anatomical body joints (never clutter the face 0..10)
+        const radius = isLowPerf ? 4 : 6;
+        for (const idx of ANATOMICAL_BODY_JOINTS) {
+          const lm = landmarks[idx];
+          if (!lm) continue;
+          const vis = lm.visibility ?? 1.0;
+          if (vis < 0.45) continue;
+
+          const pt = projectLandmarkToCanvas(lm, vW, vH, w, h, true, 'cover');
+          if (!pt.isWithinFrame) continue;
+
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, radius, 0, 2 * Math.PI);
+
+          if (vis >= 0.7) {
+            ctx.fillStyle = color;
+            ctx.fill();
+            if (!isLowPerf) {
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 2;
+              ctx.stroke();
+            }
+          } else {
+            // Low confidence (0.45 - 0.70): faint hollow ring
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
             ctx.stroke();
           }
         }
@@ -312,19 +411,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     let lastCompletedReps = 0;
     let lastInferenceTime = 0;
     let lastWatchdogStatusCheck = 0;
+    let isCurrentLowPerf = false;
 
     const startProcessingLoop = (detector: any) => {
       const processFrame = () => {
         if (!isMountedRef.current) return;
 
         const now = Date.now();
+        const minIntervalMs = isCurrentLowPerf ? 66 : 33; // 15 FPS throttle in lowPerformanceMode, 30 FPS normal
         if (
           !isPaused &&
           !isResting &&
           !isSummaryOpen &&
           videoRef.current &&
           videoRef.current.readyState >= 2 &&
-          now - lastInferenceTime >= 33 // ~30 FPS throttling
+          now - lastInferenceTime >= minIntervalMs
         ) {
           lastInferenceTime = now;
           try {
@@ -343,6 +444,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
             // 1. Hardware Watchdog Check (Frozen detection & FPS throttling)
             const wdStatus = watchdogRef.current.update(rawLandmarks, now);
+            isCurrentLowPerf = wdStatus.lowPerformanceMode;
             if (now - lastWatchdogStatusCheck > 600) {
               lastWatchdogStatusCheck = now;
               setWatchdogStatus(wdStatus);
@@ -656,6 +758,20 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </button>
           </div>
 
+          {/* Debug Inspector Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsDebugOverlayOpen((prev) => !prev)}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer border ${
+              isDebugOverlayOpen
+                ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+            title="เปิด/ปิดการแสดงดัชนีและค่าความมั่นใจของจุดข้อต่อ MediaPipe"
+          >
+            <span>🔍 Debug จุดข้อต่อ</span>
+          </button>
+
           <div className="px-4 py-2 rounded-2xl bg-slate-900 border border-slate-800 text-center">
             <div className="text-[10px] text-slate-400 uppercase font-semibold">เซ็ตที่</div>
             <div className="text-sm sm:text-base font-extrabold text-teal-400">
@@ -683,9 +799,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
         <canvas
           ref={canvasRef}
-          width={1280}
-          height={720}
-          className="absolute inset-0 w-full h-full object-cover -scale-x-100 pointer-events-none z-10"
+          className="absolute inset-0 w-full h-full pointer-events-none z-10"
         />
 
         {/* Watchdog Hardware Status Alert Badge */}
@@ -706,6 +820,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             className={`p-4 rounded-3xl backdrop-blur-md border shadow-2xl transition-all duration-300 flex items-center gap-3.5 ${
               evalResult?.formRating === 'error'
                 ? 'bg-rose-950/85 border-rose-500 text-rose-100'
+                : evalResult?.readinessStatus === 'missing_arm_landmarks' || evalResult?.readinessStatus === 'missing_shoulder'
+                ? 'bg-cyan-950/90 border-cyan-400 text-cyan-100 shadow-cyan-950/50'
                 : evalResult?.formRating === 'warning'
                 ? 'bg-amber-950/85 border-amber-500 text-amber-100'
                 : 'bg-slate-900/85 border-emerald-500/40 text-emerald-200'
@@ -714,6 +830,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             <div className="text-2xl shrink-0">
               {evalResult?.formRating === 'error'
                 ? '🚨'
+                : evalResult?.readinessStatus === 'missing_arm_landmarks' || evalResult?.readinessStatus === 'missing_shoulder'
+                ? '📷'
                 : evalResult?.formRating === 'warning'
                 ? '⚠️'
                 : isPendulum
@@ -725,7 +843,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 {evalResult?.coachingMessageTh || 'เตรียมพร้อมในตำแหน่งเริ่มต้น'}
               </div>
               {/* Hold / Pendulum Progress Bar */}
-              {progressRatio > 0 && (
+              {progressRatio > 0 && !evalResult?.readinessStatus && (
                 <div className="w-full bg-slate-950/50 rounded-full h-2 mt-2 overflow-hidden">
                   <div
                     className="bg-gradient-to-r from-emerald-400 to-teal-300 h-full transition-all duration-75"
@@ -736,7 +854,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
             {/* Live Angle or Percentage Badge */}
             <div className="px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-700/60 font-mono text-xs sm:text-sm font-bold text-white shrink-0">
-              {isPendulum
+              {evalResult?.readinessStatus
+                ? 'รอจัดท่า'
+                : isPendulum
                 ? `${Math.round(progressRatio * 100)}%`
                 : `${evalResult?.currentAngleDeg || 0}°`}
             </div>
