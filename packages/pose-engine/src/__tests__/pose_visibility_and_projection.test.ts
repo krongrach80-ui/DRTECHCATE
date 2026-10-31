@@ -330,6 +330,65 @@ describe('Pose Visibility & Projection Test Suite', () => {
       expect(res.accuracyPct).toBeDefined();
       expect(isNaN(res.currentAngleDeg)).toBe(false);
     });
+
+    it('3.5 supports Tier 3 Upper-Body Mode (desktop webcam close-up) with shoulder circular sway without freezing at 0%', () => {
+      const config = {
+        ...SHOULDER_PENDULUM_PRESET,
+        side: 'right' as const,
+        pendulumMechanics: {
+          ...SHOULDER_PENDULUM_PRESET.pendulumMechanics!,
+          minCycleDurationSec: 0.4,
+          maxCycleDurationSec: 5.0,
+        },
+      };
+      const machine = new RepStateMachine(config);
+      let currentTime = 1000;
+
+      // User sitting close to webcam: Elbow & Wrist below screen edge, Hips occluded under desk
+      const centerX = 0.5;
+      const centerY = 0.35;
+      const swayRadius = 0.05;
+
+      // Initial stationary frame (s = 0)
+      const initialSkel = createMockSkeleton();
+      initialSkel[12] = { x: centerX, y: centerY, z: 0.0, visibility: 0.92 }; // R.Shoulder visible
+      initialSkel[14] = { x: centerX, y: 1.05, z: 0.0, visibility: 0.15 };   // R.Elbow out of frame
+      initialSkel[16] = { x: centerX, y: 1.15, z: 0.0, visibility: 0.10 };   // R.Wrist out of frame
+      initialSkel[24] = { x: centerX, y: 1.20, z: 0.0, visibility: 0.05 };   // R.Hip out of frame
+
+      const initialRes = machine.evaluate(initialSkel, currentTime);
+      expect(initialRes.readinessStatus).toBe('missing_arm_landmarks');
+      expect(initialRes.coachingMessageTh).toContain('ไม่พบข้อศอกและข้อมือข้างที่ฝึก');
+      expect(initialRes.coachingMessageTh).toContain('โหมดครึ่งตัวบน');
+      expect(initialRes.completedReps).toBe(0);
+
+      // Now user performs circular shoulder sway in Upper-Body Mode
+      const steps = 20;
+      let activeProgressSeen = false;
+      for (let s = 0; s <= steps; s++) {
+        currentTime += 40;
+        const theta = (2 * Math.PI * s) / 16;
+        const shoulderX = centerX + swayRadius * Math.cos(theta);
+        const shoulderY = centerY + swayRadius * Math.sin(theta);
+
+        const skel = createMockSkeleton();
+        skel[12] = { x: shoulderX, y: shoulderY, z: 0.0, visibility: 0.92 };
+        skel[14] = { x: shoulderX, y: 1.05, z: 0.0, visibility: 0.15 };
+        skel[16] = { x: shoulderX, y: 1.15, z: 0.0, visibility: 0.10 };
+        skel[24] = { x: shoulderX, y: 1.20, z: 0.0, visibility: 0.05 };
+
+        const res = machine.evaluate(skel, currentTime);
+        if ((res.accuracyPct ?? 0) > 0) {
+          activeProgressSeen = true;
+          expect(res.readinessStatus).toBe('ready');
+          expect(res.coachingMessageTh).toContain('โหมดครึ่งตัวบน');
+        }
+      }
+
+      expect(activeProgressSeen).toBe(true);
+      const finalRes = machine.evaluate(initialSkel, currentTime + 50);
+      expect(finalRes.completedReps).toBe(1);
+    });
   });
 });
 

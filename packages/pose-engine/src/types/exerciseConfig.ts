@@ -199,7 +199,8 @@ export interface RepEvaluationResult {
     | 'missing_arm_landmarks'
     | 'missing_lower_body'
     | 'missing_head_shoulders'
-    | 'missing_full_body';
+    | 'missing_full_body'
+    | 'partial_upper_body';
   filteredLandmarks: PoseEngineLandmark[];
 }
 

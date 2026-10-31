@@ -27,6 +27,31 @@ import { ShoulderPendulumAnalyzer } from '../math/pendulumAnalyzer';
 import { CompensationDetector } from '../compensation';
 import { ForegroundSubjectLocker, SubjectLockResult } from '../subjectLock';
 
+export interface LandmarkVisibilityPolicy {
+  shoulderMinVis: number; // 0.45 (จุดหลักที่ต้องเห็นในโหมดครึ่งตัว)
+  elbowMinVis: number; // 0.40 (ถ้าไม่เห็น ใช้ Upper-Body Shoulder/Torso Fallback)
+  wristMinVis: number; // 0.35 (ถ้าไม่เห็น ใช้ Elbow หรือ Shoulder Fallback)
+  hipMinVis: number; // 0.30 (ถ้าไม่เห็นในท่านั่งโต๊ะ คำนวณแกนลำตัวจากกึ่งกลางไหล่เทียบแนวดิ่ง)
+}
+
+export const DEFAULT_LANDMARK_VISIBILITY_POLICY: LandmarkVisibilityPolicy = {
+  shoulderMinVis: 0.45,
+  elbowMinVis: 0.40,
+  wristMinVis: 0.35,
+  hipMinVis: 0.30,
+};
+
+export function isLandmarkUsable(
+  lm: PoseEngineLandmark | undefined,
+  minVis: number
+): boolean {
+  if (!lm) return false;
+  // ตัดจุดที่หลุดขอบจอออกไปก่อนคำนวณ
+  if (lm.x < 0.01 || lm.x > 0.99 || lm.y < 0.01 || lm.y > 0.99) return false;
+  const vis = lm.visibility !== undefined ? lm.visibility : 1.0;
+  return vis >= minVis;
+}
+
 export class RepStateMachine {
   private config: ExerciseDetectionConfig;
   private phase: RepPhase = 'IDLE';
@@ -772,7 +797,12 @@ export class RepStateMachine {
   }
 
   /**
-   * Evaluates Shoulder Pendulum circular trajectory
+  /**
+   * ประเมินท่า Shoulder Pendulum และท่าช่วงบนแบบยืดหยุ่น (Upper-Body Adaptive Fallback):
+   * - ถ้านั่งหน้าคอมและเห็นทั้ง ไหล่ + ศอก + ข้อมือ -> ใช้ Full Wrist Circular Trajectory
+   * - ถ้าเห็น ไหล่ + ศอก (ไม่เห็นข้อมือ) -> ใช้ Elbow Trajectory แทนข้อมือ
+   * - ถ้าเห็นเฉพาะ หัวไหล่ + ช่วงอก (นั่งใกล้หน้าจอคอม) -> ใช้ Shoulder & Upper-Torso Circular Sway/Oscillation
+   *   พร้อมแจ้งสถานะ "ตรวจจับได้บางส่วน (โหมดครึ่งตัวบน)" โดยไม่บล็อกการนับครั้งและไม่ค้างที่ 0%!
    */
   private evaluatePendulumCircular(
     landmarks: PoseEngineLandmark[],
@@ -794,62 +824,78 @@ export class RepStateMachine {
     const wIdx = isRight ? 16 : 15;
     const hIdx = isRight ? 24 : 23;
 
-    const isInFrame = (lm?: PoseEngineLandmark) =>
-      Boolean(lm && lm.x >= -0.15 && lm.x <= 1.15 && lm.y >= -0.15 && lm.y <= 1.25);
-    const isVisible = (lm?: PoseEngineLandmark) =>
-      Boolean(lm && (lm.visibility ?? 1.0) >= 0.35 && isInFrame(lm));
-
+    const policy = DEFAULT_LANDMARK_VISIBILITY_POLICY;
     const shoulder = landmarks[sIdx];
     const elbow = landmarks[eIdx];
     const wrist = landmarks[wIdx];
-    const hip = landmarks[hIdx] || (shoulder ? { x: shoulder.x, y: shoulder.y + 0.35, z: shoulder.z ?? 0 } : undefined);
+    const hip = landmarks[hIdx];
 
-    if (!shoulder || !isVisible(shoulder)) {
+    // Tier 4 / Baseline Gate: Shoulder landmark must be detected
+    if (!shoulder || !isLandmarkUsable(shoulder, policy.shoulderMinVis)) {
       const def = this.createDefaultResult(
         landmarks,
         '📷 ไม่พบหัวไหล่ในภาพ กรุณาถอยห่างจากกล้องประมาณ 1.5–2 เมตร'
       );
+      def.coachingMessageEn = '📷 Shoulder not detected. Please step back 1.5–2 meters.';
+      def.coachingMessageCn = '📷 未检测到肩部，请后退1.5-2米。';
       def.readinessStatus = 'missing_shoulder';
       def.formRating = 'warning';
       return def;
     }
 
-    const hasElbow = Boolean(elbow && isVisible(elbow));
-    const hasWrist = Boolean(wrist && isVisible(wrist));
+    const hasElbow = isLandmarkUsable(elbow, policy.elbowMinVis);
+    const hasWrist = isLandmarkUsable(wrist, policy.wristMinVis);
+    const hasHip = isLandmarkUsable(hip, policy.hipMinVis);
 
-    // Only gate if BOTH elbow and wrist are completely untrackable
-    if (!hasElbow && !hasWrist) {
-      const def = this.createDefaultResult(
-        landmarks,
-        '📷 ไม่พบข้อศอกและข้อมือข้างที่ฝึก กรุณาถอยห่างจากกล้องหรือปรับมุมกล้องให้เห็นแขนตั้งแต่ไหล่ถึงข้อมือ'
-      );
-      def.readinessStatus = 'missing_arm_landmarks';
-      def.formRating = 'warning';
-      return def;
+    // Seated Desk / Upper-Body Mode Hip Synthesis:
+    // If hip is occluded below desk line, synthesize torso axis from midShoulder with ergonomic forward lean
+    // (forward tilt ~24.5° relative to gravity vertical axis, within safe clinical envelope [18°, 65°])
+    const effectiveHip: PoseEngineLandmark = hasHip
+      ? hip!
+      : {
+          x: shoulder.x,
+          y: shoulder.y + 0.35,
+          z: (shoulder.z ?? 0) + 0.16,
+          visibility: 0.85,
+        };
+
+    // 3-Tier Upper-Body Adaptive Arm Trajectory Synthesis
+    let effectiveElbow: PoseEngineLandmark;
+    let effectiveWrist: PoseEngineLandmark;
+    let isUpperBodyOnly = false;
+    let isElbowFallback = false;
+
+    if (hasElbow && hasWrist) {
+      // Tier 1: Full Arm - Shoulder + Elbow + Wrist visible -> Full Wrist Circular Trajectory
+      effectiveElbow = elbow!;
+      effectiveWrist = wrist!;
+    } else if (hasElbow && !hasWrist) {
+      // Tier 2: Forearm occluded / desk edge - Elbow visible -> Elbow Trajectory replaces wrist
+      isElbowFallback = true;
+      effectiveElbow = elbow!;
+      effectiveWrist = {
+        x: effectiveElbow.x + (effectiveElbow.x - shoulder.x) * 0.4,
+        y: effectiveElbow.y + 0.20,
+        z: effectiveElbow.z ?? 0,
+        visibility: 0.85,
+      };
+    } else {
+      // Tier 3: Sitting close / Desktop webcam mode - Only Shoulder + Upper-Torso visible
+      // Use Shoulder & Upper-Torso Circular Sway/Oscillation
+      isUpperBodyOnly = true;
+      effectiveElbow = {
+        x: shoulder.x,
+        y: shoulder.y + 0.15,
+        z: shoulder.z ?? 0,
+        visibility: 0.85,
+      };
+      effectiveWrist = {
+        x: shoulder.x,
+        y: shoulder.y + 0.30,
+        z: shoulder.z ?? 0,
+        visibility: 0.85,
+      };
     }
-
-    // Adaptive Arm Synthesis: If elbow is visible but wrist is occluded by desk/screen edge, extrapolate forearm
-    const effectiveElbow: PoseEngineLandmark = hasElbow
-      ? elbow!
-      : {
-          x: shoulder.x + ((wrist?.x ?? shoulder.x) - shoulder.x) * 0.5,
-          y: shoulder.y + Math.max(0.12, ((wrist?.y ?? shoulder.y + 0.3) - shoulder.y) * 0.5),
-          z: shoulder.z ?? 0,
-          visibility: 0.85,
-        };
-
-    const effectiveWrist: PoseEngineLandmark = hasWrist
-      ? wrist!
-      : {
-          x: effectiveElbow.x + (effectiveElbow.x - shoulder.x) * 0.8,
-          y: effectiveElbow.y + Math.max(0.12, Math.abs(effectiveElbow.y - shoulder.y) * 0.8),
-          z: effectiveElbow.z ?? 0,
-          visibility: 0.85,
-        };
-
-    const effectiveHip = (hip && isVisible(hip))
-      ? hip
-      : { x: shoulder.x, y: shoulder.y + 0.35, z: shoulder.z ?? 0, visibility: 0.9 };
 
     const result = this.pendulumAnalyzer.update({
       shoulder,
@@ -875,6 +921,7 @@ export class RepStateMachine {
 
     let coachingMessage = 'แกว่งแขนเบาๆ เป็นวงกลมตามแรงโน้มถ่วง';
     let formRating: 'good' | 'warning' | 'error' = 'good';
+    let readinessStatus: RepEvaluationResult['readinessStatus'] = 'ready';
     const activeWarnings: ActiveCompensationWarning[] = [];
 
     if (lockResult?.isOccluded) {
@@ -888,6 +935,24 @@ export class RepStateMachine {
         currentValue: lockResult.averageVisibility,
         thresholdValue: 0.65,
       });
+    } else if (isUpperBodyOnly) {
+      if (result.cycleProgressRatio > 0) {
+        // Upper-Body Mode Active Sway: Never block rep counting and never freeze at 0%!
+        readinessStatus = 'ready';
+        formRating = 'good';
+        coachingMessage = `ตรวจจับได้บางส่วน (โหมดครึ่งตัวบน) — กำลังวิเคราะห์การแกว่งหัวไหล่ (${Math.round(result.cycleProgressRatio * 100)}%)`;
+      } else {
+        // Stationary posture in Upper-Body Mode: Prompt guidance without false elbow-bend warning
+        readinessStatus = 'missing_arm_landmarks';
+        formRating = 'warning';
+        coachingMessage = '📷 ไม่พบข้อศอกและข้อมือข้างที่ฝึก — ตรวจจับได้บางส่วน (โหมดครึ่งตัวบน) เริ่มแกว่งหัวไหล่หรือถอยห่างจากกล้อง';
+      }
+    } else if (isElbowFallback) {
+      if (result.cycleProgressRatio > 0) {
+        coachingMessage = `ตรวจจับได้บางส่วน (ติดตามข้อศอก) — แกว่งเป็นวงกลมต่อเนื่อง (${Math.round(result.cycleProgressRatio * 100)}%)`;
+      } else {
+        coachingMessage = 'ตรวจจับได้บางส่วน (ติดตามข้อศอก) — พร้อมแล้วเริ่มแกว่งแขนเป็นวงกลม';
+      }
     } else if (result.warningTh) {
       coachingMessage = result.warningTh;
       formRating = 'warning';
@@ -932,7 +997,7 @@ export class RepStateMachine {
       isSubjectLocked: lockResult?.isSubjectLocked ?? true,
       isFrameDropped: lockResult?.isFrameDropped ?? false,
       frameDropReason: lockResult?.frameDropReason,
-      readinessStatus: 'ready',
+      readinessStatus,
       filteredLandmarks: landmarks,
     };
   }
