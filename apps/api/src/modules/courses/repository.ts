@@ -604,17 +604,14 @@ export class CourseRepository implements ICourseRepository {
     accessiblePatientIds?: string[] | null
   ): Promise<CourseRecord[]> {
     try {
-      await this.cleanupPastCourses();
-      const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
-      const effectiveStartDate = startDate < todayBkk ? todayBkk : startDate;
-
+      // 100% Read-Only: Never auto-delete or clamp start date during calendar read/refetch
       const adminClient = getAdminClient();
       let query = adminClient
         .from('courses')
         .select('*, items:course_items(*)')
         .eq('status', 'active')
         .lte('start_date', endDate)
-        .gte('end_date', effectiveStartDate);
+        .gte('end_date', startDate);
 
       if (ptId) {
         query = query.eq('pt_id', ptId);

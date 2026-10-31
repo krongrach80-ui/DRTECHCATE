@@ -286,32 +286,34 @@ export class DirectoryRepository implements IDirectoryRepository {
       let records = (data as ExerciseRecord[]) || [];
       records = records.filter((e) => (e as any).is_active !== false);
 
-      // Ensure Shoulder Pendulum is present in catalog
-      const hasPendulum = records.some(
-        (e) =>
-          e.title?.toLowerCase().includes('pendulum') ||
-          e.title?.includes('แกว่งแขน') ||
-          e.id === SHOULDER_PENDULUM_PRESET.id ||
-          e.id === SHOULDER_PENDULUM_PRESET.exerciseId
-      );
-      if (!hasPendulum) {
-        records.unshift({
-          id: SHOULDER_PENDULUM_PRESET.exerciseId || 'e1000000-0000-0000-0000-000000000001',
-          title: SHOULDER_PENDULUM_PRESET.nameTh,
-          image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || '/assets/exercises/shoulder_pendulum.mp4',
-          description: SHOULDER_PENDULUM_PRESET.description || 'Codman Shoulder Pendulum',
-          target_joint: 'shoulder',
-          suitable_for: 'ผู้ป่วยข้อไหล่ติด หรือฟื้นฟูหลังผ่าตัดหัวไหล่',
-          warnings: 'หากรู้สึกเจ็บแหลมหรือเวียนศีรษะ ให้หยุดทันที',
-          default_sets: 3,
-          default_reps: 10,
-          difficulty: 'beginner',
-          detection_config: SHOULDER_PENDULUM_PRESET,
-          created_by: '00000000-0000-0000-0000-000000000001',
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
+      // Ensure all 10 clinical exercises are present in catalog
+      for (const preset of DEFAULT_CLINICAL_PRESETS) {
+        const found = records.some(
+          (e) =>
+            e.id === preset.id ||
+            e.id === preset.exerciseId ||
+            e.title === preset.nameTh ||
+            (preset.nameEn && e.title?.toLowerCase().includes(preset.nameEn.toLowerCase()))
+        );
+        if (!found) {
+          records.push({
+            id: preset.exerciseId || preset.id || 'ex-default',
+            title: preset.nameTh,
+            image_path: preset.mediaUrl || null,
+            description: preset.descriptionTh || preset.description || preset.nameEn,
+            target_joint: preset.targetJoint || null,
+            suitable_for: null,
+            warnings: preset.safetyContraindications?.stopOnPainMessageTh || null,
+            default_sets: preset.defaultPrescription?.totalSets || 3,
+            default_reps: preset.defaultPrescription?.repsPerSet || 10,
+            difficulty: 'beginner',
+            detection_config: preset,
+            created_by: '00000000-0000-0000-0000-000000000001',
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
       }
 
       // Populate detection_config for all exercises lacking it

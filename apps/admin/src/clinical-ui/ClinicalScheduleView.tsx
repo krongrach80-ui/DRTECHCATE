@@ -64,6 +64,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   // Modal State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardPatientId, setWizardPatientId] = useState<string | undefined>(undefined);
+  const [wizardPreselectedDate, setWizardPreselectedDate] = useState<string | undefined>(undefined);
 
   // Dynamic current month state
   const now = useMemo(() => new Date(), []);
@@ -85,7 +86,16 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       const patientArr = Array.isArray(list) && list.length > 0 ? list : DEMO_PATIENTS;
       const dossierArr = Array.isArray(dossierList) && dossierList.length > 0 ? dossierList : DEMO_DOSSIERS;
       setPatients(patientArr);
-      setDossiers(dossierArr);
+      setDossiers((prev) => {
+        // Safe deterministic merge: preserve recent schedule edits if refetch returned null or stale
+        return dossierArr.map((d) => {
+          const local = prev.find((p) => p.patient_id === d.patient_id || p.hn === d.hn);
+          if (local?.schedule && !d.schedule) {
+            return { ...d, schedule: local.schedule };
+          }
+          return d;
+        });
+      });
       setSelectedPatient((prev) => prev ?? patientArr[0]);
     } catch {
       setPatients(DEMO_PATIENTS);
@@ -108,9 +118,10 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     };
   }, [loadData]);
 
-  const handleOpenWizard = (patientId?: string) => {
+  const handleOpenWizard = (patientId?: string, dateStr?: string) => {
     const targetId = patientId || selectedPatient?.id;
     setWizardPatientId(targetId);
+    setWizardPreselectedDate(dateStr);
     setIsWizardOpen(true);
     onOpenCreateScheduleModal?.(targetId);
   };
@@ -121,7 +132,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     return () => clearTimeout(timer);
   }, [notification]);
 
-  const todayBkkStr = useMemo(() => {
+  const _todayBkkStr = useMemo(() => {
     try {
       return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
     } catch {
@@ -129,7 +140,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     }
   }, []);
 
-  const handleAddCourseForDate = async (dateStr: string, patientId?: string) => {
+  const _handleAddCourseForDate = async (dateStr: string, patientId?: string) => {
     const targetPatientId = patientId || selectedPatient?.id;
     if (!targetPatientId) {
       setNotification('กรุณาเลือกคนไข้ก่อนจัดคอร์ส');
@@ -864,17 +875,17 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
                   <div className="text-[10px] text-slate-300 font-medium">พักฟื้น</div>
                 )}
 
-                {/* Hover Add Course Button */}
+                {/* Hover Add Course Button: Opens Wizard pre-filled with this date and patient */}
                 <button
                   type="button"
-                  disabled={Boolean(isSubmittingByDate[dateStr])}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void handleAddCourseForDate(dateStr, selectedPatient?.id);
+                    handleOpenWizard(selectedPatient?.id, dateStr);
                   }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-full py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold text-center disabled:opacity-50 cursor-pointer"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-full py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold text-center cursor-pointer shadow-sm flex items-center justify-center gap-1"
                 >
-                  {isSubmittingByDate[dateStr] ? 'กำลังบันทึก...' : '+ จัดคอร์สวันนี้'}
+                  <Plus className="w-3 h-3" />
+                  + จัดคอร์สวันนี้
                 </button>
               </div>
             );
@@ -887,12 +898,26 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       {/* 3-Step Smart Schedule Wizard Modal */}
       <SmartScheduleWizardModal
         isOpen={isWizardOpen}
-        onClose={() => setIsWizardOpen(false)}
-        onSuccess={() => {
+        onClose={() => {
           setIsWizardOpen(false);
+          setWizardPreselectedDate(undefined);
+        }}
+        onSuccess={(savedSchedule, targetPatientId) => {
+          setIsWizardOpen(false);
+          setWizardPreselectedDate(undefined);
+          if (savedSchedule && targetPatientId) {
+            setDossiers((prev) =>
+              prev.map((d) =>
+                d.patient_id === targetPatientId || d.hn === targetPatientId
+                  ? { ...d, schedule: savedSchedule }
+                  : d
+              )
+            );
+          }
           void loadData();
         }}
         preselectedPatientId={wizardPatientId}
+        preselectedDate={wizardPreselectedDate}
       />
     </div>
   );

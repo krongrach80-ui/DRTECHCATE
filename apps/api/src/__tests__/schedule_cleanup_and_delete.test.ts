@@ -25,7 +25,7 @@ describe('Schedule Auto-Cleanup & Manual Deletion Integration Tests', () => {
   const testPatient2 = `P-CLEANUP-2-${Date.now()}`;
   const baseUploadDir = path.resolve(process.cwd(), 'public', 'uploads', 'patients');
 
-  const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+  const _todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
   const now = new Date();
   const yesterday = new Date(now.getTime() - 86400000);
   const yesterdayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(yesterday);
@@ -48,8 +48,8 @@ describe('Schedule Auto-Cleanup & Manual Deletion Integration Tests', () => {
     });
   });
 
-  describe('Test 1: Auto-Delete Past / Expired Schedules (Asia/Bangkok)', () => {
-    it('1.1 should auto-clean expired schedules where end_date < today', async () => {
+  describe('Test 1: 100% Read-Only Contracts on GET (No Auto-Prune or Auto-Deletion)', () => {
+    it('1.1 should preserve past schedules on GET (read-only, never auto-deletes)', async () => {
       // Create patient with schedule completely in the past (ended yesterday)
       const expiredRecord: PatientRecordFile = {
         patient_id: testPatient1,
@@ -95,16 +95,18 @@ describe('Schedule Auto-Cleanup & Manual Deletion Integration Tests', () => {
         .get(`/api/smart-onboarding/schedule/${testPatient1}`)
         .expect(200);
 
-      // The expired schedule MUST be auto-deleted (null)
+      // The schedule MUST NOT be auto-deleted (100% Read-Only)
       expect(res.body.ok).toBe(true);
-      expect(res.body.data.schedule).toBeNull();
+      expect(res.body.data.schedule).toBeTruthy();
+      expect(res.body.data.schedule.endDate).toBe(yesterdayStr);
 
-      // Check vault file: schedule was cleaned up
-      const afterCleanup = defaultPatientVaultService.getPatientRecord(testPatient1);
-      expect(afterCleanup?.schedule).toBeNull();
+      // Check vault file: schedule remains intact
+      const afterRead = defaultPatientVaultService.getPatientRecord(testPatient1);
+      expect(afterRead?.schedule).toBeTruthy();
+      expect(afterRead?.schedule?.endDate).toBe(yesterdayStr);
     });
 
-    it('1.2 should prune past start dates so ongoing schedule starts at today', async () => {
+    it('1.2 should preserve original startDate without pruning on GET', async () => {
       // Create patient with schedule spanning from past (2026-10-01) to tomorrow
       const ongoingRecord: PatientRecordFile = {
         patient_id: testPatient2,
@@ -148,8 +150,8 @@ describe('Schedule Auto-Cleanup & Manual Deletion Integration Tests', () => {
       expect(res.body.ok).toBe(true);
       const sched = res.body.data.schedule;
       expect(sched).toBeTruthy();
-      // Start date must be pruned to todayBkk so past dates are never scheduled
-      expect(sched.startDate).toBe(todayBkk);
+      // Start date must be preserved without pruning
+      expect(sched.startDate).toBe('2026-10-01');
       expect(sched.endDate).toBe(dayAfterTomorrowStr);
     });
   });

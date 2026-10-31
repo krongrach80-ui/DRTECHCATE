@@ -3030,30 +3030,636 @@ var init_repository6 = __esm({
   }
 });
 
+// packages/pose-engine/src/presets/exercises.config.ts
+function getClinicalExerciseConfig(idOrName) {
+  if (!idOrName) return null;
+  const q = idOrName.toLowerCase().trim();
+  if (CLINICAL_EXERCISES_CONFIG[q]) {
+    return CLINICAL_EXERCISES_CONFIG[q];
+  }
+  for (const ex of ALL_CLINICAL_EXERCISES) {
+    if (ex.id === q || ex.exerciseId === q) return ex;
+    if (ex.nameTh.toLowerCase().includes(q) || q.includes(ex.nameTh.toLowerCase())) return ex;
+    if (ex.nameEn.toLowerCase().includes(q) || q.includes(ex.nameEn.toLowerCase())) return ex;
+    if (ex.nameCn && (ex.nameCn.includes(q) || q.includes(ex.nameCn))) return ex;
+  }
+  if (q.includes("pendulum") || q.includes("\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19") || q.includes("\u949F\u6446")) return CLINICAL_EXERCISES_CONFIG["shoulder-pendulum"];
+  if (q.includes("flexion") || q.includes("\u0E22\u0E01\u0E41\u0E02\u0E19") || q.includes("\u524D\u5C48")) return CLINICAL_EXERCISES_CONFIG["shoulder-flexion"];
+  if (q.includes("abduction") || q.includes("\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19") || q.includes("\u5916\u5C55")) return CLINICAL_EXERCISES_CONFIG["shoulder-abduction"];
+  if (q.includes("elbow") || q.includes("\u0E28\u0E2D\u0E01") || q.includes("\u5C48\u4F38")) return CLINICAL_EXERCISES_CONFIG["elbow-flexion"];
+  if (q.includes("pushup") || q.includes("\u0E14\u0E31\u0E19\u0E1C\u0E19\u0E31\u0E07") || q.includes("\u63A8\u5899")) return CLINICAL_EXERCISES_CONFIG["wall-pushup"];
+  if (q.includes("neck") || q.includes("\u0E04\u0E2D") || q.includes("\u9888\u90E8")) return CLINICAL_EXERCISES_CONFIG["neck-side-tilt"];
+  if (q.includes("stand") || q.includes("\u0E25\u0E38\u0E01\u0E22\u0E37\u0E19") || q.includes("\u8D77\u7ACB")) return CLINICAL_EXERCISES_CONFIG["sit-to-stand"];
+  if (q.includes("knee") || q.includes("\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E40\u0E02\u0E48\u0E32") || q.includes("\u4F38\u819D")) return CLINICAL_EXERCISES_CONFIG["seated-knee-ext"];
+  if (q.includes("hip") || q.includes("\u0E22\u0E01\u0E02\u0E32") || q.includes("\u4FA7\u62AC\u817F")) return CLINICAL_EXERCISES_CONFIG["standing-hip-abd"];
+  if (q.includes("heel") || q.includes("\u0E40\u0E02\u0E22\u0E48\u0E07") || q.includes("\u63D0\u8E35")) return CLINICAL_EXERCISES_CONFIG["heel-raise"];
+  return null;
+}
+var CLINICAL_EXERCISES_CONFIG, ALL_CLINICAL_EXERCISES;
+var init_exercises_config = __esm({
+  "packages/pose-engine/src/presets/exercises.config.ts"() {
+    "use strict";
+    CLINICAL_EXERCISES_CONFIG = {
+      // 1. Shoulder Pendulum
+      "shoulder-pendulum": {
+        id: "shoulder-pendulum",
+        exerciseId: "e1000000-0000-0000-0000-000000000001",
+        nameTh: "\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 (Shoulder Pendulum)",
+        nameEn: "Shoulder Pendulum",
+        nameCn: "\u949F\u6446\u6446\u81C2\u653E\u677E\u80A9\u90E8",
+        descriptionTh: "\u0E42\u0E19\u0E49\u0E21\u0E15\u0E31\u0E27\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32 \u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E41\u0E02\u0E19\u0E2B\u0E49\u0E2D\u0E22\u0E15\u0E23\u0E07\u0E15\u0E32\u0E21\u0E41\u0E23\u0E07\u0E42\u0E19\u0E49\u0E21\u0E16\u0E48\u0E27\u0E07 \u0E41\u0E25\u0E30\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19\u0E40\u0E1B\u0E47\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48",
+        descriptionEn: "Lean forward, let the affected arm hang loose under gravity, and swing gently in circular motions to mobilize the shoulder joint.",
+        descriptionCn: "\u8EAB\u4F53\u5FAE\u524D\u503E\uFF0C\u8BA9\u624B\u81C2\u81EA\u7136\u4E0B\u5782\uFF0C\u8F7B\u67D4\u987A\u6ED1\u5730\u753B\u5706\u6446\u52A8\uFF0C\u653E\u677E\u80A9\u5173\u8282\u5468\u56F4\u808C\u7FA4\u3002",
+        framing: "upper_body",
+        evaluationMode: "pendulum_circular",
+        side: "bilateral",
+        targetJoint: "shoulder",
+        mediaUrl: "/assets/exercises/shoulder_pendulum.mp4",
+        cameraGuide: {
+          recommendedView: "side_45",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E22\u0E37\u0E19\u0E2B\u0E31\u0E19\u0E02\u0E49\u0E32\u0E07 45\xB0 \u0E16\u0E36\u0E07 90\xB0 \u0E23\u0E30\u0E22\u0E30\u0E2B\u0E48\u0E32\u0E07 1.5\u20132.5 \u0E21. \u0E42\u0E19\u0E49\u0E21\u0E15\u0E31\u0E27\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E40\u0E25\u0E47\u0E01\u0E19\u0E49\u0E2D\u0E22 \u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E41\u0E02\u0E19\u0E2B\u0E49\u0E2D\u0E22\u0E2A\u0E1A\u0E32\u0E22\u0E46",
+          instructionTextEn: "Stand at a 45\xB0\u201390\xB0 angle, 1.5\u20132.5m from camera. Lean slightly forward with your arm hanging relaxed.",
+          instructionTextCn: "\u4FA7\u8EAB45\xB0\u81F390\xB0\u9762\u5411\u6444\u50CF\u5934\uFF0C\u8DDD\u79BB1.5-2.5\u7C73\u3002\u8EAB\u4F53\u5FAE\u524D\u503E\uFF0C\u624B\u81C2\u81EA\u7136\u4E0B\u5782\u3002"
+        },
+        pendulumMechanics: {
+          minTrunkForwardTiltDeg: 18,
+          maxTrunkForwardTiltDeg: 65,
+          minElbowStraightnessDeg: 145,
+          minCircleRadiusRatio: 0.07,
+          maxCircleRadiusRatio: 0.35,
+          minCycleDurationSec: 1.2,
+          maxCycleDurationSec: 5
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "pendulum_trunk_lean",
+            type: "trunk_lean",
+            thresholdValue: 0.25,
+            warningMessageTh: "\u0E42\u0E19\u0E49\u0E21\u0E15\u0E31\u0E27\u0E43\u0E2B\u0E49\u0E21\u0E31\u0E48\u0E19\u0E04\u0E07 \u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E41\u0E02\u0E19\u0E41\u0E01\u0E27\u0E48\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22",
+            warningMessageEn: "Keep trunk steady, allow arm to swing freely",
+            warningMessageCn: "\u8BF7\u4FDD\u6301\u8EAB\u4F53\u7A33\u5B9A\uFF0C\u8BA9\u624B\u81C2\u81EA\u7136\u653E\u677E\u6446\u52A8",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E40\u0E08\u0E47\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35\u0E41\u0E25\u0E30\u0E41\u0E08\u0E49\u0E07\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14",
+          stopOnPainMessageEn: "Stop immediately if sharp shoulder pain occurs.",
+          stopOnPainMessageCn: "\u82E5\u80A9\u90E8\u51FA\u73B0\u660E\u663E\u75BC\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62\u3002",
+          maxSafeAngleCapDeg: 90
+        }
+      },
+      // 2. Shoulder Flexion
+      "shoulder-flexion": {
+        id: "shoulder-flexion",
+        exerciseId: "e1000000-0000-0000-0000-000000000002",
+        nameTh: "\u0E22\u0E01\u0E41\u0E02\u0E19\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32 (Shoulder Flexion)",
+        nameEn: "Shoulder Flexion",
+        nameCn: "\u80A9\u90E8\u524D\u5C48\u4E3E\u81C2",
+        descriptionTh: "\u0E22\u0E37\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E22\u0E01\u0E41\u0E02\u0E19\u0E15\u0E23\u0E07\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E08\u0E19\u0E16\u0E36\u0E07\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E40\u0E2B\u0E19\u0E37\u0E2D\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E41\u0E25\u0E49\u0E27\u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E25\u0E14\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E25\u0E07",
+        descriptionEn: "Raise arm forward and upward toward overhead position in a controlled motion, then lower smoothly.",
+        descriptionCn: "\u4FDD\u6301\u8EAB\u59FF\u76F4\u7ACB\uFF0C\u5C06\u624B\u81C2\u5411\u524D\u4E0A\u65B9\u5E73\u7A33\u62AC\u8D77\u81F3\u76EE\u6807\u89D2\u5EA6\uFF0C\u968F\u540E\u7F13\u6162\u653E\u4E0B\u3002",
+        framing: "upper_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "shoulder",
+        mediaUrl: "/assets/exercises/shoulder_flexion.mp4",
+        cameraGuide: {
+          recommendedView: "side_90",
+          recommendedDistanceMeters: [1.8, 2.8],
+          instructionTextTh: "\u0E22\u0E37\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E31\u0E19\u0E02\u0E49\u0E32\u0E07 45\xB0\u201390\xB0 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E25\u0E33\u0E15\u0E31\u0E27\u0E41\u0E25\u0E30\u0E41\u0E02\u0E19\u0E02\u0E49\u0E32\u0E07\u0E17\u0E35\u0E48\u0E1D\u0E36\u0E01\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E2A\u0E30\u0E42\u0E1E\u0E01\u0E16\u0E36\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D",
+          instructionTextEn: "Position side-on (45\xB0\u201390\xB0), 1.8\u20132.8m from camera, ensuring hip, shoulder, and wrist are visible.",
+          instructionTextCn: "\u4FA7\u8EAB45\xB0\u81F390\xB0\u5C31\u5750\u6216\u7AD9\u7ACB\uFF0C\u8DDD\u79BB1.8-2.8\u7C73\uFF0C\u786E\u4FDD\u9ACB\u3001\u80A9\u3001\u8155\u6E05\u6670\u53EF\u89C1\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 23, vertex: 11, pointB: 15, use3DWorld: true },
+            // Hip -> Shoulder -> Wrist
+            right: { pointA: 24, vertex: 12, pointB: 16, use3DWorld: true }
+          },
+          direction: "increase",
+          startAngleDeg: 25,
+          targetMinDeg: 140,
+          targetMaxDeg: 170,
+          toleranceDeg: 12,
+          holdDurationSec: 1
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "flexion_trunk_lean",
+            type: "trunk_lean",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E23\u0E31\u0E01\u0E29\u0E32\u0E25\u0E33\u0E15\u0E31\u0E27\u0E43\u0E2B\u0E49\u0E15\u0E23\u0E07 \u0E2D\u0E22\u0E48\u0E32\u0E40\u0E2D\u0E19\u0E15\u0E31\u0E27\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E02\u0E13\u0E30\u0E22\u0E01\u0E41\u0E02\u0E19",
+            warningMessageEn: "Keep body upright, avoid leaning backward while raising arm",
+            warningMessageCn: "\u8BF7\u4FDD\u6301\u8EAB\u4F53\u6B63\u76F4\uFF0C\u4E3E\u81C2\u65F6\u907F\u514D\u540E\u4EF0\u501F\u529B",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "If shoulder joint pain is felt, stop immediately.",
+          stopOnPainMessageCn: "\u5982\u611F\u5230\u80A9\u5173\u8282\u523A\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62\u3002",
+          maxSafeAngleCapDeg: 175
+        }
+      },
+      // 3. Shoulder Abduction
+      "shoulder-abduction": {
+        id: "shoulder-abduction",
+        exerciseId: "e1000000-0000-0000-0000-000000000003",
+        nameTh: "\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07 (Shoulder Abduction)",
+        nameEn: "Shoulder Abduction",
+        nameCn: "\u80A9\u90E8\u5916\u5C55\u4FA7\u4E3E",
+        descriptionTh: "\u0E22\u0E37\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27\u0E08\u0E19\u0E02\u0E19\u0E32\u0E19\u0E01\u0E31\u0E1A\u0E1E\u0E37\u0E49\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E16\u0E36\u0E07\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E17\u0E35\u0E48\u0E2A\u0E1A\u0E32\u0E22 \u0E41\u0E25\u0E49\u0E27\u0E25\u0E14\u0E25\u0E07\u0E0A\u0E49\u0E32\u0E46",
+        descriptionEn: "Raise arm laterally away from trunk up to shoulder height, hold briefly, and lower slowly.",
+        descriptionCn: "\u8EAB\u4F53\u9762\u5411\u524D\u65B9\uFF0C\u5C06\u624B\u81C2\u4ECE\u8EAB\u4F53\u4E24\u4FA7\u5E73\u7A33\u5411\u5916\u5C55\u5F00\u81F3\u6C34\u5E73\u9AD8\u5EA6\uFF0C\u7136\u540E\u6162\u6162\u6536\u56DE\u3002",
+        framing: "upper_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "shoulder",
+        mediaUrl: "/assets/exercises/shoulder_abduction.mp4",
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.8, 2.8],
+          instructionTextTh: "\u0E22\u0E37\u0E19\u0E2B\u0E31\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E25\u0E33\u0E15\u0E31\u0E27\u0E41\u0E25\u0E30\u0E41\u0E02\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19",
+          instructionTextEn: "Face camera directly, 1.8\u20132.8m away, ensuring full upper body and arms are visible.",
+          instructionTextCn: "\u6B63\u5BF9\u6444\u50CF\u5934\uFF0C\u8DDD\u79BB1.8-2.8\u7C73\uFF0C\u786E\u4FDD\u4E0A\u534A\u8EAB\u53CA\u4E24\u4FA7\u624B\u81C2\u5B8C\u5168\u5728\u753B\u9762\u5185\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 23, vertex: 11, pointB: 13, use3DWorld: true },
+            // Hip -> Shoulder -> Elbow
+            right: { pointA: 24, vertex: 12, pointB: 14, use3DWorld: true }
+          },
+          direction: "increase",
+          startAngleDeg: 20,
+          targetMinDeg: 90,
+          targetMaxDeg: 150,
+          toleranceDeg: 12,
+          holdDurationSec: 1
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "abduction_shoulder_shrug",
+            type: "shoulder_shrug",
+            thresholdValue: 0.12,
+            warningMessageTh: "\u0E2D\u0E22\u0E48\u0E32\u0E2B\u0E48\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E22\u0E01\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19 \u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E15\u0E49\u0E19\u0E41\u0E02\u0E19\u0E01\u0E32\u0E07\u0E2D\u0E2D\u0E01\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22",
+            warningMessageEn: "Avoid shrugging shoulders; use upper arm muscles smoothly",
+            warningMessageCn: "\u8BF7\u907F\u514D\u8038\u80A9\uFF0C\u4F9D\u9760\u80A9\u81C2\u808C\u8089\u5E73\u7F13\u5916\u5C55",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if shoulder pain occurs.",
+          stopOnPainMessageCn: "\u80A9\u90E8\u5982\u6709\u75BC\u75DB\u4E0D\u9002\uFF0C\u8BF7\u7ACB\u523B\u505C\u6B62\u4F11\u606F\u3002",
+          maxSafeAngleCapDeg: 155
+        }
+      },
+      // 4. Elbow Flexion
+      "elbow-flexion": {
+        id: "elbow-flexion",
+        exerciseId: "e1000000-0000-0000-0000-000000000004",
+        nameTh: "\u0E07\u0E2D-\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01 (Elbow Flexion-Extension)",
+        nameEn: "Elbow Flexion-Extension",
+        nameCn: "\u8098\u90E8\u5C48\u4F38\u7EC3\u4E60",
+        descriptionTh: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E08\u0E32\u0E01\u0E41\u0E02\u0E19\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E15\u0E23\u0E07 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E07\u0E2D\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E1E\u0E31\u0E1A\u0E21\u0E37\u0E2D\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E41\u0E25\u0E49\u0E27\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E01\u0E25\u0E31\u0E1A\u0E2A\u0E39\u0E48\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07\u0E40\u0E14\u0E34\u0E21",
+        descriptionEn: "Start with arm extended, smoothly bend elbow bringing hand toward shoulder, then extend fully.",
+        descriptionCn: "\u624B\u81C2\u81EA\u7136\u4F38\u76F4\uFF0C\u5E73\u7F13\u5F2F\u66F2\u8098\u5173\u8282\u5C06\u624B\u5E26\u5411\u80A9\u90E8\uFF0C\u968F\u540E\u518D\u6B21\u5145\u5206\u4F38\u76F4\u3002",
+        framing: "upper_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "elbow",
+        mediaUrl: "/assets/exercises/elbow_flexion.mp4",
+        cameraGuide: {
+          recommendedView: "side_45",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E2B\u0E31\u0E19\u0E02\u0E49\u0E32\u0E07\u0E40\u0E09\u0E35\u0E22\u0E07 45\xB0 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E41\u0E02\u0E19\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01 \u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19",
+          instructionTextEn: "Angle 45\xB0 to camera, 1.5\u20132.5m distance, showing shoulder, elbow, and wrist clearly.",
+          instructionTextCn: "\u4FA7\u5BF9\u955C\u593445\xB0\uFF0C\u8DDD\u79BB1.5-2.5\u7C73\uFF0C\u786E\u4FDD\u80A9\u3001\u8098\u3001\u8155\u6E05\u6670\u53EF\u89C1\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 11, vertex: 13, pointB: 15, use3DWorld: true },
+            // Shoulder -> Elbow -> Wrist
+            right: { pointA: 12, vertex: 14, pointB: 16, use3DWorld: true }
+          },
+          direction: "decrease",
+          startAngleDeg: 155,
+          targetMinDeg: 20,
+          targetMaxDeg: 55,
+          toleranceDeg: 10,
+          holdDurationSec: 0.5
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "elbow_swing_warning",
+            type: "trunk_lean",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E41\u0E19\u0E1A\u0E15\u0E49\u0E19\u0E41\u0E02\u0E19\u0E02\u0E49\u0E32\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27 \u0E44\u0E21\u0E48\u0E41\u0E01\u0E27\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E25\u0E31\u0E07",
+            warningMessageEn: "Keep upper arm pinned by your side; avoid swinging elbow",
+            warningMessageCn: "\u8BF7\u5C06\u4E0A\u81C2\u8D34\u5408\u8EAB\u4FA7\uFF0C\u907F\u514D\u8098\u90E8\u524D\u540E\u6643\u52A8",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01 \u0E43\u0E2B\u0E49\u0E1C\u0E48\u0E2D\u0E19\u0E41\u0E23\u0E07\u0E41\u0E25\u0E30\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01",
+          stopOnPainMessageEn: "Stop if elbow joint pain occurs.",
+          stopOnPainMessageCn: "\u8098\u90E8\u82E5\u6709\u523A\u75DB\uFF0C\u8BF7\u505C\u6B62\u4F11\u606F\u3002",
+          maxSafeAngleCapDeg: 175
+        }
+      },
+      // 5. Wall Push-up
+      "wall-pushup": {
+        id: "wall-pushup",
+        exerciseId: "e1000000-0000-0000-0000-000000000005",
+        nameTh: "\u0E14\u0E31\u0E19\u0E1C\u0E19\u0E31\u0E07 (Wall Push-up)",
+        nameEn: "Wall Push-up",
+        nameCn: "\u63A8\u5899\u4FEF\u5367\u6491",
+        descriptionTh: "\u0E22\u0E37\u0E19\u0E2B\u0E48\u0E32\u0E07\u0E1C\u0E19\u0E31\u0E07 1 \u0E0A\u0E48\u0E27\u0E07\u0E41\u0E02\u0E19 \u0E27\u0E32\u0E07\u0E1D\u0E48\u0E32\u0E21\u0E37\u0E2D\u0E23\u0E30\u0E19\u0E32\u0E1A\u0E2D\u0E01 \u0E42\u0E19\u0E49\u0E21\u0E15\u0E31\u0E27\u0E07\u0E2D\u0E28\u0E2D\u0E01\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E1C\u0E19\u0E31\u0E07 \u0E41\u0E25\u0E49\u0E27\u0E2D\u0E2D\u0E01\u0E41\u0E23\u0E07\u0E14\u0E31\u0E19\u0E15\u0E31\u0E27\u0E01\u0E25\u0E31\u0E1A",
+        descriptionEn: "Stand arm-length from wall, palms at chest level. Bend elbows leaning toward wall, then push back smoothly.",
+        descriptionCn: "\u7AD9\u7ACB\u8DDD\u5899\u7EA6\u4E00\u81C2\u957F\uFF0C\u53CC\u624B\u5E73\u63A8\u5899\u9762\u3002\u6162\u901F\u5C48\u8098\u5C06\u8EAB\u4F53\u5411\u5899\u9762\u503E\u659C\uFF0C\u968F\u540E\u53D1\u529B\u63A8\u8D77\u56DE\u539F\u4F4D\u3002",
+        framing: "upper_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "elbow",
+        mediaUrl: "/assets/exercises/wall_pushup.mp4",
+        cameraGuide: {
+          recommendedView: "side_90",
+          recommendedDistanceMeters: [1.8, 2.8],
+          instructionTextTh: "\u0E22\u0E37\u0E19\u0E2B\u0E31\u0E19\u0E02\u0E49\u0E32\u0E07\u0E43\u0E2B\u0E49\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E2B\u0E48\u0E32\u0E07\u0E1C\u0E19\u0E31\u0E07 1 \u0E01\u0E49\u0E32\u0E27 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E41\u0E19\u0E27\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27\u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01",
+          instructionTextEn: "Side view (90\xB0), 1.8\u20132.8m away, showing lateral trunk and elbow angle clearly.",
+          instructionTextCn: "\u4FA7\u8EAB90\xB0\u9762\u5411\u6444\u50CF\u5934\uFF0C\u8DDD\u79BB1.8-2.8\u7C73\uFF0C\u5C55\u793A\u4FA7\u8EAB\u4E0E\u8098\u90E8\u5C48\u4F38\u89D2\u5EA6\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 11, vertex: 13, pointB: 15, use3DWorld: true },
+            // Shoulder -> Elbow -> Wrist
+            right: { pointA: 12, vertex: 14, pointB: 16, use3DWorld: true }
+          },
+          direction: "decrease",
+          startAngleDeg: 155,
+          targetMinDeg: 75,
+          targetMaxDeg: 110,
+          toleranceDeg: 10,
+          holdDurationSec: 0.5
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "wall_trunk_sag",
+            type: "trunk_lean",
+            thresholdValue: 0.2,
+            warningMessageTh: "\u0E40\u0E01\u0E23\u0E47\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27\u0E43\u0E2B\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E2A\u0E49\u0E19\u0E15\u0E23\u0E07 \u0E2D\u0E22\u0E48\u0E32\u0E41\u0E2D\u0E48\u0E19\u0E2B\u0E25\u0E31\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E42\u0E01\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07",
+            warningMessageEn: "Keep trunk rigid in a straight line; do not sag hips",
+            warningMessageCn: "\u6536\u7D27\u6838\u5FC3\u4FDD\u6301\u8EAB\u4F53\u5448\u4E00\u6761\u76F4\u7EBF\uFF0C\u5207\u52FF\u584C\u8170",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E43\u0E2B\u0E49\u0E25\u0E14\u0E23\u0E30\u0E22\u0E30\u0E01\u0E49\u0E32\u0E27\u0E41\u0E25\u0E30\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01",
+          stopOnPainMessageEn: "Stop if wrist or shoulder pain occurs.",
+          stopOnPainMessageCn: "\u624B\u8155\u6216\u80A9\u90E8\u5982\u89C9\u75BC\u75DB\uFF0C\u8BF7\u7F29\u77ED\u7AD9\u7ACB\u8DDD\u79BB\u5E76\u505C\u4E0B\u4F11\u606F\u3002",
+          maxSafeAngleCapDeg: 175
+        }
+      },
+      // 6. Neck Side Tilt
+      "neck-side-tilt": {
+        id: "neck-side-tilt",
+        exerciseId: "e1000000-0000-0000-0000-000000000006",
+        nameTh: "\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E04\u0E2D\u0E0B\u0E49\u0E32\u0E22-\u0E02\u0E27\u0E32 (Neck Side Tilt)",
+        nameEn: "Neck Side Tilt",
+        nameCn: "\u9888\u90E8\u4FA7\u503E\u62C9\u4F38",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E40\u0E2D\u0E35\u0E22\u0E07\u0E28\u0E35\u0E23\u0E29\u0E30\u0E1E\u0E31\u0E1A\u0E43\u0E1A\u0E2B\u0E39\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E15\u0E36\u0E07\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E04\u0E2D \u0E41\u0E25\u0E49\u0E27\u0E01\u0E25\u0E31\u0E1A\u0E2A\u0E39\u0E48\u0E15\u0E23\u0E07\u0E01\u0E25\u0E32\u0E07",
+        descriptionEn: "Sit upright, slowly tilt head sideways bringing ear toward shoulder without lifting shoulder, then return.",
+        descriptionCn: "\u5750\u59FF\u7AEF\u6B63\uFF0C\u7F13\u7F13\u5411\u4FA7\u65B9\u503E\u659C\u5934\u90E8\u8BA9\u8033\u6735\u8D34\u8FD1\u80A9\u90E8\uFF0C\u611F\u53D7\u9888\u4FA7\u62C9\u4F38\uFF0C\u968F\u540E\u5E73\u7F13\u56DE\u6B63\u3002",
+        framing: "head_shoulders",
+        evaluationMode: "neck_tilt",
+        side: "bilateral",
+        targetJoint: "neck",
+        mediaUrl: "/assets/exercises/neck_side_tilt.mp4",
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.2, 2],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E23\u0E30\u0E22\u0E30 1.2\u20132.0 \u0E21. \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32 \u0E2B\u0E39 \u0E41\u0E25\u0E30\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07",
+          instructionTextEn: "Face camera directly, 1.2\u20132.0m away, keeping head, ears, and both shoulders in frame.",
+          instructionTextCn: "\u6B63\u5BF9\u6444\u50CF\u5934\u5C31\u5750\uFF0C\u8DDD\u79BB1.2-2.0\u7C73\uFF0C\u786E\u4FDD\u9762\u90E8\u3001\u53CC\u8033\u53CA\u53CC\u80A9\u5B8C\u6574\u5C55\u73B0\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 7, vertex: 11, pointB: 8, use3DWorld: false },
+            // Left Ear (7) & Right Ear (8) vs Shoulder line (11, 12)
+            right: { pointA: 8, vertex: 12, pointB: 7, use3DWorld: false }
+          },
+          direction: "increase",
+          startAngleDeg: 4,
+          targetMinDeg: 18,
+          targetMaxDeg: 40,
+          toleranceDeg: 4,
+          holdDurationSec: 1
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "neck_shoulder_hike",
+            type: "shoulder_shrug",
+            thresholdValue: 0.12,
+            warningMessageTh: "\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E44\u0E21\u0E48\u0E22\u0E01\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19\u0E2B\u0E32\u0E2B\u0E39\u0E02\u0E13\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E28\u0E35\u0E23\u0E29\u0E30",
+            warningMessageEn: "Relax shoulders; do not hike shoulder toward ear",
+            warningMessageCn: "\u4E0B\u6C89\u80A9\u90E8\uFF0C\u4FA7\u5934\u65F6\u8BF7\u52FF\u8038\u8D77\u80A9\u8180",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E27\u0E34\u0E07\u0E40\u0E27\u0E35\u0E22\u0E19 \u0E21\u0E36\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E1B\u0E25\u0E1A \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if dizziness or sharp neck pain occurs.",
+          stopOnPainMessageCn: "\u82E5\u611F\u5230\u5934\u6655\u6216\u9888\u90E8\u795E\u7ECF\u523A\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62\u3002",
+          maxSafeAngleCapDeg: 50
+        }
+      },
+      // 7. Sit-to-Stand
+      "sit-to-stand": {
+        id: "sit-to-stand",
+        exerciseId: "e1000000-0000-0000-0000-000000000007",
+        nameTh: "\u0E25\u0E38\u0E01\u0E22\u0E37\u0E19\u0E08\u0E32\u0E01\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 (Sit-to-Stand)",
+        nameEn: "Sit-to-Stand",
+        nameCn: "\u5750\u59FF\u8D77\u7ACB\u8BAD\u7EC3",
+        descriptionTh: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E08\u0E32\u0E01\u0E19\u0E31\u0E48\u0E07\u0E1A\u0E19\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 \u0E27\u0E32\u0E07\u0E40\u0E17\u0E49\u0E32\u0E01\u0E27\u0E49\u0E32\u0E07\u0E40\u0E17\u0E48\u0E32\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E2D\u0E2D\u0E01\u0E41\u0E23\u0E07\u0E17\u0E35\u0E48\u0E15\u0E49\u0E19\u0E02\u0E32\u0E25\u0E38\u0E01\u0E02\u0E36\u0E49\u0E19\u0E22\u0E37\u0E19\u0E15\u0E23\u0E07 \u0E41\u0E25\u0E49\u0E27\u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E19\u0E31\u0E48\u0E07\u0E25\u0E07\u0E01\u0E25\u0E31\u0E1A\u0E2A\u0E39\u0E48\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49",
+        descriptionEn: "Start seated on a stable chair. Push through heels to stand fully upright, then slowly lower back down.",
+        descriptionCn: "\u7AEF\u5750\u5728\u7A33\u56FA\u6905\u5B50\u4E0A\uFF0C\u53CC\u811A\u4E0E\u80A9\u540C\u5BBD\uFF0C\u80A1\u56DB\u5934\u808C\u53D1\u529B\u7AD9\u8D77\u81F3\u8EAB\u59FF\u7B14\u76F4\uFF0C\u968F\u540E\u8F7B\u7F13\u5750\u56DE\u3002",
+        framing: "full_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "knee",
+        mediaUrl: "/assets/exercises/sit_to_stand.mp4",
+        cameraGuide: {
+          recommendedView: "side_45",
+          recommendedDistanceMeters: [2.2, 3.2],
+          instructionTextTh: "\u0E16\u0E2D\u0E22\u0E2B\u0E48\u0E32\u0E07\u0E08\u0E32\u0E01\u0E01\u0E25\u0E49\u0E2D\u0E07 2.2\u20133.2 \u0E40\u0E21\u0E15\u0E23 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E23\u0E48\u0E32\u0E07\u0E01\u0E32\u0E22\u0E40\u0E15\u0E47\u0E21\u0E15\u0E31\u0E27\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E28\u0E35\u0E23\u0E29\u0E30\u0E16\u0E36\u0E07\u0E1B\u0E25\u0E32\u0E22\u0E40\u0E17\u0E49\u0E32\u0E02\u0E13\u0E30\u0E19\u0E31\u0E48\u0E07\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19",
+          instructionTextEn: "Step back 2.2\u20133.2m so full body from head to feet is visible throughout sitting and standing.",
+          instructionTextCn: "\u540E\u90002.2\u81F33.2\u7C73\u81F3\u5168\u8EAB\u5728\u753B\u9762\u4E2D\uFF0C\u786E\u4FDD\u5750\u7ACB\u8FC7\u7A0B\u4E2D\u4ECE\u5934\u90E8\u5230\u811A\u5E95\u5168\u7A0B\u53EF\u89C1\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 23, vertex: 25, pointB: 27, use3DWorld: true },
+            // Hip -> Knee -> Ankle
+            right: { pointA: 24, vertex: 26, pointB: 28, use3DWorld: true }
+          },
+          direction: "increase",
+          startAngleDeg: 85,
+          targetMinDeg: 158,
+          targetMaxDeg: 180,
+          toleranceDeg: 10,
+          holdDurationSec: 0.5
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 45
+        },
+        compensationRules: [
+          {
+            ruleId: "knee_valgus_warning",
+            type: "trunk_lean",
+            thresholdValue: 0.2,
+            warningMessageTh: "\u0E2D\u0E22\u0E48\u0E32\u0E43\u0E2B\u0E49\u0E2B\u0E31\u0E27\u0E40\u0E02\u0E48\u0E32\u0E1A\u0E34\u0E14\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E31\u0E19 \u0E43\u0E2B\u0E49\u0E41\u0E19\u0E27\u0E40\u0E02\u0E48\u0E32\u0E0A\u0E35\u0E49\u0E15\u0E23\u0E07\u0E44\u0E1B\u0E17\u0E32\u0E07\u0E40\u0E14\u0E35\u0E22\u0E27\u0E01\u0E31\u0E1A\u0E1B\u0E25\u0E32\u0E22\u0E40\u0E17\u0E49\u0E32",
+            warningMessageEn: "Keep knees tracking over toes; do not let knees cave inward",
+            warningMessageCn: "\u6CE8\u610F\u819D\u5173\u8282\u4E0E\u811A\u5C16\u671D\u5411\u4E00\u81F4\uFF0C\u907F\u514D\u819D\u76D6\u5185\u6263",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E40\u0E02\u0E48\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E01\u0E32\u0E23\u0E17\u0E23\u0E07\u0E15\u0E31\u0E27 \u0E43\u0E2B\u0E49\u0E08\u0E31\u0E1A\u0E1E\u0E19\u0E31\u0E01\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E41\u0E25\u0E30\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Hold onto chair armrests and stop if knee pain or unsteadiness occurs.",
+          stopOnPainMessageCn: "\u819D\u90E8\u75BC\u75DB\u6216\u91CD\u5FC3\u4E0D\u7A33\u65F6\uFF0C\u8BF7\u6276\u7A33\u6905\u80CC\u5E76\u505C\u4E0B\u3002",
+          maxSafeAngleCapDeg: 185
+        }
+      },
+      // 8. Seated Knee Extension
+      "seated-knee-ext": {
+        id: "seated-knee-ext",
+        exerciseId: "e1000000-0000-0000-0000-000000000008",
+        nameTh: "\u0E19\u0E31\u0E48\u0E07\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E40\u0E02\u0E48\u0E32 (Seated Knee Extension)",
+        nameEn: "Seated Knee Extension",
+        nameCn: "\u5750\u59FF\u4F38\u819D\u8BAD\u7EC3",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E1A\u0E19\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E40\u0E15\u0E30\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E32\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E08\u0E19\u0E02\u0E49\u0E2D\u0E40\u0E02\u0E48\u0E32\u0E15\u0E23\u0E07 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49\u0E40\u0E01\u0E23\u0E47\u0E07\u0E15\u0E49\u0E19\u0E02\u0E32 \u0E41\u0E25\u0E49\u0E27\u0E25\u0E14\u0E02\u0E32\u0E25\u0E07\u0E0A\u0E49\u0E32\u0E46",
+        descriptionEn: "Sit upright on a chair, slowly kick lower leg forward until knee is straight, squeeze quad, and lower down.",
+        descriptionCn: "\u7AEF\u5750\u5728\u6905\u5B50\u4E0A\uFF0C\u5E73\u7A33\u8E22\u8D77\u5C0F\u817F\u76F4\u81F3\u819D\u76D6\u4F38\u76F4\uFF0C\u9876\u5CF0\u6536\u7F29\u80A1\u56DB\u5934\u808C\uFF0C\u968F\u540E\u7F13\u6162\u4E0B\u653E\u3002",
+        framing: "lower_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "knee",
+        mediaUrl: "/assets/exercises/knee_extension.mp4",
+        cameraGuide: {
+          recommendedView: "side_90",
+          recommendedDistanceMeters: [1.8, 2.8],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E2B\u0E31\u0E19\u0E02\u0E49\u0E32\u0E07 45\xB0\u201390\xB0 \u0E23\u0E30\u0E22\u0E30 1.8\u20132.8 \u0E21. \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E2A\u0E30\u0E42\u0E1E\u0E01 \u0E2B\u0E31\u0E27\u0E40\u0E02\u0E48\u0E32 \u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E49\u0E32\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19",
+          instructionTextEn: "Sit at 45\xB0\u201390\xB0 angle, 1.8\u20132.8m from camera, keeping hip, knee, and ankle clearly in view.",
+          instructionTextCn: "\u4FA7\u575045\xB0-90\xB0\u9762\u5411\u6444\u50CF\u5934\uFF0C\u8DDD\u79BB1.8-2.8\u7C73\uFF0C\u6E05\u6670\u5C55\u793A\u9ACB\u3001\u819D\u53CA\u811A\u8E1D\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 23, vertex: 25, pointB: 27, use3DWorld: true },
+            // Hip -> Knee -> Ankle
+            right: { pointA: 24, vertex: 26, pointB: 28, use3DWorld: true }
+          },
+          direction: "increase",
+          startAngleDeg: 90,
+          targetMinDeg: 155,
+          targetMaxDeg: 180,
+          toleranceDeg: 10,
+          holdDurationSec: 1
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "knee_ext_lean_back",
+            type: "trunk_lean",
+            thresholdValue: 0.18,
+            warningMessageTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E44\u0E21\u0E48\u0E40\u0E2D\u0E19\u0E15\u0E31\u0E27\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E02\u0E13\u0E30\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E32",
+            warningMessageEn: "Keep spine straight; do not lean torso backward",
+            warningMessageCn: "\u5750\u59FF\u633A\u76F4\uFF0C\u4F38\u817F\u65F6\u8EAB\u4F53\u4E0D\u8981\u8FC7\u5EA6\u540E\u4EF0",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E43\u0E15\u0E49\u0E2A\u0E30\u0E1A\u0E49\u0E32\u0E2B\u0E31\u0E27\u0E40\u0E02\u0E48\u0E32 \u0E43\u0E2B\u0E49\u0E25\u0E14\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E01\u0E32\u0E23\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E41\u0E25\u0E30\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01",
+          stopOnPainMessageEn: "Stop if patellofemoral pain occurs.",
+          stopOnPainMessageCn: "\u9ACC\u9AA8\u4E0B\u65B9\u5982\u6709\u9510\u75DB\uFF0C\u8BF7\u51CF\u5C11\u4F38\u5C55\u5E45\u5EA6\u5E76\u4F11\u606F\u3002",
+          maxSafeAngleCapDeg: 185
+        }
+      },
+      // 9. Standing Hip Abduction
+      "standing-hip-abd": {
+        id: "standing-hip-abd",
+        exerciseId: "e1000000-0000-0000-0000-000000000009",
+        nameTh: "\u0E22\u0E37\u0E19\u0E22\u0E01\u0E02\u0E32\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07 (Standing Hip Abduction)",
+        nameEn: "Standing Hip Abduction",
+        nameCn: "\u7AD9\u59FF\u9ACB\u5916\u5C55\u4FA7\u62AC\u817F",
+        descriptionTh: "\u0E22\u0E37\u0E19\u0E15\u0E23\u0E07\u0E40\u0E01\u0E32\u0E30\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E1E\u0E22\u0E38\u0E07 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E01\u0E32\u0E07\u0E02\u0E32\u0E02\u0E49\u0E32\u0E07\u0E17\u0E35\u0E48\u0E1D\u0E36\u0E01\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27\u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E15\u0E31\u0E27 \u0E41\u0E25\u0E49\u0E27\u0E27\u0E32\u0E07\u0E02\u0E32\u0E01\u0E25\u0E31\u0E1A\u0E17\u0E35\u0E48\u0E40\u0E14\u0E34\u0E21",
+        descriptionEn: "Stand upright holding chair for balance, lift leg out to the side without leaning pelvis, then lower down.",
+        descriptionCn: "\u7AD9\u7ACB\u6276\u6905\u4FDD\u6301\u5E73\u8861\uFF0C\u4FDD\u6301\u9AA8\u76C6\u6C34\u5E73\uFF0C\u5E73\u7A33\u5C06\u5355\u817F\u5411\u4FA7\u9762\u62AC\u8D77\uFF0C\u968F\u540E\u5E73\u7F13\u653E\u56DE\u5730\u9762\u3002",
+        framing: "full_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "hip",
+        mediaUrl: "/assets/exercises/hip_abduction.mp4",
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [2, 3],
+          instructionTextTh: "\u0E22\u0E37\u0E19\u0E2B\u0E31\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E23\u0E30\u0E22\u0E30 2.0\u20133.0 \u0E21. \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E40\u0E15\u0E47\u0E21\u0E15\u0E31\u0E27\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E25\u0E33\u0E15\u0E31\u0E27\u0E16\u0E36\u0E07\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E49\u0E32",
+          instructionTextEn: "Face camera directly, 2.0\u20133.0m away, with whole body from shoulders to ankles in frame.",
+          instructionTextCn: "\u6B63\u5BF9\u6444\u50CF\u5934\u7AD9\u7ACB\uFF0C\u8DDD\u79BB2.0-3.0\u7C73\uFF0C\u786E\u4FDD\u4ECE\u80A9\u90E8\u81F3\u811A\u8E1D\u5168\u8EAB\u5728\u753B\u9762\u5185\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 11, vertex: 23, pointB: 27, use3DWorld: true },
+            // Shoulder -> Hip -> Ankle
+            right: { pointA: 12, vertex: 24, pointB: 28, use3DWorld: true }
+          },
+          direction: "decrease",
+          startAngleDeg: 175,
+          targetMinDeg: 125,
+          targetMaxDeg: 155,
+          toleranceDeg: 10,
+          holdDurationSec: 0.5
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "hip_trunk_lateral_flexion",
+            type: "trunk_lateral_flexion",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E23\u0E31\u0E01\u0E29\u0E32\u0E25\u0E33\u0E15\u0E31\u0E27\u0E43\u0E2B\u0E49\u0E15\u0E31\u0E49\u0E07\u0E15\u0E23\u0E07 \u0E2D\u0E22\u0E48\u0E32\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E15\u0E31\u0E27\u0E0A\u0E48\u0E27\u0E22\u0E22\u0E01\u0E02\u0E32",
+            warningMessageEn: "Keep torso upright; do not tilt body laterally to lift leg",
+            warningMessageCn: "\u8BF7\u4FDD\u6301\u8EAB\u4F53\u6B63\u76F4\uFF0C\u4E0D\u8981\u901A\u8FC7\u4FA7\u5F2F\u4E0A\u8EAB\u6765\u501F\u529B\u62AC\u817F",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E2A\u0E30\u0E42\u0E1E\u0E01\u0E2B\u0E23\u0E37\u0E2D\u0E2B\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E48\u0E32\u0E07 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop if hip joint or lumbar pain occurs.",
+          stopOnPainMessageCn: "\u9ACB\u5173\u8282\u6216\u4E0B\u80CC\u90E8\u82E5\u51FA\u73B0\u75DB\u611F\uFF0C\u8BF7\u505C\u4E0B\u4F11\u606F\u3002",
+          maxSafeAngleCapDeg: 165
+        }
+      },
+      // 10. Heel Raise
+      "heel-raise": {
+        id: "heel-raise",
+        exerciseId: "e1000000-0000-0000-0000-000000000010",
+        nameTh: "\u0E22\u0E37\u0E19\u0E40\u0E02\u0E22\u0E48\u0E07\u0E2A\u0E49\u0E19\u0E40\u0E17\u0E49\u0E32 (Heel Raise)",
+        nameEn: "Heel Raise",
+        nameCn: "\u7AD9\u59FF\u63D0\u8E35\u8BAD\u7EC3",
+        descriptionTh: "\u0E22\u0E37\u0E19\u0E15\u0E23\u0E07\u0E40\u0E01\u0E32\u0E30\u0E1E\u0E19\u0E31\u0E01\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E40\u0E02\u0E22\u0E48\u0E07\u0E2A\u0E49\u0E19\u0E40\u0E17\u0E49\u0E32\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E02\u0E36\u0E49\u0E19\u0E43\u0E2B\u0E49\u0E2A\u0E39\u0E07\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27\u0E25\u0E14\u0E2A\u0E49\u0E19\u0E40\u0E17\u0E49\u0E32\u0E25\u0E07\u0E41\u0E15\u0E30\u0E1E\u0E37\u0E49\u0E19",
+        descriptionEn: "Stand upright holding chair for balance, lift heels off the floor raising onto balls of feet, hold, then lower.",
+        descriptionCn: "\u7AD9\u59FF\u6276\u6905\uFF0C\u6162\u901F\u62AC\u8D77\u53CC\u811A\u811A\u540E\u8DDF\u81F3\u6700\u9AD8\u70B9\uFF0C\u5C0F\u817F\u808C\u7FA4\u6536\u7F29\u84C4\u529B\uFF0C\u968F\u540E\u5E73\u7A33\u843D\u56DE\u5730\u9762\u3002",
+        framing: "full_body",
+        evaluationMode: "heel_raise",
+        side: "bilateral",
+        targetJoint: "ankle",
+        mediaUrl: "/assets/exercises/heel_raise.mp4",
+        cameraGuide: {
+          recommendedView: "side_45",
+          recommendedDistanceMeters: [2, 3],
+          instructionTextTh: "\u0E22\u0E37\u0E19\u0E2B\u0E31\u0E19\u0E02\u0E49\u0E32\u0E07\u0E40\u0E09\u0E35\u0E22\u0E07 45\xB0 \u0E23\u0E30\u0E22\u0E30 2.0\u20133.0 \u0E21. \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E02\u0E49\u0E2D\u0E2A\u0E30\u0E42\u0E1E\u0E01 \u0E40\u0E02\u0E48\u0E32 \u0E02\u0E49\u0E2D\u0E40\u0E17\u0E49\u0E32 \u0E41\u0E25\u0E30\u0E1B\u0E25\u0E32\u0E22\u0E40\u0E17\u0E49\u0E32\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19",
+          instructionTextEn: "Angle 45\xB0 to camera, 2.0\u20133.0m away, keeping hips, knees, ankles, and feet visible.",
+          instructionTextCn: "\u4FA7\u5BF9\u955C\u593445\xB0\u7AD9\u7ACB\uFF0C\u8DDD\u79BB2.0-3.0\u7C73\uFF0C\u786E\u4FDD\u9ACB\u3001\u819D\u3001\u8E1D\u53CA\u811A\u638C\u6E05\u6670\u53EF\u89C1\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 23, vertex: 27, pointB: 31, use3DWorld: true },
+            // Hip -> Ankle -> Foot Index
+            right: { pointA: 24, vertex: 28, pointB: 32, use3DWorld: true }
+          },
+          direction: "increase",
+          startAngleDeg: 90,
+          targetMinDeg: 110,
+          targetMaxDeg: 140,
+          toleranceDeg: 8,
+          holdDurationSec: 0.5
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "heel_raise_knee_bend",
+            type: "elbow_flexion",
+            thresholdValue: 0.2,
+            warningMessageTh: "\u0E23\u0E31\u0E01\u0E29\u0E32\u0E02\u0E32\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E15\u0E23\u0E07 \u0E2D\u0E2D\u0E01\u0E41\u0E23\u0E07\u0E22\u0E01\u0E08\u0E32\u0E01\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E19\u0E48\u0E2D\u0E07",
+            warningMessageEn: "Keep legs straight; push up through calf muscles",
+            warningMessageCn: "\u4FDD\u6301\u817F\u90E8\u4F38\u76F4\uFF0C\u4F9D\u9760\u5C0F\u817F\u808C\u7FA4\u5145\u5206\u63D0\u8E35",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E40\u0E2D\u0E47\u0E19\u0E23\u0E49\u0E2D\u0E22\u0E2B\u0E27\u0E32\u0E22\u0E2B\u0E23\u0E37\u0E2D\u0E1D\u0E48\u0E32\u0E40\u0E17\u0E49\u0E32 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop if Achilles tendon or plantar fascia pain occurs.",
+          stopOnPainMessageCn: "\u8DDF\u8171\u6216\u8DB3\u5E95\u5982\u6709\u5267\u70C8\u7275\u62C9\u75DB\uFF0C\u8BF7\u7ACB\u523B\u505C\u6B62\u3002",
+          maxSafeAngleCapDeg: 150
+        }
+      }
+    };
+    ALL_CLINICAL_EXERCISES = Object.values(CLINICAL_EXERCISES_CONFIG);
+  }
+});
+
 // packages/pose-engine/src/presets/shoulderPendulumPreset.ts
 function findPresetForExercise(exerciseNameOrId) {
   if (!exerciseNameOrId) return null;
+  const match = getClinicalExerciseConfig(exerciseNameOrId);
+  if (match) return match;
   const query = exerciseNameOrId.toLowerCase().trim();
   for (const preset of DEFAULT_CLINICAL_PRESETS) {
     if (preset.id === query || preset.exerciseId === query) return preset;
     if (preset.nameTh.toLowerCase().includes(query) || query.includes(preset.nameTh.toLowerCase())) return preset;
     if (preset.nameEn.toLowerCase().includes(query) || query.includes(preset.nameEn.toLowerCase())) return preset;
+    if (preset.nameCn && (preset.nameCn.includes(query) || query.includes(preset.nameCn))) return preset;
   }
-  if (query.includes("pendulum") || query.includes("\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19") || query.includes("\u0E27\u0E07\u0E01\u0E25\u0E21")) {
-    return SHOULDER_PENDULUM_PRESET;
-  }
-  if (query.includes("abduction") || query.includes("\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19")) {
-    return SHOULDER_ABDUCTION_PRESET;
-  }
-  if (query.includes("knee") || query.includes("\u0E40\u0E02\u0E48\u0E32")) {
-    return KNEE_EXTENSION_PRESET;
-  }
-  return null;
+  return SHOULDER_PENDULUM_PRESET;
 }
-var SHOULDER_PENDULUM_PRESET, SHOULDER_ABDUCTION_PRESET, KNEE_EXTENSION_PRESET, DEFAULT_CLINICAL_PRESETS;
+var SHOULDER_PENDULUM_PRESET, DEFAULT_CLINICAL_PRESETS;
 var init_shoulderPendulumPreset = __esm({
   "packages/pose-engine/src/presets/shoulderPendulumPreset.ts"() {
     "use strict";
+    init_exercises_config();
     SHOULDER_PENDULUM_PRESET = {
       id: "ex-shoulder-pendulum",
       exerciseId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -3111,106 +3717,7 @@ var init_shoulderPendulumPreset = __esm({
         maxSafeAngleCapDeg: 90
       }
     };
-    SHOULDER_ABDUCTION_PRESET = {
-      id: "ex-shoulder-abduction",
-      nameTh: "Shoulder Abduction (\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E22\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07)",
-      nameEn: "Shoulder Abduction",
-      description: "\u0E22\u0E01\u0E41\u0E02\u0E19\u0E01\u0E32\u0E07\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27\u0E0A\u0E49\u0E32\u0E46 \u0E08\u0E19\u0E16\u0E36\u0E07\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E02\u0E19\u0E32\u0E19\u0E01\u0E31\u0E1A\u0E1E\u0E37\u0E49\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49",
-      evaluationMode: "angle_rep_hold",
-      side: "right",
-      targetJoint: "shoulder",
-      cameraGuide: {
-        recommendedView: "front",
-        recommendedDistanceMeters: [1.8, 2.5],
-        instructionTextTh: "\u0E22\u0E37\u0E19\u0E2B\u0E31\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E25\u0E33\u0E15\u0E31\u0E27\u0E41\u0E25\u0E30\u0E41\u0E02\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19"
-      },
-      angleMechanics: {
-        landmarks: {
-          left: { pointA: 23, vertex: 11, pointB: 15, use3DWorld: true },
-          // Hip -> Shoulder -> Wrist
-          right: { pointA: 24, vertex: 12, pointB: 16, use3DWorld: true }
-        },
-        startAngleDeg: 20,
-        targetMinDeg: 80,
-        targetMaxDeg: 100,
-        toleranceDeg: 10,
-        holdDurationSec: 2
-      },
-      defaultPrescription: {
-        repsPerSet: 10,
-        totalSets: 3,
-        restBetweenSetsSec: 30
-      },
-      compensationRules: [
-        {
-          ruleId: "abduction_trunk_lean",
-          type: "trunk_lean",
-          thresholdValue: 0.15,
-          warningMessageTh: "\u0E25\u0E33\u0E15\u0E31\u0E27\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E44\u0E1B\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07 \u0E1E\u0E22\u0E32\u0E22\u0E32\u0E21\u0E23\u0E31\u0E01\u0E29\u0E32\u0E25\u0E33\u0E15\u0E31\u0E27\u0E43\u0E2B\u0E49\u0E15\u0E23\u0E07",
-          severity: "warning"
-        },
-        {
-          ruleId: "abduction_shoulder_shrug",
-          type: "shoulder_shrug",
-          thresholdValue: 0.12,
-          warningMessageTh: "\u0E2D\u0E22\u0E48\u0E32\u0E2B\u0E48\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E22\u0E01\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19 \u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E15\u0E49\u0E19\u0E41\u0E02\u0E19\u0E22\u0E01\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22",
-          severity: "warning"
-        }
-      ],
-      safetyContraindications: {
-        stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
-        maxSafeAngleCapDeg: 135
-      }
-    };
-    KNEE_EXTENSION_PRESET = {
-      id: "ex-knee-extension",
-      nameTh: "Knee Extension (\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E49\u0E2D\u0E40\u0E02\u0E48\u0E32\u0E02\u0E13\u0E30\u0E19\u0E31\u0E48\u0E07)",
-      nameEn: "Seated Knee Extension",
-      description: "\u0E19\u0E31\u0E48\u0E07\u0E1A\u0E19\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E41\u0E25\u0E49\u0E27\u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E32\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E08\u0E19\u0E02\u0E49\u0E2D\u0E40\u0E02\u0E48\u0E32\u0E15\u0E23\u0E07 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27\u0E25\u0E14\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E25\u0E07",
-      evaluationMode: "angle_rep_hold",
-      side: "right",
-      targetJoint: "knee",
-      cameraGuide: {
-        recommendedView: "side_90",
-        recommendedDistanceMeters: [1.8, 2.8],
-        instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E2B\u0E31\u0E19\u0E02\u0E49\u0E32\u0E07 90\xB0 \u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E41\u0E19\u0E27\u0E02\u0E49\u0E2D\u0E2A\u0E30\u0E42\u0E1E\u0E01 \u0E40\u0E02\u0E48\u0E32 \u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E49\u0E32\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19"
-      },
-      angleMechanics: {
-        landmarks: {
-          left: { pointA: 23, vertex: 25, pointB: 27, use3DWorld: true },
-          // Hip -> Knee -> Ankle
-          right: { pointA: 24, vertex: 26, pointB: 28, use3DWorld: true }
-        },
-        startAngleDeg: 90,
-        targetMinDeg: 165,
-        targetMaxDeg: 180,
-        toleranceDeg: 8,
-        holdDurationSec: 2
-      },
-      defaultPrescription: {
-        repsPerSet: 10,
-        totalSets: 3,
-        restBetweenSetsSec: 30
-      },
-      compensationRules: [
-        {
-          ruleId: "knee_ext_trunk_lean",
-          type: "trunk_lean",
-          thresholdValue: 0.18,
-          warningMessageTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E2D\u0E22\u0E48\u0E32\u0E40\u0E2D\u0E19\u0E2B\u0E25\u0E31\u0E07\u0E1E\u0E34\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27",
-          severity: "warning"
-        }
-      ],
-      safetyContraindications: {
-        stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E1B\u0E27\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E27\u0E17\u0E35\u0E48\u0E2A\u0E30\u0E1A\u0E49\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E40\u0E02\u0E48\u0E32 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E01\u0E32\u0E23\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
-        maxSafeAngleCapDeg: 180
-      }
-    };
-    DEFAULT_CLINICAL_PRESETS = [
-      SHOULDER_PENDULUM_PRESET,
-      SHOULDER_ABDUCTION_PRESET,
-      KNEE_EXTENSION_PRESET
-    ];
+    DEFAULT_CLINICAL_PRESETS = ALL_CLINICAL_EXERCISES;
   }
 });
 
@@ -3416,27 +3923,29 @@ var init_repository7 = __esm({
           }
           let records = data || [];
           records = records.filter((e) => e.is_active !== false);
-          const hasPendulum = records.some(
-            (e) => e.title?.toLowerCase().includes("pendulum") || e.title?.includes("\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19") || e.id === SHOULDER_PENDULUM_PRESET.id || e.id === SHOULDER_PENDULUM_PRESET.exerciseId
-          );
-          if (!hasPendulum) {
-            records.unshift({
-              id: SHOULDER_PENDULUM_PRESET.exerciseId || "e1000000-0000-0000-0000-000000000001",
-              title: SHOULDER_PENDULUM_PRESET.nameTh,
-              image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || "/assets/exercises/shoulder_pendulum.mp4",
-              description: SHOULDER_PENDULUM_PRESET.description || "Codman Shoulder Pendulum",
-              target_joint: "shoulder",
-              suitable_for: "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E15\u0E34\u0E14 \u0E2B\u0E23\u0E37\u0E2D\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E2B\u0E25\u0E31\u0E07\u0E1C\u0E48\u0E32\u0E15\u0E31\u0E14\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48",
-              warnings: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E2B\u0E25\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E27\u0E35\u0E22\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
-              default_sets: 3,
-              default_reps: 10,
-              difficulty: "beginner",
-              detection_config: SHOULDER_PENDULUM_PRESET,
-              created_by: "00000000-0000-0000-0000-000000000001",
-              is_active: true,
-              created_at: (/* @__PURE__ */ new Date()).toISOString(),
-              updated_at: (/* @__PURE__ */ new Date()).toISOString()
-            });
+          for (const preset of DEFAULT_CLINICAL_PRESETS) {
+            const found = records.some(
+              (e) => e.id === preset.id || e.id === preset.exerciseId || e.title === preset.nameTh || preset.nameEn && e.title?.toLowerCase().includes(preset.nameEn.toLowerCase())
+            );
+            if (!found) {
+              records.push({
+                id: preset.exerciseId || preset.id || "ex-default",
+                title: preset.nameTh,
+                image_path: preset.mediaUrl || null,
+                description: preset.descriptionTh || preset.description || preset.nameEn,
+                target_joint: preset.targetJoint || null,
+                suitable_for: null,
+                warnings: preset.safetyContraindications?.stopOnPainMessageTh || null,
+                default_sets: preset.defaultPrescription?.totalSets || 3,
+                default_reps: preset.defaultPrescription?.repsPerSet || 10,
+                difficulty: "beginner",
+                detection_config: preset,
+                created_by: "00000000-0000-0000-0000-000000000001",
+                is_active: true,
+                created_at: (/* @__PURE__ */ new Date()).toISOString(),
+                updated_at: (/* @__PURE__ */ new Date()).toISOString()
+              });
+            }
           }
           for (const rec of records) {
             if (!rec.detection_config) {
@@ -4253,11 +4762,8 @@ var init_repository8 = __esm({
       }
       async getCalendarAppointments(startDate, endDate, ptId, accessiblePatientIds) {
         try {
-          await this.cleanupPastCourses();
-          const todayBkk = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(/* @__PURE__ */ new Date());
-          const effectiveStartDate = startDate < todayBkk ? todayBkk : startDate;
           const adminClient = getAdminClient();
-          let query = adminClient.from("courses").select("*, items:course_items(*)").eq("status", "active").lte("start_date", endDate).gte("end_date", effectiveStartDate);
+          let query = adminClient.from("courses").select("*, items:course_items(*)").eq("status", "active").lte("start_date", endDate).gte("end_date", startDate);
           if (ptId) {
             query = query.eq("pt_id", ptId);
           }
@@ -13930,7 +14436,6 @@ var SmartOnboardingService = class {
   async deleteScheduleDate(patientId, dateStr) {
     const adminClient = getAdminClient();
     const shouldQuerySupabase = process.env.NODE_ENV !== "test" || process.env.LIVE_TESTS === "1";
-    await this.cleanupPastSchedules();
     let patient = this.vaultService.getPatientRecord(patientId);
     if (!patient) {
       const all = this.vaultService.listAllPatientRecords();
@@ -14095,7 +14600,6 @@ var SmartOnboardingService = class {
    * Get patient schedule with automatic past date cleanup
    */
   async getPatientSchedule(patientId) {
-    await this.cleanupPastSchedules();
     const dossier = this.vaultService.getPatientDossier(patientId);
     if (dossier?.schedule) return dossier.schedule;
     const allDossiers = await this.listAllDossiers();
@@ -14328,7 +14832,6 @@ var SmartOnboardingService = class {
     return this.vaultService.getPatientDossier(patientId);
   }
   async listAllDossiers() {
-    await this.cleanupPastSchedules();
     const todayBkk = this.getTodayBkk();
     const adminClient = getAdminClient();
     const vaultDossiers = this.vaultService.listAllDossiers();

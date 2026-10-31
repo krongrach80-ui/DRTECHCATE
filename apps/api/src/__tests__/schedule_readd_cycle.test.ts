@@ -285,4 +285,54 @@ describe('Schedule Planner Add -> Delete -> Re-Add Cycle (5+ times)', () => {
       expect(deleted?.status).toBe('cancelled');
     }
   });
+
+  it('8. Verifies GET /api/smart-onboarding/dossiers and GET /schedule/:id are 100% Read-Only and never auto-prune', async () => {
+    // 1. Add schedule on Day 15
+    await request(app)
+      .post(`/api/smart-onboarding/schedule/${testPatientId}`)
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({
+        startDate: pastDateStr,
+        endDate: pastDateStr,
+        daysOfWeek: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        timeSlot: '09:00 - 10:00',
+        assigned_kiosk_id: 'kiosk-01',
+        include_minigame: true,
+        preserve_past_dates: true,
+        prescribed_exercises: [
+          {
+            exercise_id: 'shoulder-pendulum',
+            name: 'Shoulder Pendulum Read-Only Test',
+            target_joint: 'shoulder',
+            sets: 3,
+            reps: 10,
+          },
+        ],
+      })
+      .expect(200);
+
+    // 2. Query listAllDossiers 5 times consecutively
+    for (let i = 0; i < 5; i++) {
+      const res = await request(app)
+        .get('/api/smart-onboarding/dossiers')
+        .expect(200);
+      expect(res.body.ok).toBe(true);
+      const match = (res.body.data || []).find(
+        (d: any) => d.patient_id === testPatientId || d.hn === `HN-${testPatientId}`
+      );
+      expect(match).toBeDefined();
+      expect(match.schedule).not.toBeNull();
+      expect(match.schedule.startDate).toBe(pastDateStr);
+    }
+
+    // 3. Query getPatientSchedule 5 times consecutively
+    for (let i = 0; i < 5; i++) {
+      const getRes = await request(app)
+        .get(`/api/smart-onboarding/schedule/${testPatientId}`)
+        .expect(200);
+      expect(getRes.body.ok).toBe(true);
+      expect(getRes.body.data.schedule).not.toBeNull();
+      expect(getRes.body.data.schedule.startDate).toBe(pastDateStr);
+    }
+  });
 });

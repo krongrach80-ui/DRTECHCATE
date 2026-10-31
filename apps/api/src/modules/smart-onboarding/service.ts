@@ -1435,8 +1435,7 @@ export class SmartOnboardingService {
     const adminClient = getAdminClient();
     const shouldQuerySupabase = process.env.NODE_ENV !== 'test' || process.env.LIVE_TESTS === '1';
 
-    await this.cleanupPastSchedules();
-
+    // Read/delete paths are 100% deterministic without side-effect auto-cleanup
     let patient = this.vaultService.getPatientRecord(patientId);
     if (!patient) {
       const all = this.vaultService.listAllPatientRecords();
@@ -1670,7 +1669,7 @@ export class SmartOnboardingService {
    * Get patient schedule with automatic past date cleanup
    */
   public async getPatientSchedule(patientId: string): Promise<any> {
-    await this.cleanupPastSchedules();
+    // 100% Read-Only schedule fetch: never auto-delete or prune during read/refetch!
     const dossier = this.vaultService.getPatientDossier(patientId);
     if (dossier?.schedule) return dossier.schedule;
 
@@ -1977,7 +1976,7 @@ export class SmartOnboardingService {
   }
 
   public async listAllDossiers() {
-    await this.cleanupPastSchedules();
+    // 100% Read-Only: Never auto-delete schedules during dossier listing/refetch!
     const todayBkk = this.getTodayBkk();
     const adminClient = getAdminClient();
     const vaultDossiers = this.vaultService.listAllDossiers();

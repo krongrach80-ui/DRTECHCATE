@@ -21,10 +21,12 @@ import {
 } from 'lucide-react';
 import { PhysicalCardGame } from '../minigame-cards/index.js';
 import {
+  ALL_CLINICAL_EXERCISES,
   findPresetForExercise,
   ExerciseDetectionConfig,
   ExerciseSessionTelemetry,
 } from '../../../../packages/pose-engine/src/index';
+import { useClinicalI18n, LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
 import { CameraPositionGuideModal } from '../components/CameraPositionGuideModal';
 import { UnconfiguredExerciseFallbackModal } from '../components/UnconfiguredExerciseFallbackModal';
 import { DynamicExerciseSessionView } from '../views/DynamicExerciseSessionView';
@@ -39,6 +41,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   patient,
   onLogout,
 }) => {
+  const { lang } = useClinicalI18n();
   const [loading, setLoading] = useState(true);
   const [isScheduledToday, setIsScheduledToday] = useState(false);
   const [restReason, setRestReason] = useState<string>('');
@@ -94,13 +97,30 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         if (!isMountedRef.current) return;
 
         setIsScheduledToday(res.is_scheduled_today);
-        setRestReason(res.reason || 'วันนี้เป็นวันพักผ่อนของคุณ');
-        setExercises(res.exercises || []);
-        setIncludeMinigame(res.include_minigame);
+        setRestReason(res.reason || (lang === 'zh-CN' ? '今天是您的休息日' : lang === 'en-US' ? 'Today is your scheduled rest day' : 'วันนี้เป็นวันพักผ่อนของคุณ'));
+
+        let resolvedExercises = res.exercises && res.exercises.length > 0 ? res.exercises : [];
+        if (resolvedExercises.length === 0) {
+          // Default to all 10 clinical exercises if no custom subset is restricted
+          resolvedExercises = ALL_CLINICAL_EXERCISES.map((ex) => ({
+            exercise_id: ex.id,
+            id: ex.id,
+            name: ex.nameTh,
+            name_th: ex.nameTh,
+            name_en: ex.nameEn,
+            name_cn: ex.nameCn,
+            target_joint: ex.targetJoint,
+            sets: ex.defaultPrescription.totalSets,
+            reps: ex.defaultPrescription.repsPerSet,
+            detection_config: ex,
+          }));
+        }
+        setExercises(resolvedExercises);
+        setIncludeMinigame(res.include_minigame ?? true);
       } catch {
         if (!isMountedRef.current) return;
         setIsScheduledToday(false);
-        setRestReason('ไม่พบข้อมูลตารางฝึกประจำวันนี้');
+        setRestReason(lang === 'zh-CN' ? '未找到今日训练计划' : lang === 'en-US' ? 'No daily rehab schedule found' : 'ไม่พบข้อมูลตารางฝึกประจำวันนี้');
       } finally {
         if (isMountedRef.current) {
           setLoading(false);
@@ -112,7 +132,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     return () => {
       isMountedRef.current = false;
     };
-  }, [patient.patient_id, patient.hn]);
+  }, [patient.patient_id, patient.hn, lang]);
 
   // Handle exercise toggle
   const toggleExerciseComplete = (id: string) => {
@@ -445,32 +465,42 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   return (
     <div className="w-full h-full flex flex-col justify-between p-6 sm:p-8 bg-slate-950 text-white select-none overflow-y-auto">
       {/* Top Header */}
-      <div className="w-full flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
+      <div className="w-full flex items-center justify-between border-b border-slate-800 pb-4 mb-6 flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center font-bold text-emerald-400 text-lg">
             {patient.first_name[0] || 'P'}
           </div>
           <div>
             <div className="text-lg font-bold text-white">
-              โปรแกรมกายภาพบำบัด: คุณ {patient.first_name}{patient.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
+              {lang === 'zh-CN' ? '康复训练方案' : lang === 'en-US' ? 'Rehab Program' : 'โปรแกรมกายภาพบำบัด'}: คุณ {patient.first_name}{patient.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
             </div>
-            <div className="text-xs text-slate-400 flex items-center gap-2">
+            <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
               <span>HN: {patient.patient_id}</span>
               <span>•</span>
               <span className="text-emerald-400 font-semibold">
-                ความคืบหน้า: {completedExerciseIds.size}/{exercises.length} ท่า
+                {lang === 'zh-CN' ? `训练进度: ${completedExerciseIds.size}/${exercises.length} 项动作` : lang === 'en-US' ? `Progress: ${completedExerciseIds.size}/${exercises.length} exercises` : `ความคืบหน้า: ${completedExerciseIds.size}/${exercises.length} ท่า`}
               </span>
+            </div>
+            {/* Visual Progress Bar */}
+            <div className="w-48 bg-slate-800 rounded-full h-2 mt-1.5 overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-300"
+                style={{ width: `${exercises.length > 0 ? (completedExerciseIds.size / exercises.length) * 100 : 0}%` }}
+              />
             </div>
           </div>
         </div>
 
-        <button
-          onClick={onLogout}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
-        >
-          <LogOut className="w-4 h-4" />
-          <span>ออกจากระบบ</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <LanguageSwitcher variant="dark" />
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>{lang === 'zh-CN' ? '退出系统' : lang === 'en-US' ? 'Sign Out' : 'ออกจากระบบ'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Exercise Cards */}
@@ -478,13 +508,13 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-slate-200 flex items-center gap-2">
             <Activity className="w-4 h-4 text-emerald-400" />
-            <span>รายการท่าฝึกประจำวันนี้</span>
+            <span>{lang === 'zh-CN' ? '今日康复动作清单' : lang === 'en-US' ? "Today's Prescribed Exercises" : 'รายการท่าฝึกประจำวันนี้'}</span>
           </h2>
           <div className="flex items-center gap-2">
             {includeMinigame && (
               <span className="text-xs px-2.5 py-1 rounded-full bg-purple-950/60 border border-purple-500/30 text-purple-300 font-medium flex items-center gap-1.5">
                 <Brain className="w-3.5 h-3.5" />
-                <span>มีมินิเกมฝึกสมองต่อท้าย</span>
+                <span>{lang === 'zh-CN' ? '附带认知益智微游戏' : lang === 'en-US' ? 'Cognitive Minigame Included' : 'มีมินิเกมฝึกสมองต่อท้าย'}</span>
               </span>
             )}
           </div>
@@ -493,6 +523,21 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         {exercises.map((item, idx) => {
           const isDone = completedExerciseIds.has(item.exercise_id || item.id || `ex-${idx}`);
           const exerciseId = item.exercise_id || item.id || `ex-${idx}`;
+          const preset = item.detection_config || findPresetForExercise(item.exercise_id || item.id || item.name);
+
+          const title = lang === 'zh-CN'
+            ? (preset?.nameCn || item.name_cn || item.name)
+            : lang === 'en-US'
+            ? (preset?.nameEn || item.name_en || item.name)
+            : (preset?.nameTh || item.name || item.title);
+
+          const framingBadge = preset?.framing === 'full_body'
+            ? (lang === 'zh-CN' ? '📷 全身视野 (后退 2–2.5 米)' : lang === 'en-US' ? '📷 Full Body (Step back 2-2.5m)' : '📷 เต็มตัว (ถอยห่าง 2–2.5 ม.)')
+            : preset?.framing === 'lower_body'
+            ? (lang === 'zh-CN' ? '📷 下半身' : lang === 'en-US' ? '📷 Lower Body' : '📷 ช่วงขาและข้อเท้า')
+            : preset?.framing === 'head_shoulders'
+            ? (lang === 'zh-CN' ? '📷 头部与肩部' : lang === 'en-US' ? '📷 Head & Shoulders' : '📷 ศีรษะและไหล่')
+            : (lang === 'zh-CN' ? '📷 上半身' : lang === 'en-US' ? '📷 Upper Body' : '📷 ครึ่งตัวบน');
 
           return (
             <div
@@ -514,15 +559,18 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
                   {idx + 1}
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    {item.name || item.exercise_name || `ท่าฝึกกายภาพที่ ${idx + 1}`}
+                  <h3 className="text-base font-bold text-white flex items-center gap-2 flex-wrap">
+                    <span>{title}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 font-medium">
+                      {framingBadge}
+                    </span>
                     {isDone && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
                   </h3>
                   <div className="text-xs text-slate-400 mt-1 flex items-center gap-2">
-                    <span>ข้อต่อ: {item.target_joint || 'ทั่วไป'}</span>
+                    <span>{lang === 'zh-CN' ? `关节: ${preset?.targetJoint || item.target_joint || '通用'}` : lang === 'en-US' ? `Joint: ${preset?.targetJoint || item.target_joint || 'General'}` : `ข้อต่อ: ${preset?.targetJoint || item.target_joint || 'ทั่วไป'}`}</span>
                     <span>•</span>
                     <span className="text-emerald-400 font-medium">
-                      {item.sets || 3} เซ็ต × {item.reps || 10} ครั้ง
+                      {lang === 'zh-CN' ? `${item.sets || 3} 组 × ${item.reps || 10} 次` : lang === 'en-US' ? `${item.sets || 3} sets × ${item.reps || 10} reps` : `${item.sets || 3} เซ็ต × ${item.reps || 10} ครั้ง`}
                     </span>
                   </div>
                 </div>
@@ -538,7 +586,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
                   title="เริ่มตรวจจับท่าทางกายภาพบำบัดด้วย AI"
                 >
                   <Activity className="w-4 h-4 text-emerald-400" />
-                  <span>เริ่มสแกนท่าฝึก</span>
+                  <span>{lang === 'zh-CN' ? '开始 AI 动作检测' : lang === 'en-US' ? 'Start AI Scan' : 'เริ่มสแกนท่าฝึก'}</span>
                 </button>
                 <button
                   type="button"
@@ -550,7 +598,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
                   }`}
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>{isDone ? 'ทำซ้ำอีกครั้ง' : 'บันทึกว่าทำเสร็จแล้ว'}</span>
+                  <span>{isDone ? (lang === 'zh-CN' ? '再次训练' : lang === 'en-US' ? 'Repeat' : 'ทำซ้ำอีกครั้ง') : (lang === 'zh-CN' ? '标记为已完成' : lang === 'en-US' ? 'Mark Done' : 'บันทึกว่าทำเสร็จแล้ว')}</span>
                 </button>
               </div>
             </div>
@@ -561,7 +609,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       {/* Completion Action Bar */}
       <div className="max-w-4xl mx-auto w-full pt-4 border-t border-slate-800 flex items-center justify-between">
         <div className="text-xs text-slate-400">
-          เมื่อทำครบทุกท่า {includeMinigame ? 'ระบบจะเปิดมินิเกมฝึกสมองทันที' : 'ระบบจะบันทึกผลสำเร็จ'}
+          {lang === 'zh-CN' ? (includeMinigame ? '完成所有动作后，将自动进入认知微游戏' : '完成所有动作后即可提交今日记录') : lang === 'en-US' ? (includeMinigame ? 'Completing all exercises unlocks the cognitive minigame' : 'Complete all exercises to record session') : (includeMinigame ? 'เมื่อทำครบทุกท่า ระบบจะเปิดมินิเกมฝึกสมองทันที' : 'เมื่อทำครบทุกท่า ระบบจะบันทึกผลสำเร็จ')}
         </div>
 
         <button
@@ -574,9 +622,9 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               handleFinalSessionCompletion(100, 0);
             }
           }}
-          className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-emerald-900/40"
+          className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-emerald-900/40 cursor-pointer"
         >
-          <span>{includeMinigame ? 'ต่อไป: มินิเกมฝึกสมอง' : 'บันทึกการฝึกเสร็จสิ้น'}</span>
+          <span>{includeMinigame ? (lang === 'zh-CN' ? '下一步: 认知益智微游戏' : lang === 'en-US' ? 'Next: Cognitive Minigame' : 'ต่อไป: มินิเกมฝึกสมอง') : (lang === 'zh-CN' ? '提交今日训练' : lang === 'en-US' ? 'Complete Session' : 'บันทึกการฝึกเสร็จสิ้น')}</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>
@@ -617,3 +665,5 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     </div>
   );
 };
+
+export const DailyRoutineListView = SmartDailyPlanView;

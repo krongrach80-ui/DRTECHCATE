@@ -28,48 +28,21 @@ import {
   ExerciseBuilderModal
 } from '../smart-portal/index.js';
 import { ALL_99_PHYSICAL_CARD_QUESTIONS } from '../../../kiosk/src/minigame-cards/index.js';
+import { ALL_CLINICAL_EXERCISES } from '../../../../packages/pose-engine/src/index';
 
-const DEMO_EXERCISES: ExerciseRecord[] = [
-  {
-    id: 'ex-shoulder-pendulum',
-    title: 'Shoulder Pendulum Exercise (แกว่งแขนวงกลมฟื้นฟูหัวไหล่)',
-    description: 'โน้มตัวไปข้างหน้า ปล่อยแขนข้างที่มีปัญหาห้อยลง แกว่งแขนเป็นวงกลมเบาๆ ตามแรงโน้มถ่วงเพื่อคลายข้อต่อหัวไหล่',
-    target_joint: 'shoulder',
-    suitable_for: 'ผู้ป่วยข้อไหล่ติดระยะเริ่มแรก (Frozen Shoulder)',
-    warnings: 'ห้ามออกแรงเกร็งกล้ามเนื้อไหล่ ให้ใช้แรงเหวี่ยงจากลำตัว',
-    default_sets: 3,
-    default_reps: 15,
-    difficulty: 'easy',
-    image_path: null,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-  {
-    id: 'ex-shoulder-external-rotation',
-    title: 'Shoulder External Rotation (หมุนข้อไหล่ออกด้านนอก)',
-    description: 'หนีบข้อศอกข้างลำตัว ตั้งฉาก 90 องศา ค่อยๆ หมุนมือออกด้านข้างเพื่อเพิ่มพิสัยการเคลื่อนไหวข้อไหล่',
-    target_joint: 'shoulder',
-    suitable_for: 'ผู้ป่วยข้อไหล่ติดระยะฟื้นฟูพิสัยการเคลื่อนไหว',
-    warnings: 'อย่าให้ข้อศอกกางออกจากลำตัว',
-    default_sets: 3,
-    default_reps: 10,
-    difficulty: 'medium',
-    image_path: null,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-  {
-    id: 'ex-cervical-retraction',
-    title: 'Cervical Retraction (เก็บคาง ยืดแนวกระดูกคอ)',
-    description: 'ตามองตรง ดึงคางเข้าหาลำคอในแนวราบ ค้างไว้ 5 วินาที แล้วคลาย เพื่อลดแรงกดกระดูกคอ',
-    target_joint: 'cervical',
-    suitable_for: 'ผู้ป่วยออฟฟิศซินโดรมและหมอนรองกระดูกคอ',
-    warnings: 'ห้ามก้มหน้าลง ให้ดึงคางไปด้านหลังตรงๆ',
-    default_sets: 3,
-    default_reps: 10,
-    difficulty: 'easy',
-    image_path: null,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-];
+const DEMO_EXERCISES: ExerciseRecord[] = ALL_CLINICAL_EXERCISES.map((ex) => ({
+  id: ex.id || 'ex-default',
+  title: `${ex.nameTh} (${ex.nameEn} / ${ex.nameCn})`,
+  description: ex.descriptionTh || '',
+  target_joint: ex.targetJoint,
+  suitable_for: 'ผู้ป่วยฟื้นฟูสมรรถภาพทางกายภาพบำบัด',
+  warnings: ex.safetyContraindications.stopOnPainMessageTh || 'หยุดทันทีเมื่อรู้สึกเจ็บ',
+  default_sets: ex.defaultPrescription.totalSets,
+  default_reps: ex.defaultPrescription.repsPerSet,
+  difficulty: 'easy',
+  image_path: null,
+  created_at: '2026-10-31T00:00:00.000Z',
+}));
 
 const DEMO_MODPACKS: ModpackRecord[] = [
   {
@@ -78,14 +51,14 @@ const DEMO_MODPACKS: ModpackRecord[] = [
     description: 'โปรแกรมมาตรฐานสำหรับการฟื้นฟูข้อไหล่ติดและลดการยึดรั้งของปลอกหุ้มข้อต่อ',
     items: [
       {
-        exercise_id: 'ex-shoulder-pendulum',
+        exercise_id: 'shoulder-pendulum',
         exercise: DEMO_EXERCISES[0],
         sets: 3,
         reps: 15,
         position: 1,
       },
       {
-        exercise_id: 'ex-shoulder-external-rotation',
+        exercise_id: 'shoulder-flexion',
         exercise: DEMO_EXERCISES[1],
         sets: 3,
         reps: 10,

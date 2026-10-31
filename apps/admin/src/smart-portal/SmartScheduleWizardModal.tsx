@@ -21,6 +21,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { PatientPrescriptionOverrideModal } from './PatientPrescriptionOverrideModal';
+import { ALL_CLINICAL_EXERCISES } from '../../../../packages/pose-engine/src/index';
 
 interface PrescribedExerciseInput {
   exercise_id: string;
@@ -38,8 +39,9 @@ interface PrescribedExerciseInput {
 interface SmartScheduleWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (savedSchedule?: any, patientId?: string) => void;
   preselectedPatientId?: string;
+  preselectedDate?: string;
 }
 
 const formatCleanName = (first?: string, last?: string): string => {
@@ -53,6 +55,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
   onClose,
   onSuccess,
   preselectedPatientId,
+  preselectedDate,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [overrideModalIdx, setOverrideModalIdx] = useState<number | null>(null);
@@ -105,8 +108,22 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
         ]);
 
         setPatients(patientsList);
+        const combinedExList = (Array.isArray(exList) && exList.length >= 10)
+          ? exList
+          : ALL_CLINICAL_EXERCISES.map((ex) => {
+              const fromApi = Array.isArray(exList) ? exList.find((e) => e.id === ex.id) : null;
+              return {
+                id: ex.id,
+                title: fromApi?.title || `${ex.nameTh} (${ex.nameEn} / ${ex.nameCn})`,
+                target_joint: fromApi?.target_joint || ex.targetJoint,
+                image_path: fromApi?.image_path || undefined,
+                default_sets: fromApi?.default_sets || ex.defaultPrescription.totalSets,
+                default_reps: fromApi?.default_reps || ex.defaultPrescription.repsPerSet,
+              };
+            });
+
         setAvailableExercises(
-          exList.map((ex) => ({
+          combinedExList.map((ex) => ({
             id: ex.id,
             name: ex.title,
             target_joint: ex.target_joint || 'ทั่วไป',
@@ -130,9 +147,22 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
           }))
         );
 
+        if (preselectedDate) {
+          setStartDate(preselectedDate);
+          setEndDate(preselectedDate);
+          const d = new Date(preselectedDate);
+          const dayKey = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+          if (dayKey) setSelectedDays([dayKey]);
+        }
+
         if (preselectedPatientId) {
           const match = patientsList.find((p) => p.id === preselectedPatientId || p.hn === preselectedPatientId);
-          if (match) setSelectedPatient(match);
+          if (match) {
+            setSelectedPatient(match);
+            if (preselectedDate) {
+              setStep(2);
+            }
+          }
         }
       } catch {
         // non-blocking
@@ -140,7 +170,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
     }
 
     loadData();
-  }, [isOpen, preselectedPatientId]);
+  }, [isOpen, preselectedPatientId, preselectedDate]);
 
   if (!isOpen) return null;
 
@@ -226,21 +256,33 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
     setErrorMsg(null);
 
     try {
-      await defaultApiClient.smartOnboarding.saveSchedule({
-        patient_id: selectedPatient.id || (selectedPatient as any).patient_id || selectedPatient.hn,
-        schedule: {
-          start_date: startDate,
-          end_date: endDate,
-          days_of_week: selectedDays,
-          time_slot: timeSlot,
-          assigned_kiosk_id: assignedKioskId,
-          include_minigame: includeMinigame,
-          prescribed_exercises: prescribedExercises,
-        },
+      const targetPid = selectedPatient.id || (selectedPatient as any).patient_id || selectedPatient.hn;
+      const schedulePayload = {
+        start_date: startDate,
+        end_date: endDate,
+        startDate,
+        endDate,
+        days_of_week: selectedDays,
+        daysOfWeek: selectedDays,
+        time_slot: timeSlot,
+        timeSlot,
+        assigned_kiosk_id: assignedKioskId,
+        kioskId: assignedKioskId,
+        include_minigame: includeMinigame,
+        prescribed_exercises: prescribedExercises,
+        assigned_exercises: prescribedExercises,
+        preserve_past_dates: true,
+      };
+
+      const res = await defaultApiClient.smartOnboarding.saveSchedule({
+        patient_id: targetPid,
+        schedule: schedulePayload,
       });
 
+      const committedSchedule = (res as any)?.schedule || schedulePayload;
+
       window.dispatchEvent(new CustomEvent('schedule-updated'));
-      onSuccess();
+      onSuccess(committedSchedule, targetPid);
       onClose();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถบันทึกตารางฝึกได้');

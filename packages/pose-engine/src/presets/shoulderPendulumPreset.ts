@@ -169,36 +169,31 @@ export const KNEE_EXTENSION_PRESET: ExerciseDetectionConfig = {
   },
 };
 
-export const DEFAULT_CLINICAL_PRESETS: ExerciseDetectionConfig[] = [
-  SHOULDER_PENDULUM_PRESET,
-  SHOULDER_ABDUCTION_PRESET,
-  KNEE_EXTENSION_PRESET,
-];
+import {
+  ALL_CLINICAL_EXERCISES,
+  getClinicalExerciseConfig,
+} from './exercises.config';
+
+export const DEFAULT_CLINICAL_PRESETS: ExerciseDetectionConfig[] = ALL_CLINICAL_EXERCISES;
 
 /**
- * Lookup helper: finds matching detection config by title or exercise ID
+ * Lookup helper: finds matching detection config by title or exercise ID from the full 10-exercise catalog
  */
 export function findPresetForExercise(
   exerciseNameOrId?: string | null
 ): ExerciseDetectionConfig | null {
   if (!exerciseNameOrId) return null;
-  const query = exerciseNameOrId.toLowerCase().trim();
+  const match = getClinicalExerciseConfig(exerciseNameOrId);
+  if (match) return match;
 
+  const query = exerciseNameOrId.toLowerCase().trim();
   for (const preset of DEFAULT_CLINICAL_PRESETS) {
     if (preset.id === query || preset.exerciseId === query) return preset;
     if (preset.nameTh.toLowerCase().includes(query) || query.includes(preset.nameTh.toLowerCase())) return preset;
     if (preset.nameEn.toLowerCase().includes(query) || query.includes(preset.nameEn.toLowerCase())) return preset;
+    if (preset.nameCn && (preset.nameCn.includes(query) || query.includes(preset.nameCn))) return preset;
   }
 
-  if (query.includes('pendulum') || query.includes('แกว่งแขน') || query.includes('วงกลม')) {
-    return SHOULDER_PENDULUM_PRESET;
-  }
-  if (query.includes('abduction') || query.includes('กางแขน')) {
-    return SHOULDER_ABDUCTION_PRESET;
-  }
-  if (query.includes('knee') || query.includes('เข่า')) {
-    return KNEE_EXTENSION_PRESET;
-  }
-
-  return null;
+  return SHOULDER_PENDULUM_PRESET;
 }
+

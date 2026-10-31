@@ -33,6 +33,7 @@ import {
   AlertTriangle,
   Cpu,
 } from 'lucide-react';
+import { useClinicalI18n, LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
 
 interface DynamicExerciseSessionViewProps {
   patient: {
@@ -704,59 +705,81 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
   };
 
+  const { lang } = useClinicalI18n();
+
   const isPendulum = config.evaluationMode === 'pendulum_circular';
   const progressRatio = isPendulum
     ? evalResult?.pendulumCircleProgressRatio || 0
     : evalResult?.holdProgressRatio || 0;
 
+  const isLowerBody = config.targetJoint === 'knee' || config.targetJoint === 'ankle' || config.targetJoint === 'hip';
+  const isBilateral = config.targetJoint === 'neck' || config.evaluationMode === 'neck_tilt' || config.evaluationMode === 'heel_raise' || config.id === 'sit-to-stand' || config.id === 'wall-pushup';
+
+  const exerciseTitle = lang === 'zh-CN' ? (config.nameCn || config.nameTh) : lang === 'en-US' ? (config.nameEn || config.nameTh) : config.nameTh;
+  const jointLabel = lang === 'zh-CN' ? `关节: ${config.targetJoint}` : lang === 'en-US' ? `Joint: ${config.targetJoint}` : `ข้อต่อ: ${config.targetJoint}`;
+  const coachingMsg = lang === 'zh-CN'
+    ? (evalResult?.coachingMessageCn || evalResult?.coachingMessageTh)
+    : lang === 'en-US'
+    ? (evalResult?.coachingMessageEn || evalResult?.coachingMessageTh)
+    : evalResult?.coachingMessageTh;
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col justify-between overflow-hidden select-none font-sans">
       {/* 1. Top Clinical HUD Header */}
-      <div className="w-full bg-slate-950/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex items-center justify-between z-20">
+      <div className="w-full bg-slate-950/80 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 flex items-center justify-between z-20 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
             <Activity className="w-5 h-5" />
           </div>
           <div>
             <h1 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              <span>{config.nameTh}</span>
+              <span>{exerciseTitle}</span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium">
-                ข้อต่อ: {config.targetJoint}
+                {jointLabel}
               </span>
             </h1>
             <div className="text-xs text-slate-400 mt-0.5">
-              ผู้ป่วย: คุณ {patient.first_name} {patient.last_name || ''} • HN: {patient.hn || patient.patient_id}
+              {lang === 'zh-CN' ? '患者' : lang === 'en-US' ? 'Patient' : 'ผู้ป่วย'}: คุณ {patient.first_name} {patient.last_name || ''} • HN: {patient.hn || patient.patient_id}
             </div>
           </div>
         </div>
 
         {/* Side Toggle & Set/Rep Badges */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Side Toggle Selector */}
-          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-2xl p-1 gap-1">
-            <button
-              type="button"
-              onClick={() => handleToggleSide('right')}
-              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                activeSide === 'right'
-                  ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <span>🦾 แขนขวา</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleToggleSide('left')}
-              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                activeSide === 'left'
-                  ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <span>แขนซ้าย 🦾</span>
-            </button>
-          </div>
+          <LanguageSwitcher variant="dark" />
+
+          {/* Side Toggle Selector or Bilateral Badge */}
+          {isBilateral ? (
+            <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-teal-300 flex items-center gap-1.5">
+              <span>👥</span>
+              <span>{lang === 'zh-CN' ? '双侧协同' : lang === 'en-US' ? 'Bilateral' : 'ทั้งสองข้าง'}</span>
+            </div>
+          ) : (
+            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-2xl p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => handleToggleSide('right')}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  activeSide === 'right'
+                    ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span>{isLowerBody ? (lang === 'zh-CN' ? '🦿 右腿' : lang === 'en-US' ? '🦿 Right Leg' : '🦿 ขาขวา') : (lang === 'zh-CN' ? '🦾 右臂' : lang === 'en-US' ? '🦾 Right Arm' : '🦾 แขนขวา')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleSide('left')}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  activeSide === 'left'
+                    ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span>{isLowerBody ? (lang === 'zh-CN' ? '左腿 🦿' : lang === 'en-US' ? 'Left Leg 🦿' : 'ขาซ้าย 🦿') : (lang === 'zh-CN' ? '左臂 🦾' : lang === 'en-US' ? 'Left Arm 🦾' : 'แขนซ้าย 🦾')}</span>
+              </button>
+            </div>
+          )}
 
           {/* Debug Inspector Toggle */}
           <button
@@ -767,20 +790,24 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 ? 'bg-amber-500/20 border-amber-500 text-amber-300'
                 : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
             }`}
-            title="เปิด/ปิดการแสดงดัชนีและค่าความมั่นใจของจุดข้อต่อ MediaPipe"
+            title="Debug MediaPipe Landmarks"
           >
-            <span>🔍 Debug จุดข้อต่อ</span>
+            <span>🔍 Debug</span>
           </button>
 
           <div className="px-4 py-2 rounded-2xl bg-slate-900 border border-slate-800 text-center">
-            <div className="text-[10px] text-slate-400 uppercase font-semibold">เซ็ตที่</div>
+            <div className="text-[10px] text-slate-400 uppercase font-semibold">
+              {lang === 'zh-CN' ? '组数' : lang === 'en-US' ? 'Set' : 'เซ็ตที่'}
+            </div>
             <div className="text-sm sm:text-base font-extrabold text-teal-400">
               {evalResult?.currentSet || 1} / {config.defaultPrescription.totalSets}
             </div>
           </div>
 
           <div className="px-5 py-2 rounded-2xl bg-gradient-to-r from-emerald-600/30 to-teal-600/30 border border-emerald-500/50 text-center shadow-lg shadow-emerald-950/50">
-            <div className="text-[10px] text-emerald-300 uppercase font-semibold">จำนวนครั้ง</div>
+            <div className="text-[10px] text-emerald-300 uppercase font-semibold">
+              {lang === 'zh-CN' ? '次数' : lang === 'en-US' ? 'Reps' : 'จำนวนครั้ง'}
+            </div>
             <div className="text-lg sm:text-xl font-extrabold text-white">
               {evalResult?.completedReps || 0} / {config.defaultPrescription.repsPerSet}
             </div>
@@ -820,7 +847,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             className={`p-4 rounded-3xl backdrop-blur-md border shadow-2xl transition-all duration-300 flex items-center gap-3.5 ${
               evalResult?.formRating === 'error'
                 ? 'bg-rose-950/85 border-rose-500 text-rose-100'
-                : evalResult?.readinessStatus === 'missing_arm_landmarks' || evalResult?.readinessStatus === 'missing_shoulder'
+                : evalResult?.readinessStatus === 'missing_arm_landmarks' || evalResult?.readinessStatus === 'missing_shoulder' || evalResult?.readinessStatus === 'missing_full_body' || evalResult?.readinessStatus === 'missing_lower_body' || evalResult?.readinessStatus === 'missing_head_shoulders'
                 ? 'bg-cyan-950/90 border-cyan-400 text-cyan-100 shadow-cyan-950/50'
                 : evalResult?.formRating === 'warning'
                 ? 'bg-amber-950/85 border-amber-500 text-amber-100'
@@ -830,7 +857,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             <div className="text-2xl shrink-0">
               {evalResult?.formRating === 'error'
                 ? '🚨'
-                : evalResult?.readinessStatus === 'missing_arm_landmarks' || evalResult?.readinessStatus === 'missing_shoulder'
+                : evalResult?.readinessStatus
                 ? '📷'
                 : evalResult?.formRating === 'warning'
                 ? '⚠️'
@@ -840,7 +867,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
             <div className="flex-1">
               <div className="text-xs sm:text-sm font-extrabold leading-snug">
-                {evalResult?.coachingMessageTh || 'เตรียมพร้อมในตำแหน่งเริ่มต้น'}
+                {coachingMsg || (lang === 'zh-CN' ? '请在初始位置做好准备' : lang === 'en-US' ? 'Get ready at the starting position' : 'เตรียมพร้อมในตำแหน่งเริ่มต้น')}
               </div>
               {/* Hold / Pendulum Progress Bar */}
               {progressRatio > 0 && !evalResult?.readinessStatus && (
@@ -855,7 +882,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             {/* Live Angle or Percentage Badge */}
             <div className="px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-700/60 font-mono text-xs sm:text-sm font-bold text-white shrink-0">
               {evalResult?.readinessStatus
-                ? 'รอจัดท่า'
+                ? (lang === 'zh-CN' ? '等待调整' : lang === 'en-US' ? 'Adjust Pose' : 'รอจัดท่า')
                 : isPendulum
                 ? `${Math.round(progressRatio * 100)}%`
                 : `${evalResult?.currentAngleDeg || 0}°`}

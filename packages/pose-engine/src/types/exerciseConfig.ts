@@ -6,7 +6,11 @@
  * circular trajectory kinematics ('pendulum_circular' - Shoulder Pendulum).
  */
 
-export type EvaluationMode = 'angle_rep_hold' | 'pendulum_circular';
+export type EvaluationMode =
+  | 'angle_rep_hold'
+  | 'pendulum_circular'
+  | 'neck_tilt'
+  | 'heel_raise';
 
 export type BodySide = 'left' | 'right' | 'bilateral';
 
@@ -22,10 +26,16 @@ export type TargetJoint =
 
 export type CameraViewOrientation = 'front' | 'side_45' | 'side_90';
 
+export type FramingRequirement = 'head_shoulders' | 'upper_body' | 'lower_body' | 'full_body';
+
+export type AngleDirection = 'increase' | 'decrease';
+
 export interface CameraGuideConfig {
   recommendedView: CameraViewOrientation;
   recommendedDistanceMeters: [number, number]; // e.g. [1.5, 2.5]
   instructionTextTh: string;
+  instructionTextEn?: string;
+  instructionTextCn?: string;
 }
 
 export interface LandmarkTriplet {
@@ -40,11 +50,12 @@ export interface AngleMechanicsConfig {
     left: LandmarkTriplet;
     right: LandmarkTriplet;
   };
-  startAngleDeg: number;       // e.g. 15° (resting position)
+  startAngleDeg: number;       // e.g. 15° or 150° (resting position)
   targetMinDeg: number;        // e.g. 80° (effective clinical range lower bound)
   targetMaxDeg: number;        // e.g. 100° (effective clinical range upper bound)
   toleranceDeg: number;        // e.g. 10°
   holdDurationSec: number;     // e.g. 2.0s
+  direction?: AngleDirection;  // 'increase' (default) or 'decrease'
 }
 
 export interface PendulumMechanicsConfig {
@@ -77,11 +88,15 @@ export interface CompensationRule {
   type: CompensationType;
   thresholdValue: number;
   warningMessageTh: string;
+  warningMessageEn?: string;
+  warningMessageCn?: string;
   severity: 'warning' | 'error';
 }
 
 export interface SafetyContraindications {
   stopOnPainMessageTh: string;
+  stopOnPainMessageEn?: string;
+  stopOnPainMessageCn?: string;
   maxSafeAngleCapDeg: number; // Hard ceiling beyond which engine instructs patient to lower arm
   maxSafeVelocityDegPerSec?: number; // Angular velocity cap (e.g. 180°/s) to prevent uncontrolled joint jerking
   minTempoDurationSec?: number;      // Minimum tempo duration for a clean concentric/eccentric rep
@@ -92,7 +107,12 @@ export interface ExerciseDetectionConfig {
   exerciseId?: string;
   nameTh: string;
   nameEn: string;
+  nameCn?: string;
   description?: string;
+  descriptionTh?: string;
+  descriptionEn?: string;
+  descriptionCn?: string;
+  framing?: FramingRequirement;
   mediaUrl?: string;
   evaluationMode: EvaluationMode;
   side: BodySide;
@@ -132,6 +152,8 @@ export interface ActiveCompensationWarning {
   ruleId: string;
   type: CompensationType;
   messageTh: string;
+  messageEn?: string;
+  messageCn?: string;
   severity: 'warning' | 'error';
   currentValue: number;
   thresholdValue: number;
@@ -141,6 +163,7 @@ export interface RepEvaluationResult {
   phase: RepPhase;
   currentAngleDeg: number;
   targetAngleDeg: number;
+  accuracyPercent?: number; // 0 to 100
   holdProgressRatio: number; // 0.0 to 1.0 during HOLDING_TARGET
   pendulumCircleProgressRatio: number; // 0.0 to 1.0 during 360° phase rotation
   isInsideTargetZone: boolean;
@@ -153,6 +176,8 @@ export interface RepEvaluationResult {
   isSetCompleted: boolean;
   isExerciseCompleted: boolean;
   coachingMessageTh: string;
+  coachingMessageEn?: string;
+  coachingMessageCn?: string;
   activeWarnings: ActiveCompensationWarning[];
   formRating: 'good' | 'warning' | 'error';
   instantaneousVelocity: number;
@@ -166,7 +191,13 @@ export interface RepEvaluationResult {
   isSubjectLocked?: boolean;
   isFrameDropped?: boolean;
   frameDropReason?: string;
-  readinessStatus?: 'ready' | 'missing_shoulder' | 'missing_arm_landmarks';
+  readinessStatus?:
+    | 'ready'
+    | 'missing_shoulder'
+    | 'missing_arm_landmarks'
+    | 'missing_lower_body'
+    | 'missing_head_shoulders'
+    | 'missing_full_body';
   filteredLandmarks: PoseEngineLandmark[];
 }
 
