@@ -309,6 +309,27 @@ describe('Pose Visibility & Projection Test Suite', () => {
       expect(res.severity).toBeDefined();
       expect(isNaN(res.currentAngleDeg)).toBe(false);
     });
+
+    it('3.4 adaptively synthesizes arm trajectory when seated at desk and wrist is below screen edge (elbow visible)', () => {
+      const config = {
+        ...SHOULDER_PENDULUM_PRESET,
+        side: 'right' as const,
+      };
+      const machine = new RepStateMachine(config);
+      const skel = createMockSkeleton();
+
+      // Right shoulder and elbow visible, but wrist occluded at desk edge (y > 1.0 or low visibility)
+      skel[12] = { x: 0.5, y: 0.35, z: 0.0, visibility: 0.90 }; // R.Shoulder
+      skel[14] = { x: 0.5, y: 0.65, z: 0.0, visibility: 0.85 }; // R.Elbow
+      skel[16] = { x: 0.5, y: 1.05, z: 0.0, visibility: 0.15 }; // R.Wrist (below frame)
+      skel[24] = { x: 0.45, y: 0.75, z: 0.0, visibility: 0.85 }; // R.Hip
+
+      const res = machine.evaluate(skel, 1500);
+      // Crucial: Must NOT be permanently blocked with missing_arm_landmarks when elbow is clearly visible
+      expect(res.readinessStatus).toBe('ready');
+      expect(res.accuracyPct).toBeDefined();
+      expect(isNaN(res.currentAngleDeg)).toBe(false);
+    });
   });
 });
 

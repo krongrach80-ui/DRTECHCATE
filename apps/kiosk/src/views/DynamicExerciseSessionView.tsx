@@ -229,8 +229,33 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     stateMachineRef.current.updateConfig(resolvedConfig);
   }, [resolvedConfig]);
 
+  // Audio Mute State with localStorage persistence
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('drtech_voice_muted') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const isAudioMutedRef = useRef(isAudioMuted);
+  useEffect(() => {
+    isAudioMutedRef.current = isAudioMuted;
+    try {
+      localStorage.setItem('drtech_voice_muted', String(isAudioMuted));
+    } catch {
+      // safe fallback
+    }
+    if (isAudioMuted) {
+      voiceFeedbackRef.current.cancel();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    }
+  }, [isAudioMuted]);
+
   // Sound & Speech Helpers
   const playRepChime = useCallback(() => {
+    if (isAudioMutedRef.current) return;
     try {
       const AudioCtx =
         window.AudioContext ||
@@ -267,6 +292,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
   const speakThai = useCallback(
     (text: string, category?: string, overrideCooldownMs?: number) => {
+      if (isAudioMutedRef.current) return;
       voiceFeedbackRef.current.speak(text, category, overrideCooldownMs);
     },
     []
@@ -323,6 +349,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     if (sessionStartTimeRef.current === 0) {
       sessionStartTimeRef.current = Date.now();
     }
+
+    // Flush any pending or lingering speech from previous views immediately
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    voiceFeedbackRef.current.cancel();
 
     async function bootSession() {
       try {
@@ -951,6 +983,22 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               </button>
             </div>
           )}
+
+          {/* Audio Coach Mute/Unmute Toggle */}
+          <button
+            type="button"
+            id="kiosk-toggle-audio-btn"
+            data-testid="kiosk-toggle-audio-btn"
+            onClick={() => setIsAudioMuted((prev) => !prev)}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer border ${
+              isAudioMuted
+                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                : 'bg-slate-900 border-slate-800 text-emerald-400 hover:text-emerald-300'
+            }`}
+            title="เปิด/ปิดเสียงพูดแนะนำ (Audio Voice Coach)"
+          >
+            <span>{isAudioMuted ? '🔇 เสียงโค้ช: ปิด' : '🔊 เสียงโค้ช: เปิด'}</span>
+          </button>
 
           {/* Diagnostic Debug HUD Toggle */}
           <button

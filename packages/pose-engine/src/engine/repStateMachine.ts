@@ -795,9 +795,9 @@ export class RepStateMachine {
     const hIdx = isRight ? 24 : 23;
 
     const isInFrame = (lm?: PoseEngineLandmark) =>
-      Boolean(lm && lm.x >= 0.02 && lm.x <= 0.98 && lm.y >= 0.02 && lm.y <= 0.98);
+      Boolean(lm && lm.x >= -0.15 && lm.x <= 1.15 && lm.y >= -0.15 && lm.y <= 1.25);
     const isVisible = (lm?: PoseEngineLandmark) =>
-      Boolean(lm && (lm.visibility ?? 1.0) >= 0.40 && isInFrame(lm));
+      Boolean(lm && (lm.visibility ?? 1.0) >= 0.35 && isInFrame(lm));
 
     const shoulder = landmarks[sIdx];
     const elbow = landmarks[eIdx];
@@ -814,7 +814,11 @@ export class RepStateMachine {
       return def;
     }
 
-    if (!elbow || !wrist || !isVisible(elbow) || !isVisible(wrist)) {
+    const hasElbow = Boolean(elbow && isVisible(elbow));
+    const hasWrist = Boolean(wrist && isVisible(wrist));
+
+    // Only gate if BOTH elbow and wrist are completely untrackable
+    if (!hasElbow && !hasWrist) {
       const def = this.createDefaultResult(
         landmarks,
         '📷 ไม่พบข้อศอกและข้อมือข้างที่ฝึก กรุณาถอยห่างจากกล้องหรือปรับมุมกล้องให้เห็นแขนตั้งแต่ไหล่ถึงข้อมือ'
@@ -824,14 +828,33 @@ export class RepStateMachine {
       return def;
     }
 
+    // Adaptive Arm Synthesis: If elbow is visible but wrist is occluded by desk/screen edge, extrapolate forearm
+    const effectiveElbow: PoseEngineLandmark = hasElbow
+      ? elbow!
+      : {
+          x: shoulder.x + ((wrist?.x ?? shoulder.x) - shoulder.x) * 0.5,
+          y: shoulder.y + Math.max(0.12, ((wrist?.y ?? shoulder.y + 0.3) - shoulder.y) * 0.5),
+          z: shoulder.z ?? 0,
+          visibility: 0.85,
+        };
+
+    const effectiveWrist: PoseEngineLandmark = hasWrist
+      ? wrist!
+      : {
+          x: effectiveElbow.x + (effectiveElbow.x - shoulder.x) * 0.8,
+          y: effectiveElbow.y + Math.max(0.12, Math.abs(effectiveElbow.y - shoulder.y) * 0.8),
+          z: effectiveElbow.z ?? 0,
+          visibility: 0.85,
+        };
+
     const effectiveHip = (hip && isVisible(hip))
       ? hip
       : { x: shoulder.x, y: shoulder.y + 0.35, z: shoulder.z ?? 0, visibility: 0.9 };
 
     const result = this.pendulumAnalyzer.update({
       shoulder,
-      elbow,
-      wrist,
+      elbow: effectiveElbow,
+      wrist: effectiveWrist,
       hip: effectiveHip,
       timestampMs,
     });
