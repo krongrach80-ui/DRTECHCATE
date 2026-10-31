@@ -229,6 +229,27 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     stateMachineRef.current.updateConfig(resolvedConfig);
   }, [resolvedConfig]);
 
+  // 1. ตัดเสียงพูดทั้งหมดในหน้าสแกนท่าฝึก และล้างคิวเสียงค้างทันทีที่เข้าหน้า/เปลี่ยนท่า/ออกจากหน้า
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    voiceFeedbackRef.current.cancel();
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      voiceFeedbackRef.current.cancel();
+    };
+  }, [resolvedConfig]);
+
+  // 2. State สำหรับปุ่ม "แสดงเส้นลำตัว" (ค่าเริ่มต้น = false คือปิดไว้เสมอเมื่อเข้าหน้าใหม่)
+  const [showSkeletonOverlay, setShowSkeletonOverlay] = useState<boolean>(false);
+  const showSkeletonRef = useRef<boolean>(false);
+  useEffect(() => {
+    showSkeletonRef.current = showSkeletonOverlay;
+  }, [showSkeletonOverlay]);
+
   // Audio Mute State with localStorage persistence
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => {
     try {
@@ -291,9 +312,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   }, []);
 
   const speakThai = useCallback(
-    (text: string, category?: string, overrideCooldownMs?: number) => {
-      if (isAudioMutedRef.current) return;
-      voiceFeedbackRef.current.speak(text, category, overrideCooldownMs);
+    (_text: string, _category?: string, _overrideCooldownMs?: number) => {
+      // ตัดเสียงพูดทั้งหมดในหน้าสแกนท่าฝึก 100%
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      voiceFeedbackRef.current.cancel();
     },
     []
   );
@@ -591,8 +615,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           // Hardware Watchdog Update
           const wdStatus = watchdogRef.current.update(rawLandmarks, monotonicTs);
-
-          // Biomechanical State Machine Evaluation
           const evalRes = stateMachineRef.current.evaluate(rawLandmarks, monotonicTs);
 
           // Project landmarks into 1:1 canvas pixels with mirror support
@@ -607,62 +629,67 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? '#f59e0b'
               : '#10b981';
 
-          // 1. Draw Skeleton Lines
-          ctx.lineWidth = lowPowerRef.current ? 2.5 : 4;
-          ctx.strokeStyle = strokeColor;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
+          // 3. ในลูป requestAnimationFrame:
+          // - การตรวจจับ (detector.detectForVideo) และการคำนวณนับครั้ง (stateMachineRef.current.evaluateFrame)
+          //   ทำงานเบื้องหลัง 100% ทุกเฟรมแม้ showSkeletonRef.current === false
+          // - จะวาดเส้นและจุดลงบน <canvas> เฉพาะเมื่อ showSkeletonRef.current === true เท่านั้น!
+          if (showSkeletonRef.current) {
+            const isUpperBodyMode =
+              resolvedConfig.framing !== 'full_body' && resolvedConfig.framing !== 'lower_body';
+            const activeConnections = isUpperBodyMode
+              ? [
+                  [11, 12], [11, 23], [12, 24], [23, 24], // กรอบลำตัวส่วนบน
+                  [11, 13], [13, 15],                     // แขนซ้าย
+                  [12, 14], [14, 16],                     // แขนขวา
+                ]
+              : POSE_CONNECTIONS;
 
-          for (const [idxA, idxB] of POSE_CONNECTIONS) {
-            const ptA = projectedPoints[idxA];
-            const ptB = projectedPoints[idxB];
-            if (
-              ptA &&
-              ptB &&
-              ptA.visibility >= 0.35 &&
-              ptB.visibility >= 0.35 &&
-              ptA.inFrame &&
-              ptB.inFrame
-            ) {
-              ctx.beginPath();
-              ctx.moveTo(ptA.x, ptA.y);
-              ctx.lineTo(ptB.x, ptB.y);
-              ctx.stroke();
+            const activeJointIndices = isUpperBodyMode
+              ? [11, 12, 13, 14, 15, 16, 23, 24] // เฉพาะหัวไหล่ถึงสะโพก (ไม่วาดจุดใบหน้า 0-10 และไม่วาดขา 25-32)
+              : ANATOMICAL_BODY_JOINTS;
+
+            // วาดเส้นเชื่อมด้วยสีสว่างชัดเจน (#22d3ee / #10b981 / #f59e0b)
+            ctx.lineWidth = lowPowerRef.current ? 2.5 : 4;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            for (const [idxA, idxB] of activeConnections) {
+              const ptA = projectedPoints[idxA];
+              const ptB = projectedPoints[idxB];
+              if (
+                ptA &&
+                ptB &&
+                ptA.inFrame &&
+                ptB.inFrame &&
+                ptA.visibility >= 0.35 &&
+                ptB.visibility >= 0.35
+              ) {
+                ctx.beginPath();
+                ctx.moveTo(ptA.x, ptA.y);
+                ctx.lineTo(ptB.x, ptB.y);
+                ctx.stroke();
+              }
             }
-          }
 
-          // 2. Draw Body Joint Nodes
-          const isDebug = showDebugRef.current;
-          if (isDebug) {
-            ctx.font = 'bold 10px monospace';
-            for (let i = 0; i < projectedPoints.length; i++) {
-              const pt = projectedPoints[i];
-              if (!pt || pt.visibility < 0.25 || !pt.inFrame) continue;
-
-              ctx.beginPath();
-              ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
-              ctx.fillStyle = pt.visibility >= 0.65 ? strokeColor : '#f59e0b';
-              ctx.fill();
-              ctx.lineWidth = 1.5;
-              ctx.strokeStyle = '#ffffff';
-              ctx.stroke();
-
-              const name = LANDMARK_NAMES[i] || `#${i}`;
-              ctx.fillStyle = '#00ffcc';
-              ctx.fillText(`${name} (${Math.round(pt.visibility * 100)}%)`, pt.x + 8, pt.y - 4);
-            }
-          } else {
-            for (const idx of ANATOMICAL_BODY_JOINTS) {
+            // วาดจุดข้อต่อเฉพาะส่วนที่กำหนด (ไม่วาดป้ายชื่อทับใบหน้า 0-10 เด็ดขาด)
+            for (const idx of activeJointIndices) {
               const pt = projectedPoints[idx];
-              if (!pt || pt.visibility < 0.35 || !pt.inFrame) continue;
-
+              if (!pt || !pt.inFrame || pt.visibility < 0.35) continue;
               ctx.beginPath();
-              ctx.arc(pt.x, pt.y, pt.visibility >= 0.65 ? 6 : 4, 0, Math.PI * 2);
-              ctx.fillStyle = pt.visibility >= 0.65 ? strokeColor : 'rgba(245, 158, 11, 0.6)';
+              ctx.arc(pt.x, pt.y, 7, 0, Math.PI * 2);
+              ctx.fillStyle = strokeColor;
               ctx.fill();
               ctx.lineWidth = 2;
               ctx.strokeStyle = '#ffffff';
               ctx.stroke();
+
+              // วาดป้ายเลขจุดเฉพาะเมื่อเปิดทั้ง "แสดงเส้นลำตัว" และ "Debug" พร้อมกัน และเฉพาะจุดลำตัว 11..24 เท่านั้น
+              if (showDebugRef.current && idx >= 11) {
+                ctx.font = 'bold 11px sans-serif';
+                ctx.fillStyle = '#38bdf8';
+                ctx.fillText(`#${idx} (${pt.visibility.toFixed(2)})`, pt.x + 10, pt.y - 6);
+              }
             }
           }
 
@@ -984,20 +1011,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           )}
 
-          {/* Audio Coach Mute/Unmute Toggle */}
+          {/* Skeleton Overlay Toggle Button (Default = False/Off) */}
           <button
             type="button"
-            id="kiosk-toggle-audio-btn"
-            data-testid="kiosk-toggle-audio-btn"
-            onClick={() => setIsAudioMuted((prev) => !prev)}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer border ${
-              isAudioMuted
-                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
-                : 'bg-slate-900 border-slate-800 text-emerald-400 hover:text-emerald-300'
+            id="kiosk-toggle-skeleton-btn"
+            data-testid="kiosk-toggle-skeleton-btn"
+            onClick={() => setShowSkeletonOverlay((prev) => !prev)}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+              showSkeletonOverlay
+                ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300 shadow-md shadow-cyan-500/20'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
             }`}
-            title="เปิด/ปิดเสียงพูดแนะนำ (Audio Voice Coach)"
+            title="เปิด/ปิดการแสดงเส้นโครงร่างลำตัว (Skeleton Overlay)"
           >
-            <span>{isAudioMuted ? '🔇 เสียงโค้ช: ปิด' : '🔊 เสียงโค้ช: เปิด'}</span>
+            <span>🦴</span>
+            <span>{showSkeletonOverlay ? 'เส้นลำตัว: เปิด' : 'เส้นลำตัว: ปิด'}</span>
           </button>
 
           {/* Diagnostic Debug HUD Toggle */}
