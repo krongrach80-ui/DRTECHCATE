@@ -3,11 +3,16 @@
  *
  * REAL-TIME DYNAMIC AI EXERCISE EVALUATION SESSION
  * Features:
- * - Color-coded skeleton overlay (Green = good/target, Yellow = approaching/warning, Red = error/safety cap)
- * - Joint angle HUD & circular pendulum 360° progress gauge
- * - Web Audio API synthesized harmonic chime on rep completion
- * - PainStopEmergencyBar with high-priority PT alert
- * - End-of-set & End-of-exercise summary cards
+ * - Decoupled single-mount camera & MediaPipe lifecycle (No re-mounts on state changes)
+ * - Multi-CDN WASM and Model fallback with GPU -> CPU graceful degradation
+ * - Strict monotonic timestamp guarding for detectForVideo
+ * - Exact 1:1 canvas-to-video coordinate mapping with mirror support
+ * - Live Diagnostic Telemetry Debug HUD (Camera, Model, FPS, Landmarks, Angle, Accuracy, State)
+ * - Color-coded skeleton overlay (Green = target/good, Yellow = warning/adjust, Red = error/safety cap)
+ * - Synthesized harmonic chime on repetition completion
+ * - Web Speech Thai TTS audio coaching with cooldown guards
+ * - PainStopEmergencyBar with high-priority clinical alert
+ * - Rest between sets & Exercise completion summaries
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -35,14 +40,15 @@ import {
 } from 'lucide-react';
 import { useClinicalI18n, LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
 
-interface DynamicExerciseSessionViewProps {
-  patient: {
+export interface DynamicExerciseSessionViewProps {
+  // Shape A (SmartDailyPlanView)
+  patient?: {
     patient_id?: string;
     hn?: string;
     first_name: string;
     last_name?: string;
   };
-  exercise: {
+  exercise?: {
     id?: string;
     exercise_id?: string;
     name?: string;
@@ -51,8 +57,16 @@ interface DynamicExerciseSessionViewProps {
     sets?: number;
     reps?: number;
   };
-  config: ExerciseDetectionConfig;
-  onSessionCompleted: (telemetry: ExerciseSessionTelemetry) => void;
+  config?: ExerciseDetectionConfig;
+  onSessionCompleted?: (telemetry: ExerciseSessionTelemetry) => void;
+
+  // Shape B (Alternative direct usage)
+  exerciseConfig?: ExerciseDetectionConfig;
+  exerciseTitle?: string;
+  onComplete?: (summary: any) => void;
+  onPainStop?: (telemetry: any) => void;
+
+  // Shared
   onExit: () => void;
 }
 
@@ -64,9 +78,11 @@ const POSE_CONNECTIONS: [number, number][] = [
   [23, 24], // Hips
   [23, 25], [25, 27], // Left leg
   [24, 26], [26, 28], // Right leg
+  [27, 29], [27, 31], [29, 31], // Left foot
+  [28, 30], [28, 32], [30, 32], // Right foot
 ];
 
-const ANATOMICAL_BODY_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+const ANATOMICAL_BODY_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
 
 const LANDMARK_NAMES: Record<number, string> = {
   0: 'Nose',
@@ -82,18 +98,36 @@ const LANDMARK_NAMES: Record<number, string> = {
   26: 'R.Knee',
   27: 'L.Ankle',
   28: 'R.Ankle',
+  29: 'L.Heel',
+  30: 'R.Heel',
+  31: 'L.FootIndex',
+  32: 'R.FootIndex',
 };
 
-export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProps> = ({
-  patient,
-  exercise,
-  config,
-  onSessionCompleted,
-  onExit,
-}) => {
+export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProps> = (props) => {
+  const {
+    patient = { first_name: 'ผู้ฝึก' },
+    exercise = {},
+    config,
+    exerciseConfig,
+    exerciseTitle: explicitTitle,
+    onSessionCompleted,
+    onComplete,
+    onPainStop,
+    onExit,
+  } = props;
+
+  const resolvedConfig = (config || exerciseConfig)!;
+  const { lang } = useClinicalI18n();
+
+  // DOM Refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const stateMachineRef = useRef<RepStateMachine>(new RepStateMachine(config));
+
+  // Core Service Instances in Refs to survive re-renders
+  const streamRef = useRef<MediaStream | null>(null);
+  const landmarkerRef = useRef<any>(null);
+  const stateMachineRef = useRef<RepStateMachine>(new RepStateMachine(resolvedConfig));
   const watchdogRef = useRef<CameraStreamWatchdog>(
     new CameraStreamWatchdog({
       maxFrozenFrames: 60,
@@ -109,59 +143,98 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       rate: 1.05,
     })
   );
-  const isMountedRef = useRef(true);
-  const animFrameIdRef = useRef<number | null>(null);
+
+  // Loop & Timing Control Refs
+  const rafIdRef = useRef<number | null>(null);
+  const isMountedRef = useRef<boolean>(true);
+  const lastTimestampMsRef = useRef<number>(0);
+  const lastInferenceTimeRef = useRef<number>(0);
+  const lastUiUpdateMsRef = useRef<number>(0);
+  const smoothedFpsRef = useRef<number>(30);
+  const lastCompletedRepsRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sessionStartTimeRef = useRef<number>(0);
-  const isFinalizingRef = useRef(false);
-  const isReportingPainRef = useRef(false);
+  const isFinalizingRef = useRef<boolean>(false);
+  const isReportingPainRef = useRef<boolean>(false);
 
-  const [isPaused, setIsPaused] = useState(false);
-  const [activeSide, setActiveSide] = useState<BodySide>(config.side || 'right');
+  // Dynamic States
+  const [cameraStatus, setCameraStatus] = useState<'initializing' | 'ready' | 'error'>('initializing');
+  const [modelStatus, setModelStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [cameraDimensions, setCameraDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [modelDelegate, setModelDelegate] = useState<'GPU' | 'CPU'>('GPU');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [activeSide, setActiveSide] = useState<BodySide>(resolvedConfig.side || 'right');
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [lowPowerMode, setLowPowerMode] = useState<boolean>(false);
+  const [showDebugHud, setShowDebugHud] = useState<boolean>(true);
+
   const [evalResult, setEvalResult] = useState<RepEvaluationResult | null>(null);
   const [watchdogStatus, setWatchdogStatus] = useState<WatchdogHealthStatus | null>(null);
-  const [isResting, setIsResting] = useState(false);
-  const [restCountdown, setRestCountdown] = useState(config.defaultPrescription.restBetweenSetsSec || 30);
-  const [isSummaryOpen, setIsSummaryOpen] = useState(false);
-  const [painReportedState, setPainReportedState] = useState(false);
-  const [isDebugOverlayOpen, setIsDebugOverlayOpen] = useState(false);
-  const isDebugOverlayRef = useRef(false);
+  const [isResting, setIsResting] = useState<boolean>(false);
+  const [restCountdown, setRestCountdown] = useState<number>(
+    resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30
+  );
+  const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
+  const [painReportedState, setPainReportedState] = useState<boolean>(false);
+
+  // Diagnostic HUD live state
+  const [hudState, setHudState] = useState({
+    fps: 0,
+    landmarkCount: 0,
+    avgVisibility: 0,
+    currentAngle: 0,
+    accuracyPct: 0,
+    repPhase: 'IDLE',
+    completedReps: 0,
+    currentSet: 1,
+    coachingMessage: 'กำลังเตรียมกล้องและระบบตรวจจับท่าทาง...',
+    statusColor: '#10b981',
+  });
+
+  // State mirror refs for loop access without re-binding
+  const isPausedRef = useRef(isPaused);
   useEffect(() => {
-    isDebugOverlayRef.current = isDebugOverlayOpen;
-  }, [isDebugOverlayOpen]);
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
-  // Canvas Resolution Sync with Container
+  const isRestingRef = useRef(isResting);
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    isRestingRef.current = isResting;
+  }, [isResting]);
 
-    const syncCanvasSize = () => {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        const targetW = Math.round(rect.width);
-        const targetH = Math.round(rect.height);
-        if (canvas.width !== targetW || canvas.height !== targetH) {
-          canvas.width = targetW;
-          canvas.height = targetH;
-        }
-      }
-    };
+  const isSummaryOpenRef = useRef(isSummaryOpen);
+  useEffect(() => {
+    isSummaryOpenRef.current = isSummaryOpen;
+  }, [isSummaryOpen]);
 
-    syncCanvasSize();
-    const ro = new ResizeObserver(() => syncCanvasSize());
-    ro.observe(canvas);
-    window.addEventListener('resize', syncCanvasSize);
+  const lowPowerRef = useRef(lowPowerMode);
+  useEffect(() => {
+    lowPowerRef.current = lowPowerMode;
+  }, [lowPowerMode]);
 
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', syncCanvasSize);
-    };
-  }, []);
+  const showDebugRef = useRef(showDebugHud);
+  useEffect(() => {
+    showDebugRef.current = showDebugHud;
+  }, [showDebugHud]);
 
-  // Play synthesized harmonic chime
+  const activeSideRef = useRef(activeSide);
+  useEffect(() => {
+    activeSideRef.current = activeSide;
+    stateMachineRef.current.setSide(activeSide);
+  }, [activeSide]);
+
+  // Sync config updates without restarting loop
+  useEffect(() => {
+    stateMachineRef.current.updateConfig(resolvedConfig);
+  }, [resolvedConfig]);
+
+  // Sound & Speech Helpers
   const playRepChime = useCallback(() => {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
       if (!audioCtxRef.current) {
         audioCtxRef.current = new AudioCtx();
@@ -192,138 +265,73 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
   }, []);
 
-  // Web Speech Thai TTS announcement with >= 3500ms cooldown guard
-  const speakThai = useCallback((text: string, category?: string, overrideCooldownMs?: number) => {
-    voiceFeedbackRef.current.speak(text, category, overrideCooldownMs);
-  }, []);
-
-  const handleToggleSide = useCallback((newSide: BodySide) => {
-    setActiveSide(newSide);
-    stateMachineRef.current.setSide(newSide);
-    speakThai(newSide === 'right' ? 'ตรวจจับแขนขวา' : 'ตรวจจับแขนซ้าย', 'side_toggle', 0);
-  }, [speakThai]);
-
-  // Canvas Skeleton Rendering with exact coordinate projection and anatomical gating
-  const renderSkeleton = useCallback(
-    (landmarks: PoseEngineLandmark[], formRating: 'good' | 'warning' | 'error', isLowPerf: boolean = false) => {
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
-      if (!canvas || !video) return;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
-
-      if (landmarks.length === 0) return;
-
-      const vW = video.videoWidth || 1280;
-      const vH = video.videoHeight || 720;
-      const isDebug = isDebugOverlayRef.current;
-
-      // Pick theme color based on form
-      const color =
-        formRating === 'good'
-          ? '#10b981' // Emerald 500
-          : formRating === 'warning'
-          ? '#f59e0b' // Amber 500
-          : '#ef4444'; // Red 500
-
-      ctx.lineWidth = isLowPerf ? 2.5 : 4;
-      ctx.strokeStyle = color;
-      ctx.fillStyle = color;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      // 1. Draw skeletal connections between anatomical body joints (excluding facial 0..10)
-      for (const [iA, iB] of POSE_CONNECTIONS) {
-        const lmA = landmarks[iA];
-        const lmB = landmarks[iB];
-        if (lmA && lmB) {
-          const visA = lmA.visibility ?? 1.0;
-          const visB = lmB.visibility ?? 1.0;
-          if (visA >= 0.45 && visB >= 0.45) {
-            const ptA = projectLandmarkToCanvas(lmA, vW, vH, w, h, true, 'cover');
-            const ptB = projectLandmarkToCanvas(lmB, vW, vH, w, h, true, 'cover');
-            if (ptA.isWithinFrame && ptB.isWithinFrame) {
-              ctx.beginPath();
-              ctx.moveTo(ptA.x, ptA.y);
-              ctx.lineTo(ptB.x, ptB.y);
-              ctx.stroke();
-            }
-          }
-        }
-      }
-
-      // 2. Draw joint nodes
-      if (isDebug) {
-        // Debug Inspector: Draw all 33 detected landmarks with index, name, and visibility
-        ctx.font = '10px monospace';
-        for (let i = 0; i < landmarks.length; i++) {
-          const lm = landmarks[i];
-          const vis = lm.visibility ?? 1.0;
-          if (vis < 0.2) continue; // Skip completely invisible points
-          const pt = projectLandmarkToCanvas(lm, vW, vH, w, h, true, 'cover');
-          if (!pt.isWithinFrame) continue;
-
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 4, 0, 2 * Math.PI);
-          ctx.fillStyle = vis >= 0.5 ? '#10b981' : '#f59e0b';
-          ctx.fill();
-
-          const name = LANDMARK_NAMES[i] || `#${i}`;
-          const label = `#${i} ${name} (${Math.round(vis * 100)}%)`;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillText(label, pt.x + 6, pt.y - 3);
-        }
-      } else {
-        // Clinical View: Only draw anatomical body joints (never clutter the face 0..10)
-        const radius = isLowPerf ? 4 : 6;
-        for (const idx of ANATOMICAL_BODY_JOINTS) {
-          const lm = landmarks[idx];
-          if (!lm) continue;
-          const vis = lm.visibility ?? 1.0;
-          if (vis < 0.45) continue;
-
-          const pt = projectLandmarkToCanvas(lm, vW, vH, w, h, true, 'cover');
-          if (!pt.isWithinFrame) continue;
-
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, radius, 0, 2 * Math.PI);
-
-          if (vis >= 0.7) {
-            ctx.fillStyle = color;
-            ctx.fill();
-            if (!isLowPerf) {
-              ctx.strokeStyle = '#ffffff';
-              ctx.lineWidth = 2;
-              ctx.stroke();
-            }
-          } else {
-            // Low confidence (0.45 - 0.70): faint hollow ring
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-          }
-        }
-      }
+  const speakThai = useCallback(
+    (text: string, category?: string, overrideCooldownMs?: number) => {
+      voiceFeedbackRef.current.speak(text, category, overrideCooldownMs);
     },
     []
   );
 
-  // Camera & MediaPipe Pose Landmarker initialization
+  const handleToggleSide = useCallback(
+    (newSide: BodySide) => {
+      setActiveSide(newSide);
+      speakThai(
+        newSide === 'right' ? 'ตรวจจับข้างขวา' : 'ตรวจจับข้างซ้าย',
+        'side_toggle',
+        0
+      );
+    },
+    [speakThai]
+  );
+
+  // Resource Cleanup on Unmount
+  const cleanupResources = useCallback(() => {
+    isMountedRef.current = false;
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    if (landmarkerRef.current) {
+      try {
+        landmarkerRef.current.close();
+      } catch {
+        // ignore
+      }
+      landmarkerRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    voiceFeedbackRef.current.cancel();
+    watchdogRef.current.reset();
+  }, []);
+
+  // Single-Mount Lifecycle: Boot Camera, Pose Detector, and Detection Loop
   useEffect(() => {
     isMountedRef.current = true;
     if (sessionStartTimeRef.current === 0) {
       sessionStartTimeRef.current = Date.now();
     }
-    let stream: MediaStream | null = null;
-    let landmarker: any = null;
 
-    async function initCameraAndDetector() {
+    async function bootSession() {
       try {
+        setErrorMessage(null);
+        setCameraStatus('initializing');
+        setModelStatus('loading');
+
+        // 1. Initialize Webcam Stream
+        let stream: MediaStream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
@@ -334,237 +342,376 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             audio: false,
           });
         } catch {
-          // Seamless fallback to default video constraints to prevent OverconstrainedError
           stream = await navigator.mediaDevices.getUserMedia({
             video: true,
             audio: false,
           });
         }
 
-        if (videoRef.current && isMountedRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.muted = true;
-          videoRef.current.playsInline = true;
-          try {
-            await videoRef.current.play();
-          } catch (playErr) {
-            console.warn('Video play deferred or non-fatal:', playErr);
-          }
+        if (!isMountedRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
         }
 
-        // Enforce self-hosted WASM and local models for China GFW immunity
+        streamRef.current = stream;
+        const videoEl = videoRef.current;
+        if (!videoEl) return;
+
+        videoEl.srcObject = stream;
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+
+        // Explicitly wait until video metadata is loaded and videoWidth is valid (> 0)
+        await new Promise<void>((resolve) => {
+          if (videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
+            resolve();
+            return;
+          }
+          const onLoaded = () => {
+            videoEl.removeEventListener('loadeddata', onLoaded);
+            resolve();
+          };
+          videoEl.addEventListener('loadeddata', onLoaded);
+        });
+
+        try {
+          await videoEl.play();
+        } catch (playErr) {
+          console.warn('[PoseEngine] Video play warning:', playErr);
+        }
+
+        if (!isMountedRef.current) return;
+        setCameraDimensions({
+          width: videoEl.videoWidth || 1280,
+          height: videoEl.videoHeight || 720,
+        });
+        setCameraStatus('ready');
+
+        // 2. Load MediaPipe Tasks-Vision with Multi-CDN & Local Fallbacks
         const vision = await import('@mediapipe/tasks-vision');
-        let filesetResolver: any;
-        try {
-          filesetResolver = await vision.FilesetResolver.forVisionTasks('/models/wasm');
-        } catch {
-          filesetResolver = await vision.FilesetResolver.forVisionTasks('/wasm');
-        }
+        const wasmSources = [
+          '/models/wasm',
+          '/wasm',
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm',
+          'https://unpkg.com/@mediapipe/tasks-vision@0.10.14/wasm',
+        ];
 
-        try {
-          landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
-            baseOptions: {
-              modelAssetPath: '/models/pose_landmarker.task',
-              delegate: 'GPU',
-            },
-            runningMode: 'VIDEO',
-            numPoses: 1,
-            minPoseDetectionConfidence: 0.5,
-            minPosePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-          });
-        } catch {
+        let filesetResolver: any = null;
+        for (const wasmUrl of wasmSources) {
           try {
-            landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
-              baseOptions: {
-                modelAssetPath: '/models/pose_landmarker.task',
-                delegate: 'CPU',
-              },
-              runningMode: 'VIDEO',
-              numPoses: 1,
-              minPoseDetectionConfidence: 0.5,
-              minPosePresenceConfidence: 0.5,
-              minTrackingConfidence: 0.5,
-            });
-          } catch {
-            landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
-              baseOptions: {
-                modelAssetPath: '/models/pose_landmarker_lite.task',
-                delegate: 'CPU',
-              },
-              runningMode: 'VIDEO',
-              numPoses: 1,
-              minPoseDetectionConfidence: 0.5,
-              minPosePresenceConfidence: 0.5,
-              minTrackingConfidence: 0.5,
-            });
+            filesetResolver = await vision.FilesetResolver.forVisionTasks(wasmUrl);
+            if (filesetResolver) break;
+          } catch (wasmErr) {
+            console.warn('[PoseEngine] WASM source attempt failed:', wasmUrl, wasmErr);
           }
         }
 
-        startProcessingLoop(landmarker);
-      } catch (err) {
-        console.warn('Pose landmarker init warning:', err);
-        // Fallback simulation loop if camera/model has restrictions
-        startFallbackLoop();
+        if (!filesetResolver) {
+          throw new Error('ไม่สามารถโหลดไฟล์ WebAssembly ของระบบตรวจจับได้ (กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ CSP)');
+        }
+
+        // Model Sources: Local -> Lite Local -> Google Cloud Storage CDN
+        const modelSources = [
+          '/models/pose_landmarker.task',
+          '/models/pose_landmarker_lite.task',
+          'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+        ];
+
+        let landmarker: any = null;
+        let selectedDelegate: 'GPU' | 'CPU' = 'GPU';
+
+        // Try GPU delegate first across sources
+        for (const modelPath of modelSources) {
+          try {
+            landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+              baseOptions: {
+                modelAssetPath: modelPath,
+                delegate: 'GPU',
+              },
+              runningMode: 'VIDEO',
+              numPoses: 1,
+              minPoseDetectionConfidence: 0.5,
+              minPosePresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            });
+            if (landmarker) {
+              selectedDelegate = 'GPU';
+              break;
+            }
+          } catch (gpuErr) {
+            console.warn(`[PoseEngine] GPU init failed for ${modelPath}:`, gpuErr);
+          }
+        }
+
+        // If GPU fails, fallback immediately to CPU delegate
+        if (!landmarker) {
+          for (const modelPath of modelSources) {
+            try {
+              landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+                baseOptions: {
+                  modelAssetPath: modelPath,
+                  delegate: 'CPU',
+                },
+                runningMode: 'VIDEO',
+                numPoses: 1,
+                minPoseDetectionConfidence: 0.5,
+                minPosePresenceConfidence: 0.5,
+                minTrackingConfidence: 0.5,
+              });
+              if (landmarker) {
+                selectedDelegate = 'CPU';
+                break;
+              }
+            } catch (cpuErr) {
+              console.warn(`[PoseEngine] CPU init failed for ${modelPath}:`, cpuErr);
+            }
+          }
+        }
+
+        if (!landmarker) {
+          throw new Error('ไม่สามารถโหลดไฟล์โมเดลตรวจจับท่าทางได้ (ตรวจสอบสิทธิ์การเข้าถึงไฟล์โมเดล)');
+        }
+
+        if (!isMountedRef.current) {
+          landmarker.close();
+          return;
+        }
+
+        landmarkerRef.current = landmarker;
+        setModelDelegate(selectedDelegate);
+        setModelStatus('ready');
+
+        // 3. Start Continuous Detection & Render Loop (requestAnimationFrame)
+        const detectFrame = () => {
+          if (!isMountedRef.current) return;
+          rafIdRef.current = requestAnimationFrame(detectFrame);
+
+          const vEl = videoRef.current;
+          const cEl = canvasRef.current;
+          const detector = landmarkerRef.current;
+
+          if (!vEl || !cEl || !detector || vEl.readyState < 2 || vEl.videoWidth === 0) {
+            return;
+          }
+
+          // 1:1 CSS pixel synchronization to prevent DPI coordinate shift
+          const displayW = cEl.clientWidth || vEl.clientWidth || 1280;
+          const displayH = cEl.clientHeight || vEl.clientHeight || 720;
+          if (cEl.width !== displayW || cEl.height !== displayH) {
+            cEl.width = displayW;
+            cEl.height = displayH;
+          }
+
+          const nowMs = performance.now();
+          const minIntervalMs = lowPowerRef.current ? 66 : 20; // 15 FPS in low-power, 50 FPS standard
+          if (nowMs - lastInferenceTimeRef.current < minIntervalMs) {
+            return;
+          }
+
+          const dtMs = Math.max(nowMs - lastInferenceTimeRef.current, 1);
+          lastInferenceTimeRef.current = nowMs;
+          smoothedFpsRef.current = 0.85 * smoothedFpsRef.current + 0.15 * (1000 / dtMs);
+
+          // Strictly increasing integer timestamp for MediaPipe stream calculator
+          let monotonicTs = Math.floor(nowMs);
+          if (monotonicTs <= lastTimestampMsRef.current) {
+            monotonicTs = lastTimestampMsRef.current + 1;
+          }
+          lastTimestampMsRef.current = monotonicTs;
+
+          // Non-blocking detection: a single dropped frame never crashes the animation loop
+          let result: any = null;
+          try {
+            result = detector.detectForVideo(vEl, monotonicTs);
+          } catch (detectErr) {
+            console.warn('[PoseEngine] detectForVideo transient frame warning:', detectErr);
+            return;
+          }
+
+          const ctx = cEl.getContext('2d');
+          if (!ctx) return;
+          ctx.clearRect(0, 0, cEl.width, cEl.height);
+
+          const hasPose = Boolean(result && result.landmarks && result.landmarks.length > 0);
+          if (!hasPose) {
+            if (nowMs - lastUiUpdateMsRef.current > 150) {
+              lastUiUpdateMsRef.current = nowMs;
+              setHudState((prev) => ({
+                ...prev,
+                fps: Math.round(smoothedFpsRef.current),
+                landmarkCount: 0,
+                avgVisibility: 0,
+                coachingMessage: '📷 ไม่พบร่างกายในภาพ กรุณาขยับให้อยู่กลางหน้าจอและถอยห่าง 1.5–2 เมตร',
+                statusColor: '#f59e0b',
+              }));
+            }
+            return;
+          }
+
+          const normLandmarks = result.landmarks[0];
+          const rawLandmarks: PoseEngineLandmark[] = normLandmarks.map((lm: any) => ({
+            x: lm.x,
+            y: lm.y,
+            z: lm.z,
+            visibility: lm.visibility ?? 0.9,
+            presence: lm.presence ?? 0.9,
+          }));
+
+          // Hardware Watchdog Update
+          const wdStatus = watchdogRef.current.update(rawLandmarks, monotonicTs);
+
+          // Biomechanical State Machine Evaluation
+          const evalRes = stateMachineRef.current.evaluate(rawLandmarks, monotonicTs);
+
+          // Project landmarks into 1:1 canvas pixels with mirror support
+          const projectedPoints = normLandmarks.map((lm: any) =>
+            projectLandmarkToCanvas(lm, vEl, cEl, true, 'cover')
+          );
+
+          const strokeColor =
+            evalRes.formRating === 'error'
+              ? '#ef4444'
+              : evalRes.formRating === 'warning'
+              ? '#f59e0b'
+              : '#10b981';
+
+          // 1. Draw Skeleton Lines
+          ctx.lineWidth = lowPowerRef.current ? 2.5 : 4;
+          ctx.strokeStyle = strokeColor;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+
+          for (const [idxA, idxB] of POSE_CONNECTIONS) {
+            const ptA = projectedPoints[idxA];
+            const ptB = projectedPoints[idxB];
+            if (
+              ptA &&
+              ptB &&
+              ptA.visibility >= 0.35 &&
+              ptB.visibility >= 0.35 &&
+              ptA.inFrame &&
+              ptB.inFrame
+            ) {
+              ctx.beginPath();
+              ctx.moveTo(ptA.x, ptA.y);
+              ctx.lineTo(ptB.x, ptB.y);
+              ctx.stroke();
+            }
+          }
+
+          // 2. Draw Body Joint Nodes
+          const isDebug = showDebugRef.current;
+          if (isDebug) {
+            ctx.font = 'bold 10px monospace';
+            for (let i = 0; i < projectedPoints.length; i++) {
+              const pt = projectedPoints[i];
+              if (!pt || pt.visibility < 0.25 || !pt.inFrame) continue;
+
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+              ctx.fillStyle = pt.visibility >= 0.65 ? strokeColor : '#f59e0b';
+              ctx.fill();
+              ctx.lineWidth = 1.5;
+              ctx.strokeStyle = '#ffffff';
+              ctx.stroke();
+
+              const name = LANDMARK_NAMES[i] || `#${i}`;
+              ctx.fillStyle = '#00ffcc';
+              ctx.fillText(`${name} (${Math.round(pt.visibility * 100)}%)`, pt.x + 8, pt.y - 4);
+            }
+          } else {
+            for (const idx of ANATOMICAL_BODY_JOINTS) {
+              const pt = projectedPoints[idx];
+              if (!pt || pt.visibility < 0.35 || !pt.inFrame) continue;
+
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, pt.visibility >= 0.65 ? 6 : 4, 0, Math.PI * 2);
+              ctx.fillStyle = pt.visibility >= 0.65 ? strokeColor : 'rgba(245, 158, 11, 0.6)';
+              ctx.fill();
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = '#ffffff';
+              ctx.stroke();
+            }
+          }
+
+          // Rep completion audio chime & TTS
+          if (evalRes.completedReps > lastCompletedRepsRef.current) {
+            lastCompletedRepsRef.current = evalRes.completedReps;
+            playRepChime();
+            speakThai(`ครั้งที่ ${evalRes.completedReps}`, 'rep_count', 1200);
+          }
+
+          // Guidance speech announcements with cooldown guards
+          if (evalRes.isOccluded && evalRes.occlusionReasonTh) {
+            speakThai(evalRes.occlusionReasonTh, 'occlusion_warning', 3500);
+          } else if (evalRes.coachingMessageTh && evalRes.formRating !== 'good') {
+            speakThai(evalRes.coachingMessageTh, 'coaching_warning', 4000);
+          }
+
+          // Set & Exercise Completion Transitions
+          if (evalRes.isSetCompleted && !evalRes.isExerciseCompleted && !isRestingRef.current) {
+            setIsResting(true);
+            isRestingRef.current = true;
+            speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`, 'set_complete', 2500);
+          } else if (evalRes.isExerciseCompleted && !isSummaryOpenRef.current) {
+            setIsSummaryOpen(true);
+            isSummaryOpenRef.current = true;
+            speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว', 'exercise_complete', 2500);
+          }
+
+          // Throttle React State Updates to ~100ms for 60 FPS performance
+          if (nowMs - lastUiUpdateMsRef.current > 100) {
+            lastUiUpdateMsRef.current = nowMs;
+            const avgVis =
+              ANATOMICAL_BODY_JOINTS.reduce(
+                (acc, idx) => acc + (normLandmarks[idx]?.visibility ?? 0),
+                0
+              ) / ANATOMICAL_BODY_JOINTS.length;
+
+            setHudState({
+              fps: Math.round(smoothedFpsRef.current),
+              landmarkCount: normLandmarks.length,
+              avgVisibility: Number(avgVis.toFixed(2)),
+              currentAngle: Math.round(evalRes.currentAngleDeg || 0),
+              accuracyPct: Math.round(evalRes.accuracyPercent ?? evalRes.accuracyPct ?? 0),
+              repPhase: evalRes.phase,
+              completedReps: evalRes.completedReps,
+              currentSet: evalRes.currentSet,
+              coachingMessage: evalRes.coachingMessageTh,
+              statusColor: strokeColor,
+            });
+            setEvalResult(evalRes);
+            setWatchdogStatus(wdStatus);
+          }
+        };
+
+        rafIdRef.current = requestAnimationFrame(detectFrame);
+      } catch (err: any) {
+        if (!isMountedRef.current) return;
+        console.error('[PoseEngine] Session boot error:', err);
+        const msg =
+          err?.name === 'NotAllowedError'
+            ? 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้กล้องบนเบราว์เซอร์'
+            : err?.message || 'เกิดข้อผิดพลาดในการโหลดระบบตรวจจับท่าทาง';
+        setErrorMessage(msg);
+        setCameraStatus('error');
+        setModelStatus('error');
       }
     }
 
-    let lastCompletedReps = 0;
-    let lastInferenceTime = 0;
-    let lastWatchdogStatusCheck = 0;
-    let isCurrentLowPerf = false;
+    bootSession();
 
-    const startProcessingLoop = (detector: any) => {
-      const processFrame = () => {
-        if (!isMountedRef.current) return;
-
-        const now = Date.now();
-        const minIntervalMs = isCurrentLowPerf ? 66 : 33; // 15 FPS throttle in lowPerformanceMode, 30 FPS normal
-        if (
-          !isPaused &&
-          !isResting &&
-          !isSummaryOpen &&
-          videoRef.current &&
-          videoRef.current.readyState >= 2 &&
-          now - lastInferenceTime >= minIntervalMs
-        ) {
-          lastInferenceTime = now;
-          try {
-            const results = detector.detectForVideo(videoRef.current, now);
-            let rawLandmarks: PoseEngineLandmark[] = [];
-
-            if (results.landmarks && results.landmarks[0]) {
-              rawLandmarks = results.landmarks[0].map((lm: any) => ({
-                x: lm.x,
-                y: lm.y,
-                z: lm.z,
-                visibility: lm.visibility ?? 0.9,
-                presence: lm.presence ?? 0.9,
-              }));
-            }
-
-            // 1. Hardware Watchdog Check (Frozen detection & FPS throttling)
-            const wdStatus = watchdogRef.current.update(rawLandmarks, now);
-            isCurrentLowPerf = wdStatus.lowPerformanceMode;
-            if (now - lastWatchdogStatusCheck > 600) {
-              lastWatchdogStatusCheck = now;
-              setWatchdogStatus(wdStatus);
-            }
-
-            // Auto-Reconnect on stream freeze
-            if (wdStatus.needsReconnect && !wdStatus.isReconnecting) {
-              watchdogRef.current.attemptReconnect(async () => {
-                if (stream) {
-                  stream.getTracks().forEach((t) => t.stop());
-                }
-                const newStream = await navigator.mediaDevices.getUserMedia({
-                  video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: 'user',
-                  },
-                  audio: false,
-                });
-                if (videoRef.current && isMountedRef.current) {
-                  videoRef.current.srcObject = newStream;
-                  await videoRef.current.play();
-                }
-                stream = newStream;
-                return newStream;
-              });
-            }
-
-            // 2. Biomechanical Rep & Compensation Evaluation
-            const evalRes = stateMachineRef.current.evaluate(rawLandmarks, now);
-            setEvalResult(evalRes);
-
-            // Chime & speech on rep increment
-            if (evalRes.completedReps > lastCompletedReps) {
-              lastCompletedReps = evalRes.completedReps;
-              playRepChime();
-              speakThai(`ครั้งที่ ${evalRes.completedReps}`, 'rep_count', 1200);
-            }
-
-            // Occlusion / Subject Lock Warning with >= 3500ms cooldown
-            if (evalRes.isOccluded && evalRes.occlusionReasonTh) {
-              speakThai(evalRes.occlusionReasonTh, 'occlusion_warning', 3500);
-            } else if (evalRes.coachingMessageTh && evalRes.formRating !== 'good') {
-              speakThai(evalRes.coachingMessageTh, 'coaching_warning', 4000);
-            }
-
-            // Set completion check
-            if (evalRes.isSetCompleted && !evalRes.isExerciseCompleted && !isResting) {
-              setIsResting(true);
-              speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`, 'set_complete', 2500);
-            } else if (evalRes.isExerciseCompleted) {
-              setIsSummaryOpen(true);
-              speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว', 'exercise_complete', 2500);
-            }
-
-            // 3. Render skeleton overlay (adaptive lowPerformanceMode)
-            renderSkeleton(rawLandmarks, evalRes.formRating, wdStatus.lowPerformanceMode);
-          } catch {
-            // non-blocking frame error
-          }
-        }
-
-        animFrameIdRef.current = requestAnimationFrame(processFrame);
-      };
-
-      animFrameIdRef.current = requestAnimationFrame(processFrame);
-    };
-
-    const startFallbackLoop = () => {
-      // Minimal animation loop for rendering video feed cleanly if vision model is offline
-      const loop = () => {
-        if (!isMountedRef.current) return;
-        renderSkeleton([], 'good');
-        animFrameIdRef.current = requestAnimationFrame(loop);
-      };
-      animFrameIdRef.current = requestAnimationFrame(loop);
-    };
-
-    const activeVoice = voiceFeedbackRef.current;
-    const activeWatchdog = watchdogRef.current;
-    const activeCanvas = canvasRef.current;
-
-    initCameraAndDetector();
-
-    // Strict Resource Disposal Cleanup
     return () => {
-      isMountedRef.current = false;
-      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
-      activeVoice.cancel();
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
-        audioCtxRef.current = null;
-      }
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
-      }
-      if (landmarker && typeof landmarker.close === 'function') {
-        try {
-          landmarker.close();
-        } catch {
-          // ignore
-        }
-      }
-      if (activeCanvas) {
-        const ctx = activeCanvas.getContext('2d');
-        if (ctx) ctx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
-      }
-      activeWatchdog.reset();
+      cleanupResources();
     };
-  }, [isPaused, isResting, isSummaryOpen, playRepChime, speakThai, renderSkeleton]);
+  }, [cleanupResources, playRepChime, speakThai]);
 
   const handleNextSet = useCallback(() => {
     setIsResting(false);
+    isRestingRef.current = false;
     stateMachineRef.current.nextSet();
-    setRestCountdown(config.defaultPrescription.restBetweenSetsSec || 30);
-  }, [config.defaultPrescription.restBetweenSetsSec]);
+    setRestCountdown(resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30);
+  }, [resolvedConfig.defaultPrescription?.restBetweenSetsSec]);
 
   // Rest Countdown Timer
   useEffect(() => {
@@ -574,39 +721,49 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         if (prev <= 1) {
           clearInterval(interval);
           handleNextSet();
-          return config.defaultPrescription.restBetweenSetsSec || 30;
+          return resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30;
         }
         return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isResting, handleNextSet, config.defaultPrescription.restBetweenSetsSec]);
+  }, [isResting, handleNextSet, resolvedConfig.defaultPrescription?.restBetweenSetsSec]);
 
   // Final Session Telemetry Submission with Idempotency Guard
   const handleFinalizeSession = (mode: 'ai_verified' | 'stopped_pain') => {
     if (isFinalizingRef.current) return;
     isFinalizingRef.current = true;
 
-    const totalDurationSec = Math.round((Date.now() - sessionStartTimeRef.current) / 1000);
+    const totalDurationSec = Math.max(
+      1,
+      Math.round((Date.now() - sessionStartTimeRef.current) / 1000)
+    );
     const idempotencyKey =
       typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `kiosk-sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     const telemetry: ExerciseSessionTelemetry = {
-      exerciseId: exercise.id || exercise.exercise_id || config.id || 'ex',
-      exerciseName: config.nameTh,
+      exerciseId: exercise.id || exercise.exercise_id || resolvedConfig.id || 'ex',
+      exerciseName: resolvedConfig.nameTh,
       patientId: patient.patient_id || patient.hn || 'unknown',
-      totalRepsTarget: config.defaultPrescription.repsPerSet,
-      completedReps: evalResult?.completedReps || 0,
+      totalRepsTarget: resolvedConfig.defaultPrescription?.repsPerSet || 10,
+      completedReps: evalResult?.completedReps || hudState.completedReps || 0,
       incorrectReps: evalResult?.incorrectReps || 0,
-      totalSetsCompleted: evalResult?.currentSet || 1,
-      maxAngleAchievedDeg: evalResult?.currentAngleDeg || 0,
-      averageAngleDeg: evalResult?.currentAngleDeg || 0,
-      averageHoldDurationSec: config.angleMechanics?.holdDurationSec || 2.0,
+      totalSetsCompleted: evalResult?.currentSet || hudState.currentSet || 1,
+      maxAngleAchievedDeg: evalResult?.currentAngleDeg || hudState.currentAngle || 0,
+      averageAngleDeg: evalResult?.currentAngleDeg || hudState.currentAngle || 0,
+      averageHoldDurationSec: resolvedConfig.angleMechanics?.holdDurationSec || 2.0,
       consistencyScorePercent: evalResult?.completedReps
-        ? Math.min(100, Math.round((evalResult.completedReps / (evalResult.completedReps + (evalResult.incorrectReps || 0))) * 100))
+        ? Math.min(
+            100,
+            Math.round(
+              (evalResult.completedReps /
+                (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
+                100
+            )
+          )
         : 100,
       compensationEventsCount: evalResult?.activeWarnings?.length || 0,
       scapularHikingRate: evalResult?.scapularHikingRatio || 0,
@@ -619,28 +776,24 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       idempotencyKey,
     };
 
-    // Zero-flicker in-memory reset for pose engine buffer without reloading page
-    stateMachineRef.current.reset();
-    voiceFeedbackRef.current.cancel();
-    if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {});
-      audioCtxRef.current = null;
+    cleanupResources();
+
+    if (onSessionCompleted) {
+      onSessionCompleted(telemetry);
+    } else if (onComplete) {
+      onComplete(telemetry);
     }
-    onSessionCompleted(telemetry);
   };
 
-  // Emergency Pain Stop Handler with Idempotency Lock
+  // Emergency Pain Stop Handler
   const handleReportPainStop = async () => {
     if (isReportingPainRef.current) return;
     isReportingPainRef.current = true;
 
     setPainReportedState(true);
     setIsPaused(true);
+    isPausedRef.current = true;
 
-    // Instant in-memory reset of kinematics state buffer
-    stateMachineRef.current.reset();
-
-    // Immediate audio purge & high-priority emergency speech
     voiceFeedbackRef.current.cancel();
     if (audioCtxRef.current) {
       audioCtxRef.current.close().catch(() => {});
@@ -648,7 +801,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
     speakThai('หยุดการฝึกแล้วค่ะ ระบบกำลังแจ้งนักกายภาพบำบัด', 'emergency_pain_stop', 0);
 
-    // 1. Instant telemetry persistence to cloud database without requiring user to tap modal
     try {
       const totalDurationSec = sessionStartTimeRef.current
         ? Math.max(1, Math.round((Date.now() - sessionStartTimeRef.current) / 1000))
@@ -656,37 +808,28 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
       await defaultApiClient.courses.submitSessionLog({
         patient_id: patient.patient_id || patient.hn || 'unknown',
-        exercise_id: exercise.id || exercise.exercise_id || config.id || null,
+        exercise_id: exercise.id || exercise.exercise_id || resolvedConfig.id || null,
         kiosk_id: 'kiosk-01',
         completion_mode: 'stopped_pain',
-        correct_reps: evalResult?.completedReps || 0,
+        correct_reps: evalResult?.completedReps || hudState.completedReps || 0,
         incorrect_reps: evalResult?.incorrectReps || 0,
-        target_reps: config.defaultPrescription?.repsPerSet || 10,
-        current_set: evalResult?.currentSet || 1,
-        total_sets: config.defaultPrescription?.totalSets || 3,
-        max_angle_achieved: evalResult?.currentAngleDeg || null,
-        consistency_score: evalResult?.completedReps
-          ? Math.min(
-              100,
-              Math.round(
-                (evalResult.completedReps /
-                  (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
-                  100
-              )
-            )
-          : 0,
+        target_reps: resolvedConfig.defaultPrescription?.repsPerSet || 10,
+        current_set: evalResult?.currentSet || hudState.currentSet || 1,
+        total_sets: resolvedConfig.defaultPrescription?.totalSets || 3,
+        max_angle_achieved: evalResult?.currentAngleDeg || hudState.currentAngle || null,
+        consistency_score: 0,
         pain_reported: true,
         duration_seconds: totalDurationSec,
         telemetry_summary: {
           emergency_stop: true,
           pain_reported: true,
           active_side: activeSide,
-          phase_at_stop: evalResult?.phase || 'IDLE',
+          phase_at_stop: evalResult?.phase || hudState.repPhase,
           warnings_at_stop: evalResult?.activeWarnings || [],
         },
       });
     } catch (logErr) {
-      console.warn('Emergency pain telemetry log dispatch error:', logErr);
+      console.warn('[PoseEngine] Emergency telemetry log error:', logErr);
     }
 
     try {
@@ -697,49 +840,77 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
       await (defaultApiClient.kiosk.callStaff as any)({
         kiosk_id: 'kiosk-01',
-        reason: `🚨 ผู้ป่วยแจ้งว่ามีอาการเจ็บขณะฝึกท่า: "${config.nameTh}" (HN: ${patient.hn || patient.patient_id})`,
+        reason: `🚨 ผู้ป่วยแจ้งว่ามีอาการเจ็บขณะฝึกท่า: "${resolvedConfig.nameTh}" (HN: ${patient.hn || patient.patient_id})`,
         idempotency_key: idempotencyKey,
       });
     } catch {
       // safe fallback
     }
+
+    if (onPainStop) {
+      onPainStop({
+        exerciseId: resolvedConfig.id,
+        side: activeSide,
+        reps: hudState.completedReps,
+      });
+    }
   };
 
-  const { lang } = useClinicalI18n();
-
-  const isPendulum = config.evaluationMode === 'pendulum_circular';
+  const isPendulum = resolvedConfig.evaluationMode === 'pendulum_circular';
   const progressRatio = isPendulum
     ? evalResult?.pendulumCircleProgressRatio || 0
     : evalResult?.holdProgressRatio || 0;
 
-  const isLowerBody = config.targetJoint === 'knee' || config.targetJoint === 'ankle' || config.targetJoint === 'hip';
-  const isBilateral = config.targetJoint === 'neck' || config.evaluationMode === 'neck_tilt' || config.evaluationMode === 'heel_raise' || config.id === 'sit-to-stand' || config.id === 'wall-pushup';
+  const isLowerBody =
+    resolvedConfig.targetJoint === 'knee' ||
+    resolvedConfig.targetJoint === 'ankle' ||
+    resolvedConfig.targetJoint === 'hip';
+  const isBilateral =
+    resolvedConfig.targetJoint === 'neck' ||
+    resolvedConfig.evaluationMode === 'neck_tilt' ||
+    resolvedConfig.evaluationMode === 'heel_raise' ||
+    resolvedConfig.id === 'sit-to-stand' ||
+    resolvedConfig.id === 'wall-pushup';
 
-  const exerciseTitle = lang === 'zh-CN' ? (config.nameCn || config.nameTh) : lang === 'en-US' ? (config.nameEn || config.nameTh) : config.nameTh;
-  const jointLabel = lang === 'zh-CN' ? `关节: ${config.targetJoint}` : lang === 'en-US' ? `Joint: ${config.targetJoint}` : `ข้อต่อ: ${config.targetJoint}`;
-  const coachingMsg = lang === 'zh-CN'
-    ? (evalResult?.coachingMessageCn || evalResult?.coachingMessageTh)
-    : lang === 'en-US'
-    ? (evalResult?.coachingMessageEn || evalResult?.coachingMessageTh)
-    : evalResult?.coachingMessageTh;
+  const titleString =
+    explicitTitle ||
+    (lang === 'zh-CN'
+      ? resolvedConfig.nameCn || resolvedConfig.nameTh
+      : lang === 'en-US'
+      ? resolvedConfig.nameEn || resolvedConfig.nameTh
+      : resolvedConfig.nameTh);
+
+  const jointLabel =
+    lang === 'zh-CN'
+      ? `关节: ${resolvedConfig.targetJoint}`
+      : lang === 'en-US'
+      ? `Joint: ${resolvedConfig.targetJoint}`
+      : `ข้อต่อ: ${resolvedConfig.targetJoint}`;
+
+  const coachingMsg =
+    lang === 'zh-CN'
+      ? evalResult?.coachingMessageCn || hudState.coachingMessage
+      : lang === 'en-US'
+      ? evalResult?.coachingMessageEn || hudState.coachingMessage
+      : hudState.coachingMessage;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col justify-between overflow-hidden select-none font-sans">
       {/* 1. Top Clinical HUD Header */}
-      <div className="w-full bg-slate-950/80 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 flex items-center justify-between z-20 flex-wrap gap-2">
+      <div className="w-full bg-slate-950/85 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 flex items-center justify-between z-20 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
             <Activity className="w-5 h-5" />
           </div>
           <div>
             <h1 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              <span>{exerciseTitle}</span>
+              <span>{titleString}</span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium">
                 {jointLabel}
               </span>
             </h1>
             <div className="text-xs text-slate-400 mt-0.5">
-              {lang === 'zh-CN' ? '患者' : lang === 'en-US' ? 'Patient' : 'ผู้ป่วย'}: คุณ {patient.first_name} {patient.last_name || ''} • HN: {patient.hn || patient.patient_id}
+              {lang === 'zh-CN' ? '患者' : lang === 'en-US' ? 'Patient' : 'ผู้ป่วย'}: คุณ {patient.first_name} {patient.last_name || ''} • HN: {patient.hn || patient.patient_id || '-'}
             </div>
           </div>
         </div>
@@ -781,35 +952,39 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           )}
 
-          {/* Debug Inspector Toggle */}
+          {/* Diagnostic Debug HUD Toggle */}
           <button
             type="button"
-            onClick={() => setIsDebugOverlayOpen((prev) => !prev)}
+            id="kiosk-toggle-debug-btn"
+            data-testid="kiosk-toggle-debug-btn"
+            onClick={() => setShowDebugHud((prev) => !prev)}
             className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer border ${
-              isDebugOverlayOpen
-                ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+              showDebugHud
+                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
                 : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
             }`}
-            title="Debug MediaPipe Landmarks"
+            title="สลับการแสดงผลแผงตรวจวัดละเอียด (Diagnostic Debug HUD)"
           >
             <span>🔍 Debug</span>
           </button>
 
+          {/* Sets Badge */}
           <div className="px-4 py-2 rounded-2xl bg-slate-900 border border-slate-800 text-center">
             <div className="text-[10px] text-slate-400 uppercase font-semibold">
               {lang === 'zh-CN' ? '组数' : lang === 'en-US' ? 'Set' : 'เซ็ตที่'}
             </div>
             <div className="text-sm sm:text-base font-extrabold text-teal-400">
-              {evalResult?.currentSet || 1} / {config.defaultPrescription.totalSets}
+              {hudState.currentSet} / {resolvedConfig.defaultPrescription?.totalSets || 3}
             </div>
           </div>
 
+          {/* Reps Badge */}
           <div className="px-5 py-2 rounded-2xl bg-gradient-to-r from-emerald-600/30 to-teal-600/30 border border-emerald-500/50 text-center shadow-lg shadow-emerald-950/50">
             <div className="text-[10px] text-emerald-300 uppercase font-semibold">
               {lang === 'zh-CN' ? '次数' : lang === 'en-US' ? 'Reps' : 'จำนวนครั้ง'}
             </div>
             <div className="text-lg sm:text-xl font-extrabold text-white">
-              {evalResult?.completedReps || 0} / {config.defaultPrescription.repsPerSet}
+              {hudState.completedReps} / {resolvedConfig.defaultPrescription?.repsPerSet || 10}
             </div>
           </div>
         </div>
@@ -817,17 +992,60 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
       {/* 2. Main Live Tracking Viewport */}
       <div className="relative flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden">
+        {/* Webcam Video with horizontal selfie mirror */}
         <video
           ref={videoRef}
           playsInline
           muted
-          className="absolute inset-0 w-full h-full object-cover -scale-x-100"
+          className="absolute inset-0 w-full h-full object-cover -scale-x-100 z-0"
         />
 
+        {/* 1:1 Canvas overlay directly on top of video */}
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full pointer-events-none z-10"
         />
+
+        {/* Real-time Diagnostic Debug HUD (🔍 Debug สถานะระบบ) */}
+        {showDebugHud && (
+          <div
+            id="pose-engine-debug-hud"
+            data-testid="pose-engine-debug-hud"
+            className="absolute top-20 left-4 z-30 bg-slate-900/90 border border-emerald-500/50 rounded-2xl p-3.5 text-xs font-mono text-emerald-300 shadow-2xl backdrop-blur-md space-y-1.5 max-w-xs sm:max-w-sm pointer-events-auto"
+          >
+            <div className="flex items-center justify-between border-b border-emerald-500/30 pb-1 text-emerald-400 font-bold">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span>🔍 Debug สถานะระบบ</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setLowPowerMode((prev) => !prev)}
+                className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-teal-300 hover:bg-slate-700 cursor-pointer"
+              >
+                {lowPowerMode ? '⚡ ประหยัดไฟ: ON' : '⚡ ความเร็วสูง'}
+              </button>
+            </div>
+            <div>
+              📷 กล้อง: <span className="text-white font-bold">{cameraStatus === 'ready' ? `พร้อมใช้งาน (${cameraDimensions.width}x${cameraDimensions.height})` : cameraStatus}</span>
+            </div>
+            <div>
+              🧠 โมเดล: <span className="text-white font-bold">{modelStatus === 'ready' ? `พร้อมตรวจจับ (${modelDelegate})` : modelStatus}</span>
+            </div>
+            <div>
+              ⚡ FPS จริง: <span className="text-white font-bold">{hudState.fps} FPS</span> {lowPowerMode ? '<ประหยัดพลังงาน>' : ''}
+            </div>
+            <div>
+              📍 Landmarks: <span className="text-white font-bold">{hudState.landmarkCount} จุด</span> (Vis เฉลี่ย: {hudState.avgVisibility})
+            </div>
+            <div>
+              📐 มุมปัจจุบัน: <span className="text-white font-bold">{hudState.currentAngle}°</span> | ความถูกต้อง: <span className="text-white font-bold">{hudState.accuracyPct}%</span>
+            </div>
+            <div>
+              🔄 สถานะตัวนับ: <span className="text-amber-300 font-bold">{hudState.repPhase}</span> | ข้าง: <span className="text-cyan-300 font-bold">{activeSide}</span> | ครั้งที่: <span className="text-white font-bold">{hudState.completedReps}</span>
+            </div>
+          </div>
+        )}
 
         {/* Watchdog Hardware Status Alert Badge */}
         {watchdogStatus && (watchdogStatus.isFrozen || watchdogStatus.lowPerformanceMode) && (
@@ -847,7 +1065,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             className={`p-4 rounded-3xl backdrop-blur-md border shadow-2xl transition-all duration-300 flex items-center gap-3.5 ${
               evalResult?.formRating === 'error'
                 ? 'bg-rose-950/85 border-rose-500 text-rose-100'
-                : evalResult?.readinessStatus === 'missing_arm_landmarks' || evalResult?.readinessStatus === 'missing_shoulder' || evalResult?.readinessStatus === 'missing_full_body' || evalResult?.readinessStatus === 'missing_lower_body' || evalResult?.readinessStatus === 'missing_head_shoulders'
+                : evalResult?.readinessStatus === 'missing_arm_landmarks' ||
+                  evalResult?.readinessStatus === 'missing_shoulder' ||
+                  evalResult?.readinessStatus === 'missing_full_body' ||
+                  evalResult?.readinessStatus === 'missing_lower_body' ||
+                  evalResult?.readinessStatus === 'missing_head_shoulders'
                 ? 'bg-cyan-950/90 border-cyan-400 text-cyan-100 shadow-cyan-950/50'
                 : evalResult?.formRating === 'warning'
                 ? 'bg-amber-950/85 border-amber-500 text-amber-100'
@@ -885,10 +1107,57 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 ? (lang === 'zh-CN' ? '等待调整' : lang === 'en-US' ? 'Adjust Pose' : 'รอจัดท่า')
                 : isPendulum
                 ? `${Math.round(progressRatio * 100)}%`
-                : `${evalResult?.currentAngleDeg || 0}°`}
+                : `${evalResult?.currentAngleDeg || hudState.currentAngle}°`}
             </div>
           </div>
         </div>
+
+        {/* Loading Overlay */}
+        {(cameraStatus === 'initializing' || modelStatus === 'loading') && !errorMessage && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+            <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 max-w-md text-center text-white shadow-2xl">
+              <div className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center mx-auto mb-4 text-emerald-400">
+                <Activity className="w-8 h-8 animate-spin" />
+              </div>
+              <div className="text-lg font-bold mb-2">⏳ กำลังโหลดระบบตรวจจับท่าทาง AI...</div>
+              <div className="text-xs text-slate-300 leading-relaxed mb-3">
+                ระบบกำลังเชื่อมต่อกล้องและดาวน์โหลดโมเดลวิเคราะห์การเคลื่อนไหว
+              </div>
+              <div className="text-[11px] text-emerald-400/80 bg-slate-950/60 rounded-xl px-3 py-2 border border-slate-800">
+                💡 กรุณาอนุญาตการใช้งานกล้องเว็บแคม และยืนให้เห็นร่างกายในระยะ 1.5–2 เมตร
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Error Banner with Reload & Exit */}
+        {errorMessage && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
+            <div className="bg-red-950/95 border-2 border-red-500 rounded-3xl p-6 sm:p-8 max-w-md text-center text-white shadow-2xl">
+              <div className="w-14 h-14 rounded-full bg-red-500/20 border border-red-400 flex items-center justify-center mx-auto mb-4 text-red-400">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <div className="text-lg font-bold text-red-200 mb-2">⚠️ ระบบตรวจจับไม่สามารถทำงานได้</div>
+              <p className="text-xs text-red-100 mb-6 leading-relaxed">{errorMessage}</p>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-950/50"
+                >
+                  ลองใหม่อีกครั้ง (Reload)
+                </button>
+                <button
+                  type="button"
+                  onClick={onExit}
+                  className="px-5 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
+                >
+                  ออกจากการฝึก
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 3. Bottom Safety & Emergency Bar */}
@@ -908,7 +1177,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
             <h3 className="text-xl font-bold text-white">พักผ่อนระหว่างเซ็ต</h3>
             <p className="text-xs text-slate-300 mt-2">
-              ทำครบเซ็ตที่ {evalResult?.currentSet} แล้ว พักกล้ามเนื้อสักครู่ก่อนเริ่มเซ็ตถัดไป
+              ทำครบเซ็ตที่ {hudState.currentSet} แล้ว พักกล้ามเนื้อสักครู่ก่อนเริ่มเซ็ตถัดไป
             </p>
 
             <div className="my-6">
@@ -968,17 +1237,17 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ฝึกท่านี้สำเร็จแล้ว! 🎉
             </h2>
             <div className="text-xs text-emerald-400 font-medium mb-6">
-              {config.nameTh}
+              {resolvedConfig.nameTh}
             </div>
 
             <div className="grid grid-cols-2 gap-3 mb-6 text-left">
               <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
                 <div className="text-[11px] text-slate-400">จำนวนครั้ง (ทำถูก / ผิด)</div>
                 <div className="text-base sm:text-lg font-bold text-emerald-400 mt-0.5">
-                  ✅ {evalResult?.completedReps || 0} / ❌ {evalResult?.incorrectReps || 0}
+                  ✅ {evalResult?.completedReps || hudState.completedReps || 0} / ❌ {evalResult?.incorrectReps || 0}
                 </div>
                 <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
-                  เป้าหมาย: {config.defaultPrescription.repsPerSet} ครั้ง × {config.defaultPrescription.totalSets} เซ็ต
+                  เป้าหมาย: {resolvedConfig.defaultPrescription?.repsPerSet || 10} ครั้ง × {resolvedConfig.defaultPrescription?.totalSets || 3} เซ็ต
                 </div>
               </div>
 
@@ -987,10 +1256,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   {isPendulum ? 'วิถีวงกลม (360° Cycle)' : 'มุมสูงสุดที่ทำได้'}
                 </div>
                 <div className="text-base sm:text-lg font-bold text-teal-400 mt-0.5">
-                  {isPendulum ? '100% (ครบวงรอบ)' : `${evalResult?.currentAngleDeg || 0}°`}
+                  {isPendulum ? '100% (ครบวงรอบ)' : `${evalResult?.currentAngleDeg || hudState.currentAngle || 0}°`}
                 </div>
                 <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
-                  {isPendulum ? 'ความเร็วและรัศมีอยู่ในเกณฑ์' : `เป้าหมาย: ${config.angleMechanics?.targetMinDeg || 80}° - ${config.angleMechanics?.targetMaxDeg || 100}°`}
+                  {isPendulum
+                    ? 'ความเร็วและรัศมีอยู่ในเกณฑ์'
+                    : `เป้าหมาย: ${resolvedConfig.angleMechanics?.targetMinDeg || 80}° - ${resolvedConfig.angleMechanics?.targetMaxDeg || 100}°`}
                 </div>
               </div>
 
@@ -998,7 +1269,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 <div className="text-[11px] text-slate-400">ความสม่ำเสมอ (Consistency)</div>
                 <div className="text-base sm:text-lg font-bold text-cyan-400 mt-0.5">
                   {evalResult?.completedReps
-                    ? Math.min(100, Math.round((evalResult.completedReps / (evalResult.completedReps + (evalResult.incorrectReps || 0))) * 100))
+                    ? Math.min(
+                        100,
+                        Math.round(
+                          (evalResult.completedReps /
+                            (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
+                            100
+                        )
+                      )
                     : 100}%
                 </div>
                 <div className="text-[10px] text-emerald-400/80 mt-0.5 font-medium">

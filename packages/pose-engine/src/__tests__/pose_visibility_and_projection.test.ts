@@ -100,6 +100,44 @@ describe('Pose Visibility & Projection Test Suite', () => {
       expect(ptFarEdge.x).toBeLessThan(0);
       expect(ptFarEdge.isWithinFrame).toBe(false);
     });
+
+    it('1.4 projects landmarks using HTMLVideoElement and HTMLCanvasElement mock objects', () => {
+      const mockVideo = { videoWidth: 1280, videoHeight: 720 } as HTMLVideoElement;
+      const mockCanvas = { width: 1280, height: 720 } as HTMLCanvasElement;
+
+      const pt = projectLandmarkToCanvas(
+        { x: 0.2, y: 0.3, visibility: 0.95 },
+        mockVideo,
+        mockCanvas,
+        true,
+        'cover'
+      );
+
+      // Mirrored x = (1.0 - 0.2) * 1280 = 0.8 * 1280 = 1024
+      expect(pt.x).toBeCloseTo(1024, 1);
+      expect(pt.y).toBeCloseTo(216, 1);
+      expect(pt.visibility).toBe(0.95);
+      expect(pt.inFrame).toBe(true);
+      expect(pt.isWithinFrame).toBe(true);
+    });
+
+    it('1.5 gracefully handles zero canvas or video dimensions without NaN or exceptions', () => {
+      const mockVideo = { videoWidth: 0, videoHeight: 0 } as HTMLVideoElement;
+      const mockCanvas = { width: 0, height: 0 } as HTMLCanvasElement;
+
+      const pt = projectLandmarkToCanvas(
+        { x: 0.5, y: 0.5 },
+        mockVideo,
+        mockCanvas,
+        true,
+        'cover'
+      );
+
+      expect(pt.x).toBe(0);
+      expect(pt.y).toBe(0);
+      expect(pt.inFrame).toBe(false);
+      expect(pt.isWithinFrame).toBe(false);
+    });
   });
 
   describe('2. Anatomical Readiness & Landmark Visibility Gating', () => {
@@ -250,5 +288,27 @@ describe('Pose Visibility & Projection Test Suite', () => {
       expect(finalRes.completedReps).toBe(10);
       expect(finalRes.isExerciseCompleted).toBe(true);
     });
+
+    it('3.3 evaluateFrame alias processes frame successfully with moderate visibility (0.45)', () => {
+      const config = {
+        ...SHOULDER_PENDULUM_PRESET,
+        side: 'left' as const,
+      };
+      const machine = new RepStateMachine(config);
+      const skel = createMockSkeleton();
+
+      // Moderate visibility (0.45) on left side joints
+      skel[11] = { x: 0.68, y: 0.35, z: 0.0, visibility: 0.45 }; // L.Shoulder
+      skel[13] = { x: 0.68, y: 0.55, z: 0.0, visibility: 0.45 }; // L.Elbow
+      skel[15] = { x: 0.68, y: 0.75, z: 0.0, visibility: 0.45 }; // L.Wrist
+      skel[23] = { x: 0.5, y: 0.7, z: 0.0, visibility: 0.45 };  // L.Hip
+
+      const res = machine.evaluateFrame(skel, skel, 2000);
+      expect(res.readinessStatus).toBe('ready');
+      expect(res.accuracyPct).toBeDefined();
+      expect(res.severity).toBeDefined();
+      expect(isNaN(res.currentAngleDeg)).toBe(false);
+    });
   });
 });
+

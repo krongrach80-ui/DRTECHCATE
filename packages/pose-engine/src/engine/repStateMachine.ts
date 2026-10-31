@@ -74,6 +74,14 @@ export class RepStateMachine {
     this.reset();
   }
 
+  public evaluateFrame(
+    normLandmarks: PoseEngineLandmark[],
+    _worldLandmarks?: PoseEngineLandmark[],
+    timestampMs: number = Date.now()
+  ): RepEvaluationResult {
+    return this.evaluate(normLandmarks, timestampMs);
+  }
+
   public evaluate(
     rawLandmarks: PoseEngineLandmark[],
     timestampMs: number = Date.now()
@@ -125,7 +133,7 @@ export class RepStateMachine {
     const isInFrame = (lm?: PoseEngineLandmark) =>
       Boolean(lm && lm.x >= 0.02 && lm.x <= 0.98 && lm.y >= 0.02 && lm.y <= 0.98);
     const isVisible = (lm?: PoseEngineLandmark) =>
-      Boolean(lm && (lm.visibility ?? 1.0) >= 0.50 && isInFrame(lm));
+      Boolean(lm && (lm.visibility ?? 1.0) >= 0.40 && isInFrame(lm));
 
     if (framing === 'full_body' || framing === 'lower_body') {
       // Lower body requires hips (23, 24), knees (25, 26), ankles (27, 28)
@@ -463,6 +471,8 @@ export class RepStateMachine {
       currentAngleDeg: Math.round(currentAngle),
       targetAngleDeg: targetMin,
       accuracyPercent,
+      accuracyPct: accuracyPercent,
+      severity: formRating,
       holdProgressRatio,
       pendulumCircleProgressRatio: 0,
       isInsideTargetZone,
@@ -602,6 +612,8 @@ export class RepStateMachine {
       currentAngleDeg: Math.round(tiltAngleDeg),
       targetAngleDeg: 25,
       accuracyPercent,
+      accuracyPct: accuracyPercent,
+      severity: formRating,
       holdProgressRatio,
       pendulumCircleProgressRatio: 0,
       isInsideTargetZone,
@@ -737,6 +749,8 @@ export class RepStateMachine {
       currentAngleDeg: Math.round(liftRatio * 1000),
       targetAngleDeg: 40,
       accuracyPercent,
+      accuracyPct: accuracyPercent,
+      severity: formRating,
       holdProgressRatio,
       pendulumCircleProgressRatio: 0,
       isInsideTargetZone,
@@ -783,7 +797,7 @@ export class RepStateMachine {
     const isInFrame = (lm?: PoseEngineLandmark) =>
       Boolean(lm && lm.x >= 0.02 && lm.x <= 0.98 && lm.y >= 0.02 && lm.y <= 0.98);
     const isVisible = (lm?: PoseEngineLandmark) =>
-      Boolean(lm && (lm.visibility ?? 1.0) >= 0.50 && isInFrame(lm));
+      Boolean(lm && (lm.visibility ?? 1.0) >= 0.40 && isInFrame(lm));
 
     const shoulder = landmarks[sIdx];
     const elbow = landmarks[eIdx];
@@ -873,6 +887,8 @@ export class RepStateMachine {
       currentAngleDeg: Math.round(result.instantaneousPhaseDeg),
       targetAngleDeg: 360,
       accuracyPercent,
+      accuracyPct: accuracyPercent,
+      severity: formRating,
       holdProgressRatio: 0,
       pendulumCircleProgressRatio: result.cycleProgressRatio,
       isInsideTargetZone: result.isTrunkValid && result.isElbowRelaxed,
@@ -907,6 +923,8 @@ export class RepStateMachine {
       currentAngleDeg: 0,
       targetAngleDeg: 0,
       accuracyPercent: 0,
+      accuracyPct: 0,
+      severity: 'good',
       holdProgressRatio: 0,
       pendulumCircleProgressRatio: 0,
       isInsideTargetZone: false,

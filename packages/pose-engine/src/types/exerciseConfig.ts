@@ -164,6 +164,8 @@ export interface RepEvaluationResult {
   currentAngleDeg: number;
   targetAngleDeg: number;
   accuracyPercent?: number; // 0 to 100
+  accuracyPct?: number; // Alias for accuracyPercent (0 to 100)
+  severity?: 'good' | 'warning' | 'error'; // Alias for formRating
   holdProgressRatio: number; // 0.0 to 1.0 during HOLDING_TARGET
   pendulumCircleProgressRatio: number; // 0.0 to 1.0 during 360° phase rotation
   isInsideTargetZone: boolean;

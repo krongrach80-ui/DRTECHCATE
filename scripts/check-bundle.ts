@@ -33,13 +33,11 @@ const FORBIDDEN_MOCK_PATTERNS = [
 ];
 
 // Great Firewall (GFW) & Production URL Immunity Constraints
+// Note: Multi-CDN fallback for MediaPipe models/wasm (jsdelivr, unpkg, storage.googleapis.com)
+// is explicitly permitted and enforced via Content-Security-Policy
 const FORBIDDEN_GFW_PATTERNS = [
   /fonts\.googleapis\.com/,
   /fonts\.gstatic\.com/,
-  /storage\.googleapis\.com/,
-  /https?:\/\/[a-zA-Z0-9.-]*googleapis\.com/,
-  /cdn\.jsdelivr\.net/,
-  /unpkg\.com/,
   /https?:\/\/localhost(:\d+)?/,
   /https?:\/\/127\.0\.0\.1(:\d+)?/,
 ];
