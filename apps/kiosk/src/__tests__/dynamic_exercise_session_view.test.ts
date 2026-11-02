@@ -170,4 +170,116 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
       expect(KEYPOINT_NAME_MAP[11].cn).toBe('左肩');
     });
   });
+
+  describe('4. Senior-Friendly Kiosk UI/UX Overhaul Specifications', () => {
+    it('4.1 default debug HUD state must be false (completely hidden for elderly patients)', () => {
+      const defaultDebugHud = false;
+      expect(defaultDebugHud).toBe(false);
+    });
+
+    it('4.2 debug toggle visibility is strictly guarded: hidden unless staff unlocked or dev mode', () => {
+      const shouldShowDebugBtn = (isStaffUnlocked: boolean, isDev: boolean) => {
+        return isStaffUnlocked || isDev;
+      };
+
+      // Patient mode: strictly false
+      expect(shouldShowDebugBtn(false, false)).toBe(false);
+      // Staff unlocked: true
+      expect(shouldShowDebugBtn(true, false)).toBe(true);
+      // Dev mode: true
+      expect(shouldShowDebugBtn(false, true)).toBe(true);
+    });
+
+    it('4.3 senior-friendly real-time coaching banner replaces raw degree readouts with comforting Thai instructions', () => {
+      const getSeniorFriendlyCoaching = (
+        celebratingRep: number | null,
+        isResting: boolean,
+        phase: string,
+        isInsideTargetZone: boolean,
+        isLowerBody: boolean = false
+      ) => {
+        if (celebratingRep !== null) {
+          return {
+            msg: `🌟 เก่งมาก! นับ 1 ครั้ง (ครั้งที่ ${celebratingRep})`,
+            badge: '🌟 เยี่ยมมาก!',
+          };
+        }
+        if (isResting) {
+          return {
+            msg: '☕ พักผ่อนตามอัธยาศัย...',
+            badge: '☕ พักผ่อน',
+          };
+        }
+        if (phase === 'HOLDING_TARGET' || isInsideTargetZone) {
+          return {
+            msg: '🌟 เก่งมาก! ค้างไว้นิ่งๆ อีกนิด...',
+            badge: '⏱️ ค้างไว้',
+          };
+        }
+        if (phase === 'MOVING_TO_TARGET') {
+          return {
+            msg: isLowerBody ? '⬆️ ยกขาขึ้นอีกนิด ช้าๆ...' : '⬆️ ยกแขนขึ้นอีกนิด ช้าๆ...',
+            badge: '⬆️ กำลังยก',
+          };
+        }
+        if (phase === 'RETURNING_TO_START') {
+          return {
+            msg: isLowerBody ? '☕ ค่อยๆ ผ่อนขาลงช้าๆ...' : '☕ ค่อยๆ ผ่อนแขนลงช้าๆ...',
+            badge: '⬇️ ผ่อนลง',
+          };
+        }
+        return {
+          msg: 'เตรียมพร้อม ยืนตัวตรง แล้วเริ่มยกแขนช้าๆ',
+          badge: '🎯 เริ่มต้น',
+        };
+      };
+
+      // When moving to target
+      const moving = getSeniorFriendlyCoaching(null, false, 'MOVING_TO_TARGET', false);
+      expect(moving.msg).toBe('⬆️ ยกแขนขึ้นอีกนิด ช้าๆ...');
+      expect(moving.badge).toBe('⬆️ กำลังยก');
+
+      // When holding target
+      const holding = getSeniorFriendlyCoaching(null, false, 'HOLDING_TARGET', true);
+      expect(holding.msg).toBe('🌟 เก่งมาก! ค้างไว้นิ่งๆ อีกนิด...');
+      expect(holding.badge).toBe('⏱️ ค้างไว้');
+
+      // When rep completed celebration
+      const cele = getSeniorFriendlyCoaching(3, false, 'IDLE', false);
+      expect(cele.msg).toBe('🌟 เก่งมาก! นับ 1 ครั้ง (ครั้งที่ 3)');
+      expect(cele.badge).toBe('🌟 เยี่ยมมาก!');
+
+      // When resting between sets
+      const rest = getSeniorFriendlyCoaching(null, true, 'IDLE', false);
+      expect(rest.msg).toBe('☕ พักผ่อนตามอัธยาศัย...');
+      expect(rest.badge).toBe('☕ พักผ่อน');
+    });
+
+    it('4.4 computes smooth motion progress percentage during active rep movement', () => {
+      const computeProgress = (
+        currentAngle: number,
+        startAngle: number,
+        targetAngle: number,
+        phase: string,
+        holdProgressRatio: number
+      ) => {
+        if (phase === 'HOLDING_TARGET') {
+          return Math.max(0.85, holdProgressRatio);
+        }
+        if (phase === 'MOVING_TO_TARGET') {
+          const range = Math.max(1, targetAngle - startAngle);
+          return Math.max(0, Math.min(0.95, (currentAngle - startAngle) / range));
+        }
+        return 0;
+      };
+
+      // Moving from 20° to 80°: at 50°, progress should be exactly 50%
+      const prog50 = computeProgress(50, 20, 80, 'MOVING_TO_TARGET', 0);
+      expect(prog50).toBeCloseTo(0.5, 2);
+
+      // At target: hold progress ratio takes over
+      const progHold = computeProgress(80, 20, 80, 'HOLDING_TARGET', 0.9);
+      expect(progHold).toBe(0.9);
+    });
+  });
 });

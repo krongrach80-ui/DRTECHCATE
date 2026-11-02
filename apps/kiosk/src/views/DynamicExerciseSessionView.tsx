@@ -34,9 +34,13 @@ import {
   Activity,
   Clock,
   ArrowRight,
+  ArrowLeft,
+  Pause,
+  Play,
   ShieldAlert,
   AlertTriangle,
   Cpu,
+  KeyRound,
 } from 'lucide-react';
 import { useClinicalI18n, LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
 
@@ -148,7 +152,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   } = props;
 
   const resolvedConfig = (config || exerciseConfig)!;
-  const { lang } = useClinicalI18n();
+  const { lang, t } = useClinicalI18n();
 
   // DOM Refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -197,7 +201,32 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [activeSide, setActiveSide] = useState<BodySide>(resolvedConfig.side || 'right');
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [lowPowerMode, setLowPowerMode] = useState<boolean>(false);
-  const [showDebugHud, setShowDebugHud] = useState<boolean>(true);
+  const [showDebugHud, setShowDebugHud] = useState<boolean>(false);
+  const [isStaffUnlocked, setIsStaffUnlocked] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && (Boolean((import.meta as any).env?.DEV) || (window as any).__DRTECH_DEBUG__ === true);
+  });
+  const [showStaffPinModal, setShowStaffPinModal] = useState<boolean>(false);
+  const [enteredStaffPin, setEnteredStaffPin] = useState<string>('');
+  const [staffPinError, setStaffPinError] = useState<string | null>(null);
+  const titleTapCountRef = useRef<number>(0);
+  const lastTitleTapTimeRef = useRef<number>(0);
+
+  const [celebratingRep, setCelebratingRep] = useState<number | null>(null);
+
+  const handleTitleTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTitleTapTimeRef.current > 3000) {
+      titleTapCountRef.current = 1;
+    } else {
+      titleTapCountRef.current += 1;
+    }
+    lastTitleTapTimeRef.current = now;
+
+    if (titleTapCountRef.current >= 5) {
+      titleTapCountRef.current = 0;
+      setShowStaffPinModal(true);
+    }
+  }, []);
 
   const [evalResult, setEvalResult] = useState<RepEvaluationResult | null>(null);
   const [watchdogStatus, setWatchdogStatus] = useState<WatchdogHealthStatus | null>(null);
@@ -216,7 +245,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     step: number;
     current: number;
   }>({ supported: false, min: 1, max: 1, step: 0.1, current: 1 });
-  const [fitMode, setFitMode] = useState<'contain' | 'cover'>('contain');
+  const [fitMode, setFitMode] = useState<'contain' | 'cover'>('cover');
   const [boostLighting, setBoostLighting] = useState<boolean>(false);
   const [showGuideSilhouette, setShowGuideSilhouette] = useState<boolean>(true);
 
@@ -864,9 +893,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }
           }
 
-          // Rep completion audio chime & TTS
+          // Rep completion audio chime, TTS & senior celebration pulse
           if (evalRes.completedReps > lastCompletedRepsRef.current) {
             lastCompletedRepsRef.current = evalRes.completedReps;
+            setCelebratingRep(evalRes.completedReps);
+            setTimeout(() => setCelebratingRep(null), 2000);
             playRepChime();
             speakThai(`ครั้งที่ ${evalRes.completedReps}`, 'rep_count', 1200);
           }
@@ -1127,9 +1158,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   };
 
   const isPendulum = resolvedConfig.evaluationMode === 'pendulum_circular';
-  const progressRatio = isPendulum
-    ? evalResult?.pendulumCircleProgressRatio || 0
-    : evalResult?.holdProgressRatio || 0;
 
   const isLowerBody =
     resolvedConfig.targetJoint === 'knee' ||
@@ -1166,34 +1194,48 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col justify-between overflow-hidden select-none font-sans">
-      {/* 1. Top Clinical HUD Header */}
-      <div className="w-full bg-slate-950/90 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 flex items-center justify-between z-20 flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-            <Activity className="w-7 h-7" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
+      {/* 1. Senior-Friendly Top Clinical HUD Header */}
+      <div className="w-full bg-slate-950/95 backdrop-blur-md border-b border-slate-800 px-4 sm:px-8 py-3.5 flex items-center justify-between z-20 flex-wrap gap-4 shadow-xl">
+        {/* Left Section: Back / Exit Button & Exercise Info */}
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            id="kiosk-header-exit-btn"
+            data-testid="kiosk-header-exit-btn"
+            onClick={onExit}
+            className="min-h-[56px] px-5 sm:px-6 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white text-base sm:text-lg font-black flex items-center gap-2.5 transition active:scale-95 cursor-pointer border border-slate-700 shadow-md shrink-0"
+            title="ออกจากการฝึก"
+          >
+            <ArrowLeft className="w-6 h-6 shrink-0 text-slate-400" />
+            <span>{t('exit_exercise', '⬅️ ออกจากการฝึก')}</span>
+          </button>
+
+          <div
+            onClick={handleTitleTap}
+            className="cursor-pointer select-none"
+            title="แตะ 5 ครั้งเพื่อปลดล็อกโหมดช่าง/ผู้ดูแล"
+          >
+            <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-3">
               <span>{titleString}</span>
-              <span className="text-sm px-3 py-1 rounded-full bg-slate-800 text-teal-300 font-bold border border-slate-700">
+              <span className="text-xs sm:text-sm px-3.5 py-1 rounded-full bg-slate-800 text-teal-300 font-bold border border-slate-700">
                 {jointLabel}
               </span>
             </h1>
-            <div className="text-sm sm:text-base text-slate-300 font-semibold mt-1 flex items-center gap-2">
-              <span>{lang === 'zh-CN' ? '患者' : lang === 'en-US' ? 'Patient' : 'ผู้ป่วย'}: คุณ {patient.first_name} {patient.last_name || ''}</span>
+            <div className="text-sm text-slate-400 font-semibold mt-0.5 flex items-center gap-2">
+              <span>คุณ {patient.first_name} {patient.last_name || ''}</span>
               <span>•</span>
               <span className="font-mono text-emerald-400">HN: {patient.hn || patient.patient_id || '-'}</span>
             </div>
           </div>
         </div>
 
-        {/* Side Toggle & Set/Rep Badges */}
-        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
+        {/* Right Section: Side Selector + Sets Counter + Giant Reps Counter + Pause Button */}
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
           <LanguageSwitcher variant="dark" />
 
           {/* Side Toggle Selector or Bilateral Badge */}
           {isBilateral ? (
-            <div className="min-h-[48px] px-4 py-2.5 rounded-2xl bg-slate-900 border border-slate-700 text-base font-bold text-teal-300 flex items-center gap-2 shadow-sm">
+            <div className="min-h-[56px] px-4 py-2.5 rounded-2xl bg-slate-900 border border-slate-700 text-base font-bold text-teal-300 flex items-center gap-2 shadow-sm">
               <span>👥</span>
               <span>{lang === 'zh-CN' ? '双侧协同' : lang === 'en-US' ? 'Bilateral' : 'ทั้งสองข้าง'}</span>
             </div>
@@ -1202,75 +1244,31 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               <button
                 type="button"
                 onClick={() => handleToggleSide('right')}
-                className={`min-h-[44px] px-3.5 sm:px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                className={`min-h-[48px] px-4 py-2 rounded-xl text-base font-black transition cursor-pointer ${
                   activeSide === 'right'
                     ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/30'
                     : 'text-slate-300 hover:text-white'
                 }`}
               >
-                <span>{isLowerBody ? (lang === 'zh-CN' ? '🦿 右腿' : lang === 'en-US' ? '🦿 Right Leg' : '🦿 ขาขวา') : (lang === 'zh-CN' ? '🦾 右臂' : lang === 'en-US' ? '🦾 Right Arm' : '🦾 แขนขวา')}</span>
+                <span>{isLowerBody ? '🦿 ขาขวา' : '🦾 แขนขวา'}</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleToggleSide('left')}
-                className={`min-h-[44px] px-3.5 sm:px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                className={`min-h-[48px] px-4 py-2 rounded-xl text-base font-black transition cursor-pointer ${
                   activeSide === 'left'
                     ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/30'
                     : 'text-slate-300 hover:text-white'
                 }`}
               >
-                <span>{isLowerBody ? (lang === 'zh-CN' ? '左腿 🦿' : lang === 'en-US' ? 'Left Leg 🦿' : 'ขาซ้าย 🦿') : (lang === 'zh-CN' ? '左臂 🦾' : lang === 'en-US' ? 'Left Arm 🦾' : 'แขนซ้าย 🦾')}</span>
+                <span>{isLowerBody ? 'ขาซ้าย 🦿' : 'แขนซ้าย 🦾'}</span>
               </button>
             </div>
           )}
 
-          {/* Skeleton Overlay Toggle Button (Default = False/Off) */}
-          <button
-            type="button"
-            id="kiosk-toggle-skeleton-btn"
-            data-testid="kiosk-toggle-skeleton-btn"
-            onClick={() => setShowSkeletonOverlay((prev) => !prev)}
-            className={`min-h-[48px] px-4 py-2.5 rounded-2xl text-base font-bold transition flex items-center gap-2 cursor-pointer border ${
-              showSkeletonOverlay
-                ? 'bg-cyan-500/20 border-cyan-500 text-cyan-200 shadow-md shadow-cyan-500/20'
-                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
-            }`}
-            title="เปิด/ปิดการแสดงเส้นโครงร่างลำตัว (Skeleton Overlay)"
-          >
-            <span>
-              {showSkeletonOverlay
-                ? lang === 'zh-CN'
-                  ? '🦴 显示骨骼线: 开'
-                  : lang === 'en-US'
-                  ? '🦴 Show Skeleton: ON'
-                  : '🦴 แสดงเส้นลำตัว: เปิด'
-                : lang === 'zh-CN'
-                ? '🦴 显示骨骼线: 关'
-                : lang === 'en-US'
-                ? '🦴 Show Skeleton: OFF'
-                : '🦴 แสดงเส้นลำตัว: ปิด'}
-            </span>
-          </button>
-
-          {/* Diagnostic Debug HUD Toggle */}
-          <button
-            type="button"
-            id="kiosk-toggle-debug-btn"
-            data-testid="kiosk-toggle-debug-btn"
-            onClick={() => setShowDebugHud((prev) => !prev)}
-            className={`min-h-[48px] px-4 py-2.5 rounded-2xl text-base font-bold transition flex items-center gap-1.5 cursor-pointer border ${
-              showDebugHud
-                ? 'bg-emerald-500/25 border-emerald-500 text-emerald-200 shadow-sm'
-                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
-            }`}
-            title="สลับการแสดงผลแผงตรวจวัดละเอียด (Diagnostic Debug HUD)"
-          >
-            <span>🔍 Debug</span>
-          </button>
-
           {/* Sets Badge */}
-          <div className="min-h-[52px] px-5 py-2 rounded-2xl bg-slate-900 border border-slate-700 text-center flex flex-col justify-center">
-            <div className="text-xs uppercase font-extrabold text-slate-300 tracking-wider">
+          <div className="min-h-[56px] px-5 py-2 rounded-2xl bg-slate-900 border border-slate-700 text-center flex flex-col justify-center shrink-0 shadow-sm">
+            <div className="text-xs uppercase font-extrabold text-slate-400 tracking-wider">
               {lang === 'zh-CN' ? '组数' : lang === 'en-US' ? 'Set' : 'เซ็ตที่'}
             </div>
             <div className="text-2xl sm:text-3xl font-black text-teal-300 font-mono leading-tight">
@@ -1278,15 +1276,46 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           </div>
 
-          {/* Reps Badge (Super prominent 44-50px numbers for 1-2m distance readability) */}
-          <div className="min-h-[52px] px-6 py-2 rounded-2xl bg-gradient-to-r from-emerald-600/40 to-teal-600/40 border-2 border-emerald-400 text-center shadow-xl shadow-emerald-950/60 flex flex-col justify-center">
+          {/* Giant Reps Badge (Massive text-4xl to text-5xl with celebration pulse) */}
+          <div
+            className={`min-h-[56px] px-7 py-2 rounded-2xl bg-gradient-to-r from-emerald-600/40 to-teal-600/40 border-2 border-emerald-400 text-center shadow-xl shadow-emerald-950/60 flex flex-col justify-center shrink-0 transition-all duration-300 ${
+              celebratingRep !== null
+                ? 'scale-110 border-amber-300 shadow-amber-400/50 bg-gradient-to-r from-amber-500/40 to-emerald-600/50'
+                : ''
+            }`}
+          >
             <div className="text-xs uppercase font-extrabold text-emerald-200 tracking-wider">
               {lang === 'zh-CN' ? '次数' : lang === 'en-US' ? 'Reps' : 'จำนวนครั้ง'}
             </div>
-            <div className="text-3xl sm:text-4xl font-black text-white font-mono leading-tight">
+            <div className="text-3xl sm:text-5xl font-black text-white font-mono leading-tight">
               {hudState.completedReps} / {resolvedConfig.defaultPrescription?.repsPerSet || 10}
             </div>
           </div>
+
+          {/* Pause / Resume Button */}
+          <button
+            type="button"
+            id="kiosk-header-pause-btn"
+            data-testid="kiosk-header-pause-btn"
+            onClick={() => setIsPaused((prev) => !prev)}
+            className={`min-h-[56px] px-6 py-3 rounded-2xl text-base sm:text-lg font-black flex items-center gap-2.5 transition active:scale-95 cursor-pointer border shadow-md shrink-0 ${
+              isPaused
+                ? 'bg-amber-500/30 border-amber-400 text-amber-200 hover:bg-amber-500/40'
+                : 'bg-slate-900 border-slate-700 text-slate-200 hover:text-white'
+            }`}
+          >
+            {isPaused ? (
+              <>
+                <Play className="w-6 h-6 fill-amber-300 text-amber-300 shrink-0" />
+                <span>{t('resume_session', '▶️ ฝึกต่อ')}</span>
+              </>
+            ) : (
+              <>
+                <Pause className="w-6 h-6 text-amber-300 shrink-0" />
+                <span>{t('pause_session', '⏸️ พักชั่วคราว')}</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
@@ -1432,6 +1461,52 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
         {/* Floating Camera & View Controls */}
         <div className="absolute bottom-4 right-4 z-20 flex items-center flex-wrap gap-2.5 bg-slate-950/90 border border-slate-700/80 rounded-2xl p-2.5 backdrop-blur-md shadow-xl">
+          {/* Skeleton Overlay Toggle Button (Default = False/Off) */}
+          <button
+            type="button"
+            id="kiosk-toggle-skeleton-btn"
+            data-testid="kiosk-toggle-skeleton-btn"
+            onClick={() => setShowSkeletonOverlay((prev) => !prev)}
+            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+              showSkeletonOverlay
+                ? 'bg-cyan-500/20 border-cyan-500 text-cyan-200 shadow-md shadow-cyan-500/20'
+                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+            }`}
+            title="เปิด/ปิดการแสดงเส้นโครงร่างลำตัว (Skeleton Overlay)"
+          >
+            <span>
+              {showSkeletonOverlay
+                ? lang === 'zh-CN'
+                  ? '🦴 骨骼线: 开'
+                  : lang === 'en-US'
+                  ? '🦴 Skeleton: ON'
+                  : '🦴 เส้นลำตัว: เปิด'
+                : lang === 'zh-CN'
+                ? '🦴 骨骼线: 关'
+                : lang === 'en-US'
+                ? '🦴 Skeleton: OFF'
+                : '🦴 เส้นลำตัว: ปิด'}
+            </span>
+          </button>
+
+          {/* Diagnostic Debug HUD Toggle (Strictly hidden for seniors, unlocked by staff PIN or DEV) */}
+          {(isStaffUnlocked || (import.meta as any).env?.DEV) && (
+            <button
+              type="button"
+              id="kiosk-toggle-debug-btn"
+              data-testid="kiosk-toggle-debug-btn"
+              onClick={() => setShowDebugHud((prev) => !prev)}
+              className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                showDebugHud
+                  ? 'bg-emerald-500/25 border-emerald-500 text-emerald-200 shadow-sm'
+                  : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+              }`}
+              title="สลับการแสดงผลแผงตรวจวัดละเอียด (Diagnostic Debug HUD)"
+            >
+              <span>🔍 Debug</span>
+            </button>
+          )}
+
           {/* Fit Mode Toggle */}
           <button
             type="button"
@@ -1443,7 +1518,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }`}
             title="สลับโหมดการแสดงภาพ (พอดีจอ ไม่ครอปภาพ / เต็มจอ ครอปขอบ)"
           >
-            {fitMode === 'contain' ? '🔎 พอดีจอ (ไม่ครอป)' : '🖼️ เต็มจอ'}
+            {fitMode === 'contain' ? '🔎 พอดีจอ' : '🖼️ เต็มจอ'}
           </button>
 
           {/* Guide Silhouette Toggle */}
@@ -1513,7 +1588,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           </div>
         )}
 
-        {/* Floating Coaching Banner Overlay */}
+        {/* Floating Coaching Banner Overlay for Elderly Patients */}
         {(() => {
           const isWaitingPose = Boolean(
             evalResult?.readinessStatus &&
@@ -1523,55 +1598,125 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             hudState.completedReps === 0
           );
 
+          // Calculate smooth motion progress towards target (0.0 to 1.0)
+          const startAngle = resolvedConfig.angleMechanics?.startAngleDeg || 20;
+          const targetMin = resolvedConfig.angleMechanics?.targetMinDeg || 80;
+          const curAngle = evalResult?.currentAngleDeg ?? hudState.currentAngle ?? 0;
+
+          let motionProgress = 0;
+          if (isPendulum) {
+            motionProgress = evalResult?.pendulumCircleProgressRatio || 0;
+          } else if (evalResult?.phase === 'HOLDING_TARGET' || evalResult?.isInsideTargetZone) {
+            motionProgress = evalResult?.holdProgressRatio ? Math.max(0.85, evalResult.holdProgressRatio) : 1.0;
+          } else if (evalResult?.phase === 'MOVING_TO_TARGET') {
+            const range = Math.max(1, targetMin - startAngle);
+            motionProgress = Math.max(0, Math.min(0.95, (curAngle - startAngle) / range));
+          } else if (evalResult?.phase === 'RETURNING_TO_START') {
+            const range = Math.max(1, targetMin - startAngle);
+            motionProgress = Math.max(0, Math.min(0.5, (curAngle - startAngle) / range));
+          }
+
+          let friendlyMessage = '';
+          let friendlyBadge = '';
+          let bannerIcon = '🎯';
+          let bannerTheme = 'emerald'; // emerald | amber | rose | cyan | rest | celebrate
+
+          if (celebratingRep !== null) {
+            friendlyMessage = lang === 'zh-CN'
+              ? `🌟 太棒了！计数 1 次（第 ${celebratingRep} 次）`
+              : lang === 'en-US'
+              ? `🌟 Great job! Rep counted (#${celebratingRep})`
+              : `🌟 เก่งมาก! นับ 1 ครั้ง (ครั้งที่ ${celebratingRep})`;
+            friendlyBadge = '🌟 เยี่ยมมาก!';
+            bannerIcon = '🎉';
+            bannerTheme = 'celebrate';
+          } else if (isResting) {
+            friendlyMessage = lang === 'zh-CN' ? '☕ 请稍作休息...' : lang === 'en-US' ? '☕ Rest comfortably...' : '☕ พักผ่อนตามอัธยาศัย...';
+            friendlyBadge = '☕ พักผ่อน';
+            bannerIcon = '☕';
+            bannerTheme = 'rest';
+          } else if (evalResult?.formRating === 'error') {
+            friendlyMessage = coachingMsg || (lang === 'zh-CN' ? '请注意动作规范' : lang === 'en-US' ? 'Please adjust form carefully' : 'ระวังอย่าฝืนข้อต่อนะคะ');
+            friendlyBadge = '🚨 ปรับท่า';
+            bannerIcon = '🚨';
+            bannerTheme = 'rose';
+          } else if (evalResult?.formRating === 'warning') {
+            friendlyMessage = coachingMsg || (lang === 'zh-CN' ? '请保持躯干挺直' : lang === 'en-US' ? 'Keep your back straight' : 'ระวังอย่าเอียงลำตัว ยืนหลังตรงนะคะ');
+            friendlyBadge = '⚠️ ปรับท่า';
+            bannerIcon = '⚠️';
+            bannerTheme = 'amber';
+          } else if (isWaitingPose) {
+            friendlyMessage = lang === 'zh-CN' ? '📷 请站到摄像头前 1.5–2 米处做好准备' : lang === 'en-US' ? '📷 Stand in front of camera at 1.5–2 meters' : '📷 ยืนให้กล้องมองเห็นตัวในระยะ 1.5 - 2 เมตร';
+            friendlyBadge = '📷 ยืนตรง';
+            bannerIcon = '📷';
+            bannerTheme = 'cyan';
+          } else if (evalResult?.phase === 'HOLDING_TARGET' || evalResult?.isInsideTargetZone) {
+            friendlyMessage = lang === 'zh-CN' ? '🌟 很好！请在目标位置保持稳定...' : lang === 'en-US' ? '🌟 Great! Hold steady at target...' : '🌟 เก่งมาก! ค้างไว้นิ่งๆ อีกนิด...';
+            friendlyBadge = '⏱️ ค้างไว้';
+            bannerIcon = '🌟';
+            bannerTheme = 'emerald';
+          } else if (evalResult?.phase === 'MOVING_TO_TARGET') {
+            friendlyMessage = isLowerBody
+              ? (lang === 'zh-CN' ? '⬆️ 慢慢向上抬腿...' : lang === 'en-US' ? '⬆️ Lift leg up slowly...' : '⬆️ ยกขาขึ้นอีกนิด ช้าๆ...')
+              : (lang === 'zh-CN' ? '⬆️ 慢慢向上抬臂...' : lang === 'en-US' ? '⬆️ Lift arm up slowly...' : '⬆️ ยกแขนขึ้นอีกนิด ช้าๆ...');
+            friendlyBadge = '⬆️ กำลังยก';
+            bannerIcon = '⬆️';
+            bannerTheme = 'emerald';
+          } else if (evalResult?.phase === 'RETURNING_TO_START') {
+            friendlyMessage = isLowerBody
+              ? (lang === 'zh-CN' ? '☕ 慢慢放下腿部回到起始位置...' : lang === 'en-US' ? '☕ Lower leg down slowly...' : '☕ ค่อยๆ ผ่อนขาลงช้าๆ...')
+              : (lang === 'zh-CN' ? '☕ 慢慢放下手臂回到起始位置...' : lang === 'en-US' ? '☕ Lower arm down slowly...' : '☕ ค่อยๆ ผ่อนแขนลงช้าๆ...');
+            friendlyBadge = '⬇️ ผ่อนลง';
+            bannerIcon = '☕';
+            bannerTheme = 'rest';
+          } else {
+            // IDLE
+            friendlyMessage = isLowerBody
+              ? (lang === 'zh-CN' ? '准备就绪，开始慢慢抬腿' : lang === 'en-US' ? 'Ready, slowly lift leg' : 'เตรียมพร้อม ยืนตัวตรง แล้วเริ่มยกขาช้าๆ')
+              : (lang === 'zh-CN' ? '准备就绪，开始慢慢抬臂' : lang === 'en-US' ? 'Ready, slowly lift arm' : 'เตรียมพร้อม ยืนตัวตรง แล้วเริ่มยกแขนช้าๆ');
+            friendlyBadge = '🎯 เริ่มต้น';
+            bannerIcon = isPendulum ? '🌀' : '🎯';
+            bannerTheme = 'emerald';
+          }
+
+          const bannerColorClasses =
+            bannerTheme === 'celebrate'
+              ? 'bg-emerald-950/95 border-3 border-amber-300 text-white shadow-2xl shadow-emerald-500/40 animate-pulse'
+              : bannerTheme === 'rose'
+              ? 'bg-rose-950/95 border-2 border-rose-400 text-white shadow-2xl shadow-rose-950/80'
+              : bannerTheme === 'amber'
+              ? 'bg-amber-950/95 border-2 border-amber-400 text-amber-100 shadow-2xl shadow-amber-950/80'
+              : bannerTheme === 'cyan'
+              ? 'bg-cyan-950/95 border-2 border-cyan-400 text-cyan-100 shadow-2xl shadow-cyan-950/80'
+              : bannerTheme === 'rest'
+              ? 'bg-slate-950/95 border-2 border-slate-600 text-slate-100 shadow-2xl'
+              : 'bg-emerald-950/95 border-2 border-emerald-400 text-emerald-100 shadow-2xl shadow-emerald-950/80';
+
           return (
-            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-2xl">
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-3xl">
               <div
-                className={`p-5 sm:p-6 rounded-3xl backdrop-blur-md border shadow-2xl transition-all duration-300 flex items-center gap-4 ${
-                  evalResult?.formRating === 'error'
-                    ? 'bg-rose-950/90 border-rose-500 text-rose-100 shadow-rose-950/60'
-                    : isWaitingPose
-                    ? 'bg-cyan-950/90 border-cyan-400 text-cyan-100 shadow-cyan-950/50'
-                    : evalResult?.readinessStatus === 'partial_upper_body'
-                    ? 'bg-teal-950/90 border-teal-500 text-teal-100 shadow-teal-950/50'
-                    : evalResult?.formRating === 'warning'
-                    ? 'bg-amber-950/90 border-amber-500 text-amber-100 shadow-amber-950/50'
-                    : 'bg-slate-900/90 border-emerald-500/60 text-emerald-100 shadow-emerald-950/60'
-                }`}
+                className={`p-5 sm:p-6 rounded-3xl backdrop-blur-md border shadow-2xl transition-all duration-300 flex items-center gap-4 sm:gap-5 ${bannerColorClasses}`}
               >
-                <div className="text-3xl shrink-0">
-                  {evalResult?.formRating === 'error'
-                    ? '🚨'
-                    : isWaitingPose
-                    ? '📷'
-                    : evalResult?.readinessStatus === 'partial_upper_body'
-                    ? '💡'
-                    : evalResult?.formRating === 'warning'
-                    ? '⚠️'
-                    : isPendulum
-                    ? '🌀'
-                    : '🎯'}
+                <div className="text-4xl sm:text-5xl shrink-0">
+                  {bannerIcon}
                 </div>
-                <div className="flex-1">
-                  <div className="text-xl sm:text-2xl font-black leading-relaxed tracking-normal">
-                    {coachingMsg || (lang === 'zh-CN' ? '请在初始位置做好准备' : lang === 'en-US' ? 'Get ready at the starting position' : 'เตรียมพร้อมในตำแหน่งเริ่มต้น')}
+                <div className="flex-1 min-w-0">
+                  <div className="text-2xl sm:text-3xl font-black leading-relaxed tracking-normal text-white">
+                    {friendlyMessage}
                   </div>
-                  {/* Hold / Pendulum Progress Bar */}
-                  {progressRatio > 0 && !isWaitingPose && (
-                    <div className="w-full bg-slate-950/60 rounded-full h-3 mt-2.5 overflow-hidden border border-slate-700/60">
+                  {/* Smooth Motion Progress Bar */}
+                  {!isWaitingPose && (
+                    <div className="w-full bg-slate-950/80 rounded-full h-4 mt-3 overflow-hidden border border-slate-700/80">
                       <div
-                        className="bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-300 h-full transition-all duration-75"
-                        style={{ width: `${Math.round(progressRatio * 100)}%` }}
+                        className="bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-300 h-full transition-all duration-150"
+                        style={{ width: `${Math.round(motionProgress * 100)}%` }}
                       />
                     </div>
                   )}
                 </div>
-                {/* Live Angle or Percentage Badge (Prominent 20-24px font) */}
-                <div className="px-4 py-2.5 rounded-2xl bg-slate-950/80 border-2 border-slate-700 font-mono text-xl sm:text-2xl font-black text-white shrink-0 shadow-inner">
-                  {isWaitingPose
-                    ? (lang === 'zh-CN' ? '等待调整' : lang === 'en-US' ? 'Adjust Pose' : 'รอจัดท่า')
-                    : isPendulum
-                    ? `${Math.round(progressRatio * 100)}%`
-                    : `${evalResult?.currentAngleDeg || hudState.currentAngle}°`}
+                {/* Intuitive Visual Status Badge (No confusing degree numbers!) */}
+                <div className="px-5 py-3 rounded-2xl bg-slate-900/90 border-2 border-slate-700 text-xl sm:text-2xl font-black text-white shrink-0 shadow-inner flex items-center justify-center">
+                  {celebratingRep !== null ? '🌟 +1' : friendlyBadge}
                 </div>
               </div>
             </div>
@@ -1794,6 +1939,71 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               <span>{lang === 'zh-CN' ? '完成并继续下一个动作' : lang === 'en-US' ? 'Complete & Proceed' : 'เสร็จสิ้นและดำเนินการต่อ'}</span>
               <ArrowRight className="w-6 h-6" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Staff PIN Modal to Unlock Developer Debug Mode */}
+      {showStaffPinModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-slate-900 border-2 border-teal-500/60 shadow-2xl p-6 text-center animate-scale-up">
+            <div className="w-16 h-16 rounded-full bg-teal-500/20 border border-teal-400 flex items-center justify-center mx-auto mb-3 text-teal-300">
+              <KeyRound className="w-8 h-8" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-1">
+              รหัสเจ้าหน้าที่ (Staff PIN)
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              กรุณากรอก PIN เพื่อเปิดใช้งาน Diagnostic Debug HUD
+            </p>
+
+            <input
+              type="password"
+              maxLength={8}
+              value={enteredStaffPin}
+              onChange={(e) => {
+                setEnteredStaffPin(e.target.value);
+                setStaffPinError(null);
+              }}
+              placeholder="••••"
+              className="w-full text-center tracking-widest text-3xl font-mono py-3 rounded-2xl bg-slate-950 border-2 border-slate-700 text-white focus:border-teal-400 focus:outline-none mb-3"
+            />
+
+            {staffPinError && (
+              <p className="text-xs text-rose-400 font-bold mb-3">{staffPinError}</p>
+            )}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStaffPinModal(false);
+                  setEnteredStaffPin('');
+                  setStaffPinError(null);
+                }}
+                className="flex-1 py-3 rounded-xl bg-slate-800 text-slate-300 font-bold hover:bg-slate-700 cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pin = enteredStaffPin.trim();
+                  if (pin === '1234' || pin === 'admin' || pin === 'director') {
+                    setIsStaffUnlocked(true);
+                    setShowDebugHud(true);
+                    setShowStaffPinModal(false);
+                    setEnteredStaffPin('');
+                    setStaffPinError(null);
+                  } else {
+                    setStaffPinError('รหัส PIN ไม่ถูกต้อง');
+                  }
+                }}
+                className="flex-1 py-3 rounded-xl bg-teal-500 text-slate-950 font-bold hover:bg-teal-400 cursor-pointer shadow-md"
+              >
+                ยืนยัน
+              </button>
+            </div>
           </div>
         </div>
       )}

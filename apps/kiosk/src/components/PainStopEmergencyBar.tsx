@@ -48,56 +48,56 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
 
   return (
     <div className="w-full bg-slate-950/95 border-t border-slate-800 backdrop-blur-md px-4 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-4 z-30 select-none">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
         <button
           type="button"
           onClick={onExitSession}
-          className="min-h-[48px] px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-base font-bold flex items-center gap-2 transition active:scale-95 cursor-pointer border border-slate-700/80 shadow-sm"
-          title="ออกจากเซสชันนี้"
+          className="min-h-[56px] px-6 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white text-lg font-black flex items-center gap-2.5 transition active:scale-95 cursor-pointer border border-slate-700/90 shadow-md"
+          title="ออกจากการฝึก"
         >
-          <LogOut className="w-5 h-5 shrink-0" />
-          <span>{t('exit_exercise', 'ออกจากการฝึก')}</span>
+          <LogOut className="w-6 h-6 shrink-0 text-slate-400" />
+          <span>{t('exit_exercise', '⬅️ ออกจากการฝึก')}</span>
         </button>
 
         <button
           type="button"
           onClick={onTogglePause}
-          className={`min-h-[48px] px-5 py-3 rounded-2xl text-base font-bold flex items-center gap-2.5 transition active:scale-95 cursor-pointer border shadow-sm ${
+          className={`min-h-[56px] px-6 py-3.5 rounded-2xl text-lg font-black flex items-center gap-2.5 transition active:scale-95 cursor-pointer border shadow-md ${
             isPaused
-              ? 'bg-amber-500/25 border-amber-500/60 text-amber-300 hover:bg-amber-500/35'
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600'
+              ? 'bg-amber-500/25 border-amber-400 text-amber-200 hover:bg-amber-500/35'
+              : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700/90'
           }`}
         >
           {isPaused ? (
             <>
-              <Play className="w-5 h-5 fill-amber-300 shrink-0" />
-              <span>{t('resume_session', 'ทำต่อ (Resume)')}</span>
+              <Play className="w-6 h-6 fill-amber-300 text-amber-300 shrink-0" />
+              <span>{t('resume_session', '▶️ ฝึกต่อ')}</span>
             </>
           ) : (
             <>
-              <Pause className="w-5 h-5 shrink-0" />
-              <span>{t('pause_session', '🛑 พักสักครู่')}</span>
+              <Pause className="w-6 h-6 text-amber-300 shrink-0" />
+              <span>{t('pause_session', '⏸️ พักชั่วคราว')}</span>
             </>
           )}
         </button>
       </div>
 
-      {/* Prominent Red Emergency Pain Stop Button with Idempotency Lock (Min height 52px, text >= 16px) */}
+      {/* Prominent Red Emergency Pain Stop Button (Senior-Friendly, min-h-[60px], text-xl sm:text-2xl) */}
       <button
         type="button"
         id="pain-stop-emergency-btn"
         data-testid="pain-stop-emergency-btn"
         disabled={isSubmittingPain}
         onClick={handlePainClick}
-        className={`min-h-[52px] px-6 py-3.5 rounded-2xl font-black text-base sm:text-lg shadow-xl flex items-center gap-3 transition active:scale-95 cursor-pointer border leading-relaxed ${
+        className={`min-h-[60px] px-8 py-4 rounded-2xl font-black text-xl sm:text-2xl shadow-2xl flex items-center gap-3.5 transition active:scale-95 cursor-pointer border-2 leading-relaxed ${
           isSubmittingPain
             ? 'bg-rose-900/60 border-rose-700 text-rose-200 cursor-not-allowed opacity-80'
-            : 'bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-950/70 border-rose-400/40 animate-pulse'
+            : 'bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-950/80 border-rose-400/50 animate-pulse'
         }`}
       >
         {isSubmittingPain ? (
           <>
-            <Loader2 className="w-6 h-6 shrink-0 animate-spin" />
+            <Loader2 className="w-7 h-7 shrink-0 animate-spin" />
             <span>
               {lang === 'zh-CN'
                 ? '正在呼叫医护人员...'
@@ -108,8 +108,8 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
           </>
         ) : (
           <>
-            <AlertOctagon className="w-6 h-6 shrink-0" />
-            <span>{t('stopped_pain', '🚨 รู้สึกเจ็บ (หยุดฉุกเฉินและแจ้งนักกายภาพ)')}</span>
+            <AlertOctagon className="w-7 h-7 shrink-0 text-white" />
+            <span>{t('stopped_pain', '🚨 รู้สึกเจ็บ (หยุดทันที)')}</span>
           </>
         )}
       </button>
