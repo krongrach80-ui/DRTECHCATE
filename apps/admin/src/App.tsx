@@ -13,29 +13,41 @@ export const AdminApp: React.FC = () => {
   const checkSession = async () => {
     try {
       setAuthLoading(true);
+      if (typeof window !== 'undefined' && sessionStorage.getItem('drtech_admin_logged_out') === 'true') {
+        setCurrentUser(null);
+        return;
+      }
+
       const token = defaultApiClient.getAuthToken();
       if (!token) {
-        try {
-          const loginRes = await defaultApiClient.auth.login({
-            username: 'director',
-            password: 'Admin12345678!',
-          });
-          if (loginRes.user) {
-            setCurrentUser(loginRes.user);
+        const isDev = Boolean(
+          (import.meta as any)?.env?.DEV ||
+          (typeof window !== 'undefined' &&
+            (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+        );
+        if (isDev) {
+          try {
+            const loginRes = await defaultApiClient.auth.login({
+              username: 'director',
+              password: 'Admin12345678!',
+            });
+            if (loginRes.user) {
+              setCurrentUser(loginRes.user);
+              return;
+            }
+          } catch {
+            // If network login fails in dev, set default director profile
+            const defaultDirector: UserProfile = {
+              id: 'd1000000-0000-0000-0000-000000000001',
+              username: 'director',
+              full_name: 'ผอ. นพ. บริรักษ์ เวชกิจ',
+              role: 'admin',
+              status: 'active',
+            };
+            defaultApiClient.setUserProfile(defaultDirector);
+            setCurrentUser(defaultDirector);
             return;
           }
-        } catch {
-          // If network login fails, set default director profile
-          const defaultDirector: UserProfile = {
-            id: 'd1000000-0000-0000-0000-000000000001',
-            username: 'director',
-            full_name: 'ผอ. นพ. บริรักษ์ เวชกิจ',
-            role: 'admin',
-            status: 'active',
-          };
-          defaultApiClient.setUserProfile(defaultDirector);
-          setCurrentUser(defaultDirector);
-          return;
         }
       }
 
@@ -106,6 +118,9 @@ export const AdminApp: React.FC = () => {
     try {
       await defaultApiClient.auth.logout();
     } finally {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('drtech_admin_logged_out', 'true');
+      }
       setCurrentUser(null);
     }
   };
@@ -123,6 +138,9 @@ export const AdminApp: React.FC = () => {
 
   const handleDirectLogin = async (credentials: { username: string; password: string }) => {
     try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('drtech_admin_logged_out');
+      }
       const res = await defaultApiClient.auth.login(credentials);
       const role = (res.user?.role || res.role || '').toLowerCase();
       const uname = (res.user?.username || credentials.username || '').toLowerCase();
@@ -159,10 +177,9 @@ export const AdminApp: React.FC = () => {
     }
   };
 
-  const spaNavigate = (path: string) => {
+  const navigateToKiosk = () => {
     if (typeof window !== 'undefined') {
-      window.history.pushState(null, '', path);
-      window.dispatchEvent(new PopStateEvent('popstate'));
+      window.location.href = '/';
     }
   };
 
@@ -172,13 +189,9 @@ export const AdminApp: React.FC = () => {
       <div className="min-h-screen bg-gradient-to-br from-[#F0FDF9] via-[#FFFFFF] to-[#EFF6FF] flex items-center justify-center p-4">
         <StaffLoginModal
           isOpen={true}
-          onClose={() => {
-            spaNavigate('/');
-          }}
+          onClose={navigateToKiosk}
           onLogin={handleDirectLogin}
-          onReturnToKiosk={() => {
-            spaNavigate('/');
-          }}
+          onReturnToKiosk={navigateToKiosk}
         />
       </div>
     );
@@ -190,9 +203,7 @@ export const AdminApp: React.FC = () => {
       <ClinicalAdminShell
         currentUser={currentUser}
         onLogout={handleLogout}
-        onReturnToKiosk={() => {
-          spaNavigate('/');
-        }}
+        onReturnToKiosk={navigateToKiosk}
         onLogin={handleDirectLogin}
       />
     </div>

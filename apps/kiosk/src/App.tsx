@@ -233,6 +233,7 @@ export const App: React.FC = () => {
   }, []);
 
   const handleReturnToKiosk = useCallback(() => {
+    setIsStaffLoginModalOpen(false);
     setRoleMode('kiosk');
     if (window.location.pathname !== '/') {
       window.history.pushState({ mode: 'kiosk' }, '', '/');

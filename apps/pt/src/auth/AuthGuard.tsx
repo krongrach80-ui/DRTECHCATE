@@ -70,11 +70,11 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
 
           <StaffLoginModal
             isOpen={true}
-            onClose={() => spaNavigate('/')}
+            onClose={() => { window.location.href = '/'; }}
             onLogin={async (creds) => {
               await unlock(creds);
             }}
-            onReturnToKiosk={() => spaNavigate('/')}
+            onReturnToKiosk={() => { window.location.href = '/'; }}
           />
         </div>
       </div>
@@ -87,9 +87,9 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
       <div className="min-h-screen bg-gradient-to-br from-[#F0FDF9] via-[#FFFFFF] to-[#EFF6FF] flex items-center justify-center p-4">
         <StaffLoginModal
           isOpen={true}
-          onClose={() => spaNavigate('/')}
+          onClose={() => { window.location.href = '/'; }}
           onLogin={login}
-          onReturnToKiosk={() => spaNavigate('/')}
+          onReturnToKiosk={() => { window.location.href = '/'; }}
         />
       </div>
     );
