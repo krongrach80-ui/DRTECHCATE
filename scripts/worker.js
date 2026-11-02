@@ -43,7 +43,7 @@ export default {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
             'Access-Control-Allow-Headers':
-              'Content-Type, Authorization, X-Requested-With, x-auth-token, x-staff-role, x-actor-id',
+              'Content-Type, Authorization, X-Requested-With, x-auth-token, x-staff-role, x-actor-id, drtech_access_token',
           },
         }
       );
