@@ -167,12 +167,28 @@ export class SmartOnboardingController {
         });
         return;
       }
-      const data = await this.service.saveRehabScore(patient_id, score);
+      const isStaffOverride = Boolean(
+        req.headers['x-staff-override'] === 'true' ||
+        (req as any).user?.role === 'staff' ||
+        (req as any).user?.role === 'admin' ||
+        (req as any).user?.role === 'pt'
+      );
+      const data = await this.service.saveRehabScore(patient_id, score, isStaffOverride);
       res.status(200).json({
         ok: true,
         data,
       });
-    } catch (err) {
+    } catch (err: any) {
+      if (err.statusCode === 403 || err.code === 'NO_SCHEDULED_APPOINTMENT_TODAY') {
+        res.status(403).json({
+          ok: false,
+          error: {
+            code: 'NO_SCHEDULED_APPOINTMENT_TODAY',
+            message: err.message,
+          },
+        });
+        return;
+      }
       next(err);
     }
   };

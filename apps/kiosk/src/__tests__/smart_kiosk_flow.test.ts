@@ -291,6 +291,36 @@ describe('[MASTER PROMPT v4] Isolated Kiosk Smart Flow Test Suite', () => {
 
       expect(scoreRes).toBeDefined();
     });
+
+    it('4.3 Rest day sets exercises to empty and suppresses start button', async () => {
+      vi.spyOn(defaultApiClient.smartOnboarding, 'getDailyPlan').mockResolvedValueOnce({
+        is_scheduled_today: false,
+        is_completed_today: false,
+        reason: 'วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้',
+        exercises: [],
+        include_minigame: false,
+      });
+
+      const plan = await defaultApiClient.smartOnboarding.getDailyPlan(mockPatient.patient_id);
+      expect(plan.is_scheduled_today).toBe(false);
+      expect(plan.is_completed_today).toBe(false);
+      expect(plan.exercises).toHaveLength(0);
+    });
+
+    it('4.4 Already completed today returns is_completed_today true', async () => {
+      vi.spyOn(defaultApiClient.smartOnboarding, 'getDailyPlan').mockResolvedValueOnce({
+        is_scheduled_today: true,
+        is_completed_today: true,
+        reason: 'วันนี้คุณได้ทำการฝึกกายภาพบำบัดครบถ้วนตามนัดแล้ว',
+        exercises: [{ exercise_id: 'ex-01', name: 'หมุนข้อไหล่', target_joint: 'ไหล่', sets: 3, reps: 10 }],
+        include_minigame: false,
+      });
+
+      const plan = await defaultApiClient.smartOnboarding.getDailyPlan(mockPatient.patient_id);
+      expect(plan.is_scheduled_today).toBe(true);
+      expect(plan.is_completed_today).toBe(true);
+      expect(plan.reason).toContain('ฝึกกายภาพบำบัดครบถ้วน');
+    });
   });
 
   describe('5. SmartFlowController: State Transitions', () => {

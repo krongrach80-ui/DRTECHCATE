@@ -44,6 +44,19 @@ interface SmartScheduleWizardModalProps {
   preselectedDate?: string;
 }
 
+function broadcastScheduleSync(patientId?: string): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('schedule-updated'));
+  try {
+    const bc = new BroadcastChannel('drtechcare_schedule');
+    bc.postMessage({ type: 'schedule-updated', patientId, timestamp: Date.now() });
+    bc.close();
+  } catch {}
+  try {
+    localStorage.setItem('drtechcare_schedule_updated', Date.now().toString());
+  } catch {}
+}
+
 const formatCleanName = (first?: string, last?: string): string => {
   const cleanFirst = first?.trim() || '';
   const cleanLast = last && last.trim() !== '-' && last.trim() !== '' ? ` ${last.trim()}` : '';
@@ -281,7 +294,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
 
       const committedSchedule = (res as any)?.schedule || schedulePayload;
 
-      window.dispatchEvent(new CustomEvent('schedule-updated'));
+      broadcastScheduleSync(targetPid);
       onSuccess(committedSchedule, targetPid);
       onClose();
     } catch (err: unknown) {

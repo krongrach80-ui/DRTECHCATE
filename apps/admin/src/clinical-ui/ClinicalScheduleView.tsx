@@ -38,6 +38,19 @@ const formatCleanName = (first?: string, last?: string): string => {
   return `${cleanFirst}${cleanLast}`.trim() || 'ผู้ป่วย';
 };
 
+function broadcastScheduleSync(patientId?: string): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('schedule-updated'));
+  try {
+    const bc = new BroadcastChannel('drtechcare_schedule');
+    bc.postMessage({ type: 'schedule-updated', patientId, timestamp: Date.now() });
+    bc.close();
+  } catch {}
+  try {
+    localStorage.setItem('drtechcare_schedule_updated', Date.now().toString());
+  } catch {}
+}
+
 export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   onOpenCreateScheduleModal,
 }) => {
@@ -219,7 +232,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       );
 
       setNotification(`จัดคอร์สวันที่ ${dateStr} เรียบร้อยแล้ว`);
-      window.dispatchEvent(new CustomEvent('schedule-updated'));
+      broadcastScheduleSync(targetPatientId);
     } catch (err) {
       setNotification(err instanceof Error ? err.message : 'ไม่สามารถเพิ่มวันนัดได้');
     } finally {
@@ -258,7 +271,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       );
 
       setNotification(`ลบวันนัดวันที่ ${dateStr} เรียบร้อยแล้ว`);
-      window.dispatchEvent(new CustomEvent('schedule-updated'));
+      broadcastScheduleSync(targetPatientId);
     } catch (err) {
       setNotification(err instanceof Error ? err.message : 'ไม่สามารถลบวันนัดได้');
     } finally {
@@ -287,7 +300,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       );
 
       setNotification(`ล้างตารางนัดของคนไข้ ${pName} เรียบร้อยแล้ว`);
-      window.dispatchEvent(new CustomEvent('schedule-updated'));
+      broadcastScheduleSync(selectedPatient.id);
     } catch (err) {
       setNotification(err instanceof Error ? err.message : 'ไม่สามารถล้างตารางนัดได้');
     } finally {

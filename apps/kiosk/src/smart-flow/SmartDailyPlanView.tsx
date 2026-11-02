@@ -4,7 +4,7 @@
  * Conforms to Master Prompt v4 Section 4.3
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import { PatientRecordFile } from '../../../../packages/smart-biometric-core/src/index.js';
 import {
@@ -16,6 +16,8 @@ import {
   RefreshCw,
   Sun,
   Brain,
+  Bell,
+  Check,
   ChevronRight as _ChevronRight,
   Gamepad2 as _Gamepad2,
 } from 'lucide-react';
@@ -44,9 +46,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   const { lang } = useClinicalI18n();
   const [loading, setLoading] = useState(true);
   const [isScheduledToday, setIsScheduledToday] = useState(false);
+  const [isCompletedToday, setIsCompletedToday] = useState(false);
   const [restReason, setRestReason] = useState<string>('');
   const [exercises, setExercises] = useState<any[]>([]);
   const [includeMinigame, setIncludeMinigame] = useState(false);
+  const [callStaffStatus, setCallStaffStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   // Exercise tracking
   const [completedExerciseIds, setCompletedExerciseIds] = useState<Set<string>>(new Set());
@@ -86,22 +90,33 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     },
   ];
 
-  // Fetch daily plan on mount
-  useEffect(() => {
-    isMountedRef.current = true;
-    async function loadPlan() {
-      try {
-        setLoading(true);
-        const targetId = patient.patient_id || patient.hn || '';
-        const res = await defaultApiClient.smartOnboarding.getDailyPlan(targetId);
-        if (!isMountedRef.current) return;
+  // Fetch daily plan (with realtime event integration)
+  const loadPlan = useCallback(async () => {
+    try {
+      const targetId = patient.patient_id || patient.hn || '';
+      const res = await defaultApiClient.smartOnboarding.getDailyPlan(targetId);
+      if (!isMountedRef.current) return;
 
-        setIsScheduledToday(res.is_scheduled_today);
-        setRestReason(res.reason || (lang === 'zh-CN' ? '今天是您的休息日' : lang === 'en-US' ? 'Today is your scheduled rest day' : 'วันนี้เป็นวันพักผ่อนของคุณ'));
+      const scheduled = Boolean(res.is_scheduled_today);
+      const completed = Boolean(res.is_completed_today);
+      setIsScheduledToday(scheduled);
+      setIsCompletedToday(completed);
 
+      if (!scheduled) {
+        setExercises([]);
+        setRestReason(
+          res.reason ||
+            (lang === 'zh-CN'
+              ? '今日是您的休息日，暂无训练安排'
+              : lang === 'en-US'
+              ? 'Today is your scheduled rest day'
+              : 'วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้')
+        );
+      } else {
+        setRestReason(res.reason || '');
         let resolvedExercises = res.exercises && res.exercises.length > 0 ? res.exercises : [];
         if (resolvedExercises.length === 0) {
-          // Default to all 10 clinical exercises if no custom subset is restricted
+          // If scheduled today but no custom subset assigned, fallback to clinical presets
           resolvedExercises = ALL_CLINICAL_EXERCISES.map((ex) => ({
             exercise_id: ex.id,
             id: ex.id,
@@ -117,22 +132,91 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         }
         setExercises(resolvedExercises);
         setIncludeMinigame(res.include_minigame ?? true);
-      } catch {
-        if (!isMountedRef.current) return;
-        setIsScheduledToday(false);
-        setRestReason(lang === 'zh-CN' ? '未找到今日训练计划' : lang === 'en-US' ? 'No daily rehab schedule found' : 'ไม่พบข้อมูลตารางฝึกประจำวันนี้');
-      } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
-        }
+      }
+    } catch {
+      if (!isMountedRef.current) return;
+      setIsScheduledToday(false);
+      setIsCompletedToday(false);
+      setExercises([]);
+      setRestReason(
+        lang === 'zh-CN'
+          ? '未找到今日训练计划'
+          : lang === 'en-US'
+          ? 'No daily rehab schedule found'
+          : 'ไม่พบข้อมูลตารางฝึกประจำวันนี้'
+      );
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
       }
     }
+  }, [patient.patient_id, patient.hn, lang]);
 
+  useEffect(() => {
+    isMountedRef.current = true;
     loadPlan();
+
+    const handleRefresh = () => {
+      loadPlan();
+    };
+
+    window.addEventListener('schedule-updated', handleRefresh);
+    window.addEventListener('focus', handleRefresh);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadPlan();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel('drtechcare_schedule');
+      channel.onmessage = () => {
+        loadPlan();
+      };
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'drtechcare_schedule_updated') {
+        loadPlan();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    // Periodic sync polling every 10 seconds
+    const interval = setInterval(loadPlan, 10000);
+
     return () => {
       isMountedRef.current = false;
+      window.removeEventListener('schedule-updated', handleRefresh);
+      window.removeEventListener('focus', handleRefresh);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('storage', handleStorage);
+      if (channel) channel.close();
+      clearInterval(interval);
     };
-  }, [patient.patient_id, patient.hn, lang]);
+  }, [loadPlan]);
+
+  const handleCallStaff = async () => {
+    try {
+      setCallStaffStatus('sending');
+      await defaultApiClient.kiosk.callStaff({
+        kiosk_id: 'kiosk-01',
+        reason: `คนไข้ ${patient.first_name} (HN: ${patient.patient_id}) ขอความช่วยเหลือ / สอบถามตารางนัดหมาย`,
+      });
+      setCallStaffStatus('sent');
+      setTimeout(() => {
+        if (isMountedRef.current) setCallStaffStatus('idle');
+      }, 5000);
+    } catch {
+      setCallStaffStatus('error');
+      setTimeout(() => {
+        if (isMountedRef.current) setCallStaffStatus('idle');
+      }, 4000);
+    }
+  };
 
   // Handle exercise toggle
   const toggleExerciseComplete = (id: string) => {
@@ -157,6 +241,27 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   // Launch AI Exercise Detection with Pre-Session Camera Guide
   const handleStartExercise = (exerciseItem: any) => {
+    if (!isScheduledToday) {
+      alert(
+        lang === 'zh-CN'
+          ? '今日无预约训练，无法开始'
+          : lang === 'en-US'
+          ? 'No appointment scheduled for today. Exercise session cannot be started.'
+          : 'วันนี้ไม่มีนัดหมายในตารางฝึกกายภาพบำบัด ไม่สามารถเริ่มฝึกได้ครับ'
+      );
+      return;
+    }
+    if (isCompletedToday || isSessionCompleted) {
+      alert(
+        lang === 'zh-CN'
+          ? '今日康复动作已完成，请勿过度训练'
+          : lang === 'en-US'
+          ? 'Today’s session is already completed. Please rest to prevent overtraining.'
+          : 'คุณได้ฝึกกายภาพครบตามนัดวันนี้แล้ว เชิญพักผ่อนเพื่อความปลอดภัยครับ'
+      );
+      return;
+    }
+
     const exName = exerciseItem.name || exerciseItem.exercise_name || exerciseItem.title || '';
     const config: ExerciseDetectionConfig | null =
       exerciseItem.detection_config ||
@@ -171,6 +276,10 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   };
 
   const handleGuideReady = () => {
+    if (!isScheduledToday || isCompletedToday || isSessionCompleted) {
+      setActiveGuideConfig(null);
+      return;
+    }
     if (activeGuideConfig) {
       setActiveSession(activeGuideConfig);
       setActiveGuideConfig(null);
@@ -288,6 +397,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     } finally {
       if (isMountedRef.current) {
         setIsSessionCompleted(true);
+        setIsCompletedToday(true);
         setIsPlayingQuiz(false);
       }
     }
@@ -329,7 +439,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     );
   }
 
-  // 1. Rest Day View (Friendly notice)
+  // 1. Rest Day View (Friendly notice when no appointment today)
   if (!isScheduledToday) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-between p-8 bg-slate-950 text-white select-none">
@@ -346,38 +456,63 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               <div className="text-xs text-slate-400">HN: {patient.patient_id}</div>
             </div>
           </div>
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>ออกจากระบบ</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <LanguageSwitcher variant="dark" />
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>{lang === 'zh-CN' ? '退出系统' : lang === 'en-US' ? 'Sign Out' : 'ออกจากระบบ'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Center Friendly Notice */}
         <div className="max-w-md w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl flex flex-col items-center my-auto">
-          <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4">
+          <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4 shadow-lg shadow-emerald-950/40">
             <Sun className="w-8 h-8" />
           </div>
 
-          <h2 className="text-xl font-bold text-white mb-2">วันพักผ่อนของคุณ</h2>
+          <h2 className="text-xl font-bold text-white mb-2">
+            {lang === 'zh-CN' ? '今天是您的休息日' : lang === 'en-US' ? 'Your Scheduled Rest Day' : 'วันพักผ่อนของคุณ'}
+          </h2>
           <p className="text-sm text-slate-300 leading-relaxed mb-6">
-            🌿 วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้ เชิญพักผ่อนตามอัธยาศัยครับ
+            {lang === 'zh-CN'
+              ? '🌿 今日没有为您安排康复训练，或当前为休息日。请好好休息，保持良好状态。'
+              : lang === 'en-US'
+              ? '🌿 There is no physical therapy session scheduled for you today. Please feel free to rest.'
+              : '🌿 วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้ เชิญพักผ่อนตามอัธยาศัยครับ'}
           </p>
 
-          <div className="text-xs text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-2.5 w-full">
-            {restReason}
+          <div className="text-xs text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-2.5 w-full mb-4">
+            {restReason || (lang === 'zh-CN' ? '今日无预约训练' : lang === 'en-US' ? 'No scheduled appointment today' : 'วันนี้ไม่มีนัดหมายในตารางฝึก')}
           </div>
 
-          {exercises.length > 0 && (
-            <button
-              onClick={() => setIsScheduledToday(true)}
-              className="mt-6 w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-sm shadow-lg shadow-teal-950/50 flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
-            >
-              <Activity className="w-4 h-4" />
-              <span>เริ่มฝึกกายภาพทันที ({exercises.length} ท่า)</span>
-            </button>
+          {/* Call Staff Button */}
+          <button
+            type="button"
+            onClick={handleCallStaff}
+            disabled={callStaffStatus === 'sending' || callStaffStatus === 'sent'}
+            className="w-full py-3.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-semibold text-xs border border-slate-700/80 flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60 shadow-md"
+          >
+            {callStaffStatus === 'sent' ? (
+              <Check className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <Bell className="w-4 h-4 text-amber-400" />
+            )}
+            <span>
+              {callStaffStatus === 'sending'
+                ? (lang === 'zh-CN' ? '正在呼叫工作人员...' : lang === 'en-US' ? 'Calling staff...' : 'กำลังเรียกเจ้าหน้าที่...')
+                : callStaffStatus === 'sent'
+                ? (lang === 'zh-CN' ? '✓ 已成功通知医护人员' : lang === 'en-US' ? '✓ Staff Notified' : '✓ แจ้งเจ้าหน้าที่เรียบร้อยแล้ว')
+                : (lang === 'zh-CN' ? '呼叫医护人员 / 咨询预约' : lang === 'en-US' ? 'Call Staff / Inquire Schedule' : 'เรียกเจ้าหน้าที่ / ปรึกษาตารางนัด')}
+            </span>
+          </button>
+          {callStaffStatus === 'sent' && (
+            <p className="mt-2 text-[11px] text-emerald-400">
+              {lang === 'zh-CN' ? '工作人员已收到通知，马上前来协助您。' : lang === 'en-US' ? 'Staff has been notified and will assist you shortly.' : 'เจ้าหน้าที่ได้รับแจ้งแล้ว กำลังมาช่วยเหลือครับ'}
+            </p>
           )}
         </div>
 
@@ -389,44 +524,85 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     );
   }
 
-  // 2. Final Completion Screen
-  if (isSessionCompleted) {
+  // 2. Final Completion Screen / Completed Today Screen (Prevent repeated exercises)
+  if (isSessionCompleted || isCompletedToday) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-between p-8 bg-slate-950 text-white select-none">
+        {/* Top Header */}
+        <div className="w-full flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-emerald-400">
+              {patient.first_name[0] || 'P'}
+            </div>
+            <div>
+              <div className="text-base font-bold text-white">
+                คุณ {patient.first_name}{patient.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
+              </div>
+              <div className="text-xs text-slate-400">HN: {patient.patient_id}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <LanguageSwitcher variant="dark" />
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>{lang === 'zh-CN' ? '退出系统' : lang === 'en-US' ? 'Sign Out' : 'ออกจากระบบ'}</span>
+            </button>
+          </div>
+        </div>
+
         <div className="my-auto max-w-lg w-full bg-gradient-to-b from-slate-900 to-emerald-950/30 border-2 border-emerald-500/40 rounded-3xl p-8 text-center shadow-2xl flex flex-col items-center">
           <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-emerald-400 mb-4 shadow-lg shadow-emerald-900/30">
             <Trophy className="w-10 h-10" />
           </div>
 
           <h2 className="text-2xl font-bold text-white mb-2">
-            วันนี้คุณทำได้ดีมาก! 🎉
+            {lang === 'zh-CN' ? '今日康复训练已完成 🎉' : lang === 'en-US' ? 'Training Completed Today 🎉' : 'ฝึกเสร็จแล้ววันนี้ 🎉'}
           </h2>
 
-          <p className="text-base text-emerald-200 font-medium mb-4">
-            คุณทำกายภาพและกิจกรรมเสร็จสิ้นสำหรับวันนี้แล้ว เชิญพักผ่อนได้ครับ
+          <p className="text-sm text-emerald-200 font-medium mb-4 leading-relaxed">
+            {lang === 'zh-CN'
+              ? '您已顺利完成今日的所有康复动作与评估。为避免过度疲劳与肌肉损伤，今日请充分休息。'
+              : lang === 'en-US'
+              ? 'You have successfully completed all prescribed physical therapy exercises for today. Please rest to prevent overtraining.'
+              : 'คุณทำกายภาพบำบัดและกิจกรรมตามนัดหมายประจำวันนี้เสร็จสิ้นแล้ว เพื่อความปลอดภัยและผลการรักษาที่ดีที่สุด เชิญพักผ่อนได้ครับ'}
           </p>
 
           <div className="w-full bg-slate-950/80 border border-emerald-500/30 rounded-2xl p-4 text-center mb-6">
-            <div className="text-xs text-slate-400 mb-1">นัดหมายครั้งต่อไป:</div>
+            <div className="text-xs text-slate-400 mb-1">
+              {lang === 'zh-CN' ? '下次预约时间:' : lang === 'en-US' ? 'Next Appointment:' : 'นัดหมายครั้งต่อไป:'}
+            </div>
             <div className="text-sm font-bold text-emerald-400">
               📅 {nextApptDateStr}
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              (ระบบจะรีเซ็ตกลับสู่หน้าสแตนด์บายอัตโนมัติใน {autoResetSeconds} วินาที)
-            </div>
+            {isSessionCompleted && (
+              <div className="text-[11px] text-slate-500 mt-1">
+                {lang === 'zh-CN'
+                  ? `(系统将在 ${autoResetSeconds} 秒后自动返回待机页面)`
+                  : lang === 'en-US'
+                  ? `(System will return to standby in ${autoResetSeconds} seconds)`
+                  : `(ระบบจะรีเซ็ตกลับสู่หน้าสแตนด์บายอัตโนมัติใน ${autoResetSeconds} วินาที)`}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3 w-full mb-6">
             <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-center">
-              <div className="text-xs text-slate-400 mb-1">ท่ากายภาพบำบัด</div>
+              <div className="text-xs text-slate-400 mb-1">
+                {lang === 'zh-CN' ? '动作项目' : lang === 'en-US' ? 'Exercises' : 'ท่ากายภาพบำบัด'}
+              </div>
               <div className="text-xl font-bold text-emerald-400">
-                {exercises.length}/{exercises.length} ท่า
+                {exercises.length > 0 ? `${exercises.length}/${exercises.length}` : 'เสร็จสมบูรณ์'}
               </div>
             </div>
             <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-center">
-              <div className="text-xs text-slate-400 mb-1">คะแนนมินิเกมฝึกสมอง</div>
+              <div className="text-xs text-slate-400 mb-1">
+                {lang === 'zh-CN' ? '微游戏得分' : lang === 'en-US' ? 'Minigame' : 'คะแนนมินิเกม'}
+              </div>
               <div className="text-xl font-bold text-amber-400">
-                {includeMinigame ? `${quizScore} คะแนน` : 'ผ่านเกณฑ์'}
+                {includeMinigame ? `${quizScore} คะแนน` : (lang === 'zh-CN' ? '已达标' : lang === 'en-US' ? 'Passed' : 'ผ่านเกณฑ์')}
               </div>
             </div>
           </div>
@@ -436,8 +612,13 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition active:scale-95 shadow-lg shadow-emerald-900/40 flex items-center justify-center gap-2 cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
-            <span>เสร็จสิ้นและออกจากระบบทันที</span>
+            <span>{lang === 'zh-CN' ? '完成并立即退出系统' : lang === 'en-US' ? 'Finish & Sign Out' : 'เสร็จสิ้นและออกจากระบบทันที'}</span>
           </button>
+        </div>
+
+        {/* Bottom Bar */}
+        <div className="w-full text-center text-xs text-slate-500">
+          ระบบกายภาพบำบัดอัจฉริยะ • Aura Framing Smart PT System
         </div>
       </div>
     );

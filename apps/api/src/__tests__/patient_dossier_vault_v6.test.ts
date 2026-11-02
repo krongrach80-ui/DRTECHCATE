@@ -308,11 +308,11 @@ describe('[MASTER PROMPT v6] Strict Patient-Centric Dossier Vault, 10-Snapshot R
       );
     });
 
-    it('4.5 records rehab and minigame scores to rehab_scores in patient_record.json', async () => {
+    it('4.5 records rehab and minigame scores to rehab_scores in patient_record.json on scheduled day', async () => {
       const scorePayload = {
         patient_id: testPatientId,
         score: {
-          timestamp: new Date().toISOString(),
+          timestamp: '2026-10-26T10:00:00+07:00', // Monday within schedule
           completion_rate: 100,
           exercises_completed: 1,
           minigame_score: 70,
@@ -333,6 +333,29 @@ describe('[MASTER PROMPT v6] Strict Patient-Centric Dossier Vault, 10-Snapshot R
       const latest = record?.rehab_scores[record.rehab_scores.length - 1];
       expect(latest?.minigame_score).toBe(70);
       expect(latest?.total_score).toBe(170);
+      expect(record?.daily_checklists?.['2026-10-26']).toBe(true);
+    });
+
+    it('4.6 rejects recording rehab scores when there is no scheduled appointment on that date', async () => {
+      const unscheduledPayload = {
+        patient_id: testPatientId,
+        score: {
+          timestamp: '2026-10-27T10:00:00+07:00', // Tuesday - not scheduled
+          completion_rate: 100,
+          exercises_completed: 1,
+          minigame_score: 50,
+          total_score: 150,
+        },
+      };
+
+      const res = await request(app)
+        .post('/api/smart-onboarding/rehab-score')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .send(unscheduledPayload)
+        .expect(403);
+
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error.code).toBe('NO_SCHEDULED_APPOINTMENT_TODAY');
     });
   });
 });

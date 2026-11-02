@@ -1875,6 +1875,7 @@ export class ApiClient {
       const q = date ? `?date=${encodeURIComponent(date)}` : '';
       return this.request<{
         is_scheduled_today: boolean;
+        is_completed_today?: boolean;
         reason?: string;
         schedule?: any;
         exercises: any[];

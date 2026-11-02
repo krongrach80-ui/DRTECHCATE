@@ -14821,6 +14821,7 @@ var SmartOnboardingService = class {
     if (!effectiveSchedule) {
       return {
         is_scheduled_today: false,
+        is_completed_today: false,
         reason: "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E15\u0E32\u0E23\u0E32\u0E07\u0E1D\u0E36\u0E01\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E23\u0E32\u0E22\u0E19\u0E35\u0E49",
         schedule: null,
         exercises: [],
@@ -14874,8 +14875,16 @@ var SmartOnboardingService = class {
       Array.isArray(effectiveSchedule.excluded_dates) && effectiveSchedule.excluded_dates.includes(bkkIsoDate)
     );
     if (isWithinDateRange && isDayScheduled && !isExcluded) {
+      const isCompletedToday = Boolean(
+        patient?.daily_checklists?.[bkkIsoDate] || Array.isArray(patient?.rehab_scores) && patient.rehab_scores.some((s) => {
+          const itemDate = s.date || (s.timestamp ? s.timestamp.slice(0, 10) : "") || (s.completed_at ? s.completed_at.slice(0, 10) : "");
+          return itemDate === bkkIsoDate;
+        })
+      );
       return {
         is_scheduled_today: true,
+        is_completed_today: isCompletedToday,
+        reason: isCompletedToday ? "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E04\u0E38\u0E13\u0E44\u0E14\u0E49\u0E17\u0E33\u0E01\u0E32\u0E23\u0E1D\u0E36\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E15\u0E32\u0E21\u0E19\u0E31\u0E14\u0E41\u0E25\u0E49\u0E27" : void 0,
         schedule: effectiveSchedule,
         exercises,
         include_minigame: includeMinigame
@@ -14883,9 +14892,10 @@ var SmartOnboardingService = class {
     }
     return {
       is_scheduled_today: false,
+      is_completed_today: false,
       reason: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E27\u0E31\u0E19\u0E1E\u0E31\u0E01\u0E1C\u0E48\u0E2D\u0E19\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13 \u0E2B\u0E23\u0E37\u0E2D\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1D\u0E36\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49",
       schedule: effectiveSchedule,
-      exercises,
+      exercises: [],
       include_minigame: false
     };
   }
@@ -15004,17 +15014,33 @@ var SmartOnboardingService = class {
   /**
    * 7. Record Rehab Scores & Checklists
    */
-  async saveRehabScore(patientId, score) {
+  async saveRehabScore(patientId, score, isStaffOverride = false) {
     const existing = this.vaultService.getPatientRecord(patientId);
     if (!existing) {
       throw new Error(`Patient vault for ${patientId} not found`);
     }
+    const todayBkk = this.getTodayBkk();
+    const targetDate = score.date || (score.timestamp ? score.timestamp.slice(0, 10) : todayBkk);
+    const plan = await this.getDailyPlan(patientId, score.timestamp || score.date || todayBkk);
+    if (!plan.is_scheduled_today && !isStaffOverride && !score.bypass_schedule_check) {
+      const err = new Error(
+        `\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E1C\u0E25\u0E44\u0E14\u0E49: \u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 ${patientId} \u0E44\u0E21\u0E48\u0E21\u0E35\u0E19\u0E31\u0E14\u0E1D\u0E36\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E43\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${targetDate} (Asia/Bangkok)`
+      );
+      err.statusCode = 403;
+      err.code = "NO_SCHEDULED_APPOINTMENT_TODAY";
+      throw err;
+    }
+    const dailyChecklists = { ...existing.daily_checklists || {}, [targetDate]: true };
     const updated = {
       ...existing,
+      daily_checklists: dailyChecklists,
       rehab_scores: [...existing.rehab_scores || [], score],
       updated_at: (/* @__PURE__ */ new Date()).toISOString()
     };
     this.vaultService.savePatientRecord(patientId, updated);
+    if (existing.hn && existing.hn !== patientId) {
+      this.vaultService.savePatientRecord(existing.hn, updated);
+    }
     try {
       await this.recordsRepo.createTreatmentResult(
         patientId,
@@ -15301,12 +15327,25 @@ var SmartOnboardingController = class {
           });
           return;
         }
-        const data = await this.service.saveRehabScore(patient_id, score);
+        const isStaffOverride = Boolean(
+          req.headers["x-staff-override"] === "true" || req.user?.role === "staff" || req.user?.role === "admin" || req.user?.role === "pt"
+        );
+        const data = await this.service.saveRehabScore(patient_id, score, isStaffOverride);
         res.status(200).json({
           ok: true,
           data
         });
       } catch (err) {
+        if (err.statusCode === 403 || err.code === "NO_SCHEDULED_APPOINTMENT_TODAY") {
+          res.status(403).json({
+            ok: false,
+            error: {
+              code: "NO_SCHEDULED_APPOINTMENT_TODAY",
+              message: err.message
+            }
+          });
+          return;
+        }
         next(err);
       }
     };

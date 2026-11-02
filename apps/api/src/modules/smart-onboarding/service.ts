@@ -1775,6 +1775,7 @@ export class SmartOnboardingService {
     currentDateStr?: string
   ): Promise<{
     is_scheduled_today: boolean;
+    is_completed_today?: boolean;
     reason?: string;
     schedule?: any;
     exercises: PrescribedExercise[];
@@ -1969,6 +1970,7 @@ export class SmartOnboardingService {
     if (!effectiveSchedule) {
       return {
         is_scheduled_today: false,
+        is_completed_today: false,
         reason: 'ไม่มีตารางฝึกสำหรับผู้ป่วยรายนี้',
         schedule: null,
         exercises: [],
@@ -2040,8 +2042,23 @@ export class SmartOnboardingService {
     );
 
     if (isWithinDateRange && isDayScheduled && !isExcluded) {
+      // Check if patient already completed training for today
+      const isCompletedToday = Boolean(
+        patient?.daily_checklists?.[bkkIsoDate] ||
+        (Array.isArray(patient?.rehab_scores) &&
+          patient.rehab_scores.some((s) => {
+            const itemDate =
+              s.date ||
+              (s.timestamp ? s.timestamp.slice(0, 10) : '') ||
+              (s.completed_at ? s.completed_at.slice(0, 10) : '');
+            return itemDate === bkkIsoDate;
+          }))
+      );
+
       return {
         is_scheduled_today: true,
+        is_completed_today: isCompletedToday,
+        reason: isCompletedToday ? 'วันนี้คุณได้ทำการฝึกกายภาพบำบัดครบถ้วนตามนัดแล้ว' : undefined,
         schedule: effectiveSchedule,
         exercises,
         include_minigame: includeMinigame,
@@ -2050,9 +2067,10 @@ export class SmartOnboardingService {
 
     return {
       is_scheduled_today: false,
+      is_completed_today: false,
       reason: 'วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้',
       schedule: effectiveSchedule,
-      exercises,
+      exercises: [],
       include_minigame: false,
     };
   }
@@ -2192,19 +2210,43 @@ export class SmartOnboardingService {
   /**
    * 7. Record Rehab Scores & Checklists
    */
-  public async saveRehabScore(patientId: string, score: RehabScoreEntry): Promise<PatientRecordFile> {
+  public async saveRehabScore(
+    patientId: string,
+    score: RehabScoreEntry,
+    isStaffOverride = false
+  ): Promise<PatientRecordFile> {
     const existing = this.vaultService.getPatientRecord(patientId);
     if (!existing) {
       throw new Error(`Patient vault for ${patientId} not found`);
     }
 
+    const todayBkk = this.getTodayBkk();
+    const targetDate = score.date || (score.timestamp ? score.timestamp.slice(0, 10) : todayBkk);
+
+    // Clinical verification: Patient must have an active scheduled appointment on that date
+    const plan = await this.getDailyPlan(patientId, score.timestamp || score.date || todayBkk);
+    if (!plan.is_scheduled_today && !isStaffOverride && !(score as any).bypass_schedule_check) {
+      const err: any = new Error(
+        `ไม่สามารถบันทึกผลได้: ผู้ป่วย ${patientId} ไม่มีนัดฝึกกายภาพบำบัดในวันที่ ${targetDate} (Asia/Bangkok)`
+      );
+      err.statusCode = 403;
+      err.code = 'NO_SCHEDULED_APPOINTMENT_TODAY';
+      throw err;
+    }
+
+    const dailyChecklists = { ...(existing.daily_checklists || {}), [targetDate]: true };
+
     const updated: PatientRecordFile = {
       ...existing,
+      daily_checklists: dailyChecklists,
       rehab_scores: [...(existing.rehab_scores || []), score],
       updated_at: new Date().toISOString(),
     };
 
     this.vaultService.savePatientRecord(patientId, updated);
+    if (existing.hn && existing.hn !== patientId) {
+      this.vaultService.savePatientRecord(existing.hn, updated);
+    }
 
     // Save into Supabase treatment_results table via recordsRepo
     try {
