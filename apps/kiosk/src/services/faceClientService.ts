@@ -177,3 +177,18 @@ export function resetFaceClientServices(): void {
     sharedServices = null;
   }
 }
+
+/**
+ * Preloads MediaPipe Face Detector and Embedding Models ahead of time
+ * (Warm up WebGL / GPU delegate and cache model files in memory)
+ */
+export function preloadFaceModels(): void {
+  try {
+    const services = getFaceClientServices();
+    if (services.detector && 'initialize' in services.detector && typeof (services.detector as any).initialize === 'function') {
+      (services.detector as any).initialize().catch(() => {});
+    }
+  } catch {
+    // Non-blocking preload
+  }
+}

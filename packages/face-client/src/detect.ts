@@ -68,19 +68,25 @@ export interface FaceROIValidationResult {
   statusMessageThai: string;
 }
 
+export interface FaceROIOptions {
+  maxCenterDistance?: number;
+  minFaceWidthRatio?: number;
+  minBorderMargin?: number;
+}
+
 /**
- * Strict Face ROI / Circle Center & Full-Face Bounding Check (Rule 1)
+ * Flexible & Strict Face ROI / Circle Center & Full-Face Bounding Check (Rule 1)
  * Enforces:
  * 1. Nose Tip (or face center) distance to guide circle center (cx = 0.5, cy = 0.5):
- *    sqrt((x_nose - 0.5)^2 + (y_nose - 0.5)^2) <= 0.18
- * 2. Full face boundaries (Forehead Landmark 10, Chin Landmark 152, Left Cheek 234, Right Cheek 454
- *    or bounding box bounds) must stay strictly within 0.15 <= x, y <= 0.85
- * 3. Face Width Ratio (face width / frame width) >= 0.22 (not too far or small)
+ *    sqrt((x_nose - 0.5)^2 + (y_nose - 0.5)^2) <= maxCenterDistance (default: 0.18, kiosk: up to 0.32)
+ * 2. Full face boundaries must stay within minBorderMargin <= x, y <= 1 - minBorderMargin (default: 0.15)
+ * 3. Face Width Ratio (face width / frame width) >= minFaceWidthRatio (default: 0.22, kiosk: 0.10)
  */
 export function checkFaceROIInCircle(
   detection: FaceDetectionResult,
   frameWidth: number = 640,
-  frameHeight: number = 480
+  frameHeight: number = 480,
+  options?: FaceROIOptions
 ): FaceROIValidationResult {
   if (!detection || !detection.hasFace) {
     return {
@@ -95,6 +101,11 @@ export function checkFaceROIInCircle(
 
   const fw = frameWidth > 0 ? frameWidth : 640;
   const fh = frameHeight > 0 ? frameHeight : 480;
+
+  const maxCenterDist = options?.maxCenterDistance ?? 0.18;
+  const minWidthRatio = options?.minFaceWidthRatio ?? 0.22;
+  const minBorderMargin = options?.minBorderMargin ?? 0.15;
+  const maxBorderMargin = 1.0 - minBorderMargin;
 
   // 1. Calculate normalized nose center coordinate
   let normNoseX = 0.5;
@@ -135,7 +146,7 @@ export function checkFaceROIInCircle(
     faceWidthRatio = eyeDist * 2.5;
   }
 
-  // 3. Full Face Bounding Check (0.15 <= x, y <= 0.85)
+  // 3. Full Face Bounding Check (minBorderMargin <= x, y <= maxBorderMargin)
   let isFullFaceVisible = true;
   const rawLandmarks = detection.landmarks?.rawLandmarks3D || (detection.landmarks as any)?.allPoints;
 
@@ -146,7 +157,7 @@ export function checkFaceROIInCircle(
       if (p) {
         const nx = p.x / fw;
         const ny = p.y / fh;
-        if (nx < 0.15 || nx > 0.85 || ny < 0.15 || ny > 0.85) {
+        if (nx < minBorderMargin || nx > maxBorderMargin || ny < minBorderMargin || ny > maxBorderMargin) {
           isFullFaceVisible = false;
           break;
         }
@@ -157,12 +168,12 @@ export function checkFaceROIInCircle(
     const minY = detection.box.y / fh;
     const maxX = (detection.box.x + detection.box.width) / fw;
     const maxY = (detection.box.y + detection.box.height) / fh;
-    if (minX < 0.15 || maxX > 0.85 || minY < 0.15 || maxY > 0.85) {
+    if (minX < minBorderMargin || maxX > maxBorderMargin || minY < minBorderMargin || maxY > maxBorderMargin) {
       isFullFaceVisible = false;
     }
   }
 
-  if (centerDistance > 0.18) {
+  if (centerDistance > maxCenterDist) {
     return {
       inCircle: false,
       reason: 'CENTER_OFFSET_TOO_LARGE',
@@ -184,7 +195,7 @@ export function checkFaceROIInCircle(
     };
   }
 
-  if (faceWidthRatio < 0.22) {
+  if (faceWidthRatio < minWidthRatio) {
     return {
       inCircle: false,
       reason: 'FACE_TOO_FAR_OR_SMALL',
@@ -510,17 +521,33 @@ export class MediaPipeFaceDetector implements FaceDetector {
         };
       }
 
+      let primaryIdx = 0;
       if (faceCount > 1) {
-        return {
-          hasFace: false,
-          multipleFaces: true,
-          faceCount,
-          confidence: 0,
-        };
+        // Multi-person handling: Select the largest face closest to frame center (0.5, 0.5)
+        let bestScore = -Infinity;
+        for (let i = 0; i < faceCount; i++) {
+          const lms = faces[i];
+          let fMinX = 1, fMaxX = 0, fMinY = 1, fMaxY = 0;
+          for (const pt of lms) {
+            if (pt.x < fMinX) fMinX = pt.x;
+            if (pt.x > fMaxX) fMaxX = pt.x;
+            if (pt.y < fMinY) fMinY = pt.y;
+            if (pt.y > fMaxY) fMaxY = pt.y;
+          }
+          const fWidth = Math.max(0.01, fMaxX - fMinX);
+          const fCenterX = (fMinX + fMaxX) / 2;
+          const fCenterY = (fMinY + fMaxY) / 2;
+          const distToCenter = Math.sqrt((fCenterX - 0.5) ** 2 + (fCenterY - 0.5) ** 2);
+          const score = (fWidth * 2.0) - distToCenter;
+          if (score > bestScore) {
+            bestScore = score;
+            primaryIdx = i;
+          }
+        }
       }
 
-      // Single face detected
-      const landmarksRaw = faces[0];
+      // Primary face detected (works for single or multi-subject frames)
+      const landmarksRaw = faces[primaryIdx];
       const width = 'videoWidth' in frame && frame.videoWidth > 0 ? frame.videoWidth : frame.width || 640;
       const height = 'videoHeight' in frame && frame.videoHeight > 0 ? frame.videoHeight : frame.height || 480;
 
@@ -585,8 +612,8 @@ export class MediaPipeFaceDetector implements FaceDetector {
       // Extract Head Pose (yaw, pitch, roll) from facialTransformationMatrixes
       let pose: HeadPose;
       const matrices = results.facialTransformationMatrixes;
-      if (matrices && matrices.length > 0 && matrices[0].data) {
-        pose = extractEulerAnglesFromMatrix(matrices[0].data);
+      if (matrices && matrices.length > primaryIdx && matrices[primaryIdx].data) {
+        pose = extractEulerAnglesFromMatrix(matrices[primaryIdx].data);
       } else {
         pose = extractEulerAnglesFromLandmarks(landmarksRaw);
       }
@@ -595,8 +622,8 @@ export class MediaPipeFaceDetector implements FaceDetector {
       let leftEyeOpen = 1.0;
       let rightEyeOpen = 1.0;
       const blendshapes = results.faceBlendshapes;
-      if (blendshapes && blendshapes.length > 0 && blendshapes[0].categories) {
-        const cats = blendshapes[0].categories;
+      if (blendshapes && blendshapes.length > primaryIdx && blendshapes[primaryIdx].categories) {
+        const cats = blendshapes[primaryIdx].categories;
         for (const cat of cats) {
           if (cat.categoryName === 'eyeBlinkLeft') {
             leftEyeOpen = Math.max(0, Math.min(1, 1.0 - cat.score));
@@ -718,8 +745,8 @@ export class MediaPipeFaceDetector implements FaceDetector {
 
       return {
         hasFace: true,
-        multipleFaces: false,
-        faceCount: 1,
+        multipleFaces: faceCount > 1,
+        faceCount,
         confidence: 0.95,
         box,
         landmarks,

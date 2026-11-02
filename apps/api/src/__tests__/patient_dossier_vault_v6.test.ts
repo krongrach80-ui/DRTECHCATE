@@ -16,7 +16,7 @@ import {
 
 describe('[MASTER PROMPT v6] Strict Patient-Centric Dossier Vault, 10-Snapshot Retention & Therapy Sync', () => {
   const app = createApp();
-  const testPatientId = `P-TEST6-${Date.now()}`;
+  const testPatientId = `P-VAULT6-${Date.now()}`;
   const baseUploadDir = path.resolve(process.cwd(), 'public', 'uploads', 'patients');
   const patientDir = path.join(baseUploadDir, testPatientId);
 

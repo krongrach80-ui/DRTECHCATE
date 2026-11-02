@@ -13565,7 +13565,7 @@ var SmartOnboardingService = class {
    * 0.1 PIN Login for Kiosk Screen
    * Queries Supabase public.patients and local vault for matching PIN or HN
    */
-  async pinLogin(pin, hn) {
+  async pinLogin(pin, hn, probeVector) {
     const cleanPin = pin.trim();
     const records = this.vaultService.listAllPatientRecords();
     if (process.env.NODE_ENV !== "test") {
@@ -13633,6 +13633,25 @@ var SmartOnboardingService = class {
       return storedPin === cleanPin || Boolean(rHn) && (rHn === cleanPin || rHn.endsWith(cleanPin)) || Boolean(rId) && rId === cleanPin || Boolean(rPhone) && (rPhone === cleanPin || rPhone.endsWith(cleanPin));
     });
     if (matched) {
+      if (probeVector && Array.isArray(probeVector) && probeVector.length === 512) {
+        try {
+          const supabase = getAdminClient();
+          const { data: curP } = await supabase.from("patients").select("history").eq("id", matched.patient_id).maybeSingle();
+          const curHistory = curP?.history || {};
+          const existingTpls = Array.isArray(curHistory.adaptive_templates) ? curHistory.adaptive_templates : [];
+          const updatedTpls = [...existingTpls, probeVector].slice(-5);
+          await supabase.from("patients").update({
+            history: {
+              ...curHistory,
+              adaptive_templates: updatedTpls,
+              last_adaptive_update: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          }).eq("id", matched.patient_id);
+          logger.info(`[PIN-AUTH] Adaptive template updated for patient ${matched.patient_id}`);
+        } catch (err) {
+          logger.warn({ err }, "Failed to save adaptive template during PIN login");
+        }
+      }
       return {
         matched: true,
         patient: matched
@@ -13713,6 +13732,9 @@ var SmartOnboardingService = class {
               if (p.history?.frames && Array.isArray(p.history.frames)) {
                 builtRecord.enrolled_frames = p.history.frames;
               }
+              if (p.history?.adaptive_templates && Array.isArray(p.history.adaptive_templates)) {
+                builtRecord.adaptive_templates = p.history.adaptive_templates;
+              }
               if (existingIndex >= 0) {
                 records[existingIndex] = builtRecord;
               } else {
@@ -13782,6 +13804,14 @@ var SmartOnboardingService = class {
           }
         }
       }
+      const adaptiveTpls = record.adaptive_templates || record.history?.adaptive_templates;
+      if (adaptiveTpls && Array.isArray(adaptiveTpls)) {
+        for (const at of adaptiveTpls) {
+          if (Array.isArray(at) && at.length === 512) {
+            candidateVectors.push(at);
+          }
+        }
+      }
       for (const vec of candidateVectors) {
         const result = evaluateBiometricMatch(probeVector, vec);
         if (!nearestCandidate || result.cosineSimilarity > nearestCandidate.sim) {
@@ -13824,6 +13854,25 @@ var SmartOnboardingService = class {
           logger.warn({ err }, "Failed to save login snapshot");
         }
       }
+      if (bestMatch.percent >= 82 && probeVector && probeVector.length === 512 && process.env.NODE_ENV !== "test") {
+        try {
+          const supabase = getAdminClient();
+          const { data: curPatient } = await supabase.from("patients").select("history").eq("id", patient.patient_id).maybeSingle();
+          const curHistory = curPatient?.history || {};
+          const existingTemplates = Array.isArray(curHistory.adaptive_templates) ? curHistory.adaptive_templates : [];
+          const updatedTemplates = [...existingTemplates, probeVector].slice(-5);
+          await supabase.from("patients").update({
+            history: {
+              ...curHistory,
+              adaptive_templates: updatedTemplates,
+              last_adaptive_update: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          }).eq("id", patient.patient_id);
+          logger.info(`[FACE-AUTH] Adaptive template updated for patient ${patient.patient_id} (${patient.hn})`);
+        } catch (adaptErr) {
+          logger.warn({ adaptErr }, "Failed to persist adaptive face template");
+        }
+      }
       return {
         matched: true,
         patient,
@@ -13832,8 +13881,23 @@ var SmartOnboardingService = class {
         similarityPercentage: bestMatch.percent
       };
     }
+    const nearestSim = nearestCandidate?.sim ?? 0;
+    const nearestPercent = Math.max(0, Math.min(100, Math.round(nearestSim * 100)));
+    if (nearestCandidate && nearestPercent >= 50 && nearestPercent < 80) {
+      logger.info(
+        `[FACE-AUTH] Ambiguous candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) at ${nearestPercent}% - Prompting PIN confirmation`
+      );
+      return {
+        matched: false,
+        requirePin: true,
+        candidateName: nearestCandidate.name,
+        candidateHn: nearestCandidate.hn,
+        similarityPercentage: nearestPercent,
+        message: `\u0E04\u0E27\u0E32\u0E21\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33 ${nearestPercent}% (\u0E01\u0E49\u0E33\u0E01\u0E36\u0E48\u0E07) \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19\u0E14\u0E49\u0E27\u0E22\u0E23\u0E2B\u0E31\u0E2A PIN 4 \u0E2B\u0E25\u0E31\u0E01`
+      };
+    }
     logger.warn(
-      `[FACE-AUTH] Rejected: Candidate below 80% threshold (Nearest: ${nearestCandidate?.name || "none"}, Similarity: ${nearestCandidate?.sim || 0}, Distance: ${nearestCandidate?.dist || 2})`
+      `[FACE-AUTH] Rejected: Candidate below threshold (Nearest: ${nearestCandidate?.name || "none"}, Similarity: ${nearestCandidate?.sim || 0}, Distance: ${nearestCandidate?.dist || 2})`
     );
     return {
       matched: false,
@@ -15106,12 +15170,12 @@ var SmartOnboardingController = class {
     };
     this.pinLogin = async (req, res, _next) => {
       try {
-        const { pin, hn } = req.body;
+        const { pin, hn, probe } = req.body;
         if (!pin) {
           res.status(400).json({ ok: false, error: { code: "BAD_REQUEST", message: "PIN is required" } });
           return;
         }
-        const result = await this.service.pinLogin(pin, hn);
+        const result = await this.service.pinLogin(pin, hn, probe);
         res.status(200).json({
           ok: true,
           ...result

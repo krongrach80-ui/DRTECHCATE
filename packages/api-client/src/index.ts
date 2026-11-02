@@ -1778,7 +1778,7 @@ export class ApiClient {
       });
     },
 
-    pinLogin: async (payload: { pin: string; hn?: string }) => {
+    pinLogin: async (payload: { pin: string; hn?: string; probe?: number[] }) => {
       return this.request<{
         matched: boolean;
         patient?: any;

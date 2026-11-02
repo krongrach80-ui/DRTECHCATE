@@ -150,35 +150,66 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
       vChroma[j] = 0.615 * r - 0.51499 * g - 0.10001 * b;
     }
 
-    // 1.1 Contrast & Illumination Normalization (Zero-mean, unit-variance standard score)
+    // 1.1 Clothing-Invariant Biometric Facial Oval Mask
+    // Isolate facial skin area: center (56, 52), horizontal rx = 44, vertical ry = 42,
+    // cutoff y in [16..94] strictly excluding neck, collar, clothing, and background.
+    const isFace = new Uint8Array(totalPixels);
+    let facePixelsCount = 0;
     let sumG = 0, sumG2 = 0;
     let sumU = 0, sumU2 = 0;
     let sumV = 0, sumV2 = 0;
-    for (let i = 0; i < totalPixels; i++) {
-      const g = gray[i];
-      sumG += g;
-      sumG2 += g * g;
-      const u = uChroma[i];
-      sumU += u;
-      sumU2 += u * u;
-      const v = vChroma[i];
-      sumV += v;
-      sumV2 += v * v;
+
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+      for (let x = 0; x < width; x++) {
+        const idx = row + x;
+        const nx = (x - 56) / 44;
+        const ny = (y - 52) / 42;
+        if (nx * nx + ny * ny <= 1.0 && y >= 16 && y <= 94) {
+          isFace[idx] = 1;
+          facePixelsCount++;
+          const g = gray[idx];
+          sumG += g;
+          sumG2 += g * g;
+          const u = uChroma[idx];
+          sumU += u;
+          sumU2 += u * u;
+          const v = vChroma[idx];
+          sumV += v;
+          sumV2 += v * v;
+        }
+      }
     }
-    const meanG = sumG / totalPixels;
-    const stdG = Math.sqrt(Math.max(1e-4, sumG2 / totalPixels - meanG * meanG));
-    const meanU = sumU / totalPixels;
-    const stdU = Math.sqrt(Math.max(1e-4, sumU2 / totalPixels - meanU * meanU));
-    const meanV = sumV / totalPixels;
-    const stdV = Math.sqrt(Math.max(1e-4, sumV2 / totalPixels - meanV * meanV));
+
+    // Use face pixels for contrast normalization so shirt color/brightness does not affect facial embedding
+    const count = facePixelsCount > 100 ? facePixelsCount : totalPixels;
+    const meanG = (facePixelsCount > 100 ? sumG : gray.reduce((a, b) => a + b, 0)) / count;
+    const stdG = Math.sqrt(
+      Math.max(1e-4, (facePixelsCount > 100 ? sumG2 : gray.reduce((a, b) => a + b * b, 0)) / count - meanG * meanG)
+    );
+    const meanU = (facePixelsCount > 100 ? sumU : uChroma.reduce((a, b) => a + b, 0)) / count;
+    const stdU = Math.sqrt(
+      Math.max(1e-4, (facePixelsCount > 100 ? sumU2 : uChroma.reduce((a, b) => a + b * b, 0)) / count - meanU * meanU)
+    );
+    const meanV = (facePixelsCount > 100 ? sumV : vChroma.reduce((a, b) => a + b, 0)) / count;
+    const stdV = Math.sqrt(
+      Math.max(1e-4, (facePixelsCount > 100 ? sumV2 : vChroma.reduce((a, b) => a + b * b, 0)) / count - meanV * meanV)
+    );
 
     const normGray = new Float32Array(totalPixels);
     const normU = new Float32Array(totalPixels);
     const normV = new Float32Array(totalPixels);
     for (let i = 0; i < totalPixels; i++) {
-      normGray[i] = (gray[i] - meanG) / stdG;
-      normU[i] = (uChroma[i] - meanU) / stdU;
-      normV[i] = (vChroma[i] - meanV) / stdV;
+      if (facePixelsCount > 100 ? isFace[i] === 1 : true) {
+        normGray[i] = (gray[i] - meanG) / stdG;
+        normU[i] = (uChroma[i] - meanU) / stdU;
+        normV[i] = (vChroma[i] - meanV) / stdV;
+      } else {
+        // Zero-out non-facial pixels (clothing, neck, hair) to guarantee clothing-invariance
+        normGray[i] = 0;
+        normU[i] = 0;
+        normV[i] = 0;
+      }
     }
 
     const vector: number[] = new Array(512).fill(0);
@@ -254,6 +285,7 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
           const r = y * width;
           for (let x = x0; x < x1; x++) {
             const idx = r + x;
+            if (facePixelsCount > 100 && isFace[idx] !== 1) continue;
             const dx = normGray[idx + 1] - normGray[idx - 1];
             const dy = normGray[idx + width] - normGray[idx - width];
             dxSum += dx;
@@ -280,7 +312,7 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
 
     // 4. Radial Geometric Contour & Facial Proportions (128 components: indices 384 to 511)
     const cx = width / 2;
-    const cy = height / 2;
+    const cy = 52;
     // 32 radial angles x 4 concentric radii = 128 samples
     const radii = [0.2, 0.4, 0.6, 0.8];
     let outIdx = 384;
@@ -290,8 +322,9 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
         const theta = (aIdx * 2 * Math.PI) / 32;
         const sx = Math.round(cx + radius * Math.cos(theta));
         const sy = Math.round(cy + radius * Math.sin(theta));
-        const clampedX = Math.max(0, Math.min(width - 1, sx));
-        const clampedY = Math.max(0, Math.min(height - 1, sy));
+        // Clamp strictly within biometric face boundaries (y <= 94 to avoid clothing collar)
+        const clampedX = Math.max(12, Math.min(width - 13, sx));
+        const clampedY = Math.max(16, Math.min(94, sy));
         const pVal = normGray[clampedY * width + clampedX];
         const centerDiff = pVal - normGray[Math.floor(cy) * width + Math.floor(cx)];
         vector[outIdx++] = centerDiff;

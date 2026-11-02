@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   FaceDetector,
-  l2Normalize,
+  averageAndNormalize,
   FastLoginLivenessVerifier,
   LivenessTelemetryBadge,
   LivenessVerificationResult,
@@ -16,7 +16,7 @@ import {
 } from '../../../../packages/face-client/src/index.js';
 import { useRaiseBothHandsConfirm } from '../hooks/useRaiseBothHandsConfirm';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
-import { getFaceClientServices } from '../services/faceClientService';
+import { getFaceClientServices, preloadFaceModels } from '../services/faceClientService';
 import {
   RefreshCw,
   CheckCircle2,
@@ -64,7 +64,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [isMirrored, setIsMirrored] = useState<boolean>(true);
   const [userDisabledCamera, setUserDisabledCamera] = useState<boolean>(false);
 
-  const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(1500));
+  const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(350));
+  const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lastProbeVectorRef = useRef<number[] | null>(null);
+  const scanFailureCountRef = useRef<number>(0);
+  const scanSessionStartTimeRef = useRef<number>(0);
+  const autoScanDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Modals inside Kiosk Screen
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
@@ -204,17 +209,21 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      // 2.0 Strict ROI in Circle Check (Rule 1)
-      const roi = checkFaceROIInCircle(detection, rawFrame.width, rawFrame.height);
+      // 2.0 Flexible ROI in Circle Check for Kiosk Lenses (0.32 max distance, 0.10 width)
+      const roi = checkFaceROIInCircle(detection, rawFrame.width, rawFrame.height, {
+        maxCenterDistance: 0.32,
+        minFaceWidthRatio: 0.10,
+        minBorderMargin: 0.05,
+      });
       if (!roi.inCircle) {
         setFaceInCircle(false);
-        const warningMsg = 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม';
+        const warningMsg = 'กรุณาขยับใบหน้าให้อยู่ในกรอบวงกลม';
         setStatusText(warningMsg);
         setUnrecognizedAlert(
-          '⚠️ ใบหน้าไม่อยู่ในกรอบวงกลม หรือเห็นใบหน้าไม่ครบทั้งหน้า กรุณาจัดตำแหน่งใบหน้าให้อยู่ตรงกลางกรอบวงกลม และมองตรงที่กล้อง'
+          '⚠️ ใบหน้าไม่อยู่ในกรอบวงกลม กรุณาขยับใบหน้าให้อยู่ในกรอบ และมองตรงที่กล้อง'
         );
         hasTriggeredScanRef.current = false;
-        setCountdown(5);
+        setCountdown(1);
         setIsScanning(false);
         return;
       }
@@ -235,11 +244,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      // 3. ArcFace Landmark Alignment & Cropping
+      // 3. Multi-Frame Biometric Voting & Landmark Alignment (2 rapid frames to remove motion artifacts)
+      const probeVectors: number[][] = [];
       try {
         if (detection.landmarks) {
           const aligned = aligner.align(rawFrame, detection.landmarks);
-          probe = await embeddingModel.embed(aligned);
+          const v1 = await embeddingModel.embed(aligned);
+          if (v1 && v1.length === 512) probeVectors.push(v1);
           const actx = aligned.getContext?.('2d');
           if (actx) actx.clearRect(0, 0, aligned.width, aligned.height);
         } else if (detection.box && detection.box.width > 20) {
@@ -256,36 +267,42 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             const sw = Math.min(fw - sx, detection.box.width + pad * 2);
             const sh = Math.min(fh - sy, detection.box.height + pad * 2);
             fcCtx.drawImage(rawFrame, sx, sy, sw, sh, 0, 0, 112, 112);
-            probe = await embeddingModel.embed(faceCrop);
+            const v1 = await embeddingModel.embed(faceCrop);
+            if (v1 && v1.length === 512) probeVectors.push(v1);
           }
-        } else {
-          const faceCrop = document.createElement('canvas');
-          faceCrop.width = 112;
-          faceCrop.height = 112;
-          const fcCtx = faceCrop.getContext('2d');
-          if (fcCtx) {
-            const fw = rawFrame.width || 640;
-            const fh = rawFrame.height || 480;
-            const size = Math.min(fw, fh) * 0.58;
-            const sx = (fw - size) / 2;
-            const sy = Math.max(0, (fh - size) * 0.35);
-            fcCtx.drawImage(rawFrame, sx, sy, size, size, 0, 0, 112, 112);
-            probe = await embeddingModel.embed(faceCrop);
+        }
+
+        // Rapid 2nd frame capture for biometric voting
+        if (videoRef.current && videoRef.current.readyState >= 2) {
+          try {
+            const rawFrame2 = camera.captureRotatedFrame(videoRef.current);
+            const d2 = await detector.detect(rawFrame2);
+            if (d2.landmarks) {
+              const aligned2 = aligner.align(rawFrame2, d2.landmarks);
+              const v2 = await embeddingModel.embed(aligned2);
+              if (v2 && v2.length === 512) probeVectors.push(v2);
+              const actx2 = aligned2.getContext?.('2d');
+              if (actx2) actx2.clearRect(0, 0, aligned2.width, aligned2.height);
+            }
+          } catch {
+            // Non-blocking 2nd frame capture
           }
         }
       } catch (err) {
-        console.warn('Face embedding extraction fallback:', err);
+        console.warn('Face embedding extraction error:', err);
       }
 
-      if (!probe || probe.length !== 512) {
+      if (probeVectors.length === 0) {
         setStatusText('คุณภาพภาพสแกนยังไม่สมบูรณ์ กรุณานิ่งไว้สักครู่');
         hasTriggeredScanRef.current = false;
-        setCountdown(2);
+        setCountdown(1);
         setIsScanning(false);
         return;
       }
 
-      probe = l2Normalize(probe);
+      // Unit-normalize probe average vector
+      probe = averageAndNormalize(probeVectors);
+      lastProbeVectorRef.current = probe.slice();
 
       // 4. Call /api/smart-onboarding/scan-login
       const res = await defaultApiClient.smartOnboarding
@@ -303,23 +320,27 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       if (!isMountedRef.current || isScanningPaused) return;
 
+      // Handle Ambiguous Result (50% - 79%): Clinical Safety fallback to PIN
+      if (res && (res as any).requirePin) {
+        scanFailureCountRef.current++;
+        const candName = (res as any).candidateName ? `คุณ ${(res as any).candidateName}` : '';
+        const ambiguousMsg = `ความแม่นยำ ${(res as any).similarityPercentage ?? 65}% (ก้ำกึ่ง) เพื่อความปลอดภัย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก ${candName}`;
+        setStatusText(ambiguousMsg);
+        setUnrecognizedAlert(ambiguousMsg);
+        setIsPinModalOpen(true);
+        return;
+      }
+
       if (res && res.matched && (res as any).patient && (res.similarityPercentage ?? 0) >= 80) {
+        scanFailureCountRef.current = 0;
         const patient = (res as any).patient;
         const distance = typeof res.distance === 'number' ? res.distance : 0.20;
         const similarityPercent = typeof res.similarityPercentage === 'number'
           ? res.similarityPercentage
           : Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
 
-        if (similarityPercent < 80) {
-          const failMsg =
-            '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในวงกลมแล้วลองสแกนใหม่อีกครั้ง หรือลงทะเบียนคนไข้ใหม่';
-          setUnrecognizedAlert(failMsg);
-          setStatusText(failMsg);
-          return;
-        }
-
         console.log(
-          `[Liveness Status: PASSED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Blink/Motion Verified: ${liv.blinkVerified || liv.motionVerified}] [Calculated Distance: ${distance.toFixed(3)}] [Matched Patient Name: ${patient.first_name} ${patient.last_name}] [Similarity %: ${similarityPercent}%]`
+          `[Liveness Status: PASSED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Calculated Distance: ${distance.toFixed(3)}] [Matched Patient Name: ${patient.first_name} ${patient.last_name}] [Similarity %: ${similarityPercent}%]`
         );
         const fw = rawFrame.width || 640;
         const fh = rawFrame.height || 480;
@@ -337,14 +358,21 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         });
         setStatusText(`ยืนยันตัวตนสำเร็จ: คุณ ${patient.first_name} (${similarityPercent}%)`);
       } else {
+        scanFailureCountRef.current++;
         const failMsg =
           res?.message ||
-          '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในวงกลมแล้วลองสแกนใหม่อีกครั้ง หรือลงทะเบียนคนไข้ใหม่';
-        console.log(
-          `[Liveness Status: REJECTED] [3D Depth Score: ${liv.depthScore.toFixed(3)}] [Calculated Distance: ${res?.distance ?? 'N/A'}] [Similarity %: ${res?.similarityPercentage ?? 0}%]`
-        );
+          '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในวงกลมแล้วลองสแกนใหม่อีกครั้ง หรือเข้าด้วยรหัส PIN';
         setUnrecognizedAlert(failMsg);
         setStatusText(failMsg);
+
+        // Fallback after 2 unsuccessful attempts: Prompt PIN automatically
+        if (scanFailureCountRef.current >= 2) {
+          setTimeout(() => {
+            if (isMountedRef.current && !matchedPatient) {
+              setIsPinModalOpen(true);
+            }
+          }, 600);
+        }
       }
     } catch (err: unknown) {
       if (!isMountedRef.current) return;
@@ -356,7 +384,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         setIsScanning(false);
       }
     }
-  }, [isScanning, isScanningPaused]);
+  }, [isScanning, isScanningPaused, matchedPatient]);
 
   const executeScanLoginRef = useRef(executeScanLogin);
   useEffect(() => {
@@ -366,6 +394,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   // 1. ISOLATED CAMERA LIFECYCLE: Starts camera strictly ONCE on mount, stops ONLY on unmount
   useEffect(() => {
     isMountedRef.current = true;
+    preloadFaceModels();
     startCamera();
 
     return () => {
@@ -441,19 +470,47 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       }
     });
 
-    // Run face detection interval (140ms, throttled)
+    // Run face detection interval (160ms, throttled on downscaled canvas)
     const presenceInterval = setInterval(async () => {
       if (!isMountedRef.current || isScanningPaused || isScanning) return;
       if (videoRef.current && videoRef.current.readyState >= 2) {
         try {
           const vw = videoRef.current.videoWidth || 640;
           const vh = videoRef.current.videoHeight || 480;
-          const res = await detector.detect(videoRef.current);
+
+          // Downscale to 480px width detection canvas to eliminate lag and stutter
+          let dCanvas = detectCanvasRef.current;
+          if (!dCanvas) {
+            dCanvas = document.createElement('canvas');
+            detectCanvasRef.current = dCanvas;
+          }
+          const targetW = 480;
+          const scale = Math.min(1.0, targetW / vw);
+          const dw = Math.round(vw * scale);
+          const dh = Math.round(vh * scale);
+          if (dCanvas.width !== dw || dCanvas.height !== dh) {
+            dCanvas.width = dw;
+            dCanvas.height = dh;
+          }
+          const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
+          if (dctx) {
+            dctx.drawImage(videoRef.current, 0, 0, dw, dh);
+          }
+
+          const res = await detector.detect(dCanvas);
 
           if (res.hasFace && res.box) {
-            const roi = checkFaceROIInCircle(res, vw, vh);
+            const roi = checkFaceROIInCircle(res, dw, dh, {
+              maxCenterDistance: 0.32,
+              minFaceWidthRatio: 0.10,
+              minBorderMargin: 0.05,
+            });
 
             if (!roi.inCircle) {
+              if (autoScanDebounceRef.current) {
+                clearTimeout(autoScanDebounceRef.current);
+                autoScanDebounceRef.current = null;
+              }
               if (prevFaceInCircleRef.current !== false) {
                 prevFaceInCircleRef.current = false;
                 setFaceInCircle(false);
@@ -462,21 +519,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 prevPresenceDetectedRef.current = false;
                 setPresenceDetected(false);
               }
-              if (prevLivenessStateRef.current !== 'face_not_in_circle') {
-                prevLivenessStateRef.current = 'face_not_in_circle';
-                fastLivenessVerifierRef.current.start();
-                setLivenessResult({
-                  isLive: false,
-                  depthScore: res.liveness?.depthScore ?? 0,
-                  motionScore: 0,
-                  ear: res.eyes?.ear ?? 0.3,
-                  blinkVerified: false,
-                  motionVerified: false,
-                  state: 'face_not_in_circle',
-                  statusMessageThai: '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)',
-                });
-              }
-              const msg = 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม';
+              const msg = 'กรุณาขยับใบหน้าให้อยู่ในกรอบวงกลม';
               if (prevStatusTextRef.current !== msg) {
                 prevStatusTextRef.current = msg;
                 setStatusText(msg);
@@ -498,12 +541,36 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   prevPresenceDetectedRef.current = true;
                   setPresenceDetected(true);
                 }
-                const msg = 'ตรวจพบใบหน้าจริงในวงกลม (เริ่มสแกนอัตโนมัติ)';
+                const msg = 'ตรวจพบใบหน้าจริงในวงกลม (กำลังยืนยันตัวตน...)';
                 if (prevStatusTextRef.current !== msg) {
                   prevStatusTextRef.current = msg;
                   setStatusText(msg);
                 }
+
+                // Global session timer check: prompt PIN if scanning takes > 8 seconds
+                if (scanSessionStartTimeRef.current === 0) {
+                  scanSessionStartTimeRef.current = Date.now();
+                } else if (Date.now() - scanSessionStartTimeRef.current > 8000) {
+                  scanSessionStartTimeRef.current = 0;
+                  setIsPinModalOpen(true);
+                  setUnrecognizedAlert('💡 ใช้เวลานานกว่าปกติ แนะนำให้เข้าสู่ระบบด้วยรหัส PIN 4 หลัก');
+                }
+
+                // Auto-trigger scan instantly after 250ms debounce (replaces sluggish 5s timer)
+                if (!autoScanDebounceRef.current && !hasTriggeredScanRef.current && !isScanning) {
+                  setCountdown(1);
+                  autoScanDebounceRef.current = setTimeout(() => {
+                    autoScanDebounceRef.current = null;
+                    if (isMountedRef.current && !isScanning && !hasTriggeredScanRef.current) {
+                      executeScanLoginRef.current();
+                    }
+                  }, 250);
+                }
               } else if (liv.state === 'spoof_blocked') {
+                if (autoScanDebounceRef.current) {
+                  clearTimeout(autoScanDebounceRef.current);
+                  autoScanDebounceRef.current = null;
+                }
                 if (prevPresenceDetectedRef.current !== false) {
                   prevPresenceDetectedRef.current = false;
                   setPresenceDetected(false);
@@ -514,10 +581,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   setStatusText(msg);
                 }
               } else {
-                if (prevPresenceDetectedRef.current !== false) {
-                  prevPresenceDetectedRef.current = false;
-                  setPresenceDetected(false);
-                }
                 const msg = '🟡 กำลังตรวจสอบความมีชีวิต...';
                 if (prevStatusTextRef.current !== msg) {
                   prevStatusTextRef.current = msg;
@@ -527,15 +590,19 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
               inputManager.processFaceDetection(
                 {
-                  x: res.box.x / vw,
-                  y: res.box.y / vh,
-                  width: res.box.width / vw,
-                  height: res.box.height / vh,
+                  x: res.box.x / dw,
+                  y: res.box.y / dh,
+                  width: res.box.width / dw,
+                  height: res.box.height / dh,
                 },
                 performance.now()
               );
             }
           } else {
+            if (autoScanDebounceRef.current) {
+              clearTimeout(autoScanDebounceRef.current);
+              autoScanDebounceRef.current = null;
+            }
             if (prevFaceInCircleRef.current !== false) {
               prevFaceInCircleRef.current = false;
               setFaceInCircle(false);
@@ -544,21 +611,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               prevPresenceDetectedRef.current = false;
               setPresenceDetected(false);
             }
-            if (prevLivenessStateRef.current !== 'no_face') {
-              prevLivenessStateRef.current = 'no_face';
-              fastLivenessVerifierRef.current.start();
-              setLivenessResult({
-                isLive: false,
-                depthScore: 0,
-                motionScore: 0,
-                ear: 0,
-                blinkVerified: false,
-                motionVerified: false,
-                state: 'face_not_in_circle',
-                statusMessageThai: '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)',
-              });
-            }
-            const msg = 'กรุณาขยับใบหน้าให้ตรงกรอบวงกลม';
+            const msg = 'กรุณาขยับใบหน้าให้อยู่ในกรอบวงกลม';
             if (prevStatusTextRef.current !== msg) {
               prevStatusTextRef.current = msg;
               setStatusText(msg);
@@ -569,7 +622,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           // ignore detection pass error
         }
       }
-    }, 140);
+    }, 160);
 
     return () => {
       clearInterval(presenceInterval);
@@ -644,7 +697,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setLivenessResult(null);
     fastLivenessVerifierRef.current.start();
     hasTriggeredScanRef.current = false;
-    setCountdown(5);
+    scanFailureCountRef.current = 0;
+    scanSessionStartTimeRef.current = 0;
+    if (autoScanDebounceRef.current) {
+      clearTimeout(autoScanDebounceRef.current);
+      autoScanDebounceRef.current = null;
+    }
+    setCountdown(1);
     setStatusText('เตรียมสแกนใหม่อีกครั้ง...');
   };
 
@@ -654,15 +713,19 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     startCamera();
   };
 
-  // Patient login via PIN - queries real patient registry
+  // Patient login via PIN - queries real patient registry & dynamically updates adaptive face template
   const handlePinLoginSuccess = async () => {
     setIsPinModalOpen(false);
     const pin = enteredPin.trim();
     if (!pin) return;
 
     try {
-      const pinRes = await defaultApiClient.smartOnboarding.pinLogin({ pin });
+      const pinRes = await defaultApiClient.smartOnboarding.pinLogin({
+        pin,
+        probe: lastProbeVectorRef.current || undefined,
+      });
       if (pinRes?.matched && pinRes.patient) {
+        setStatusText('เข้าสู่ระบบสำเร็จ พร้อมอัปเดตข้อมูลชีวมาตรใบหน้าล่าสุด');
         onLoginSuccess(pinRes.patient);
         return;
       }
@@ -837,6 +900,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   ) : livenessResult?.state !== 'live_verified' ? (
                     <>
                       <span>🟡 กำลังตรวจสอบความมีชีวิต...</span>
+                    </>
+                  ) : livenessResult?.state === 'live_verified' ? (
+                    <>
+                      <span className="text-emerald-300 font-semibold">⚡ กำลังยืนยันตัวตนอัตโนมัติ...</span>
                     </>
                   ) : countdown > 0 ? (
                     <>

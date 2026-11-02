@@ -29,12 +29,12 @@ export class SmartOnboardingController {
 
   pinLogin = async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
     try {
-      const { pin, hn } = req.body;
+      const { pin, hn, probe } = req.body;
       if (!pin) {
         res.status(400).json({ ok: false, error: { code: 'BAD_REQUEST', message: 'PIN is required' } });
         return;
       }
-      const result = await this.service.pinLogin(pin, hn);
+      const result = await this.service.pinLogin(pin, hn, probe);
       res.status(200).json({
         ok: true,
         ...result,

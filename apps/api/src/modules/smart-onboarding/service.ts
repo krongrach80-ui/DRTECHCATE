@@ -347,7 +347,8 @@ export class SmartOnboardingService {
    */
   public async pinLogin(
     pin: string,
-    hn?: string
+    hn?: string,
+    probeVector?: number[]
   ): Promise<{
     matched: boolean;
     patient?: PatientRecordFile;
@@ -432,6 +433,30 @@ export class SmartOnboardingService {
     });
 
     if (matched) {
+      if (probeVector && Array.isArray(probeVector) && probeVector.length === 512) {
+        try {
+          const supabase = getAdminClient();
+          const { data: curP } = await supabase
+            .from('patients')
+            .select('history')
+            .eq('id', matched.patient_id)
+            .maybeSingle();
+          const curHistory = curP?.history || {};
+          const existingTpls: number[][] = Array.isArray(curHistory.adaptive_templates) ? curHistory.adaptive_templates : [];
+          const updatedTpls = [...existingTpls, probeVector].slice(-5);
+          await supabase.from('patients').update({
+            history: {
+              ...curHistory,
+              adaptive_templates: updatedTpls,
+              last_adaptive_update: new Date().toISOString(),
+            }
+          }).eq('id', matched.patient_id);
+          logger.info(`[PIN-AUTH] Adaptive template updated for patient ${matched.patient_id}`);
+        } catch (err) {
+          logger.warn({ err }, 'Failed to save adaptive template during PIN login');
+        }
+      }
+
       return {
         matched: true,
         patient: matched,
@@ -457,6 +482,9 @@ export class SmartOnboardingService {
     distance?: number;
     similarityPercentage?: number;
     message?: string;
+    requirePin?: boolean;
+    candidateName?: string;
+    candidateHn?: string;
   }> {
     if (
       !probeVector ||
@@ -536,6 +564,10 @@ export class SmartOnboardingService {
 
               if (p.history?.frames && Array.isArray(p.history.frames)) {
                 (builtRecord as any).enrolled_frames = p.history.frames;
+              }
+
+              if (p.history?.adaptive_templates && Array.isArray(p.history.adaptive_templates)) {
+                (builtRecord as any).adaptive_templates = p.history.adaptive_templates;
               }
 
               if (existingIndex >= 0) {
@@ -618,6 +650,14 @@ export class SmartOnboardingService {
           }
         }
       }
+      const adaptiveTpls = (record as any).adaptive_templates || (record as any).history?.adaptive_templates;
+      if (adaptiveTpls && Array.isArray(adaptiveTpls)) {
+        for (const at of adaptiveTpls) {
+          if (Array.isArray(at) && at.length === 512) {
+            candidateVectors.push(at);
+          }
+        }
+      }
 
       for (const vec of candidateVectors) {
         const result = evaluateBiometricMatch(probeVector, vec);
@@ -669,6 +709,38 @@ export class SmartOnboardingService {
         }
       }
 
+      // Adaptive enrollment / Dynamic template update (Spec item 2)
+      // Save high-confidence live probe vector (>= 82%) to adapt to new clothing, haircuts, and lighting
+      if (bestMatch.percent >= 82 && probeVector && probeVector.length === 512 && process.env.NODE_ENV !== 'test') {
+        try {
+          const supabase = getAdminClient();
+          const { data: curPatient } = await supabase
+            .from('patients')
+            .select('history')
+            .eq('id', patient.patient_id)
+            .maybeSingle();
+
+          const curHistory = curPatient?.history || {};
+          const existingTemplates: number[][] = Array.isArray(curHistory.adaptive_templates)
+            ? curHistory.adaptive_templates
+            : [];
+          const updatedTemplates = [...existingTemplates, probeVector].slice(-5);
+          await supabase
+            .from('patients')
+            .update({
+              history: {
+                ...curHistory,
+                adaptive_templates: updatedTemplates,
+                last_adaptive_update: new Date().toISOString(),
+              },
+            })
+            .eq('id', patient.patient_id);
+          logger.info(`[FACE-AUTH] Adaptive template updated for patient ${patient.patient_id} (${patient.hn})`);
+        } catch (adaptErr) {
+          logger.warn({ adaptErr }, 'Failed to persist adaptive face template');
+        }
+      }
+
       return {
         matched: true,
         patient,
@@ -678,9 +750,26 @@ export class SmartOnboardingService {
       };
     }
 
-    // No match found or low similarity (< 80%)
+    // Ambiguous candidate check (50% - 79%): DO NOT guess false identity! Require PIN confirmation
+    const nearestSim = nearestCandidate?.sim ?? 0;
+    const nearestPercent = Math.max(0, Math.min(100, Math.round(nearestSim * 100)));
+    if (nearestCandidate && nearestPercent >= 50 && nearestPercent < 80) {
+      logger.info(
+        `[FACE-AUTH] Ambiguous candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) at ${nearestPercent}% - Prompting PIN confirmation`
+      );
+      return {
+        matched: false,
+        requirePin: true,
+        candidateName: nearestCandidate.name,
+        candidateHn: nearestCandidate.hn,
+        similarityPercentage: nearestPercent,
+        message: `ความแม่นยำ ${nearestPercent}% (ก้ำกึ่ง) เพื่อความปลอดภัยของผู้ป่วย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก`,
+      };
+    }
+
+    // No match found or low similarity (< 50%)
     logger.warn(
-      `[FACE-AUTH] Rejected: Candidate below 80% threshold (Nearest: ${nearestCandidate?.name || 'none'}, Similarity: ${nearestCandidate?.sim || 0}, Distance: ${nearestCandidate?.dist || 2.0})`
+      `[FACE-AUTH] Rejected: Candidate below threshold (Nearest: ${nearestCandidate?.name || 'none'}, Similarity: ${nearestCandidate?.sim || 0}, Distance: ${nearestCandidate?.dist || 2.0})`
     );
     return {
       matched: false,
