@@ -6,3 +6,4 @@ export default {
     return new Response('DrTech.Care Kiosk System', { status: 200 });
   },
 };
+
