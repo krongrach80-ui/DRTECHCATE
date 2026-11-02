@@ -20,6 +20,10 @@ import {
   Check,
   ChevronRight as _ChevronRight,
   Gamepad2 as _Gamepad2,
+  RotateCcw,
+  ArrowLeft,
+  PhoneCall,
+  AlertTriangle,
 } from 'lucide-react';
 import { PhysicalCardGame } from '../minigame-cards/index.js';
 import {
@@ -51,6 +55,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   const [exercises, setExercises] = useState<any[]>([]);
   const [includeMinigame, setIncludeMinigame] = useState(false);
   const [callStaffStatus, setCallStaffStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Exercise tracking
   const [completedExerciseIds, setCompletedExerciseIds] = useState<Set<string>>(new Set());
@@ -99,6 +104,8 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   const loadPlan = useCallback(async () => {
     if (activeSessionRef.current) return;
     try {
+      setLoading(true);
+      setLoadError(null);
       const targetId = patient.patient_id || patient.hn || '';
       const res = await defaultApiClient.smartOnboarding.getDailyPlan(targetId);
       if (!isMountedRef.current) return;
@@ -132,12 +139,10 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         setExercises(resolvedExercises);
         setIncludeMinigame(res.include_minigame ?? true);
       }
-    } catch {
+    } catch (err: any) {
       if (!isMountedRef.current) return;
-      setIsScheduledToday(false);
-      setIsCompletedToday(false);
-      setExercises([]);
-      setRestReason('no_plan_found');
+      const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการโหลดตารางกายภาพบำบัด';
+      setLoadError(msg);
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
@@ -432,6 +437,60 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     );
   }
 
+  // Error Screen: Network or Server 500 error (Must NEVER show white blank screen)
+  if (loadError) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center p-6 sm:p-8 bg-slate-950 text-white select-none">
+        <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-rose-500/40 p-6 sm:p-8 text-center shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto mb-4 text-rose-400">
+            <AlertTriangle className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">
+            {lang === 'zh-CN' ? '系统连接或加载失败' : lang === 'en-US' ? 'Connection or Loading Error' : 'เกิดข้อผิดพลาดในการโหลดข้อมูลตาราง'}
+          </h2>
+          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+            {loadError}
+          </p>
+
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              id="plan-retry-btn"
+              data-testid="plan-retry-btn"
+              onClick={() => loadPlan()}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-emerald-950/40"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>{lang === 'zh-CN' ? '重试 (Try Again)' : lang === 'en-US' ? 'Try Again' : 'ลองใหม่อีกครั้ง (Try Again)'}</span>
+            </button>
+
+            <button
+              type="button"
+              id="plan-home-btn"
+              data-testid="plan-home-btn"
+              onClick={onLogout}
+              className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer border border-slate-700"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>{lang === 'zh-CN' ? '返回主页 (Back to Home)' : lang === 'en-US' ? 'Back to Home' : 'กลับสู่หน้าหลัก (Back to Home)'}</span>
+            </button>
+
+            <button
+              type="button"
+              id="plan-call-staff-btn"
+              data-testid="plan-call-staff-btn"
+              onClick={handleCallStaff}
+              className="w-full py-2.5 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <PhoneCall className="w-4 h-4" />
+              <span>{lang === 'zh-CN' ? '呼叫医护人员 (Call Staff)' : lang === 'en-US' ? 'Call Staff' : 'เรียกเจ้าหน้าที่ (Call Staff)'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // 1. Rest Day View (Friendly notice when no appointment today)
   if (!isScheduledToday) {
     return (
@@ -440,13 +499,13 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         <div className="w-full flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-emerald-400">
-              {patient.first_name[0] || 'P'}
+              {patient?.first_name?.[0] || (patient as any)?.name?.[0] || 'P'}
             </div>
             <div>
               <div className="text-base font-bold text-white">
-                คุณ {patient.first_name}{patient.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
+                คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
               </div>
-              <div className="text-xs text-slate-400">HN: {patient.patient_id}</div>
+              <div className="text-xs text-slate-400">HN: {patient?.patient_id || patient?.hn || '-'}</div>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -529,13 +588,13 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         <div className="w-full flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-emerald-400">
-              {patient.first_name[0] || 'P'}
+              {patient?.first_name?.[0] || (patient as any)?.name?.[0] || 'P'}
             </div>
             <div>
               <div className="text-base font-bold text-white">
-                คุณ {patient.first_name}{patient.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
+                คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
               </div>
-              <div className="text-xs text-slate-400">HN: {patient.patient_id}</div>
+              <div className="text-xs text-slate-400">HN: {patient?.patient_id || patient?.hn || '-'}</div>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -646,14 +705,14 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       <div className="w-full flex items-center justify-between border-b border-slate-800 pb-4 mb-6 flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center font-bold text-emerald-400 text-lg">
-            {patient.first_name[0] || 'P'}
+            {patient?.first_name?.[0] || (patient as any)?.name?.[0] || 'P'}
           </div>
           <div>
             <div className="text-lg font-bold text-white">
-              {lang === 'zh-CN' ? '康复训练方案' : lang === 'en-US' ? 'Rehab Program' : 'โปรแกรมกายภาพบำบัด'}: คุณ {patient.first_name}{patient.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
+              {lang === 'zh-CN' ? '康复训练方案' : lang === 'en-US' ? 'Rehab Program' : 'โปรแกรมกายภาพบำบัด'}: คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
             </div>
             <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-              <span>HN: {patient.patient_id}</span>
+              <span>HN: {patient?.patient_id || patient?.hn || '-'}</span>
               <span>•</span>
               <span className="text-emerald-400 font-semibold">
                 {lang === 'zh-CN' ? `训练进度: ${completedExerciseIds.size}/${exercises.length} 项动作` : lang === 'en-US' ? `Progress: ${completedExerciseIds.size}/${exercises.length} exercises` : `ความคืบหน้า: ${completedExerciseIds.size}/${exercises.length} ท่า`}

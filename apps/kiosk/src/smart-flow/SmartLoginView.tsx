@@ -22,6 +22,7 @@ import {
   DEFAULT_SUPABASE_URL,
   DEFAULT_SUPABASE_ANON_KEY,
   defaultApiClient,
+  normalizePatientRecord,
 } from '../../../../packages/api-client/src/index.js';
 import { getFaceClientServices, preloadFaceModels } from '../services/faceClientService';
 import {
@@ -92,6 +93,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [cameraRotation, setCameraRotation] = useState<0 | 90 | 180 | 270>(0);
   const [isMirrored, setIsMirrored] = useState<boolean>(true);
   const [userDisabledCamera, setUserDisabledCamera] = useState<boolean>(false);
+  const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
 
   // 3-Second Countdown & Realtime Aggregator states
   const [countdownValue, setCountdownValue] = useState<number | null>(null);
@@ -159,7 +161,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     anchor: identityAnchor,
     onConfirm: () => {
       if (matchedPatient) {
-        onLoginSuccess(matchedPatient);
+        setIsTransitioning(true);
+        setTimeout(() => {
+          onLoginSuccess(matchedPatient);
+        }, 300);
       }
     },
   });
@@ -521,7 +526,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         if (res && res.matched && (res as any).patient && (res.similarityPercentage ?? 0) >= 80) {
           scanFailureCountRef.current = 0;
           isProcessingScanRef.current = true;
-          const patient = (res as any).patient;
+          const patient = normalizePatientRecord((res as any).patient);
           const finalPercent = res.similarityPercentage ?? medianPercent;
           const finalDistance = typeof res.distance === 'number' ? res.distance : medianDistance;
 
@@ -1035,7 +1040,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       });
       if (pinRes?.matched && pinRes.patient) {
         setStatusText('เข้าสู่ระบบสำเร็จ พร้อมอัปเดตข้อมูลชีวมาตรใบหน้าล่าสุด');
-        onLoginSuccess(pinRes.patient);
+        const norm = normalizePatientRecord(pinRes.patient);
+        setIsTransitioning(true);
+        setTimeout(() => {
+          onLoginSuccess(norm);
+        }, 300);
         return;
       }
     } catch {}
@@ -1046,33 +1055,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.data || [];
         if (list.length > 0) {
-          const p = list[0];
-          onLoginSuccess({
-            patient_id: p.id,
-            hn: p.hn,
-            first_name: p.first_name,
-            last_name: p.last_name,
-            age: p.age,
-            gender: p.sex === 'F' || p.sex === 'female' ? 'female' : 'male',
-            registration_status: p.registration_status,
-            registered_via: p.registered_via || 'kiosk',
-            biometrics: {
-              face_vector: p.history?.face_vector || new Array(512).fill(0),
-              registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
-              confidence_score: 1.0,
-              model_version: 'w600k_r50',
-              enrolled_at: p.created_at || new Date().toISOString(),
-            },
-            daily_checklists: {},
-            rehab_scores: [],
-            clinical: {
-              diagnosis: p.injury || 'กายภาพบำบัดฟื้นฟู',
-              treatment_plan: 'โปรแกรมฟื้นฟูสมรรถภาพทางกายภาพบำบัด',
-              progress_notes: [],
-            },
-            created_at: p.created_at || new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
+          const norm = normalizePatientRecord(list[0]);
+          setIsTransitioning(true);
+          setTimeout(() => {
+            onLoginSuccess(norm);
+          }, 300);
           return;
         }
       }
@@ -1595,15 +1582,21 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       {matchedPatient && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-3xl bg-white border-2 border-emerald-500/50 shadow-2xl p-6 text-center animate-scale-up">
-            <div className="w-24 h-24 rounded-full mx-auto p-1 bg-gradient-to-tr from-emerald-500 to-teal-400 shadow-xl mb-4">
-              <img
-                src={matchedPatient.biometrics.registered_face_url}
-                alt="Profile Face"
-                className="w-full h-full rounded-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
+            <div className="w-24 h-24 rounded-full mx-auto p-1 bg-gradient-to-tr from-emerald-500 to-teal-400 shadow-xl mb-4 flex items-center justify-center overflow-hidden">
+              {matchedPatient.biometrics?.registered_face_url ? (
+                <img
+                  src={matchedPatient.biometrics.registered_face_url}
+                  alt="Profile Face"
+                  className="w-full h-full rounded-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full rounded-full bg-emerald-700 text-white flex items-center justify-center text-3xl font-black">
+                  {matchedPatient.first_name?.[0] || 'P'}
+                </div>
+              )}
             </div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 mb-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -1850,6 +1843,21 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               เข้าใจแล้ว
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Loading / Transitioning Screen */}
+      {isTransitioning && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center select-none animate-fade-in">
+          <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-6 shadow-2xl">
+            <RefreshCw className="w-10 h-10 text-emerald-400 animate-spin" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">
+            {lang === 'zh-CN' ? '正在准备康复方案...' : lang === 'en-US' ? 'Preparing Rehab Program...' : 'กำลังเตรียมข้อมูลและดึงตารางกายภาพบำบัด...'}
+          </h2>
+          <p className="text-sm text-slate-400 max-w-md">
+            {lang === 'zh-CN' ? `欢迎，${matchedPatient?.first_name || ''}。正在同步今日训练计划` : lang === 'en-US' ? `Welcome, ${matchedPatient?.first_name || ''}. Syncing today's schedule.` : `ยินดีต้อนรับ คุณ ${matchedPatient?.first_name || ''} ระบบกำลังซิงค์ตารางฝึกประจำวันนี้`}
+          </p>
         </div>
       )}
     </div>

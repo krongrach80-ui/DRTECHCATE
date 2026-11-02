@@ -11,6 +11,7 @@ import { SmartInfoForm } from './SmartInfoForm';
 import { SmartDailyPlanView } from './SmartDailyPlanView';
 import { PatientRecordFile } from '../../../../packages/smart-biometric-core/src/index.js';
 import { FaceDetector } from '../../../../packages/face-client/src/index.js';
+import { ClinicalErrorBoundary } from '../../../../packages/hospital-ui-kit/src/index';
 
 export type SmartFlowStep = 'login' | 'enroll' | 'info_form' | 'daily_plan';
 
@@ -68,40 +69,46 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
   };
 
   return (
-    <div className="w-full h-full bg-[#F0FDF9] overflow-hidden">
-      {currentStep === 'login' && (
-        <SmartLoginView
-          onLoginSuccess={handleLoginSuccess}
-          onNavigateToEnroll={handleNavigateToEnroll}
-          customDetector={customDetector}
-          onOpenStaffLoginModal={onOpenStaffLoginModal}
-          onOpenNewPatientModal={onOpenNewPatientModal}
-          isPaused={isPaused}
-        />
-      )}
+    <ClinicalErrorBoundary
+      fallbackTitle="เกิดข้อผิดพลาดในระบบบริการคนไข้ Kiosk"
+      onReset={() => changeStep('login')}
+      onExit={() => changeStep('login')}
+    >
+      <div className="w-full h-full bg-[#F0FDF9] overflow-hidden">
+        {currentStep === 'login' && (
+          <SmartLoginView
+            onLoginSuccess={handleLoginSuccess}
+            onNavigateToEnroll={handleNavigateToEnroll}
+            customDetector={customDetector}
+            onOpenStaffLoginModal={onOpenStaffLoginModal}
+            onOpenNewPatientModal={onOpenNewPatientModal}
+            isPaused={isPaused}
+          />
+        )}
 
-      {currentStep === 'enroll' && (
-        <SmartEnrollmentView
-          onEnrollSuccess={handleEnrollSuccess}
-          onCancel={() => changeStep('login')}
-          customDetector={customDetector}
-        />
-      )}
+        {currentStep === 'enroll' && (
+          <SmartEnrollmentView
+            onEnrollSuccess={handleEnrollSuccess}
+            onCancel={() => changeStep('login')}
+            customDetector={customDetector}
+          />
+        )}
 
-      {currentStep === 'info_form' && pendingPatientId && (
-        <SmartInfoForm
-          patientId={pendingPatientId}
-          onCompleted={handleInfoCompleted}
-          onCancel={() => changeStep('login')}
-        />
-      )}
+        {currentStep === 'info_form' && pendingPatientId && (
+          <SmartInfoForm
+            patientId={pendingPatientId}
+            onCompleted={handleInfoCompleted}
+            onCancel={() => changeStep('login')}
+          />
+        )}
 
-      {currentStep === 'daily_plan' && activePatient && (
-        <SmartDailyPlanView
-          patient={activePatient}
-          onLogout={handleLogout}
-        />
-      )}
-    </div>
+        {currentStep === 'daily_plan' && activePatient && (
+          <SmartDailyPlanView
+            patient={activePatient}
+            onLogout={handleLogout}
+          />
+        )}
+      </div>
+    </ClinicalErrorBoundary>
   );
 };

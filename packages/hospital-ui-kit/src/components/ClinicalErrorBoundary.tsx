@@ -12,7 +12,7 @@
  */
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { RotateCcw, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { RotateCcw, AlertTriangle, ArrowLeft, PhoneCall } from 'lucide-react';
 
 export interface ClinicalErrorLogEntry {
   timestamp: string;
@@ -55,6 +55,7 @@ interface Props {
   fallbackTitle?: string;
   onReset?: () => void;
   onExit?: () => void;
+  onCallStaff?: () => void;
 }
 
 interface State {
@@ -128,30 +129,51 @@ export class ClinicalErrorBoundary extends Component<Props, State> {
               </div>
             )}
 
-            <div className="mt-6 flex flex-col gap-3">
+            <div className="mt-6 flex flex-col gap-2.5">
               <button
                 type="button"
                 id="clinical-boundary-auto-reset-btn"
                 data-testid="clinical-boundary-auto-reset-btn"
                 onClick={this.handleReset}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-sm sm:text-base shadow-xl shadow-emerald-950/50 flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer"
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-sm shadow-xl shadow-emerald-950/50 flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer"
               >
-                <RotateCcw className="w-5 h-5" />
-                <span>รีเซ็ตระบบตรวจจับอัตโนมัติ</span>
+                <RotateCcw className="w-4 h-4" />
+                <span>ลองใหม่อีกครั้ง (Try Again)</span>
               </button>
 
-              {this.props.onExit && (
-                <button
-                  type="button"
-                  id="clinical-boundary-exit-btn"
-                  data-testid="clinical-boundary-exit-btn"
-                  onClick={this.props.onExit}
-                  className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer border border-slate-700"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>กลับสู่หน้าหลัก</span>
-                </button>
-              )}
+              <button
+                type="button"
+                id="clinical-boundary-exit-btn"
+                data-testid="clinical-boundary-exit-btn"
+                onClick={() => {
+                  if (this.props.onExit) {
+                    this.props.onExit();
+                  } else if (typeof window !== 'undefined') {
+                    window.location.href = '/';
+                  }
+                }}
+                className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer border border-slate-700"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>กลับสู่หน้าหลัก (Back to Home)</span>
+              </button>
+
+              <button
+                type="button"
+                id="clinical-boundary-call-staff-btn"
+                data-testid="clinical-boundary-call-staff-btn"
+                onClick={() => {
+                  if (this.props.onCallStaff) {
+                    this.props.onCallStaff();
+                  } else {
+                    alert('แจ้งเตือนเจ้าหน้าที่เรียบร้อยแล้ว หรือกรุณาติดต่อเจ้าหน้าที่เวชระเบียนที่เคาน์เตอร์ 1');
+                  }
+                }}
+                className="w-full py-2.5 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer"
+              >
+                <PhoneCall className="w-4 h-4" />
+                <span>เรียกเจ้าหน้าที่ (Call Staff)</span>
+              </button>
             </div>
           </div>
         </div>
