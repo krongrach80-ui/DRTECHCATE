@@ -74,17 +74,14 @@ for (const app of apps) {
   }
 }
 
-// 4. Ensure _redirects and _headers in public and dist
-const redirectsContent = `/api/*    /.netlify/functions/api/:splat  200!
-/admin/*  /admin/index.html               200
-/pt/*     /pt/index.html                  200
-/kiosk/*  /kiosk/index.html               200
-/*        /index.html                     200
-`;
-
-fs.writeFileSync(path.join(root, 'public', '_redirects'), redirectsContent, 'utf8');
+// 4. Ensure _headers in public and dist (skip _redirects to let Cloudflare Worker/SPA handles routing natively)
+if (fs.existsSync(path.join(root, 'public', '_redirects'))) {
+  fs.unlinkSync(path.join(root, 'public', '_redirects'));
+}
+if (fs.existsSync(path.join(root, 'dist', '_redirects'))) {
+  fs.unlinkSync(path.join(root, 'dist', '_redirects'));
+}
 if (fs.existsSync(path.join(root, 'dist'))) {
-  fs.writeFileSync(path.join(root, 'dist', '_redirects'), redirectsContent, 'utf8');
   if (fs.existsSync(path.join(root, 'public', '_headers'))) {
     fs.copyFileSync(path.join(root, 'public', '_headers'), path.join(root, 'dist', '_headers'));
   }
