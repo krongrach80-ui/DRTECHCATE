@@ -13,3 +13,4 @@ export * from './liveness';
 export * from './flow';
 export * from './ring';
 export * from './gesture/raiseBothHandsDetector';
+export * from './cache';

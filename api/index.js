@@ -9752,6 +9752,7 @@ __export(localPersistenceEngine_exports, {
   getRegisteredPassword: () => getRegisteredPassword,
   isLocalPersistenceActive: () => isLocalPersistenceActive,
   loadLocalDatabase: () => loadLocalDatabase,
+  purgeStaleBiometricVault: () => purgeStaleBiometricVault,
   registerLocalUserPassword: () => registerLocalUserPassword,
   saveLocalDatabase: () => saveLocalDatabase,
   seedDefaultLocalData: () => seedDefaultLocalData
@@ -10049,6 +10050,29 @@ function seedDefaultLocalData() {
   };
   currentFakeDirectoryRepo.inMemoryModpacks.set(modpack.id, modpack);
 }
+function purgeStaleBiometricVault() {
+  let purgedTemplates = 0;
+  let purgedPatients = 0;
+  try {
+    const validPatientIds = new Set(currentFakePatientRepo.inMemoryPatients.keys());
+    const initialTplCount = currentFakeFaceEnrollmentRepo.inMemoryTemplates.length;
+    currentFakeFaceEnrollmentRepo.inMemoryTemplates = currentFakeFaceEnrollmentRepo.inMemoryTemplates.filter((t) => {
+      const isValid = validPatientIds.has(t.patient_id) && Array.isArray(t.embedding) && t.embedding.length === 512;
+      return isValid;
+    });
+    purgedTemplates = initialTplCount - currentFakeFaceEnrollmentRepo.inMemoryTemplates.length;
+    for (const [id, p] of currentFakePatientRepo.inMemoryPatients.entries()) {
+      const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim().toLowerCase();
+      if (fullName.includes("ghost") || fullName === "fake patient" || p.hn && p.hn.startsWith("TEST_GHOST")) {
+        currentFakePatientRepo.inMemoryPatients.delete(id);
+        purgedPatients++;
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "Error during purgeStaleBiometricVault");
+  }
+  return { purgedTemplates, purgedPatients };
+}
 function activateLocalPersistenceEngine() {
   if (isEngineActive) return;
   isEngineActive = true;
@@ -10059,6 +10083,7 @@ function activateLocalPersistenceEngine() {
     saveLocalDatabase().catch(() => {
     });
   }
+  purgeStaleBiometricVault();
   syncActiveBans([]);
   const localSignIn = async ({ email, password }) => {
     const cleanEmail = email.trim().toLowerCase();
@@ -10508,15 +10533,15 @@ function calibrateCosineSimilarity(rawCos) {
   if (rawCos >= 0.85) {
     return Math.min(1, 0.96 + Math.max(0, (rawCos - 0.85) / 0.15) * 0.04);
   }
-  if (rawCos >= 0.48) {
-    const t = (rawCos - 0.48) / (0.85 - 0.48);
-    return 0.85 + t * (0.96 - 0.85);
+  if (rawCos >= 0.55) {
+    const t = (rawCos - 0.55) / (0.85 - 0.55);
+    return 0.8 + t * (0.96 - 0.8);
   }
-  if (rawCos >= 0.38) {
-    const t = (rawCos - 0.38) / (0.48 - 0.38);
-    return 0.45 + t * (0.8 - 0.45);
+  if (rawCos >= 0.42) {
+    const t = (rawCos - 0.42) / (0.55 - 0.42);
+    return 0.5 + t * (0.79 - 0.5);
   }
-  return Math.max(0, Math.max(0, rawCos) / 0.38 * 0.44);
+  return Math.max(0, Math.max(0, rawCos) / 0.42 * 0.49);
 }
 function evaluateBiometricMatch(probeVector, referenceVector, options) {
   const normProbe = l2Normalize(probeVector);
@@ -10530,7 +10555,7 @@ function evaluateBiometricMatch(probeVector, referenceVector, options) {
   const minCos = options?.minCosine ?? ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY;
   const maxDist = options?.maxEuclidean ?? ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE;
   const minPercent = options?.minSimilarityPercentage ?? ACCEPTANCE_THRESHOLDS.MIN_SIMILARITY_PERCENTAGE;
-  const isMatch = rawCos >= 0.38 && (useCalibration && rawCos >= 0.48 && similarityPercentage >= minPercent || !useCalibration && rawCos >= minCos && similarityPercentage >= minPercent && (eucDist <= maxDist || eucDist <= 0.65));
+  const isMatch = rawCos >= 0.42 && similarityPercentage >= minPercent && (useCalibration && rawCos >= 0.55 || !useCalibration && rawCos >= minCos && (eucDist <= maxDist || eucDist <= 0.65));
   return {
     isMatch,
     cosineSimilarity: Number(effectiveSim.toFixed(4)),
@@ -11183,7 +11208,7 @@ var init_service10 = __esm({
                 dist: result.euclideanDistance
               };
             }
-            const satisfiesThreshold = result.isMatch && result.similarityPercentage >= 80 || result.similarityPercentage >= 80 && (result.cosineSimilarity >= 0.8 || result.euclideanDistance <= 0.65);
+            const satisfiesThreshold = result.isMatch && result.similarityPercentage >= 80;
             if (satisfiesThreshold) {
               if (!bestMatch || result.cosineSimilarity > bestMatch.similarity) {
                 bestMatch = {
@@ -11262,6 +11287,7 @@ var init_service10 = __esm({
         );
         return {
           matched: false,
+          similarityPercentage: nearestPercent,
           message: "\u26A0\uFE0F \u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A (\u0E04\u0E27\u0E32\u0E21\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33\u0E44\u0E21\u0E48\u0E16\u0E36\u0E07\u0E40\u0E01\u0E13\u0E11\u0E4C 80%) \u0E01\u0E23\u0E38\u0E13\u0E32\u0E27\u0E32\u0E07\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E43\u0E2B\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E41\u0E25\u0E49\u0E27\u0E25\u0E2D\u0E07\u0E2A\u0E41\u0E01\u0E19\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E04\u0E19\u0E44\u0E02\u0E49\u0E43\u0E2B\u0E21\u0E48"
         };
       }

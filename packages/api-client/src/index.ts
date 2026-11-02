@@ -346,15 +346,18 @@ function calibrateCosineSimilarity(rawCos: number): number {
   if (rawCos >= 0.85) {
     return Math.min(1.0, 0.96 + Math.max(0, (rawCos - 0.85) / 0.15) * 0.04);
   }
-  if (rawCos >= 0.48) {
-    const t = (rawCos - 0.48) / (0.85 - 0.48);
-    return 0.85 + t * (0.96 - 0.85);
+  if (rawCos >= 0.55) {
+    // [0.55, 0.85) -> [0.80, 0.96) (80%–96% for genuine patient range)
+    const t = (rawCos - 0.55) / (0.85 - 0.55);
+    return 0.80 + t * (0.96 - 0.80);
   }
-  if (rawCos >= 0.38) {
-    const t = (rawCos - 0.38) / (0.48 - 0.38);
-    return 0.45 + t * (0.80 - 0.45);
+  if (rawCos >= 0.42) {
+    // [0.42, 0.55) -> [0.50, 0.79) (Ambiguous candidate zone)
+    const t = (rawCos - 0.42) / (0.55 - 0.42);
+    return 0.50 + t * (0.79 - 0.50);
   }
-  return Math.max(0, (Math.max(0, rawCos) / 0.38) * 0.44);
+  // < 0.42 (True impostor / stranger zone, guaranteed <= 49%)
+  return Math.max(0, (Math.max(0, rawCos) / 0.42) * 0.49);
 }
 
 export class ApiClient {
@@ -1118,8 +1121,8 @@ export class ApiClient {
         const normalizedMatch = bestMatch ? normalizePatientRecord(bestMatch) : null;
         const finalPercentage = Math.round(bestCalScore * 100);
 
-        // Case A: High Match (calibrated >= 80% with rawCos >= 0.48)
-        if (normalizedMatch && finalPercentage >= 80 && bestRawScore >= 0.48) {
+        // Case A: High Match (calibrated >= 80% with rawCos >= 0.55)
+        if (normalizedMatch && finalPercentage >= 80 && bestRawScore >= 0.55) {
           // Auto-heal template by appending probe to adaptive_templates in background
           if (typeof window !== 'undefined' && bestMatch) {
             try {
@@ -1169,14 +1172,14 @@ export class ApiClient {
           } as T;
         }
 
-        // Case B: Ambiguous candidate match (50% <= percent < 80% and candidate found with rawCos >= 0.38)
-        if (normalizedMatch && finalPercentage >= 50 && finalPercentage < 80 && bestRawScore >= 0.38) {
+        // Case B: Ambiguous candidate match (50% <= percent < 80% and candidate found with rawCos >= 0.42)
+        if (normalizedMatch && finalPercentage >= 50 && finalPercentage < 80 && bestRawScore >= 0.42) {
           return {
             ok: true,
             matched: false,
             requirePin: true,
             candidate: normalizedMatch,
-            patient: normalizedMatch,
+            patient: null,
             candidateName: `${normalizedMatch.first_name} ${normalizedMatch.last_name}`.trim(),
             candidateHn: normalizedMatch.hn,
             similarityPercentage: finalPercentage,
@@ -1187,16 +1190,19 @@ export class ApiClient {
           } as T;
         }
 
-        // Case C: Below threshold / Impostor (< 50% or rawCos < 0.38)
+        // Case C: Below threshold / Impostor / Stranger (< 50% or rawCos < 0.42)
         return {
           ok: true,
           matched: false,
           patient: null,
-          similarityPercentage: finalPercentage,
+          candidate: null,
+          candidateName: undefined,
+          candidateHn: undefined,
+          similarityPercentage: finalPercentage < 50 ? finalPercentage : 0,
           cosineSimilarity: Number(bestCalScore.toFixed(4)),
           rawCosineSimilarity: Number(bestRawScore.toFixed(4)),
           distance: Math.max(0, 1 - bestCalScore),
-          message: 'ไม่พบบัญชีที่ตรงกับใบหน้านี้ในระบบชีวมิติ',
+          message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่',
         } as T;
       }
 

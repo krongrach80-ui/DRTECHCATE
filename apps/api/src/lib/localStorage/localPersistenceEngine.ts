@@ -382,6 +382,35 @@ export function seedDefaultLocalData(): void {
 }
 
 /**
+ * Purges stale biometric cache, expired or orphaned templates, and ghost profiles.
+ * Ensures local persistence never matches strangers against test/mock embeddings.
+ */
+export function purgeStaleBiometricVault(): { purgedTemplates: number; purgedPatients: number } {
+  let purgedTemplates = 0;
+  let purgedPatients = 0;
+  try {
+    const validPatientIds = new Set(currentFakePatientRepo.inMemoryPatients.keys());
+    const initialTplCount = currentFakeFaceEnrollmentRepo.inMemoryTemplates.length;
+    currentFakeFaceEnrollmentRepo.inMemoryTemplates = currentFakeFaceEnrollmentRepo.inMemoryTemplates.filter((t) => {
+      const isValid = validPatientIds.has(t.patient_id) && Array.isArray(t.embedding) && t.embedding.length === 512;
+      return isValid;
+    });
+    purgedTemplates = initialTplCount - currentFakeFaceEnrollmentRepo.inMemoryTemplates.length;
+
+    for (const [id, p] of currentFakePatientRepo.inMemoryPatients.entries()) {
+      const fullName = `${p.first_name || ''} ${p.last_name || ''}`.trim().toLowerCase();
+      if (fullName.includes('ghost') || fullName === 'fake patient' || (p.hn && p.hn.startsWith('TEST_GHOST'))) {
+        currentFakePatientRepo.inMemoryPatients.delete(id);
+        purgedPatients++;
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Error during purgeStaleBiometricVault');
+  }
+  return { purgedTemplates, purgedPatients };
+}
+
+/**
  * Activates Local Persistence Engine.
  * Replaces Supabase clients with memory/file-backed repositories.
  */
@@ -398,6 +427,9 @@ export function activateLocalPersistenceEngine(): void {
     seedDefaultLocalData();
     saveLocalDatabase().catch(() => {});
   }
+
+  // Purge any orphan/ghost biometric records from vault
+  purgeStaleBiometricVault();
 
   // 3. Clear active bans so server starts smoothly
   syncActiveBans([]);
