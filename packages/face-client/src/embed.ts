@@ -359,7 +359,8 @@ export class OnnxEmbeddingModel implements EmbeddingModel {
   public async initialize(): Promise<void> {
     if (this.session || this.isFallback) return;
     try {
-      const ort = await import('onnxruntime-web');
+      const ortModule = 'onnxruntime-web';
+      const ort = await import(/* @vite-ignore */ ortModule);
       this.session = await ort.InferenceSession.create(this.modelUrl, {
         executionProviders: ['wasm'],
       });
@@ -385,7 +386,8 @@ export class OnnxEmbeddingModel implements EmbeddingModel {
     }
 
     try {
-      const ort = await import('onnxruntime-web');
+      const ortModule = 'onnxruntime-web';
+      const ort = await import(/* @vite-ignore */ ortModule);
       const tensorData = canvasToNchwTensor(alignedFace, 112, 112);
 
       try {
