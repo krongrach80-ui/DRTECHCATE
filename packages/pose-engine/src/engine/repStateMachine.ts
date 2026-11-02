@@ -81,7 +81,11 @@ export class RepStateMachine {
     this.pendulumAnalyzer = new ShoulderPendulumAnalyzer(config.pendulumMechanics);
     const maxSafeVelocity = config.safetyContraindications?.maxSafeVelocityDegPerSec;
     this.compensationDetector = new CompensationDetector(config.compensationRules, maxSafeVelocity);
-    this.subjectLocker = new ForegroundSubjectLocker();
+    const isUpper = config.framing !== 'full_body' && config.framing !== 'lower_body';
+    this.subjectLocker = new ForegroundSubjectLocker({
+      primaryKeypointIndices: isUpper ? [11, 12, 13, 14] : [11, 12, 13, 14, 15, 16, 23, 24],
+      minKeypointVisibility: isUpper ? 0.45 : 0.65,
+    });
   }
 
   public updateConfig(config: ExerciseDetectionConfig): void {
@@ -92,6 +96,11 @@ export class RepStateMachine {
     const maxSafeVelocity = config.safetyContraindications?.maxSafeVelocityDegPerSec;
     this.compensationDetector.setMaxSafeVelocity(maxSafeVelocity);
     this.compensationDetector.setRules(config.compensationRules);
+    const isUpper = config.framing !== 'full_body' && config.framing !== 'lower_body';
+    this.subjectLocker = new ForegroundSubjectLocker({
+      primaryKeypointIndices: isUpper ? [11, 12, 13, 14] : [11, 12, 13, 14, 15, 16, 23, 24],
+      minKeypointVisibility: isUpper ? 0.45 : 0.65,
+    });
   }
 
   public setSide(side: BodySide): void {

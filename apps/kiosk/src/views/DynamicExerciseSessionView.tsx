@@ -179,6 +179,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
   const [painReportedState, setPainReportedState] = useState<boolean>(false);
 
+  // Camera FOV, Aspect Ratio & Zoom States
+  const [zoomInfo, setZoomInfo] = useState<{
+    supported: boolean;
+    min: number;
+    max: number;
+    step: number;
+    current: number;
+  }>({ supported: false, min: 1, max: 1, step: 0.1, current: 1 });
+  const [fitMode, setFitMode] = useState<'contain' | 'cover'>('contain');
+  const [boostLighting, setBoostLighting] = useState<boolean>(false);
+  const [showGuideSilhouette, setShowGuideSilhouette] = useState<boolean>(true);
+
   // Diagnostic HUD live state
   const [hudState, setHudState] = useState({
     fps: 0,
@@ -191,9 +203,45 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     currentSet: 1,
     coachingMessage: 'กำลังเตรียมกล้องและระบบตรวจจับท่าทาง...',
     statusColor: '#10b981',
+    shoulderWidthPct: 0,
+    distanceStatus: 'กำลังจัดระยะ...',
+    distanceWarning: null as string | null,
+    detectedPeople: 1,
+    lockedTargetIdx: 0,
+    hasLightingWarning: false,
   });
 
   // State mirror refs for loop access without re-binding
+  const fitModeRef = useRef<'contain' | 'cover'>('contain');
+  useEffect(() => {
+    fitModeRef.current = fitMode;
+  }, [fitMode]);
+
+  const boostLightingRef = useRef<boolean>(boostLighting);
+  useEffect(() => {
+    boostLightingRef.current = boostLighting;
+  }, [boostLighting]);
+
+  // Target lock & landmark smoothing refs
+  const lockedSubjectCoMRef = useRef<{ x: number; y: number } | null>(null);
+  const smoothedLandmarksRef = useRef<PoseEngineLandmark[] | null>(null);
+
+  const handleZoomChange = useCallback(async (newZoom: number) => {
+    const stream = streamRef.current;
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+    if (track && typeof track.applyConstraints === 'function') {
+      try {
+        await track.applyConstraints({
+          advanced: [{ zoom: newZoom } as any],
+        });
+        setZoomInfo((prev) => ({ ...prev, current: newZoom }));
+      } catch (err) {
+        console.warn('[PoseEngine] Failed to apply zoom:', err);
+      }
+    }
+  }, []);
+
   const isPausedRef = useRef(isPaused);
   useEffect(() => {
     isPausedRef.current = isPaused;
@@ -411,6 +459,33 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           width: videoEl.videoWidth || 1280,
           height: videoEl.videoHeight || 720,
         });
+
+        // Query & apply lowest hardware zoom for widest FOV without cropping
+        const videoTrack = stream.getVideoTracks()[0];
+        let supportedZoom = { supported: false, min: 1, max: 1, step: 0.1, current: 1 };
+        if (videoTrack && typeof videoTrack.getCapabilities === 'function') {
+          try {
+            const caps: any = videoTrack.getCapabilities();
+            if (caps && 'zoom' in caps && typeof caps.zoom === 'object') {
+              const minZoom = Number(caps.zoom.min ?? 1);
+              const maxZoom = Number(caps.zoom.max ?? 1);
+              const stepZoom = Number(caps.zoom.step ?? 0.1);
+              supportedZoom = {
+                supported: true,
+                min: minZoom,
+                max: maxZoom,
+                step: stepZoom,
+                current: minZoom,
+              };
+              await videoTrack.applyConstraints({
+                advanced: [{ zoom: minZoom } as any],
+              });
+            }
+          } catch (zoomErr) {
+            console.warn('[PoseEngine] Camera zoom capabilities check failed:', zoomErr);
+          }
+        }
+        setZoomInfo(supportedZoom);
         setCameraStatus('ready');
 
         // 2. Load MediaPipe Tasks-Vision with Multi-CDN & Local Fallbacks
@@ -436,8 +511,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           throw new Error('ไม่สามารถโหลดไฟล์ WebAssembly ของระบบตรวจจับได้ (กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ CSP)');
         }
 
-        // Model Sources: Local -> Lite Local -> Google Cloud Storage CDN
+        // Model Sources: Full CDN -> Local Full/Default -> Lite Local -> Lite CDN
         const modelSources = [
+          'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
+          '/models/pose_landmarker_full.task',
           '/models/pose_landmarker.task',
           '/models/pose_landmarker_lite.task',
           'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
@@ -446,7 +523,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         let landmarker: any = null;
         let selectedDelegate: 'GPU' | 'CPU' = 'GPU';
 
-        // Try GPU delegate first across sources
+        // Try GPU delegate first across sources (numPoses: 3 for multi-person support)
         for (const modelPath of modelSources) {
           try {
             landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
@@ -455,7 +532,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 delegate: 'GPU',
               },
               runningMode: 'VIDEO',
-              numPoses: 1,
+              numPoses: 3,
               minPoseDetectionConfidence: 0.5,
               minPosePresenceConfidence: 0.5,
               minTrackingConfidence: 0.5,
@@ -479,7 +556,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   delegate: 'CPU',
                 },
                 runningMode: 'VIDEO',
-                numPoses: 1,
+                numPoses: 3,
                 minPoseDetectionConfidence: 0.5,
                 minPosePresenceConfidence: 0.5,
                 minTrackingConfidence: 0.5,
@@ -567,6 +644,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 fps: Math.round(smoothedFpsRef.current),
                 landmarkCount: 0,
                 avgVisibility: 0,
+                shoulderWidthPct: 0,
+                distanceStatus: 'ไม่พบผู้ใช้ในภาพ',
+                distanceWarning: '📷 ไม่พบร่างกายในภาพ กรุณาขยับให้อยู่กลางหน้าจอและถอยห่าง 1–1.5 เมตร',
+                detectedPeople: 0,
                 coachingMessage: '📷 ไม่พบร่างกายในภาพ กรุณาขยับให้อยู่กลางหน้าจอและถอยห่าง 1.5–2 เมตร',
                 statusColor: '#f59e0b',
               }));
@@ -574,23 +655,118 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             return;
           }
 
-          const normLandmarks = result.landmarks[0];
-          const rawLandmarks: PoseEngineLandmark[] = normLandmarks.map((lm: any) => ({
-            x: lm.x,
-            y: lm.y,
-            z: lm.z,
-            visibility: lm.visibility ?? 0.9,
-            presence: lm.presence ?? 0.9,
-          }));
+          // 1. Multi-Person Detection & Continuous Primary Subject Locking
+          const allPoses = result.landmarks;
+          const detectedPeopleCount = allPoses.length;
+          let bestIdx = 0;
+
+          if (detectedPeopleCount > 1) {
+            let maxScore = -Infinity;
+            allPoses.forEach((pose: any[], idx: number) => {
+              const ls = pose[11];
+              const rs = pose[12];
+              if (!ls || !rs) return;
+
+              const midX = (ls.x + rs.x) / 2;
+              const midY = (ls.y + rs.y) / 2;
+              const shoulderWidth = Math.abs(ls.x - rs.x);
+
+              // Size score (closer/primary user has wider shoulders)
+              const sizeScore = shoulderWidth * 2.5;
+
+              // Center score (primary user stands in front of kiosk/screen center)
+              const distFromCenter = Math.hypot(midX - 0.5, midY - 0.5);
+              const centerScore = Math.max(0, 1.0 - distFromCenter * 1.8);
+
+              // Persistence lock bonus (prevents swapping to bystanders walking behind)
+              let persistenceScore = 0;
+              if (lockedSubjectCoMRef.current) {
+                const distFromPrev = Math.hypot(
+                  midX - lockedSubjectCoMRef.current.x,
+                  midY - lockedSubjectCoMRef.current.y
+                );
+                persistenceScore = Math.max(0, (1.0 - distFromPrev * 2.2) * 2.0);
+              }
+
+              const totalScore = sizeScore * 1.5 + centerScore * 1.2 + persistenceScore * 2.0;
+              if (totalScore > maxScore) {
+                maxScore = totalScore;
+                bestIdx = idx;
+              }
+            });
+          }
+
+          const chosenPose = allPoses[bestIdx];
+          const rawLs = chosenPose[11];
+          const rawRs = chosenPose[12];
+          if (rawLs && rawRs) {
+            const curMidX = (rawLs.x + rawRs.x) / 2;
+            const curMidY = (rawLs.y + rawRs.y) / 2;
+            if (!lockedSubjectCoMRef.current) {
+              lockedSubjectCoMRef.current = { x: curMidX, y: curMidY };
+            } else {
+              lockedSubjectCoMRef.current = {
+                x: 0.82 * lockedSubjectCoMRef.current.x + 0.18 * curMidX,
+                y: 0.82 * lockedSubjectCoMRef.current.y + 0.18 * curMidY,
+              };
+            }
+          }
+
+          // 2. Velocity-Adaptive Landmark Smoothing (EMA Filter)
+          const prevSmoothed = smoothedLandmarksRef.current;
+          const smoothedPose: PoseEngineLandmark[] = chosenPose.map((lm: any, idx: number) => {
+            const rawVis = lm.visibility ?? 0.9;
+            const rawPresence = lm.presence ?? 0.9;
+            if (!prevSmoothed || !prevSmoothed[idx]) {
+              return { x: lm.x, y: lm.y, z: lm.z ?? 0, visibility: rawVis, presence: rawPresence };
+            }
+
+            const prev = prevSmoothed[idx];
+            const dist = Math.hypot(lm.x - prev.x, lm.y - prev.y);
+            // Higher smoothing (lower alpha) when stationary to suppress jitter from harsh lighting/noise
+            const alpha = Math.min(0.85, Math.max(0.28, dist * 15.0));
+
+            return {
+              x: alpha * lm.x + (1 - alpha) * prev.x,
+              y: alpha * lm.y + (1 - alpha) * prev.y,
+              z: alpha * (lm.z ?? 0) + (1 - alpha) * (prev.z ?? 0),
+              visibility: rawVis,
+              presence: rawPresence,
+            };
+          });
+          smoothedLandmarksRef.current = smoothedPose;
 
           // Hardware Watchdog Update
-          const wdStatus = watchdogRef.current.update(rawLandmarks, monotonicTs);
-          const evalRes = stateMachineRef.current.evaluate(rawLandmarks, monotonicTs);
+          const wdStatus = watchdogRef.current.update(smoothedPose, monotonicTs);
+          const evalRes = stateMachineRef.current.evaluate(smoothedPose, monotonicTs);
 
-          // Project landmarks into 1:1 canvas pixels with mirror support
-          const projectedPoints = normLandmarks.map((lm: any) =>
-            projectLandmarkToCanvas(lm, vEl, cEl, true, 'cover')
+          // Project landmarks into 1:1 canvas pixels with mirror support and fitMode
+          const currentFitMode = fitModeRef.current;
+          const projectedPoints = smoothedPose.map((lm: any) =>
+            projectLandmarkToCanvas(lm, vEl, cEl, true, currentFitMode)
           );
+
+          // Shoulder width & distance estimation
+          const smoothLs = smoothedPose[11];
+          const smoothRs = smoothedPose[12];
+          let shoulderWidthPct = 0;
+          let distanceStatus = 'กำลังวัดระยะ...';
+          let distanceWarning: string | null = null;
+
+          if (smoothLs && smoothRs && (smoothLs.visibility ?? 1) > 0.35 && (smoothRs.visibility ?? 1) > 0.35) {
+            const sw = Math.abs(smoothLs.x - smoothRs.x);
+            shoulderWidthPct = Math.round(sw * 100);
+            if (sw > 0.55) {
+              distanceStatus = 'ใกล้เกินไป';
+              distanceWarning = '⚠️ ยืนใกล้กล้องเกินไป — กรุณาถอยห่างประมาณ 1–1.5 เมตร ให้เห็นศีรษะถึงเอว';
+            } else if (sw < 0.18) {
+              distanceStatus = 'ไกลเกินไป';
+              distanceWarning = '⚠️ อยู่ไกลเกินไป — กรุณาขยับเข้าใกล้กล้องอีกเล็กน้อย';
+            } else {
+              distanceStatus = 'ระยะเหมาะสม (1-1.5 ม.)';
+              distanceWarning = null;
+            }
+          }
 
           const strokeColor =
             evalRes.formRating === 'error'
@@ -685,13 +861,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             lastUiUpdateMsRef.current = nowMs;
             const avgVis =
               ANATOMICAL_BODY_JOINTS.reduce(
-                (acc, idx) => acc + (normLandmarks[idx]?.visibility ?? 0),
+                (acc, idx) => acc + (smoothedPose[idx]?.visibility ?? 0),
                 0
               ) / ANATOMICAL_BODY_JOINTS.length;
 
+            const isLightingLow = avgVis < 0.45 && detectedPeopleCount >= 1;
+
             setHudState({
               fps: Math.round(smoothedFpsRef.current),
-              landmarkCount: normLandmarks.length,
+              landmarkCount: smoothedPose.length,
               avgVisibility: Number(avgVis.toFixed(2)),
               currentAngle: Math.round(evalRes.currentAngleDeg || 0),
               accuracyPct: Math.round(evalRes.accuracyPercent ?? evalRes.accuracyPct ?? 0),
@@ -700,6 +878,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               currentSet: evalRes.currentSet,
               coachingMessage: evalRes.coachingMessageTh,
               statusColor: strokeColor,
+              shoulderWidthPct,
+              distanceStatus,
+              distanceWarning,
+              detectedPeople: detectedPeopleCount,
+              lockedTargetIdx: bestIdx,
+              hasLightingWarning: isLightingLow,
             });
             setEvalResult(evalRes);
             setWatchdogStatus(wdStatus);
@@ -1046,7 +1230,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           ref={videoRef}
           playsInline
           muted
-          className="absolute inset-0 w-full h-full object-cover -scale-x-100 z-0"
+          className={`w-full h-full ${
+            fitMode === 'contain' ? 'object-contain' : 'object-cover'
+          } -scale-x-100 z-0 transition-all duration-200 ${
+            boostLighting ? 'brightness-110 contrast-125' : ''
+          }`}
         />
 
         {/* 1:1 Canvas overlay directly on top of video */}
@@ -1054,6 +1242,35 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           ref={canvasRef}
           className="absolute inset-0 w-full h-full pointer-events-none z-10"
         />
+
+        {/* Half-body Silhouette Guide Overlay */}
+        {showGuideSilhouette && (
+          <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center opacity-25">
+            <svg
+              viewBox="0 0 400 400"
+              className={`w-80 h-80 sm:w-96 sm:h-96 transition-colors duration-300 ${
+                hudState.shoulderWidthPct > 55
+                  ? 'text-amber-400 stroke-amber-400'
+                  : hudState.shoulderWidthPct > 0 && hudState.shoulderWidthPct < 18
+                  ? 'text-amber-400 stroke-amber-400'
+                  : 'text-teal-400 stroke-teal-400'
+              }`}
+              fill="none"
+              strokeWidth="2"
+              strokeDasharray="6 4"
+            >
+              {/* Head outline */}
+              <circle cx="200" cy="100" r="48" stroke="currentColor" />
+              {/* Neck & Shoulders */}
+              <path
+                d="M 175 146 L 175 165 L 85 200 L 95 320 L 305 320 L 315 200 L 225 165 L 225 146"
+                stroke="currentColor"
+              />
+              {/* Mid-chest center line */}
+              <line x1="200" y1="165" x2="200" y2="320" stroke="currentColor" strokeDasharray="3 3" />
+            </svg>
+          </div>
+        )}
 
         {/* Real-time Diagnostic Debug HUD (🔍 Debug สถานะระบบ) */}
         {showDebugHud && (
@@ -1076,16 +1293,19 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               </button>
             </div>
             <div>
-              📷 กล้อง: <span className="text-white font-bold">{cameraStatus === 'ready' ? `พร้อมใช้งาน (${cameraDimensions.width}x${cameraDimensions.height})` : cameraStatus}</span>
+              📷 กล้อง: <span className="text-white font-bold">{cameraStatus === 'ready' ? `${cameraDimensions.width}x${cameraDimensions.height}` : cameraStatus}</span> | ซูม: <span className="text-teal-300 font-bold">{zoomInfo.supported ? `${zoomInfo.current.toFixed(1)}x` : '1.0x (Fixed)'}</span> | โหมด: <span className="text-cyan-300">{fitMode}</span>
             </div>
             <div>
-              🧠 โมเดล: <span className="text-white font-bold">{modelStatus === 'ready' ? `พร้อมตรวจจับ (${modelDelegate})` : modelStatus}</span>
+              🧠 โมเดล: <span className="text-white font-bold">{modelStatus === 'ready' ? `พร้อมตรวจจับ (${modelDelegate})` : modelStatus}</span> | พบ: <span className="text-teal-300 font-bold">{hudState.detectedPeople} คน</span> (ล็อก #{hudState.lockedTargetIdx + 1})
+            </div>
+            <div>
+              📏 ไหล่กว้าง: <span className="text-white font-bold">{hudState.shoulderWidthPct}% ของเฟรม</span> | ระยะ: <span className="text-amber-300">{hudState.distanceStatus}</span>
             </div>
             <div>
               ⚡ FPS จริง: <span className="text-white font-bold">{hudState.fps} FPS</span> {lowPowerMode ? '<ประหยัดพลังงาน>' : ''}
             </div>
             <div>
-              📍 Landmarks: <span className="text-white font-bold">{hudState.landmarkCount} จุด</span> (Vis เฉลี่ย: {hudState.avgVisibility})
+              📍 Landmarks: <span className="text-white font-bold">{hudState.landmarkCount} จุด</span> (Vis: {hudState.avgVisibility}) | กรอง: <span className="text-emerald-400">EMA Smooth</span>
             </div>
             <div>
               📐 มุมปัจจุบัน: <span className="text-white font-bold">{hudState.currentAngle}°</span> | ความถูกต้อง: <span className="text-white font-bold">{hudState.accuracyPct}%</span>
@@ -1095,6 +1315,98 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           </div>
         )}
+
+        {/* Real-time Distance Alert Banner */}
+        {hudState.distanceWarning && (
+          <div className="absolute top-24 right-4 z-20 max-w-xs px-3.5 py-2 rounded-2xl bg-amber-950/90 border border-amber-500/70 text-amber-200 text-xs font-semibold backdrop-blur-md shadow-xl animate-pulse">
+            {hudState.distanceWarning}
+          </div>
+        )}
+
+        {/* Multi-Person Detection Notice */}
+        {hudState.detectedPeople > 1 && (
+          <div className="absolute top-36 right-4 z-20 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-teal-500/50 text-teal-300 text-xs font-semibold backdrop-blur-md shadow-lg flex items-center gap-1.5">
+            <span>👥 ตรวจพบ {hudState.detectedPeople} คน (ล็อกผู้ฝึกหลักตรงกลาง)</span>
+          </div>
+        )}
+
+        {/* Lighting / Backlight Alert Notice */}
+        {hudState.hasLightingWarning && (
+          <div className="absolute bottom-20 left-4 z-20 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-amber-500/50 text-amber-300 text-xs font-medium backdrop-blur-md shadow-lg flex items-center gap-1.5">
+            <span>💡 แสงสว่างน้อยหรือมีแสงย้อน แนะนำเปิดไฟด้านหน้าผู้ฝึก</span>
+          </div>
+        )}
+
+        {/* Floating Camera & View Controls */}
+        <div className="absolute bottom-4 right-4 z-20 flex items-center flex-wrap gap-2 bg-slate-950/80 border border-slate-800 rounded-2xl p-2 backdrop-blur-md shadow-xl">
+          {/* Fit Mode Toggle */}
+          <button
+            type="button"
+            onClick={() => setFitMode((m) => (m === 'contain' ? 'cover' : 'contain'))}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+              fitMode === 'contain'
+                ? 'bg-teal-500/20 border-teal-500 text-teal-300'
+                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+            }`}
+            title="สลับโหมดการแสดงภาพ (พอดีจอ ไม่ครอปภาพ / เต็มจอ ครอปขอบ)"
+          >
+            {fitMode === 'contain' ? '🔎 พอดีจอ (ไม่ครอป)' : '🖼️ เต็มจอ'}
+          </button>
+
+          {/* Guide Silhouette Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowGuideSilhouette((prev) => !prev)}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+              showGuideSilhouette
+                ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
+                : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+            }`}
+            title="เปิด/ปิดเส้นโครงร่างนำทาง (Silhouette Guide)"
+          >
+            👤 ไกด์จัดท่า
+          </button>
+
+          {/* Contrast / Backlight Boost Toggle */}
+          <button
+            type="button"
+            onClick={() => setBoostLighting((prev) => !prev)}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+              boostLighting
+                ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+            }`}
+            title="เพิ่มความสว่างและความคมชัด เพื่อรับมือแสงย้อนหรือไฟเพดาน"
+          >
+            💡 ชดเชยแสง
+          </button>
+
+          {/* Hardware Zoom Slider / Zoom Out Button */}
+          {zoomInfo.supported && (
+            <div className="flex items-center gap-1.5 pl-1 border-l border-slate-800">
+              <button
+                type="button"
+                onClick={() => handleZoomChange(zoomInfo.min)}
+                className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-[11px] font-bold text-teal-300 border border-slate-700 cursor-pointer"
+                title="ซูมออกสุดเพื่อให้เห็นมุมกว้างที่สุด"
+              >
+                มุมกว้าง ({zoomInfo.min.toFixed(1)}x)
+              </button>
+              {zoomInfo.max > zoomInfo.min && (
+                <input
+                  type="range"
+                  min={zoomInfo.min}
+                  max={zoomInfo.max}
+                  step={zoomInfo.step}
+                  value={zoomInfo.current}
+                  onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+                  className="w-16 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                  title={`ระดับซูม: ${zoomInfo.current.toFixed(1)}x`}
+                />
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Watchdog Hardware Status Alert Badge */}
         {watchdogStatus && (watchdogStatus.isFrozen || watchdogStatus.lowPerformanceMode) && (
@@ -1120,6 +1432,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   evalResult?.readinessStatus === 'missing_lower_body' ||
                   evalResult?.readinessStatus === 'missing_head_shoulders'
                 ? 'bg-cyan-950/90 border-cyan-400 text-cyan-100 shadow-cyan-950/50'
+                : evalResult?.readinessStatus === 'partial_upper_body'
+                ? 'bg-teal-950/85 border-teal-500 text-teal-100'
                 : evalResult?.formRating === 'warning'
                 ? 'bg-amber-950/85 border-amber-500 text-amber-100'
                 : 'bg-slate-900/85 border-emerald-500/40 text-emerald-200'
@@ -1128,8 +1442,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             <div className="text-2xl shrink-0">
               {evalResult?.formRating === 'error'
                 ? '🚨'
-                : evalResult?.readinessStatus
+                : evalResult?.readinessStatus && evalResult.readinessStatus !== 'partial_upper_body'
                 ? '📷'
+                : evalResult?.readinessStatus === 'partial_upper_body'
+                ? '💡'
                 : evalResult?.formRating === 'warning'
                 ? '⚠️'
                 : isPendulum
@@ -1141,7 +1457,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 {coachingMsg || (lang === 'zh-CN' ? '请在初始位置做好准备' : lang === 'en-US' ? 'Get ready at the starting position' : 'เตรียมพร้อมในตำแหน่งเริ่มต้น')}
               </div>
               {/* Hold / Pendulum Progress Bar */}
-              {progressRatio > 0 && !evalResult?.readinessStatus && (
+              {progressRatio > 0 && (!evalResult?.readinessStatus || evalResult.readinessStatus === 'partial_upper_body') && (
                 <div className="w-full bg-slate-950/50 rounded-full h-2 mt-2 overflow-hidden">
                   <div
                     className="bg-gradient-to-r from-emerald-400 to-teal-300 h-full transition-all duration-75"
@@ -1152,8 +1468,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
             {/* Live Angle or Percentage Badge */}
             <div className="px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-700/60 font-mono text-xs sm:text-sm font-bold text-white shrink-0">
-              {evalResult?.readinessStatus
+              {evalResult?.readinessStatus && evalResult.readinessStatus !== 'partial_upper_body'
                 ? (lang === 'zh-CN' ? '等待调整' : lang === 'en-US' ? 'Adjust Pose' : 'รอจัดท่า')
+                : evalResult?.readinessStatus === 'partial_upper_body'
+                ? (isPendulum
+                    ? `${Math.round(progressRatio * 100)}%`
+                    : `${evalResult?.currentAngleDeg || hudState.currentAngle}°`)
                 : isPendulum
                 ? `${Math.round(progressRatio * 100)}%`
                 : `${evalResult?.currentAngleDeg || hudState.currentAngle}°`}
