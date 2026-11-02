@@ -85,6 +85,35 @@ export const POSE_CONNECTIONS: [number, number][] = [
 export const BODY_JOINT_INDICES = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
 export const ANATOMICAL_BODY_JOINTS = BODY_JOINT_INDICES;
 
+export function getRequiredKeypointsForExercise(config?: ExerciseDetectionConfig): number[] {
+  const framing = config?.framing;
+  if (framing === 'head_shoulders') {
+    return [7, 8, 11, 12];
+  }
+  if (framing === 'full' || framing === 'full_body' || framing === 'lower_body') {
+    return [11, 12, 23, 24, 25, 26, 27, 28];
+  }
+  // Upper-body mode (shoulder pendulum, arm raises, etc.)
+  return [11, 12, 13, 14, 15, 16, 23, 24];
+}
+
+export const KEYPOINT_NAME_MAP: Record<number, { th: string; en: string; cn: string }> = {
+  7: { th: 'หูซ้าย', en: 'L Ear', cn: '左耳' },
+  8: { th: 'หูขวา', en: 'R Ear', cn: '右耳' },
+  11: { th: 'ไหล่ซ้าย', en: 'L Shoulder', cn: '左肩' },
+  12: { th: 'ไหล่ขวา', en: 'R Shoulder', cn: '右肩' },
+  13: { th: 'ศอกซ้าย', en: 'L Elbow', cn: '左肘' },
+  14: { th: 'ศอกขวา', en: 'R Elbow', cn: '右肘' },
+  15: { th: 'ข้อมือซ้าย', en: 'L Wrist', cn: '左腕' },
+  16: { th: 'ข้อมือขวา', en: 'R Wrist', cn: '右腕' },
+  23: { th: 'สะโพกซ้าย', en: 'L Hip', cn: '左髋' },
+  24: { th: 'สะโพกขวา', en: 'R Hip', cn: '右髋' },
+  25: { th: 'เข่าซ้าย', en: 'L Knee', cn: '左膝' },
+  26: { th: 'เข่าขวา', en: 'R Knee', cn: '右膝' },
+  27: { th: 'ข้อเท้าซ้าย', en: 'L Ankle', cn: '左踝' },
+  28: { th: 'ข้อเท้าขวา', en: 'R Ankle', cn: '右踝' },
+};
+
 const _LANDMARK_NAMES: Record<number, string> = {
   0: 'Nose',
   11: 'L.Shoulder',
@@ -209,6 +238,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     detectedPeople: 1,
     lockedTargetIdx: 0,
     hasLightingWarning: false,
+    requiredKeypointsStatus: [] as Array<{ idx: number; name: string; visibility: number; isPresent: boolean }>,
+    readinessReason: 'กำลังเตรียมระบบตรวจจับ...',
   });
 
   // State mirror refs for loop access without re-binding
@@ -274,7 +305,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   }, [activeSide]);
 
   // Sync config updates without restarting loop
+  const resolvedConfigRef = useRef(resolvedConfig);
   useEffect(() => {
+    resolvedConfigRef.current = resolvedConfig;
     stateMachineRef.current.updateConfig(resolvedConfig);
   }, [resolvedConfig]);
 
@@ -859,13 +892,42 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           // Throttle React State Updates to ~100ms for 60 FPS performance
           if (nowMs - lastUiUpdateMsRef.current > 100) {
             lastUiUpdateMsRef.current = nowMs;
+            const requiredJoints = getRequiredKeypointsForExercise(resolvedConfig);
             const avgVis =
-              ANATOMICAL_BODY_JOINTS.reduce(
+              requiredJoints.reduce(
                 (acc, idx) => acc + (smoothedPose[idx]?.visibility ?? 0),
                 0
-              ) / ANATOMICAL_BODY_JOINTS.length;
+              ) / (requiredJoints.length || 1);
 
-            const isLightingLow = avgVis < 0.45 && detectedPeopleCount >= 1;
+            const isLightingLow = avgVis < 0.40 && detectedPeopleCount >= 1;
+
+            const requiredKeypointsStatus = requiredJoints.map((idx) => {
+              const lm = smoothedPose[idx];
+              const vis = lm?.visibility ?? 0;
+              const nameEntry = KEYPOINT_NAME_MAP[idx];
+              const name = nameEntry ? nameEntry.th : `#${idx}`;
+              return {
+                idx,
+                name,
+                visibility: Number(vis.toFixed(2)),
+                isPresent: vis >= 0.35,
+              };
+            });
+
+            const readinessReason =
+              evalRes.readinessStatus === 'ready'
+                ? 'พร้อมเริ่มฝึก (ready)'
+                : evalRes.readinessStatus === 'partial_upper_body'
+                ? 'ตรวจพบครึ่งตัวบน (partial_upper_body)'
+                : evalRes.readinessStatus === 'missing_shoulder'
+                ? 'ไม่พบจุดหัวไหล่ในภาพ'
+                : evalRes.readinessStatus === 'missing_arm_landmarks'
+                ? 'ไม่พบจุดแขนหรือข้อมือ'
+                : evalRes.readinessStatus === 'missing_lower_body'
+                ? 'ไม่พบจุดช่วงขาหรือข้อเท้า'
+                : evalRes.readinessStatus === 'missing_head_shoulders'
+                ? 'ไม่พบจุดศีรษะและไหล่'
+                : 'รอจัดท่าให้อยู่ในกรอบ';
 
             setHudState({
               fps: Math.round(smoothedFpsRef.current),
@@ -884,6 +946,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               detectedPeople: detectedPeopleCount,
               lockedTargetIdx: bestIdx,
               hasLightingWarning: isLightingLow,
+              requiredKeypointsStatus,
+              readinessReason,
             });
             setEvalResult(evalRes);
             setWatchdogStatus(wdStatus);
@@ -909,6 +973,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     return () => {
       cleanupResources();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleanupResources, playRepChime, speakThai, resolvedConfig.framing]);
 
   const handleNextSet = useCallback(() => {
@@ -1102,43 +1167,45 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   return (
     <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col justify-between overflow-hidden select-none font-sans">
       {/* 1. Top Clinical HUD Header */}
-      <div className="w-full bg-slate-950/85 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 flex items-center justify-between z-20 flex-wrap gap-2">
+      <div className="w-full bg-slate-950/90 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 flex items-center justify-between z-20 flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-            <Activity className="w-5 h-5" />
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+            <Activity className="w-7 h-7" />
           </div>
           <div>
-            <h1 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
               <span>{titleString}</span>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium">
+              <span className="text-sm px-3 py-1 rounded-full bg-slate-800 text-teal-300 font-bold border border-slate-700">
                 {jointLabel}
               </span>
             </h1>
-            <div className="text-xs text-slate-400 mt-0.5">
-              {lang === 'zh-CN' ? '患者' : lang === 'en-US' ? 'Patient' : 'ผู้ป่วย'}: คุณ {patient.first_name} {patient.last_name || ''} • HN: {patient.hn || patient.patient_id || '-'}
+            <div className="text-sm sm:text-base text-slate-300 font-semibold mt-1 flex items-center gap-2">
+              <span>{lang === 'zh-CN' ? '患者' : lang === 'en-US' ? 'Patient' : 'ผู้ป่วย'}: คุณ {patient.first_name} {patient.last_name || ''}</span>
+              <span>•</span>
+              <span className="font-mono text-emerald-400">HN: {patient.hn || patient.patient_id || '-'}</span>
             </div>
           </div>
         </div>
 
         {/* Side Toggle & Set/Rep Badges */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
           <LanguageSwitcher variant="dark" />
 
           {/* Side Toggle Selector or Bilateral Badge */}
           {isBilateral ? (
-            <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-teal-300 flex items-center gap-1.5">
+            <div className="min-h-[48px] px-4 py-2.5 rounded-2xl bg-slate-900 border border-slate-700 text-base font-bold text-teal-300 flex items-center gap-2 shadow-sm">
               <span>👥</span>
               <span>{lang === 'zh-CN' ? '双侧协同' : lang === 'en-US' ? 'Bilateral' : 'ทั้งสองข้าง'}</span>
             </div>
           ) : (
-            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-2xl p-1 gap-1">
+            <div className="flex items-center bg-slate-900 border border-slate-700 rounded-2xl p-1 gap-1">
               <button
                 type="button"
                 onClick={() => handleToggleSide('right')}
-                className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                className={`min-h-[44px] px-3.5 sm:px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition flex items-center gap-1.5 cursor-pointer ${
                   activeSide === 'right'
-                    ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/30'
+                    : 'text-slate-300 hover:text-white'
                 }`}
               >
                 <span>{isLowerBody ? (lang === 'zh-CN' ? '🦿 右腿' : lang === 'en-US' ? '🦿 Right Leg' : '🦿 ขาขวา') : (lang === 'zh-CN' ? '🦾 右臂' : lang === 'en-US' ? '🦾 Right Arm' : '🦾 แขนขวา')}</span>
@@ -1146,10 +1213,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               <button
                 type="button"
                 onClick={() => handleToggleSide('left')}
-                className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                className={`min-h-[44px] px-3.5 sm:px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition flex items-center gap-1.5 cursor-pointer ${
                   activeSide === 'left'
-                    ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/30'
+                    : 'text-slate-300 hover:text-white'
                 }`}
               >
                 <span>{isLowerBody ? (lang === 'zh-CN' ? '左腿 🦿' : lang === 'en-US' ? 'Left Leg 🦿' : 'ขาซ้าย 🦿') : (lang === 'zh-CN' ? '左臂 🦾' : lang === 'en-US' ? 'Left Arm 🦾' : 'แขนซ้าย 🦾')}</span>
@@ -1163,10 +1230,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             id="kiosk-toggle-skeleton-btn"
             data-testid="kiosk-toggle-skeleton-btn"
             onClick={() => setShowSkeletonOverlay((prev) => !prev)}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+            className={`min-h-[48px] px-4 py-2.5 rounded-2xl text-base font-bold transition flex items-center gap-2 cursor-pointer border ${
               showSkeletonOverlay
-                ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300 shadow-md shadow-cyan-500/20'
-                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-cyan-500/20 border-cyan-500 text-cyan-200 shadow-md shadow-cyan-500/20'
+                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
             }`}
             title="เปิด/ปิดการแสดงเส้นโครงร่างลำตัว (Skeleton Overlay)"
           >
@@ -1176,12 +1243,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   ? '🦴 骨骼线: 开'
                   : lang === 'en-US'
                   ? '🦴 Skeleton: ON'
-                  : '🦴 แสดงเส้นลำตัว: เปิด'
+                  : '🦴 เส้นลำตัว: เปิด'
                 : lang === 'zh-CN'
                 ? '🦴 骨骼线: 关'
                 : lang === 'en-US'
                 ? '🦴 Skeleton: OFF'
-                : '🦴 แสดงเส้นลำตัว: ปิด'}
+                : '🦴 เส้นลำตัว: ปิด'}
             </span>
           </button>
 
@@ -1191,10 +1258,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             id="kiosk-toggle-debug-btn"
             data-testid="kiosk-toggle-debug-btn"
             onClick={() => setShowDebugHud((prev) => !prev)}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer border ${
+            className={`min-h-[48px] px-4 py-2.5 rounded-2xl text-base font-bold transition flex items-center gap-1.5 cursor-pointer border ${
               showDebugHud
-                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-emerald-500/25 border-emerald-500 text-emerald-200 shadow-sm'
+                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
             }`}
             title="สลับการแสดงผลแผงตรวจวัดละเอียด (Diagnostic Debug HUD)"
           >
@@ -1202,21 +1269,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           </button>
 
           {/* Sets Badge */}
-          <div className="px-4 py-2 rounded-2xl bg-slate-900 border border-slate-800 text-center">
-            <div className="text-[10px] text-slate-400 uppercase font-semibold">
+          <div className="min-h-[52px] px-5 py-2 rounded-2xl bg-slate-900 border border-slate-700 text-center flex flex-col justify-center">
+            <div className="text-xs uppercase font-extrabold text-slate-300 tracking-wider">
               {lang === 'zh-CN' ? '组数' : lang === 'en-US' ? 'Set' : 'เซ็ตที่'}
             </div>
-            <div className="text-sm sm:text-base font-extrabold text-teal-400">
+            <div className="text-2xl sm:text-3xl font-black text-teal-300 font-mono leading-tight">
               {hudState.currentSet} / {resolvedConfig.defaultPrescription?.totalSets || 3}
             </div>
           </div>
 
-          {/* Reps Badge */}
-          <div className="px-5 py-2 rounded-2xl bg-gradient-to-r from-emerald-600/30 to-teal-600/30 border border-emerald-500/50 text-center shadow-lg shadow-emerald-950/50">
-            <div className="text-[10px] text-emerald-300 uppercase font-semibold">
+          {/* Reps Badge (Super prominent 44-50px numbers for 1-2m distance readability) */}
+          <div className="min-h-[52px] px-6 py-2 rounded-2xl bg-gradient-to-r from-emerald-600/40 to-teal-600/40 border-2 border-emerald-400 text-center shadow-xl shadow-emerald-950/60 flex flex-col justify-center">
+            <div className="text-xs uppercase font-extrabold text-emerald-200 tracking-wider">
               {lang === 'zh-CN' ? '次数' : lang === 'en-US' ? 'Reps' : 'จำนวนครั้ง'}
             </div>
-            <div className="text-lg sm:text-xl font-extrabold text-white">
+            <div className="text-3xl sm:text-4xl font-black text-white font-mono leading-tight">
               {hudState.completedReps} / {resolvedConfig.defaultPrescription?.repsPerSet || 10}
             </div>
           </div>
@@ -1277,73 +1344,99 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <div
             id="pose-engine-debug-hud"
             data-testid="pose-engine-debug-hud"
-            className="absolute top-20 left-4 z-30 bg-slate-900/90 border border-emerald-500/50 rounded-2xl p-3.5 text-xs font-mono text-emerald-300 shadow-2xl backdrop-blur-md space-y-1.5 max-w-xs sm:max-w-sm pointer-events-auto"
+            className="absolute top-20 left-4 z-30 bg-slate-900/95 border-2 border-emerald-500/60 rounded-3xl p-4 sm:p-5 text-sm font-mono text-emerald-300 shadow-2xl backdrop-blur-md space-y-2 max-w-sm sm:max-w-md pointer-events-auto leading-relaxed"
           >
-            <div className="flex items-center justify-between border-b border-emerald-500/30 pb-1 text-emerald-400 font-bold">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2 text-emerald-400 font-bold text-base">
+              <span className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
                 <span>🔍 Debug สถานะระบบ</span>
               </span>
               <button
                 type="button"
                 onClick={() => setLowPowerMode((prev) => !prev)}
-                className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-teal-300 hover:bg-slate-700 cursor-pointer"
+                className="text-xs px-2.5 py-1 rounded-xl bg-slate-800 text-teal-300 hover:bg-slate-700 cursor-pointer font-bold border border-slate-700"
               >
                 {lowPowerMode ? '⚡ ประหยัดไฟ: ON' : '⚡ ความเร็วสูง'}
               </button>
             </div>
             <div>
-              📷 กล้อง: <span className="text-white font-bold">{cameraStatus === 'ready' ? `${cameraDimensions.width}x${cameraDimensions.height}` : cameraStatus}</span> | ซูม: <span className="text-teal-300 font-bold">{zoomInfo.supported ? `${zoomInfo.current.toFixed(1)}x` : '1.0x (Fixed)'}</span> | โหมด: <span className="text-cyan-300">{fitMode}</span>
+              📷 กล้อง: <span className="text-white font-bold">{cameraStatus === 'ready' ? `${cameraDimensions.width}x${cameraDimensions.height}` : cameraStatus}</span> | ซูม: <span className="text-teal-300 font-bold">{zoomInfo.supported ? `${zoomInfo.current.toFixed(1)}x` : '1.0x (Fixed)'}</span> | โหมด: <span className="text-cyan-300 font-bold">{fitMode}</span>
             </div>
             <div>
               🧠 โมเดล: <span className="text-white font-bold">{modelStatus === 'ready' ? `พร้อมตรวจจับ (${modelDelegate})` : modelStatus}</span> | พบ: <span className="text-teal-300 font-bold">{hudState.detectedPeople} คน</span> (ล็อก #{hudState.lockedTargetIdx + 1})
             </div>
             <div>
-              📏 ไหล่กว้าง: <span className="text-white font-bold">{hudState.shoulderWidthPct}% ของเฟรม</span> | ระยะ: <span className="text-amber-300">{hudState.distanceStatus}</span>
+              📏 ไหล่กว้าง: <span className="text-white font-bold">{hudState.shoulderWidthPct}% ของเฟรม</span> | ระยะ: <span className="text-amber-300 font-bold">{hudState.distanceStatus}</span>
             </div>
             <div>
-              ⚡ FPS จริง: <span className="text-white font-bold">{hudState.fps} FPS</span> {lowPowerMode ? '<ประหยัดพลังงาน>' : ''}
+              ⚡ FPS จริง: <span className="text-white font-bold">{hudState.fps} FPS</span> {lowPowerMode ? '<โหมดประหยัด>' : ''}
             </div>
             <div>
-              📍 Landmarks: <span className="text-white font-bold">{hudState.landmarkCount} จุด</span> (Vis: {hudState.avgVisibility}) | กรอง: <span className="text-emerald-400">EMA Smooth</span>
+              📍 Landmarks: <span className="text-white font-bold">{hudState.landmarkCount} จุด</span> (ความชัดเฉลี่ย: {hudState.avgVisibility}) | กรอง: <span className="text-emerald-400">EMA Smooth</span>
             </div>
             <div>
-              📐 มุมปัจจุบัน: <span className="text-white font-bold">{hudState.currentAngle}°</span> | ความถูกต้อง: <span className="text-white font-bold">{hudState.accuracyPct}%</span>
+              📐 มุมปัจจุบัน: <span className="text-white font-bold">{hudState.currentAngle}°</span> | ความแม่นยำ: <span className="text-white font-bold">{hudState.accuracyPct}%</span>
             </div>
             <div>
               🔄 สถานะตัวนับ: <span className="text-amber-300 font-bold">{hudState.repPhase}</span> | ข้าง: <span className="text-cyan-300 font-bold">{activeSide}</span> | ครั้งที่: <span className="text-white font-bold">{hudState.completedReps}</span>
             </div>
+            <div>
+              🔍 เงื่อนไขความพร้อม: <span className="text-white font-bold">{hudState.readinessReason}</span>
+            </div>
+
+            {/* Required Keypoints Status Matrix */}
+            {hudState.requiredKeypointsStatus && hudState.requiredKeypointsStatus.length > 0 && (
+              <div className="pt-2 border-t border-slate-700/80">
+                <div className="text-xs font-bold text-slate-300 mb-1.5">
+                  จุดสำคัญของท่านี้ ({hudState.requiredKeypointsStatus.length} จุด):
+                </div>
+                <div className="flex flex-wrap gap-1.5 text-xs">
+                  {hudState.requiredKeypointsStatus.map((kp) => (
+                    <span
+                      key={kp.idx}
+                      className={`px-2 py-0.5 rounded-lg font-bold border ${
+                        kp.isPresent
+                          ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
+                          : 'bg-rose-950/80 border-rose-500/70 text-rose-300'
+                      }`}
+                    >
+                      {kp.name}: {kp.isPresent ? '✅' : '❌'} ({kp.visibility})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Real-time Distance Alert Banner */}
         {hudState.distanceWarning && (
-          <div className="absolute top-24 right-4 z-20 max-w-xs px-3.5 py-2 rounded-2xl bg-amber-950/90 border border-amber-500/70 text-amber-200 text-xs font-semibold backdrop-blur-md shadow-xl animate-pulse">
+          <div className="absolute top-24 right-4 z-20 max-w-sm px-5 py-3 rounded-2xl bg-amber-950/95 border-2 border-amber-400 text-amber-100 text-base sm:text-lg font-bold backdrop-blur-md shadow-2xl animate-pulse">
             {hudState.distanceWarning}
           </div>
         )}
 
         {/* Multi-Person Detection Notice */}
         {hudState.detectedPeople > 1 && (
-          <div className="absolute top-36 right-4 z-20 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-teal-500/50 text-teal-300 text-xs font-semibold backdrop-blur-md shadow-lg flex items-center gap-1.5">
+          <div className="absolute top-36 right-4 z-20 px-4 py-2 rounded-2xl bg-slate-900/90 border border-teal-500/60 text-teal-200 text-sm sm:text-base font-bold backdrop-blur-md shadow-lg flex items-center gap-2">
             <span>👥 ตรวจพบ {hudState.detectedPeople} คน (ล็อกผู้ฝึกหลักตรงกลาง)</span>
           </div>
         )}
 
         {/* Lighting / Backlight Alert Notice */}
         {hudState.hasLightingWarning && (
-          <div className="absolute bottom-20 left-4 z-20 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-amber-500/50 text-amber-300 text-xs font-medium backdrop-blur-md shadow-lg flex items-center gap-1.5">
+          <div className="absolute bottom-24 left-4 z-20 px-4 py-2.5 rounded-2xl bg-slate-900/90 border border-amber-500/60 text-amber-200 text-sm sm:text-base font-bold backdrop-blur-md shadow-lg flex items-center gap-2">
             <span>💡 แสงสว่างน้อยหรือมีแสงย้อน แนะนำเปิดไฟด้านหน้าผู้ฝึก</span>
           </div>
         )}
 
         {/* Floating Camera & View Controls */}
-        <div className="absolute bottom-4 right-4 z-20 flex items-center flex-wrap gap-2 bg-slate-950/80 border border-slate-800 rounded-2xl p-2 backdrop-blur-md shadow-xl">
+        <div className="absolute bottom-4 right-4 z-20 flex items-center flex-wrap gap-2.5 bg-slate-950/90 border border-slate-700/80 rounded-2xl p-2.5 backdrop-blur-md shadow-xl">
           {/* Fit Mode Toggle */}
           <button
             type="button"
             onClick={() => setFitMode((m) => (m === 'contain' ? 'cover' : 'contain'))}
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm sm:text-base font-bold transition cursor-pointer border ${
               fitMode === 'contain'
                 ? 'bg-teal-500/20 border-teal-500 text-teal-300'
                 : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
@@ -1357,10 +1450,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <button
             type="button"
             onClick={() => setShowGuideSilhouette((prev) => !prev)}
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm sm:text-base font-bold transition cursor-pointer border ${
               showGuideSilhouette
                 ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
-                : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
             }`}
             title="เปิด/ปิดเส้นโครงร่างนำทาง (Silhouette Guide)"
           >
@@ -1371,10 +1464,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <button
             type="button"
             onClick={() => setBoostLighting((prev) => !prev)}
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm sm:text-base font-bold transition cursor-pointer border ${
               boostLighting
                 ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
             }`}
             title="เพิ่มความสว่างและความคมชัด เพื่อรับมือแสงย้อนหรือไฟเพดาน"
           >
@@ -1383,11 +1476,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           {/* Hardware Zoom Slider / Zoom Out Button */}
           {zoomInfo.supported && (
-            <div className="flex items-center gap-1.5 pl-1 border-l border-slate-800">
+            <div className="flex items-center gap-2 pl-2 border-l border-slate-700">
               <button
                 type="button"
                 onClick={() => handleZoomChange(zoomInfo.min)}
-                className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-[11px] font-bold text-teal-300 border border-slate-700 cursor-pointer"
+                className="min-h-[44px] px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-sm font-bold text-teal-300 border border-slate-700 cursor-pointer"
                 title="ซูมออกสุดเพื่อให้เห็นมุมกว้างที่สุด"
               >
                 มุมกว้าง ({zoomInfo.min.toFixed(1)}x)
@@ -1400,7 +1493,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   step={zoomInfo.step}
                   value={zoomInfo.current}
                   onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
-                  className="w-16 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                  className="w-20 sm:w-28 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-400"
                   title={`ระดับซูม: ${zoomInfo.current.toFixed(1)}x`}
                 />
               )}
@@ -1421,79 +1514,85 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         )}
 
         {/* Floating Coaching Banner Overlay */}
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-xl">
-          <div
-            className={`p-4 rounded-3xl backdrop-blur-md border shadow-2xl transition-all duration-300 flex items-center gap-3.5 ${
-              evalResult?.formRating === 'error'
-                ? 'bg-rose-950/85 border-rose-500 text-rose-100'
-                : evalResult?.readinessStatus === 'missing_arm_landmarks' ||
-                  evalResult?.readinessStatus === 'missing_shoulder' ||
-                  evalResult?.readinessStatus === 'missing_full_body' ||
-                  evalResult?.readinessStatus === 'missing_lower_body' ||
-                  evalResult?.readinessStatus === 'missing_head_shoulders'
-                ? 'bg-cyan-950/90 border-cyan-400 text-cyan-100 shadow-cyan-950/50'
-                : evalResult?.readinessStatus === 'partial_upper_body'
-                ? 'bg-teal-950/85 border-teal-500 text-teal-100'
-                : evalResult?.formRating === 'warning'
-                ? 'bg-amber-950/85 border-amber-500 text-amber-100'
-                : 'bg-slate-900/85 border-emerald-500/40 text-emerald-200'
-            }`}
-          >
-            <div className="text-2xl shrink-0">
-              {evalResult?.formRating === 'error'
-                ? '🚨'
-                : evalResult?.readinessStatus && evalResult.readinessStatus !== 'partial_upper_body'
-                ? '📷'
-                : evalResult?.readinessStatus === 'partial_upper_body'
-                ? '💡'
-                : evalResult?.formRating === 'warning'
-                ? '⚠️'
-                : isPendulum
-                ? '🌀'
-                : '🎯'}
-            </div>
-            <div className="flex-1">
-              <div className="text-xs sm:text-sm font-extrabold leading-snug">
-                {coachingMsg || (lang === 'zh-CN' ? '请在初始位置做好准备' : lang === 'en-US' ? 'Get ready at the starting position' : 'เตรียมพร้อมในตำแหน่งเริ่มต้น')}
-              </div>
-              {/* Hold / Pendulum Progress Bar */}
-              {progressRatio > 0 && (!evalResult?.readinessStatus || evalResult.readinessStatus === 'partial_upper_body') && (
-                <div className="w-full bg-slate-950/50 rounded-full h-2 mt-2 overflow-hidden">
-                  <div
-                    className="bg-gradient-to-r from-emerald-400 to-teal-300 h-full transition-all duration-75"
-                    style={{ width: `${Math.round(progressRatio * 100)}%` }}
-                  />
+        {(() => {
+          const isWaitingPose = Boolean(
+            evalResult?.readinessStatus &&
+            evalResult.readinessStatus !== 'ready' &&
+            evalResult.readinessStatus !== 'partial_upper_body' &&
+            hudState.repPhase === 'IDLE' &&
+            hudState.completedReps === 0
+          );
+
+          return (
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-2xl">
+              <div
+                className={`p-5 sm:p-6 rounded-3xl backdrop-blur-md border shadow-2xl transition-all duration-300 flex items-center gap-4 ${
+                  evalResult?.formRating === 'error'
+                    ? 'bg-rose-950/90 border-rose-500 text-rose-100 shadow-rose-950/60'
+                    : isWaitingPose
+                    ? 'bg-cyan-950/90 border-cyan-400 text-cyan-100 shadow-cyan-950/50'
+                    : evalResult?.readinessStatus === 'partial_upper_body'
+                    ? 'bg-teal-950/90 border-teal-500 text-teal-100 shadow-teal-950/50'
+                    : evalResult?.formRating === 'warning'
+                    ? 'bg-amber-950/90 border-amber-500 text-amber-100 shadow-amber-950/50'
+                    : 'bg-slate-900/90 border-emerald-500/60 text-emerald-100 shadow-emerald-950/60'
+                }`}
+              >
+                <div className="text-3xl shrink-0">
+                  {evalResult?.formRating === 'error'
+                    ? '🚨'
+                    : isWaitingPose
+                    ? '📷'
+                    : evalResult?.readinessStatus === 'partial_upper_body'
+                    ? '💡'
+                    : evalResult?.formRating === 'warning'
+                    ? '⚠️'
+                    : isPendulum
+                    ? '🌀'
+                    : '🎯'}
                 </div>
-              )}
-            </div>
-            {/* Live Angle or Percentage Badge */}
-            <div className="px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-700/60 font-mono text-xs sm:text-sm font-bold text-white shrink-0">
-              {evalResult?.readinessStatus && evalResult.readinessStatus !== 'partial_upper_body'
-                ? (lang === 'zh-CN' ? '等待调整' : lang === 'en-US' ? 'Adjust Pose' : 'รอจัดท่า')
-                : evalResult?.readinessStatus === 'partial_upper_body'
-                ? (isPendulum
+                <div className="flex-1">
+                  <div className="text-xl sm:text-2xl font-black leading-relaxed tracking-normal">
+                    {coachingMsg || (lang === 'zh-CN' ? '请在初始位置做好准备' : lang === 'en-US' ? 'Get ready at the starting position' : 'เตรียมพร้อมในตำแหน่งเริ่มต้น')}
+                  </div>
+                  {/* Hold / Pendulum Progress Bar */}
+                  {progressRatio > 0 && !isWaitingPose && (
+                    <div className="w-full bg-slate-950/60 rounded-full h-3 mt-2.5 overflow-hidden border border-slate-700/60">
+                      <div
+                        className="bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-300 h-full transition-all duration-75"
+                        style={{ width: `${Math.round(progressRatio * 100)}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                {/* Live Angle or Percentage Badge (Prominent 20-24px font) */}
+                <div className="px-4 py-2.5 rounded-2xl bg-slate-950/80 border-2 border-slate-700 font-mono text-xl sm:text-2xl font-black text-white shrink-0 shadow-inner">
+                  {isWaitingPose
+                    ? (lang === 'zh-CN' ? '等待调整' : lang === 'en-US' ? 'Adjust Pose' : 'รอจัดท่า')
+                    : isPendulum
                     ? `${Math.round(progressRatio * 100)}%`
-                    : `${evalResult?.currentAngleDeg || hudState.currentAngle}°`)
-                : isPendulum
-                ? `${Math.round(progressRatio * 100)}%`
-                : `${evalResult?.currentAngleDeg || hudState.currentAngle}°`}
+                    : `${evalResult?.currentAngleDeg || hudState.currentAngle}°`}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Loading Overlay */}
         {(cameraStatus === 'initializing' || modelStatus === 'loading') && !errorMessage && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
-            <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 max-w-md text-center text-white shadow-2xl">
-              <div className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center mx-auto mb-4 text-emerald-400">
-                <Activity className="w-8 h-8 animate-spin" />
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4">
+            <div className="bg-slate-900 border-2 border-emerald-500/50 rounded-3xl p-8 max-w-lg text-center text-white shadow-2xl">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center mx-auto mb-4 text-emerald-400">
+                <Activity className="w-9 h-9 animate-spin" />
               </div>
-              <div className="text-lg font-bold mb-2">⏳ กำลังโหลดระบบตรวจจับท่าทาง AI...</div>
-              <div className="text-xs text-slate-300 leading-relaxed mb-3">
-                ระบบกำลังเชื่อมต่อกล้องและดาวน์โหลดโมเดลวิเคราะห์การเคลื่อนไหว
+              <div className="text-xl sm:text-2xl font-black mb-3 text-white">
+                ⏳ {lang === 'zh-CN' ? '正在启动 AI 动作捕捉系统...' : lang === 'en-US' ? 'Initializing AI Pose Engine...' : 'กำลังโหลดระบบตรวจจับท่าทาง AI...'}
               </div>
-              <div className="text-[11px] text-emerald-400/80 bg-slate-950/60 rounded-xl px-3 py-2 border border-slate-800">
-                💡 กรุณาอนุญาตการใช้งานกล้องเว็บแคม และยืนให้เห็นร่างกายในระยะ 1.5–2 เมตร
+              <div className="text-base text-slate-300 leading-relaxed mb-4">
+                {lang === 'zh-CN' ? '系统正在连接摄像头并加载生物力学分析模型' : lang === 'en-US' ? 'Connecting camera and loading biomechanical model' : 'ระบบกำลังเชื่อมต่อกล้องและดาวน์โหลดโมเดลวิเคราะห์การเคลื่อนไหว'}
+              </div>
+              <div className="text-sm font-semibold text-emerald-300 bg-slate-950/80 rounded-2xl px-4 py-3 border border-slate-800">
+                💡 {lang === 'zh-CN' ? '请允许浏览器使用摄像头，并保持全身/上半身处于 1.5–2 米距离内' : lang === 'en-US' ? 'Please grant camera access and stand 1.5–2 meters in front of the screen' : 'กรุณาอนุญาตการใช้งานกล้องเว็บแคม และยืนให้เห็นร่างกายในระยะ 1.5–2 เมตร'}
               </div>
             </div>
           </div>
@@ -1501,27 +1600,29 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
         {/* Error Banner with Reload & Exit */}
         {errorMessage && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
-            <div className="bg-red-950/95 border-2 border-red-500 rounded-3xl p-6 sm:p-8 max-w-md text-center text-white shadow-2xl">
-              <div className="w-14 h-14 rounded-full bg-red-500/20 border border-red-400 flex items-center justify-center mx-auto mb-4 text-red-400">
-                <AlertTriangle className="w-8 h-8" />
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
+            <div className="bg-red-950/95 border-2 border-red-500 rounded-3xl p-8 max-w-lg text-center text-white shadow-2xl">
+              <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-400 flex items-center justify-center mx-auto mb-4 text-red-400">
+                <AlertTriangle className="w-9 h-9" />
               </div>
-              <div className="text-lg font-bold text-red-200 mb-2">⚠️ ระบบตรวจจับไม่สามารถทำงานได้</div>
-              <p className="text-xs text-red-100 mb-6 leading-relaxed">{errorMessage}</p>
-              <div className="flex items-center justify-center gap-3">
+              <div className="text-xl sm:text-2xl font-black text-red-200 mb-3">
+                ⚠️ {lang === 'zh-CN' ? '动作检测系统遇到错误' : lang === 'en-US' ? 'Pose Detection Error' : 'ระบบตรวจจับไม่สามารถทำงานได้'}
+              </div>
+              <p className="text-base text-red-100 mb-6 leading-relaxed">{errorMessage}</p>
+              <div className="flex items-center justify-center gap-4">
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-950/50"
+                  className="min-h-[48px] px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-base font-bold transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-950/50"
                 >
-                  ลองใหม่อีกครั้ง (Reload)
+                  {lang === 'zh-CN' ? '重新尝试 (Reload)' : lang === 'en-US' ? 'Retry (Reload)' : 'ลองใหม่อีกครั้ง (Reload)'}
                 </button>
                 <button
                   type="button"
                   onClick={onExit}
-                  className="px-5 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
+                  className="min-h-[48px] px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-2xl text-base font-bold transition active:scale-95 cursor-pointer border border-slate-700"
                 >
-                  ออกจากการฝึก
+                  {lang === 'zh-CN' ? '退出训练' : lang === 'en-US' ? 'Exit Exercise' : 'ออกจากการฝึก'}
                 </button>
               </div>
             </div>
@@ -1539,29 +1640,37 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
       {/* MODAL A: Rest Between Sets Countdown */}
       {isResting && (
-        <div className="fixed inset-0 z-40 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl bg-slate-900 border-2 border-teal-500/50 shadow-2xl p-6 text-center animate-scale-up">
-            <div className="w-16 h-16 rounded-full bg-teal-500/10 border border-teal-500/30 flex items-center justify-center mx-auto mb-4 text-teal-400 text-2xl font-bold">
-              <Clock className="w-8 h-8" />
+        <div className="fixed inset-0 z-40 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-slate-900 border-2 border-teal-500/60 shadow-2xl p-8 text-center animate-scale-up">
+            <div className="w-20 h-20 rounded-full bg-teal-500/15 border-2 border-teal-400 flex items-center justify-center mx-auto mb-4 text-teal-300 text-3xl font-bold">
+              <Clock className="w-10 h-10" />
             </div>
-            <h3 className="text-xl font-bold text-white">พักผ่อนระหว่างเซ็ต</h3>
-            <p className="text-xs text-slate-300 mt-2">
-              ทำครบเซ็ตที่ {hudState.currentSet} แล้ว พักกล้ามเนื้อสักครู่ก่อนเริ่มเซ็ตถัดไป
+            <h3 className="text-2xl sm:text-3xl font-black text-white">
+              {lang === 'zh-CN' ? '组间休息' : lang === 'en-US' ? 'Rest Between Sets' : 'พักผ่อนระหว่างเซ็ต'}
+            </h3>
+            <p className="text-base sm:text-lg text-slate-200 mt-2 font-medium">
+              {lang === 'zh-CN'
+                ? `已完成第 ${hudState.currentSet} 组，请放松肌肉稍作休息`
+                : lang === 'en-US'
+                ? `Set ${hudState.currentSet} completed. Relax your muscles before the next set.`
+                : `ทำครบเซ็ตที่ ${hudState.currentSet} แล้ว พักผ่อนกล้ามเนื้อสักครู่ก่อนเริ่มเซ็ตถัดไป`}
             </p>
 
             <div className="my-6">
-              <div className="text-5xl font-black text-teal-400 font-mono">
+              <div className="text-6xl sm:text-7xl font-black text-teal-400 font-mono">
                 {restCountdown}
               </div>
-              <div className="text-xs text-slate-400 mt-1">วินาที</div>
+              <div className="text-base text-slate-400 mt-1 font-bold">
+                {lang === 'zh-CN' ? '秒' : lang === 'en-US' ? 'seconds' : 'วินาที'}
+              </div>
             </div>
 
             <button
               type="button"
               onClick={handleNextSet}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-extrabold text-sm shadow-xl shadow-teal-900/40 transition active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+              className="w-full min-h-[52px] py-4 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black text-lg shadow-xl shadow-teal-900/40 transition active:scale-98 cursor-pointer flex items-center justify-center gap-2"
             >
-              <span>พร้อมแล้ว เริ่มเซ็ตถัดไปทันที ➔</span>
+              <span>{lang === 'zh-CN' ? '准备就绪，开始下一组 ➔' : lang === 'en-US' ? 'Ready, Start Next Set ➔' : 'พร้อมแล้ว เริ่มเซ็ตถัดไปทันที ➔'}</span>
             </button>
           </div>
         </div>
@@ -1569,25 +1678,29 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
       {/* MODAL B: Pain Reported Emergency Card */}
       {painReportedState && (
-        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl bg-slate-900 border-2 border-rose-500 shadow-2xl p-6 text-center animate-scale-up">
-            <div className="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto mb-4 text-rose-500">
-              <ShieldAlert className="w-8 h-8" />
+        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-slate-900 border-2 border-rose-500 shadow-2xl p-8 text-center animate-scale-up">
+            <div className="w-20 h-20 rounded-full bg-rose-500/20 border-2 border-rose-500 flex items-center justify-center mx-auto mb-4 text-rose-500">
+              <ShieldAlert className="w-10 h-10" />
             </div>
-            <h3 className="text-xl font-bold text-white">
-              ระบบหยุดการฝึกและแจ้งเจ้าหน้าที่แล้ว
+            <h3 className="text-2xl sm:text-3xl font-black text-white">
+              {lang === 'zh-CN' ? '训练已停止并通知医护人员' : lang === 'en-US' ? 'Session Stopped & Staff Notified' : 'ระบบหยุดการฝึกและแจ้งเจ้าหน้าที่แล้ว'}
             </h3>
-            <p className="text-xs text-slate-300 mt-2 leading-relaxed">
-              ขอให้ผู้ป่วยนั่งพักผ่อนอย่างสบายๆ ไม่ต้องกังวล เจ้าหน้าที่กายภาพบำบัดกำลังเดินทางมาดูแลท่านครับ
+            <p className="text-base sm:text-lg text-slate-200 mt-3 leading-relaxed font-medium">
+              {lang === 'zh-CN'
+                ? '请舒适坐下休息，物理治疗师马上前来为您检查协助。'
+                : lang === 'en-US'
+                ? 'Please take a seat and rest comfortably. The physical therapist has been alerted and will assist you shortly.'
+                : 'ขอให้ผู้ป่วยนั่งพักผ่อนอย่างสบายๆ ไม่ต้องกังวล เจ้าหน้าที่กายภาพบำบัดกำลังเดินทางมาดูแลท่านครับ'}
             </p>
 
-            <div className="mt-6 flex flex-col gap-3">
+            <div className="mt-8 flex flex-col gap-3">
               <button
                 type="button"
                 onClick={() => handleFinalizeSession('stopped_pain')}
-                className="w-full py-4 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-xl shadow-rose-950/50 cursor-pointer"
+                className="w-full min-h-[52px] py-4 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-lg shadow-xl shadow-rose-950/60 cursor-pointer"
               >
-                บันทึกประวัติและกลับสู่หน้าหลัก
+                {lang === 'zh-CN' ? '记录结果并返回主界面' : lang === 'en-US' ? 'Record & Return Home' : 'บันทึกประวัติและกลับสู่หน้าหลัก'}
               </button>
             </div>
           </div>
@@ -1596,47 +1709,51 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
       {/* MODAL C: End-of-Exercise Summary Card */}
       {isSummaryOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-3xl bg-slate-900 border-2 border-emerald-500/50 shadow-2xl p-6 sm:p-8 text-center animate-scale-up">
-            <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center mx-auto mb-4 text-emerald-400 shadow-xl shadow-emerald-950/40">
-              <Trophy className="w-10 h-10" />
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-xl rounded-3xl bg-slate-900 border-2 border-emerald-500/60 shadow-2xl p-8 sm:p-10 text-center animate-scale-up">
+            <div className="w-24 h-24 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center mx-auto mb-4 text-emerald-400 shadow-xl shadow-emerald-950/40">
+              <Trophy className="w-12 h-12" />
             </div>
 
-            <h2 className="text-2xl font-bold text-white mb-1">
-              ฝึกท่านี้สำเร็จแล้ว! 🎉
+            <h2 className="text-3xl sm:text-4xl font-black text-white mb-2">
+              {lang === 'zh-CN' ? '本项动作训练完成! 🎉' : lang === 'en-US' ? 'Exercise Completed! 🎉' : 'ฝึกท่านี้สำเร็จแล้ว! 🎉'}
             </h2>
-            <div className="text-xs text-emerald-400 font-medium mb-6">
-              {resolvedConfig.nameTh}
+            <div className="text-lg text-emerald-300 font-bold mb-6">
+              {titleString}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-6 text-left">
-              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-                <div className="text-[11px] text-slate-400">จำนวนครั้ง (ทำถูก / ผิด)</div>
-                <div className="text-base sm:text-lg font-bold text-emerald-400 mt-0.5">
+            <div className="grid grid-cols-2 gap-4 mb-8 text-left">
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="text-sm font-bold text-slate-300">
+                  {lang === 'zh-CN' ? '完成次数 (正确 / 代偿)' : lang === 'en-US' ? 'Reps (Correct / Rejected)' : 'จำนวนครั้ง (ทำถูก / ผิด)'}
+                </div>
+                <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1 font-mono">
                   ✅ {evalResult?.completedReps || hudState.completedReps || 0} / ❌ {evalResult?.incorrectReps || 0}
                 </div>
-                <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
-                  เป้าหมาย: {resolvedConfig.defaultPrescription?.repsPerSet || 10} ครั้ง × {resolvedConfig.defaultPrescription?.totalSets || 3} เซ็ต
+                <div className="text-xs text-slate-400 mt-1 font-semibold">
+                  {lang === 'zh-CN' ? '目标' : lang === 'en-US' ? 'Target' : 'เป้าหมาย'}: {resolvedConfig.defaultPrescription?.repsPerSet || 10} × {resolvedConfig.defaultPrescription?.totalSets || 3}
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-                <div className="text-[11px] text-slate-400">
-                  {isPendulum ? 'วิถีวงกลม (360° Cycle)' : 'มุมสูงสุดที่ทำได้'}
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="text-sm font-bold text-slate-300">
+                  {isPendulum ? (lang === 'zh-CN' ? '360° 全环轨迹' : lang === 'en-US' ? '360° Circular Orbit' : 'วิถีวงกลม (360°)') : (lang === 'zh-CN' ? '最高达标角度' : lang === 'en-US' ? 'Max Angle Achieved' : 'มุมสูงสุดที่ทำได้')}
                 </div>
-                <div className="text-base sm:text-lg font-bold text-teal-400 mt-0.5">
-                  {isPendulum ? '100% (ครบวงรอบ)' : `${evalResult?.currentAngleDeg || hudState.currentAngle || 0}°`}
+                <div className="text-2xl sm:text-3xl font-black text-teal-300 mt-1 font-mono">
+                  {isPendulum ? '100%' : `${evalResult?.currentAngleDeg || hudState.currentAngle || 0}°`}
                 </div>
-                <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                <div className="text-xs text-slate-400 mt-1 font-semibold">
                   {isPendulum
-                    ? 'ความเร็วและรัศมีอยู่ในเกณฑ์'
-                    : `เป้าหมาย: ${resolvedConfig.angleMechanics?.targetMinDeg || 80}° - ${resolvedConfig.angleMechanics?.targetMaxDeg || 100}°`}
+                    ? (lang === 'zh-CN' ? '速度与半径达标' : lang === 'en-US' ? 'Steady radius & pace' : 'ความเร็วและรัศมีอยู่ในเกณฑ์')
+                    : `${resolvedConfig.angleMechanics?.targetMinDeg || 80}° - ${resolvedConfig.angleMechanics?.targetMaxDeg || 100}°`}
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-                <div className="text-[11px] text-slate-400">ความสม่ำเสมอ (Consistency)</div>
-                <div className="text-base sm:text-lg font-bold text-cyan-400 mt-0.5">
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="text-sm font-bold text-slate-300">
+                  {lang === 'zh-CN' ? '动作稳定性 (Consistency)' : lang === 'en-US' ? 'Consistency Score' : 'ความสม่ำเสมอ'}
+                </div>
+                <div className="text-2xl sm:text-3xl font-black text-cyan-300 mt-1 font-mono">
                   {evalResult?.completedReps
                     ? Math.min(
                         100,
@@ -1648,19 +1765,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                       )
                     : 100}%
                 </div>
-                <div className="text-[10px] text-emerald-400/80 mt-0.5 font-medium">
-                  ระดับ: ดีเยี่ยม (High Reliability)
+                <div className="text-xs text-emerald-400/90 mt-1 font-semibold">
+                  {lang === 'zh-CN' ? '表现: 优秀' : lang === 'en-US' ? 'Rating: Excellent' : 'ระดับ: ดีเยี่ยม'}
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-                <div className="text-[11px] text-slate-400">สถานะการฝึก (Mode)</div>
-                <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-1 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="text-sm font-bold text-slate-300">
+                  {lang === 'zh-CN' ? '验证模式 (Mode)' : lang === 'en-US' ? 'Verification Mode' : 'สถานะการฝึก'}
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-emerald-400 mt-1 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span>AI-Verified</span>
                 </div>
-                <div className="text-[10px] text-slate-400 mt-1">
-                  ผ่านการตรวจจับด้วยระบบวิสัยทัศน์คอมพิวเตอร์
+                <div className="text-xs text-slate-400 mt-1 font-semibold">
+                  SaMD Class II Vision
                 </div>
               </div>
             </div>
@@ -1670,10 +1789,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               id="kiosk-finish-exercise-summary-btn"
               data-testid="kiosk-finish-exercise-summary-btn"
               onClick={() => handleFinalizeSession('ai_verified')}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-base shadow-xl shadow-emerald-900/50 transition active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+              className="w-full min-h-[54px] py-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-lg shadow-xl shadow-emerald-900/60 transition active:scale-98 cursor-pointer flex items-center justify-center gap-2.5"
             >
-              <span>เสร็จสิ้นและดำเนินการต่อ</span>
-              <ArrowRight className="w-5 h-5" />
+              <span>{lang === 'zh-CN' ? '完成并继续下一个动作' : lang === 'en-US' ? 'Complete & Proceed' : 'เสร็จสิ้นและดำเนินการต่อ'}</span>
+              <ArrowRight className="w-6 h-6" />
             </button>
           </div>
         </div>

@@ -95,6 +95,19 @@ describe('Mandarin Voice Feedback Synthesis (VoiceFeedbackController)', () => {
     expect(t('voice_avoid_tilt_shrug', 'zh-CN')).toBe('请保持身体直立，放松肩膀，不要耸肩');
     expect(t('voice_slow_down', 'zh-CN')).toBe('请放慢动作，保持均匀节奏');
   });
+  it('provides all newly added exercise status and distance tokens across 3 languages', () => {
+    expect(t('adjust_pose', 'th-TH')).toBe('รอจัดท่า');
+    expect(t('adjust_pose', 'en-US')).toBe('Adjust Pose');
+    expect(t('adjust_pose', 'zh-CN')).toBe('等待调整姿势');
+
+    expect(t('too_close', 'th-TH')).toBe('ใกล้เกินไป — ถอยห่างอีกนิด');
+    expect(t('too_far', 'th-TH')).toBe('ไกลเกินไป — ขยับเข้าใกล้อีกนิด');
+    expect(t('ideal_distance', 'th-TH')).toBe('ระยะพอดี');
+
+    expect(t('set_label', 'th-TH')).toBe('เซ็ตที่');
+    expect(t('reps_label', 'th-TH')).toBe('จำนวนครั้ง');
+    expect(t('exit_exercise', 'th-TH')).toBe('ออกจากการฝึก');
+  });
 });
 
 describe('GFW Immunity & Zero External CDN / Localhost Audit', () => {

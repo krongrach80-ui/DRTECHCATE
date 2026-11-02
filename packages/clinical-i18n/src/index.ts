@@ -9,7 +9,7 @@
  * - 'en-US': English (International HL7 FHIR & SaMD Class II Standard)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, createContext, useContext, useMemo } from 'react';
 
 
 export type ClinicalLanguage = 'zh-CN' | 'th-TH' | 'en-US';
@@ -238,6 +238,93 @@ export const CLINICAL_DICTIONARY = {
     'th-TH': 'ยอดเยี่ยมมาก ทำตามจังหวะต่อไป',
     'en-US': 'Great job! Keep maintaining this pace',
   },
+
+  // Exercise Session & Kiosk Status Badges
+  adjust_pose: {
+    'zh-CN': '等待调整姿势',
+    'th-TH': 'รอจัดท่า',
+    'en-US': 'Adjust Pose',
+  },
+  ready_to_start: {
+    'zh-CN': '请在初始位置做好准备',
+    'th-TH': 'เตรียมพร้อมในตำแหน่งเริ่มต้น',
+    'en-US': 'Get ready at the starting position',
+  },
+  too_close: {
+    'zh-CN': '距离过近 — 请后退',
+    'th-TH': 'ใกล้เกินไป — ถอยห่างอีกนิด',
+    'en-US': 'Too Close — Step Back',
+  },
+  too_far: {
+    'zh-CN': '距离过远 — 请靠近',
+    'th-TH': 'ไกลเกินไป — ขยับเข้าใกล้อีกนิด',
+    'en-US': 'Too Far — Step Closer',
+  },
+  ideal_distance: {
+    'zh-CN': '距离合适',
+    'th-TH': 'ระยะพอดี',
+    'en-US': 'Ideal Distance',
+  },
+  set_label: {
+    'zh-CN': '组数',
+    'th-TH': 'เซ็ตที่',
+    'en-US': 'Set',
+  },
+  reps_label: {
+    'zh-CN': '次数',
+    'th-TH': 'จำนวนครั้ง',
+    'en-US': 'Reps',
+  },
+  right_arm: {
+    'zh-CN': '🦾 右臂',
+    'th-TH': '🦾 แขนขวา',
+    'en-US': '🦾 Right Arm',
+  },
+  left_arm: {
+    'zh-CN': '左臂 🦾',
+    'th-TH': 'แขนซ้าย 🦾',
+    'en-US': 'Left Arm 🦾',
+  },
+  right_leg: {
+    'zh-CN': '🦿 右腿',
+    'th-TH': '🦿 ขาขวา',
+    'en-US': '🦿 Right Leg',
+  },
+  left_leg: {
+    'zh-CN': '左腿 🦿',
+    'th-TH': 'ขาซ้าย 🦿',
+    'en-US': 'Left Leg 🦿',
+  },
+  bilateral: {
+    'zh-CN': '双侧协同',
+    'th-TH': 'ทั้งสองข้าง',
+    'en-US': 'Bilateral',
+  },
+  exit_exercise: {
+    'zh-CN': '退出训练',
+    'th-TH': 'ออกจากการฝึก',
+    'en-US': 'Exit Exercise',
+  },
+  pause_session: {
+    'zh-CN': '🛑 暂停休息',
+    'th-TH': '🛑 พักสักครู่',
+    'en-US': '🛑 Pause',
+  },
+  resume_session: {
+    'zh-CN': '继续训练 (Resume)',
+    'th-TH': 'ทำต่อ (Resume)',
+    'en-US': 'Resume',
+  },
+  rest_between_sets: {
+    'zh-CN': '组间休息',
+    'th-TH': 'พักผ่อนระหว่างเซ็ต',
+    'en-US': 'Rest Between Sets',
+  },
+  ready_next_set: {
+    'zh-CN': '准备就绪，开始下一组 ➔',
+    'th-TH': 'พร้อมแล้ว เริ่มเซ็ตถัดไปทันที ➔',
+    'en-US': 'Ready, Start Next Set ➔',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof CLINICAL_DICTIONARY;
@@ -251,22 +338,30 @@ export function t(key: TranslationKey, lang: ClinicalLanguage = getSavedLanguage
   return entry[lang] || entry['th-TH'] || fallback || String(key);
 }
 
+export interface ClinicalI18nContextValue {
+  lang: ClinicalLanguage;
+  setLanguage: (lang: ClinicalLanguage) => void;
+  t: (key: TranslationKey, fallback?: string) => string;
+}
+
+export const ClinicalI18nContext = createContext<ClinicalI18nContextValue | null>(null);
+
 /**
- * Reactive React hook for multilingual clinical presentation
+ * Global Isolated i18n Provider to avoid full app remounts on language change
  */
-export function useClinicalI18n() {
+export const ClinicalI18nProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [lang, setLangState] = useState<ClinicalLanguage>(getSavedLanguage);
 
   useEffect(() => {
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent<ClinicalLanguage>;
-      if (customEvent.detail) {
+      if (customEvent.detail && customEvent.detail !== lang) {
         setLangState(customEvent.detail);
       }
     };
     window.addEventListener('drtech:lang_change', handler);
     return () => window.removeEventListener('drtech:lang_change', handler);
-  }, []);
+  }, [lang]);
 
   const switchLanguage = useCallback((newLang: ClinicalLanguage) => {
     setSavedLanguage(newLang);
@@ -280,8 +375,63 @@ export function useClinicalI18n() {
     [lang]
   );
 
+  const contextValue = useMemo(
+    () => ({
+      lang,
+      setLanguage: switchLanguage,
+      t: translate,
+    }),
+    [lang, switchLanguage, translate]
+  );
+
+  return React.createElement(ClinicalI18nContext.Provider, { value: contextValue }, children);
+};
+
+/**
+ * Reactive React hook for multilingual clinical presentation
+ * Consumes global ClinicalI18nContext if provided; otherwise falls back gracefully.
+ */
+export function useClinicalI18n(): ClinicalI18nContextValue {
+  const context = useContext(ClinicalI18nContext);
+  const [localLang, setLocalLang] = useState<ClinicalLanguage>(getSavedLanguage);
+
+  useEffect(() => {
+    if (context) return;
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent<ClinicalLanguage>;
+      if (customEvent.detail) {
+        setLocalLang(customEvent.detail);
+      }
+    };
+    window.addEventListener('drtech:lang_change', handler);
+    return () => window.removeEventListener('drtech:lang_change', handler);
+  }, [context]);
+
+  const switchLanguage = useCallback(
+    (newLang: ClinicalLanguage) => {
+      if (context) {
+        context.setLanguage(newLang);
+      } else {
+        setSavedLanguage(newLang);
+        setLocalLang(newLang);
+      }
+    },
+    [context]
+  );
+
+  const translate = useCallback(
+    (key: TranslationKey, fallback?: string) => {
+      return t(key, context ? context.lang : localLang, fallback);
+    },
+    [context, localLang]
+  );
+
+  if (context) {
+    return context;
+  }
+
   return {
-    lang,
+    lang: localLang,
     setLanguage: switchLanguage,
     t: translate,
   };

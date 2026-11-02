@@ -164,10 +164,20 @@ export class RepStateMachine {
     const framing = this.config.framing;
     if (!framing || landmarks.length === 0) return null;
 
+    // Never block with framing check if user is actively in middle of a rep or has completed reps
+    if (
+      this.completedReps > 0 ||
+      this.phase === 'MOVING_TO_TARGET' ||
+      this.phase === 'HOLDING_TARGET' ||
+      this.phase === 'RETURNING_TO_START'
+    ) {
+      return null;
+    }
+
     const isInFrame = (lm?: PoseEngineLandmark) =>
       Boolean(lm && lm.x >= 0.02 && lm.x <= 0.98 && lm.y >= 0.02 && lm.y <= 0.98);
     const isVisible = (lm?: PoseEngineLandmark) =>
-      Boolean(lm && (lm.visibility ?? 1.0) >= 0.40 && isInFrame(lm));
+      Boolean(lm && (lm.visibility ?? 1.0) >= 0.35 && isInFrame(lm));
 
     const isFull = framing === 'full' || framing === 'full_body' || framing === 'lower_body';
     const isHeadShoulders = framing === 'head_shoulders';
@@ -597,8 +607,15 @@ export class RepStateMachine {
       }
     }
 
-    // Occlusion warning check
-    if (lockResult?.isOccluded) {
+    // Occlusion warning check (only trigger warning message if NOT actively moving/holding in a rep)
+    const isActivelyExercising =
+      this.phase === 'MOVING_TO_TARGET' ||
+      this.phase === 'HOLDING_TARGET' ||
+      this.phase === 'RETURNING_TO_START' ||
+      this.phase === 'REP_COMPLETED' ||
+      this.completedReps > 0;
+
+    if (lockResult?.isOccluded && !isActivelyExercising) {
       formRating = 'warning';
       coachingMessage = 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน';
       activeWarnings.push({
@@ -607,7 +624,7 @@ export class RepStateMachine {
         messageTh: 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน',
         severity: 'warning',
         currentValue: lockResult.averageVisibility,
-        thresholdValue: 0.65,
+        thresholdValue: 0.50,
       });
     }
 
@@ -1054,7 +1071,8 @@ export class RepStateMachine {
     let readinessStatus: RepEvaluationResult['readinessStatus'] = 'ready';
     const activeWarnings: ActiveCompensationWarning[] = [];
 
-    if (lockResult?.isOccluded) {
+    const isPendulumActive = result.cycleProgressRatio > 0 || this.completedReps > 0;
+    if (lockResult?.isOccluded && !isPendulumActive) {
       formRating = 'warning';
       coachingMessage = 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน';
       activeWarnings.push({
@@ -1063,7 +1081,7 @@ export class RepStateMachine {
         messageTh: 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน',
         severity: 'warning',
         currentValue: lockResult.averageVisibility,
-        thresholdValue: 0.65,
+        thresholdValue: 0.50,
       });
     } else if (isUpperBodyOnly) {
       // Upper-Body Mode Active Sway: Never block rep counting and never freeze at 0%!

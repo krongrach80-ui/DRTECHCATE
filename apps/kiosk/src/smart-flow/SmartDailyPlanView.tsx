@@ -58,6 +58,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   // Dynamic AI Session & Guided Modals
   const [activeGuideConfig, setActiveGuideConfig] = useState<{ exercise: any; config: ExerciseDetectionConfig } | null>(null);
   const [activeSession, setActiveSession] = useState<{ exercise: any; config: ExerciseDetectionConfig } | null>(null);
+  const activeSessionRef = useRef(activeSession);
+  useEffect(() => {
+    activeSessionRef.current = activeSession;
+  }, [activeSession]);
+
   const [unconfiguredExercise, setUnconfiguredExercise] = useState<any | null>(null);
 
   // Minigame states
@@ -92,6 +97,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   // Fetch daily plan (with realtime event integration)
   const loadPlan = useCallback(async () => {
+    if (activeSessionRef.current) return;
     try {
       const targetId = patient.patient_id || patient.hn || '';
       const res = await defaultApiClient.smartOnboarding.getDailyPlan(targetId);
@@ -104,14 +110,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
       if (!scheduled) {
         setExercises([]);
-        setRestReason(
-          res.reason ||
-            (lang === 'zh-CN'
-              ? '今日是您的休息日，暂无训练安排'
-              : lang === 'en-US'
-              ? 'Today is your scheduled rest day'
-              : 'วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้')
-        );
+        setRestReason(res.reason || 'rest_day_default');
       } else {
         setRestReason(res.reason || '');
         let resolvedExercises = res.exercises && res.exercises.length > 0 ? res.exercises : [];
@@ -138,19 +137,13 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       setIsScheduledToday(false);
       setIsCompletedToday(false);
       setExercises([]);
-      setRestReason(
-        lang === 'zh-CN'
-          ? '未找到今日训练计划'
-          : lang === 'en-US'
-          ? 'No daily rehab schedule found'
-          : 'ไม่พบข้อมูลตารางฝึกประจำวันนี้'
-      );
+      setRestReason('no_plan_found');
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
       }
     }
-  }, [patient.patient_id, patient.hn, lang]);
+  }, [patient.patient_id, patient.hn]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -485,8 +478,12 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               : '🌿 วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้ เชิญพักผ่อนตามอัธยาศัยครับ'}
           </p>
 
-          <div className="text-xs text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-2.5 w-full mb-4">
-            {restReason || (lang === 'zh-CN' ? '今日无预约训练' : lang === 'en-US' ? 'No scheduled appointment today' : 'วันนี้ไม่มีนัดหมายในตารางฝึก')}
+          <div className="text-sm text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-2.5 w-full mb-4">
+            {restReason === 'rest_day_default'
+              ? (lang === 'zh-CN' ? '今日是您的休息日，暂无训练安排' : lang === 'en-US' ? 'Today is your scheduled rest day' : 'วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้')
+              : restReason === 'no_plan_found'
+              ? (lang === 'zh-CN' ? '未找到今日训练计划' : lang === 'en-US' ? 'No daily rehab schedule found' : 'ไม่พบข้อมูลตารางฝึกประจำวันนี้')
+              : restReason || (lang === 'zh-CN' ? '今日无预约训练' : lang === 'en-US' ? 'No scheduled appointment today' : 'วันนี้ไม่มีนัดหมายในตารางฝึก')}
           </div>
 
           {/* Call Staff Button */}

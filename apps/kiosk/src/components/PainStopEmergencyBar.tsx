@@ -8,6 +8,7 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import { Pause, Play, AlertOctagon, LogOut, Loader2 } from 'lucide-react';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 
 interface PainStopEmergencyBarProps {
   isPaused: boolean;
@@ -22,6 +23,7 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
   onReportPainStop,
   onExitSession,
 }) => {
+  const { lang, t } = useClinicalI18n();
   const [isSubmittingPain, setIsSubmittingPain] = useState(false);
   const lastClickTimeRef = useRef<number>(0);
 
@@ -45,63 +47,69 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
   }, [onReportPainStop, isSubmittingPain]);
 
   return (
-    <div className="w-full bg-slate-950/90 border-t border-slate-800 backdrop-blur-md px-4 sm:px-8 pr-32 sm:pr-40 py-3.5 flex flex-wrap items-center justify-between gap-3 z-30 select-none">
-      <div className="flex items-center gap-2">
+    <div className="w-full bg-slate-950/95 border-t border-slate-800 backdrop-blur-md px-4 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-4 z-30 select-none">
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={onExitSession}
-          className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer border border-slate-800"
+          className="min-h-[48px] px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-base font-bold flex items-center gap-2 transition active:scale-95 cursor-pointer border border-slate-700/80 shadow-sm"
           title="ออกจากเซสชันนี้"
         >
-          <LogOut className="w-4 h-4" />
-          <span className="hidden sm:inline">ออกจากการฝึก</span>
+          <LogOut className="w-5 h-5 shrink-0" />
+          <span>{t('exit_exercise', 'ออกจากการฝึก')}</span>
         </button>
 
         <button
           type="button"
           onClick={onTogglePause}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition active:scale-95 cursor-pointer border ${
+          className={`min-h-[48px] px-5 py-3 rounded-2xl text-base font-bold flex items-center gap-2.5 transition active:scale-95 cursor-pointer border shadow-sm ${
             isPaused
-              ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 hover:bg-amber-500/30'
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+              ? 'bg-amber-500/25 border-amber-500/60 text-amber-300 hover:bg-amber-500/35'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600'
           }`}
         >
           {isPaused ? (
             <>
-              <Play className="w-4 h-4 fill-amber-300" />
-              <span>ทำต่อ (Resume)</span>
+              <Play className="w-5 h-5 fill-amber-300 shrink-0" />
+              <span>{t('resume_session', 'ทำต่อ (Resume)')}</span>
             </>
           ) : (
             <>
-              <Pause className="w-4 h-4" />
-              <span>🛑 พักสักครู่</span>
+              <Pause className="w-5 h-5 shrink-0" />
+              <span>{t('pause_session', '🛑 พักสักครู่')}</span>
             </>
           )}
         </button>
       </div>
 
-      {/* Prominent Red Emergency Pain Stop Button with Idempotency Lock */}
+      {/* Prominent Red Emergency Pain Stop Button with Idempotency Lock (Min height 52px, text >= 16px) */}
       <button
         type="button"
         id="pain-stop-emergency-btn"
         data-testid="pain-stop-emergency-btn"
         disabled={isSubmittingPain}
         onClick={handlePainClick}
-        className={`px-5 py-3 rounded-2xl font-extrabold text-xs sm:text-sm shadow-lg flex items-center gap-2.5 transition active:scale-95 cursor-pointer border ${
+        className={`min-h-[52px] px-6 py-3.5 rounded-2xl font-black text-base sm:text-lg shadow-xl flex items-center gap-3 transition active:scale-95 cursor-pointer border leading-relaxed ${
           isSubmittingPain
             ? 'bg-rose-900/60 border-rose-700 text-rose-200 cursor-not-allowed opacity-80'
-            : 'bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-950/60 border-rose-400/30 animate-pulse'
+            : 'bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-950/70 border-rose-400/40 animate-pulse'
         }`}
       >
         {isSubmittingPain ? (
           <>
-            <Loader2 className="w-5 h-5 shrink-0 animate-spin" />
-            <span>กำลังแจ้งเจ้าหน้าที่...</span>
+            <Loader2 className="w-6 h-6 shrink-0 animate-spin" />
+            <span>
+              {lang === 'zh-CN'
+                ? '正在呼叫医护人员...'
+                : lang === 'en-US'
+                ? 'Notifying therapist...'
+                : 'กำลังแจ้งเจ้าหน้าที่...'}
+            </span>
           </>
         ) : (
           <>
-            <AlertOctagon className="w-5 h-5 shrink-0" />
-            <span>🚨 รู้สึกเจ็บ (หยุดและแจ้งนักกายภาพ)</span>
+            <AlertOctagon className="w-6 h-6 shrink-0" />
+            <span>{t('stopped_pain', '🚨 รู้สึกเจ็บ (หยุดฉุกเฉินและแจ้งนักกายภาพ)')}</span>
           </>
         )}
       </button>

@@ -16,6 +16,18 @@
   --font-medical-sans: 'Prompt', 'Sarabun', 'Leelawadee UI', 'Thonburi', 'Sukhumvit Set', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-heading: 'Prompt', 'Sarabun', 'Leelawadee UI', sans-serif;
   --font-body: 'Prompt', 'Sarabun', 'Leelawadee UI', sans-serif;
+
+  /* Senior & Kiosk Clinical Typography Tokens (Min 14px, WCAG AA 4.5:1, Touch Height >= 48px) */
+  --kiosk-font-min: 14px;
+  --kiosk-font-sm: 14px;
+  --kiosk-font-base: 16px;
+  --kiosk-font-lg: 18px;
+  --kiosk-font-xl: 20px;
+  --kiosk-font-2xl: 24px;
+  --kiosk-font-3xl: 30px;
+  --kiosk-font-stat: 44px;
+  --kiosk-line-height: 1.45;
+  --kiosk-touch-target-min: 48px;
 }
 
 /* Force font on ALL elements, inputs, buttons, headings, dialogs */

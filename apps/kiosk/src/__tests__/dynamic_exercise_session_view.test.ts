@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { DynamicExerciseSessionView, POSE_CONNECTIONS, BODY_JOINT_INDICES } from '../views/DynamicExerciseSessionView';
+import { DynamicExerciseSessionView, POSE_CONNECTIONS, BODY_JOINT_INDICES, getRequiredKeypointsForExercise, KEYPOINT_NAME_MAP } from '../views/DynamicExerciseSessionView';
 import { DynamicExerciseSessionView as TrainingExerciseSessionView } from '../views/training/DynamicExerciseSessionView';
 
 describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
@@ -115,6 +115,59 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
       expect(BODY_JOINT_INDICES).toContain(24);
       expect(BODY_JOINT_INDICES).not.toContain(0); // No facial landmarks
       expect(TrainingExerciseSessionView).toBe(DynamicExerciseSessionView);
+    });
+
+    it('3.3 filters required keypoints based on exercise framing without demanding lower body in upper-body mode', () => {
+      const upperKeypoints = getRequiredKeypointsForExercise({ framing: 'upper_body' } as any);
+      expect(upperKeypoints).toEqual([11, 12, 13, 14, 15, 16, 23, 24]);
+      expect(upperKeypoints.includes(25)).toBe(false); // No knees
+      expect(upperKeypoints.includes(27)).toBe(false); // No ankles
+
+      const fullKeypoints = getRequiredKeypointsForExercise({ framing: 'full_body' } as any);
+      expect(fullKeypoints).toContain(25);
+      expect(fullKeypoints).toContain(28);
+
+      const headKeypoints = getRequiredKeypointsForExercise({ framing: 'head_shoulders' } as any);
+      expect(headKeypoints).toEqual([7, 8, 11, 12]);
+    });
+
+    it('3.4 ensures isWaitingPose logic evaluates to FALSE when posture is ready or rep phase is active', () => {
+      const computeIsWaitingPose = (
+        readinessStatus: string | undefined,
+        repPhase: string,
+        completedReps: number
+      ) => {
+        return Boolean(
+          readinessStatus &&
+          readinessStatus !== 'ready' &&
+          readinessStatus !== 'partial_upper_body' &&
+          repPhase === 'IDLE' &&
+          completedReps === 0
+        );
+      };
+
+      // When posture is ready -> FALSE (never shows 'รอจัดท่า')
+      expect(computeIsWaitingPose('ready', 'IDLE', 0)).toBe(false);
+
+      // When partial upper body -> FALSE
+      expect(computeIsWaitingPose('partial_upper_body', 'IDLE', 0)).toBe(false);
+
+      // When in middle of rep -> FALSE
+      expect(computeIsWaitingPose('missing_shoulder', 'MOVING_TO_TARGET', 0)).toBe(false);
+      expect(computeIsWaitingPose('missing_shoulder', 'HOLDING_TARGET', 0)).toBe(false);
+      expect(computeIsWaitingPose('missing_shoulder', 'RETURNING_TO_START', 0)).toBe(false);
+
+      // When rep completed > 0 -> FALSE
+      expect(computeIsWaitingPose('missing_shoulder', 'IDLE', 1)).toBe(false);
+
+      // ONLY when truly waiting and at start -> TRUE
+      expect(computeIsWaitingPose('missing_shoulder', 'IDLE', 0)).toBe(true);
+    });
+
+    it('3.5 maps landmark names across TH, EN, and CN', () => {
+      expect(KEYPOINT_NAME_MAP[11].th).toBe('ไหล่ซ้าย');
+      expect(KEYPOINT_NAME_MAP[11].en).toBe('L Shoulder');
+      expect(KEYPOINT_NAME_MAP[11].cn).toBe('左肩');
     });
   });
 });

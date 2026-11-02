@@ -203,11 +203,29 @@ export class ForegroundSubjectLocker {
   private isCurrentlyOccluded: boolean = false;
 
   constructor(config: SubjectLockConfig = {}) {
-    this.minKeypointVisibility = config.minKeypointVisibility ?? 0.65;
+    this.minKeypointVisibility = config.minKeypointVisibility ?? 0.50;
     this.maxOcclusionFrames = config.maxOcclusionFrames ?? 45;
     this.maxJumpThresholdPercent = config.maxJumpThresholdPercent ?? 0.35;
     this.maxJumpDeltaTimeMs = config.maxJumpDeltaTimeMs ?? 50;
     this.primaryKeypointIndices = config.primaryKeypointIndices ?? DEFAULT_PRIMARY_KEYPOINTS;
+  }
+
+  public setPrimaryKeypoints(indices: number[]): void {
+    if (indices && indices.length > 0) {
+      this.primaryKeypointIndices = indices;
+    }
+  }
+
+  public updateConfig(config: SubjectLockConfig): void {
+    if (config.minKeypointVisibility !== undefined) {
+      this.minKeypointVisibility = config.minKeypointVisibility;
+    }
+    if (config.maxOcclusionFrames !== undefined) {
+      this.maxOcclusionFrames = config.maxOcclusionFrames;
+    }
+    if (config.primaryKeypointIndices !== undefined) {
+      this.primaryKeypointIndices = config.primaryKeypointIndices;
+    }
   }
 
   public processFrame(
