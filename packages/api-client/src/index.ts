@@ -757,10 +757,15 @@ export class ApiClient {
       fetchError = err;
     }
 
-    // Detect if primary backend was 404, 502, network failure, or non-JSON HTML (SPA redirect)
+    // Detect if primary backend was 404, 405, 502, 503, network failure, or non-JSON HTML (SPA redirect)
     const isPrimaryHtml = res && res.headers.get('content-type')?.includes('text/html');
     const isPrimary404OrFailed =
-      !res || res.status === 404 || res.status === 502 || (isPrimaryHtml && cleanEndpoint !== '/health');
+      !res ||
+      res.status === 404 ||
+      res.status === 405 ||
+      res.status === 502 ||
+      res.status === 503 ||
+      (isPrimaryHtml && cleanEndpoint !== '/health');
 
     if (isPrimary404OrFailed) {
       // 1. Direct Netlify Functions URL retry (/.netlify/functions/api/...)
