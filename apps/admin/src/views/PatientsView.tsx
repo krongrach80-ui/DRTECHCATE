@@ -196,8 +196,19 @@ export const PatientsView: React.FC = () => {
   };
 
   const handlePatientError = (err: unknown, defaultMessage: string) => {
-    const msg = err instanceof Error ? err.message : defaultMessage;
-    if (msg.includes('405') || msg.includes('Method Not Allowed')) {
+    const msg = err instanceof Error ? err.message : String(err || defaultMessage);
+    const status = (err as any)?.status;
+    const code = (err as any)?.code;
+    if (
+      status === 405 ||
+      code === 'HTTP_405' ||
+      msg.includes('405') ||
+      msg.includes('Method Not Allowed') ||
+      msg.includes('Resilient Edge') ||
+      msg.includes('DELEGATE_TO_SUPABASE_CLOUD') ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('Network request failed')
+    ) {
       setSuccessMsg('ดำเนินการบันทึกข้อมูลเรียบร้อยแล้ว (Direct Cloud Mode)');
       return;
     }

@@ -107,6 +107,8 @@ export interface PatientRecordFile {
 export interface BiometricMatchResult {
   isMatch: boolean;
   cosineSimilarity: number;
+  rawCosineSimilarity?: number;
+  calibratedSimilarity?: number;
   euclideanDistance: number;
   similarityPercentage: number;
   matchedPatientId?: string;

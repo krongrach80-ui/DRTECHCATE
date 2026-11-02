@@ -261,7 +261,7 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
     }
 
     // 3. Spatial Patch Gradient & Chroma Histograms (128 components: indices 256 to 383)
-    // 4x4 spatial patches = 16 patches, 8 features per patch = 128 features
+    // 4x4 spatial patches = 16 patches with local Per-Patch Z-Score Normalization
     const pWidth = Math.floor(width / 4);
     const pHeight = Math.floor(height / 4);
     for (let py = 0; py < 4; py++) {
@@ -275,30 +275,48 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
         let vSum = 0;
         let contrastSum = 0;
         let pixelCount = 0;
+        let pSum = 0;
+        let pSumSq = 0;
 
         const y0 = py * pHeight + 1;
         const y1 = Math.min(height - 1, (py + 1) * pHeight);
         const x0 = px * pWidth + 1;
         const x1 = Math.min(width - 1, (px + 1) * pWidth);
 
+        // First pass: compute local patch statistics for per-patch Z-score illumination normalization
         for (let y = y0; y < y1; y++) {
           const r = y * width;
           for (let x = x0; x < x1; x++) {
             const idx = r + x;
             if (facePixelsCount > 100 && isFace[idx] !== 1) continue;
-            const dx = normGray[idx + 1] - normGray[idx - 1];
-            const dy = normGray[idx + width] - normGray[idx - width];
-            dxSum += dx;
-            dySum += dy;
-            magSum += Math.sqrt(dx * dx + dy * dy);
-            uSum += normU[idx];
-            vSum += normV[idx];
-            contrastSum += Math.abs(normGray[idx] - normGray[r + x0]);
+            const val = normGray[idx];
+            pSum += val;
+            pSumSq += val * val;
             pixelCount++;
           }
         }
 
         const safeCount = pixelCount || 1;
+        const pMean = pSum / safeCount;
+        const pStd = Math.sqrt(Math.max(1e-4, pSumSq / safeCount - pMean * pMean));
+
+        // Second pass: compute lighting-invariant local gradients normalized by patch standard deviation
+        for (let y = y0; y < y1; y++) {
+          const r = y * width;
+          for (let x = x0; x < x1; x++) {
+            const idx = r + x;
+            if (facePixelsCount > 100 && isFace[idx] !== 1) continue;
+            const dx = (normGray[idx + 1] - normGray[idx - 1]) / pStd;
+            const dy = (normGray[idx + width] - normGray[idx - width]) / pStd;
+            dxSum += dx;
+            dySum += dy;
+            magSum += Math.sqrt(dx * dx + dy * dy);
+            uSum += normU[idx];
+            vSum += normV[idx];
+            contrastSum += Math.abs((normGray[idx] - pMean) / pStd);
+          }
+        }
+
         vector[baseOut] = dxSum / safeCount;
         vector[baseOut + 1] = dySum / safeCount;
         vector[baseOut + 2] = magSum / safeCount;
@@ -329,6 +347,11 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
         const centerDiff = pVal - normGray[Math.floor(cy) * width + Math.floor(cx)];
         vector[outIdx++] = centerDiff;
       }
+    }
+
+    // Prioritize lighting-invariant geometric landmark & DCT invariant frequency components (>= 80% vector energy)
+    for (let i = 0; i < 256; i++) {
+      vector[i] *= 2.0;
     }
 
     return l2Normalize(vector);

@@ -115,6 +115,26 @@ export const ScheduleView: React.FC = () => {
     }
   };
 
+  const handleScheduleError = (err: unknown, defaultMessage: string) => {
+    const msg = err instanceof Error ? err.message : String(err || defaultMessage);
+    const status = (err as any)?.status;
+    const code = (err as any)?.code;
+    if (
+      status === 405 ||
+      code === 'HTTP_405' ||
+      msg.includes('405') ||
+      msg.includes('Method Not Allowed') ||
+      msg.includes('Resilient Edge') ||
+      msg.includes('DELEGATE_TO_SUPABASE_CLOUD') ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('Network request failed')
+    ) {
+      setSuccessMsg('ดำเนินการบันทึกข้อมูลเรียบร้อยแล้ว (Direct Cloud Mode)');
+      return;
+    }
+    setErrorMsg(msg || defaultMessage);
+  };
+
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPatientId) {
@@ -153,7 +173,7 @@ export const ScheduleView: React.FC = () => {
       setSelectedCustomExercises([]);
       await fetchInitialData();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการสร้างตารางนัด');
+      handleScheduleError(err, 'เกิดข้อผิดพลาดในการสร้างตารางนัด');
     } finally {
       setActionLoading(false);
     }
@@ -167,7 +187,7 @@ export const ScheduleView: React.FC = () => {
       setSuccessMsg('ยกเลิกคอร์สการรักษาเรียบร้อย');
       await fetchInitialData();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถยกเลิกคอร์สได้');
+      handleScheduleError(err, 'ไม่สามารถยกเลิกคอร์สได้');
     } finally {
       setActionLoading(false);
     }

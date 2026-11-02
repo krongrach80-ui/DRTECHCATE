@@ -837,7 +837,7 @@ export class SmartOnboardingService {
       }
 
       for (const vec of candidateVectors) {
-        const result = evaluateBiometricMatch(probeVector, vec);
+        const result = evaluateBiometricMatch(probeVector, vec, { useCalibration: true });
         if (!nearestCandidate || result.cosineSimilarity > nearestCandidate.sim) {
           nearestCandidate = {
             name: `${record.first_name} ${record.last_name}`,
@@ -940,7 +940,7 @@ export class SmartOnboardingService {
         candidateName: nearestCandidate.name,
         candidateHn: nearestCandidate.hn,
         similarityPercentage: nearestPercent,
-        message: `ความแม่นยำ ${nearestPercent}% (ก้ำกึ่ง) เพื่อความปลอดภัยของผู้ป่วย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก`,
+        message: `⚠️ ไม่พบบัญชีในระบบที่ตรงตามเกณฑ์ 80% (ความแม่นยำ ${nearestPercent}% ก้ำกึ่ง เพื่อความปลอดภัยของผู้ป่วย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก)`,
       };
     }
 

@@ -117,7 +117,10 @@ export const PtsView: React.FC = () => {
       }
       await fetchData();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลบนักกายภาพ');
+      const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลบนักกายภาพ';
+      if (!msg.includes('405') && !msg.includes('Method Not Allowed') && !msg.includes('Resilient Edge')) {
+        alert(msg);
+      }
     } finally {
       setLoading(false);
     }

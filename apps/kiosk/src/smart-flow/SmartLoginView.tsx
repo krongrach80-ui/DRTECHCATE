@@ -23,6 +23,7 @@ import {
   defaultApiClient,
   normalizePatientRecord,
 } from '../../../../packages/api-client/src/index.js';
+import { calibrateCosineSimilarity } from '../../../../packages/smart-biometric-core/src/index.js';
 import { getFaceClientServices, preloadFaceModels } from '../services/faceClientService';
 import {
   RefreshCw,
@@ -94,6 +95,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [cameraReady, setCameraReady] = useState<boolean>(false);
   const [statusText, setStatusText] = useState<string>('กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น');
   const [unrecognizedAlert, setUnrecognizedAlert] = useState<string | null>(null);
+  const [ambiguousCandidate, setAmbiguousCandidate] = useState<{
+    id: string;
+    hn: string;
+    name: string;
+    score: number;
+  } | null>(null);
   const [matchedPatient, setMatchedPatient] = useState<PatientRecordFile | null>(null);
   const [identityAnchor, setIdentityAnchor] = useState<SpatialIdentityAnchor | null>(null);
   const [similarityInfo, setSimilarityInfo] = useState<{ percent: number; distance: number } | null>(null);
@@ -153,7 +160,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [isAboutModalOpen, setIsAboutModalOpen] = useState<boolean>(false);
 
   // Effective pause state
-  const isScanningPaused = Boolean(isPaused || isAboutModalOpen || isPinModalOpen || userDisabledCamera);
+  const isScanningPaused = Boolean(isPaused || isAboutModalOpen || isPinModalOpen || ambiguousCandidate || userDisabledCamera);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -440,31 +447,33 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       const agreementRatio = topGroup ? topGroup.samples.length / totalSamples : 0;
       const MIN_FRAME_AGREEMENT = 0.70; // Approved requirement >= 70%
 
-      // 2. Compute Median Score
-      let medianScore = 0;
-      let medianPercent = 0;
-      let medianDistance = 2.0;
+      // 2. Compute Top-3 Highest-Scoring Frames Score (Approved Top-Quartile Aggregator)
+      let aggregatedScore = 0;
+      let aggregatedPercent = 0;
+      let aggregatedDistance = 2.0;
       const topCand = topGroup?.cand || null;
 
-      if (topGroup && topGroup.samples.length > 0) {
-        const sortedScores = topGroup.samples.map((s) => s.score).sort((a, b) => a - b);
-        medianScore = sortedScores[Math.floor(sortedScores.length / 2)];
-        medianPercent = Math.max(0, Math.min(100, Math.round(medianScore * 100)));
-        medianDistance = Math.sqrt(Math.max(0, 2 - 2 * medianScore));
-      } else {
-        const allScores = samples.map((s) => s.score).sort((a, b) => a - b);
-        medianScore = allScores[Math.floor(allScores.length / 2)] || 0;
-        medianPercent = Math.max(0, Math.min(100, Math.round(medianScore * 100)));
-        medianDistance = Math.sqrt(Math.max(0, 2 - 2 * medianScore));
-      }
+      // Filter for frames that passed 3D liveness
+      const livenessPool = (topGroup ? topGroup.samples : samples).filter(
+        (s) => s.liveness?.isLive !== false
+      );
+      const evalPool = livenessPool.length >= 3 ? livenessPool : (topGroup ? topGroup.samples : samples);
+      const sortedPool = evalPool.slice().sort((a, b) => b.score - a.score);
+      const top3Samples = sortedPool.slice(0, Math.min(3, sortedPool.length));
+
+      aggregatedScore =
+        top3Samples.reduce((sum, s) => sum + s.score, 0) / (top3Samples.length || 1);
+      aggregatedPercent = Math.max(0, Math.min(100, Math.round(aggregatedScore * 100)));
+      aggregatedDistance = Math.sqrt(Math.max(0, 2 - 2 * aggregatedScore));
 
       // Candidate 2 score & Margin check
       let secondCandScore = 0;
       if (secondGroup && secondGroup.samples.length > 0) {
-        const secondSorted = secondGroup.samples.map((s) => s.score).sort((a, b) => a - b);
-        secondCandScore = secondSorted[Math.floor(secondSorted.length / 2)];
+        const secondSorted = secondGroup.samples.map((s) => s.score).sort((a, b) => b - a);
+        const top3Second = secondSorted.slice(0, Math.min(3, secondSorted.length));
+        secondCandScore = top3Second.reduce((sum, s) => sum + s, 0) / (top3Second.length || 1);
       }
-      const margin = medianScore - secondCandScore;
+      const margin = aggregatedScore - secondCandScore;
       const isMarginAmbiguous = topGroup && secondGroup && margin < 0.05; // Differ by < 5%
 
       // Non-blocking log to Supabase face_scan_logs
@@ -473,13 +482,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         body: JSON.stringify({
           patient_id: topCand?.id || null,
           hn: topCand?.hn || null,
-          cosine_similarity: medianScore,
-          euclidean_distance: medianDistance,
-          similarity_percentage: medianPercent,
+          cosine_similarity: aggregatedScore,
+          euclidean_distance: aggregatedDistance,
+          similarity_percentage: aggregatedPercent,
           samples_count: totalSamples,
           agreement_ratio: agreementRatio,
           margin,
-          passed: medianPercent >= 80 && agreementRatio >= MIN_FRAME_AGREEMENT && !isMarginAmbiguous,
+          passed: aggregatedPercent >= 80 && agreementRatio >= MIN_FRAME_AGREEMENT && !isMarginAmbiguous,
           timestamp: new Date().toISOString(),
         }),
       }).catch(() => {});
@@ -494,67 +503,84 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         } catch {}
       }
 
-      // 3. Ambiguity Gate (50% - 79% OR Margin < 5% OR Frame Agreement < 70%)
-      if (
-        (medianPercent >= 50 && medianPercent < 80) ||
-        isMarginAmbiguous ||
-        (topCand && agreementRatio < MIN_FRAME_AGREEMENT && medianPercent >= 60)
-      ) {
-        scanFailureCountRef.current++;
-        isProcessingScanRef.current = false;
-        setIsScanning(false);
-        const candName = topCand ? `คุณ ${topCand.name}` : '';
-        const msg = lang === 'zh-CN'
-          ? `匹配度 ${medianPercent}%（边界待确认）。为确保医疗安全，请使用4位PIN码验证 ${candName}`
-          : lang === 'en-US'
-          ? `Similarity ${medianPercent}% (Ambiguous). For clinical safety, please verify with 4-digit PIN ${candName}`
-          : `ความแม่นยำ ${medianPercent}% (ก้ำกึ่ง) เพื่อความปลอดภัย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก ${candName}`;
-        setStatusText(msg);
-        setUnrecognizedAlert(msg);
-        setIsPinModalOpen(true);
+      // Best probe vector from the top 3 highest-scoring frames
+      const bestSampleVectors = top3Samples.map((s) => s.vector);
+      const finalProbe = averageAndNormalize(
+        bestSampleVectors.length > 0 ? bestSampleVectors : (topGroup ? topGroup.samples.map(s => s.vector) : samples.map(s => s.vector))
+      );
+      lastProbeVectorRef.current = finalProbe.slice();
+
+      // Server-Side Verification call
+      const res = await defaultApiClient.smartOnboarding
+        .scanLogin({
+          probe: finalProbe,
+          snapshot: snapshotBase64,
+        })
+        .catch(() => null);
+
+      finalProbe.fill(0);
+
+      if (!isMountedRef.current || isScanningPaused) return;
+
+      const isServerMatch = Boolean(res && res.matched && (res as any).patient && ((res.similarityPercentage ?? 0) >= 80));
+      const isClientMatch = Boolean(aggregatedPercent >= 80 && agreementRatio >= MIN_FRAME_AGREEMENT && topCand);
+
+      // Case A: Confirmed High Match (>= 80%)
+      if (isServerMatch || isClientMatch) {
+        scanFailureCountRef.current = 0;
+        isProcessingScanRef.current = true;
+        const rawPatient = (res as any)?.patient || topCand;
+        const patient = normalizePatientRecord(rawPatient);
+        const finalPercent = res?.similarityPercentage ?? aggregatedPercent;
+        const finalDistance = typeof res?.distance === 'number' ? res.distance : aggregatedDistance;
+
+        setUnrecognizedAlert(null);
+        setAmbiguousCandidate(null);
+        setMatchedPatient(patient);
+        setSimilarityInfo({
+          percent: finalPercent,
+          distance: finalDistance,
+        });
+        setStatusText(
+          lang === 'zh-CN'
+            ? `身份验证成功：${patient.first_name}（${finalPercent}%）`
+            : lang === 'en-US'
+            ? `Identity Verified: ${patient.first_name} (${finalPercent}%)`
+            : `ยืนยันตัวตนสำเร็จ: คุณ ${patient.first_name} (${finalPercent}%)`
+        );
         return;
       }
 
-      // 4. Decision: High Match (>= 80% with >= 70% Agreement)
-      if (medianPercent >= 80 && agreementRatio >= MIN_FRAME_AGREEMENT && topCand) {
-        const candidateVectors = topGroup.samples.map((s) => s.vector);
-        const finalProbe = averageAndNormalize(candidateVectors);
-        lastProbeVectorRef.current = finalProbe.slice();
+      // Case B: Ambiguous Candidate Match (50% - 79% with candidate identified)
+      const candToCheck = topCand || (res as any)?.candidate || (res as any)?.patient;
+      const effectiveScore = res?.similarityPercentage ?? aggregatedPercent;
 
-        // Server-Side Verification call
-        const res = await defaultApiClient.smartOnboarding
-          .scanLogin({
-            probe: finalProbe,
-            snapshot: snapshotBase64,
-          })
-          .catch(() => null);
+      if (candToCheck && effectiveScore >= 50 && effectiveScore < 80) {
+        scanFailureCountRef.current++;
+        isProcessingScanRef.current = false;
+        setIsScanning(false);
+        const cName = candToCheck.name || `${(candToCheck as any).first_name || ''} ${(candToCheck as any).last_name || ''}`.trim() || 'ผู้ป่วย';
+        const cHn = candToCheck.hn || '';
+        const cId = candToCheck.id || (candToCheck as any).patient_id || '';
 
-        finalProbe.fill(0);
-
-        if (!isMountedRef.current || isScanningPaused) return;
-
-        if (res && res.matched && (res as any).patient && (res.similarityPercentage ?? 0) >= 80) {
-          scanFailureCountRef.current = 0;
-          isProcessingScanRef.current = true;
-          const patient = normalizePatientRecord((res as any).patient);
-          const finalPercent = res.similarityPercentage ?? medianPercent;
-          const finalDistance = typeof res.distance === 'number' ? res.distance : medianDistance;
-
-          setMatchedPatient(patient);
-          setSimilarityInfo({
-            percent: finalPercent,
-            distance: finalDistance,
-          });
-          setStatusText(
-            lang === 'zh-CN'
-              ? `身份验证成功：${patient.first_name}（${finalPercent}%）`
-              : lang === 'en-US'
-              ? `Identity Verified: ${patient.first_name} (${finalPercent}%)`
-              : `ยืนยันตัวตนสำเร็จ: คุณ ${patient.first_name} (${finalPercent}%)`
-          );
-          return;
-        }
+        setUnrecognizedAlert(null); // Explicitly ensure "not found" is hidden!
+        setAmbiguousCandidate({
+          id: cId,
+          hn: cHn,
+          name: cName,
+          score: effectiveScore,
+        });
+        setStatusText(
+          lang === 'zh-CN'
+            ? `匹配度 ${effectiveScore}%（需PIN验证）：${cName}`
+            : lang === 'en-US'
+            ? `Similarity ${effectiveScore}% (PIN Required): ${cName}`
+            : `ความแม่นยำ ${effectiveScore}% (ก้ำกึ่ง) กรุณายืนยัน PIN: คุณ ${cName}`
+        );
+        return;
       }
+
+      // Case C: Below threshold / Zero Match (< 50%) -> will proceed to failure path below
 
       // 5. Low Match (< 50% or unmatched): Failure path
       scanFailureCountRef.current++;
@@ -578,10 +604,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       }
 
       const failMsg = lang === 'zh-CN'
-        ? `⚠️ 未找到匹配账户（相似度 ${medianPercent}% 未达80%）。请将面部对准圆框重试，或使用PIN码登录`
+        ? `⚠️ 未找到匹配账户（相似度 ${aggregatedPercent}% 未达80%）。请将面部对准圆框重试，或使用PIN码登录`
         : lang === 'en-US'
-        ? `⚠️ Account not found (${medianPercent}% match <80% threshold). Please center face in circle or use PIN`
-        : `⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำ ${medianPercent}% ไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในกรอบวงกลมแล้วลองใหม่อีกครั้ง หรือเข้าด้วยรหัส PIN`;
+        ? `⚠️ Account not found (${aggregatedPercent}% match <80% threshold). Please center face in circle or use PIN`
+        : `⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำ ${aggregatedPercent}% ไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในกรอบวงกลมแล้วลองใหม่อีกครั้ง หรือเข้าด้วยรหัส PIN`;
       setStatusText(failMsg);
       setUnrecognizedAlert(failMsg);
 
@@ -734,7 +760,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   for (let i = 0; i < 512; i++) {
                     dot += vector[i] * cv[i];
                   }
-                  if (dot > candBestSim) candBestSim = dot;
+                  const calDot = calibrateCosineSimilarity(dot);
+                  if (calDot > candBestSim) candBestSim = calDot;
                 }
               }
               if (candBestSim > top1Sim) {
@@ -1031,6 +1058,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     resetConfirmation();
     setIdentityAnchor(null);
     setUnrecognizedAlert(null);
+    setAmbiguousCandidate(null);
     setMatchedPatient(null);
     setLivenessResult(null);
     fastLivenessVerifierRef.current.start();
@@ -1053,13 +1081,17 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     const pin = enteredPin.trim();
     if (!pin) return;
 
+    const candHn = ambiguousCandidate?.hn || undefined;
+
     try {
       const pinRes = await defaultApiClient.smartOnboarding.pinLogin({
         pin,
+        hn: candHn,
         probe: lastProbeVectorRef.current || undefined,
       });
       if (pinRes?.matched && pinRes.patient) {
-        setStatusText('เข้าสู่ระบบสำเร็จ พร้อมอัปเดตข้อมูลชีวมาตรใบหน้าล่าสุด');
+        setAmbiguousCandidate(null);
+        setStatusText('เข้าสู่ระบบสำเร็จ พร้อมอัปเดตข้อมูลชีวมาตรใบหน้าล่าสุด (Auto-Healed)');
         const norm = normalizePatientRecord(pinRes.patient);
         setIsTransitioning(true);
         setTimeout(() => {
@@ -1070,11 +1102,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     } catch {}
 
     try {
-      const res = await fetch(`/api/patients?q=${encodeURIComponent(pin)}`);
+      const res = await fetch(`/api/patients?q=${encodeURIComponent(candHn || pin)}`);
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data) ? data : data.data || [];
         if (list.length > 0) {
+          setAmbiguousCandidate(null);
           const norm = normalizePatientRecord(list[0]);
           setIsTransitioning(true);
           setTimeout(() => {
@@ -1084,7 +1117,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         }
       }
     } catch {}
-    setUnrecognizedAlert(`ไม่พบข้อมูลผู้ป่วยสำหรับรหัส "${pin}" (กรุณาตรวจสอบรหัส HN หรือลงทะเบียนคนไข้ใหม่)`);
+    setUnrecognizedAlert(`ไม่พบข้อมูลผู้ป่วยสำหรับรหัส "${pin}" (กรุณาตรวจสอบรหัส PIN หรือลงทะเบียนคนไข้ใหม่)`);
   };
 
   const handlePinKey = (digit: string) => {
@@ -1196,17 +1229,24 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                       : 'border-2 border-dashed border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.35)]'
                   }`}
                 >
-                  {/* Big Animated Countdown Number in the Center */}
+                  {/* Floating Clean Countdown & Percentage Indicators that do not obscure the face */}
                   {countdownValue !== null ? (
-                    <div className="flex flex-col items-center justify-center select-none animate-scale-up">
-                      <div className="text-7xl font-black text-white drop-shadow-[0_4px_16px_rgba(0,0,0,0.95)] tracking-tighter leading-none">
-                        {countdownValue}
+                    <>
+                      {/* Top Timer Pill */}
+                      <div className="absolute -top-7 px-3 py-1 rounded-full bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-500/50 flex items-center gap-1.5 animate-bounce z-30">
+                        <span>⏱️</span>
+                        <span>{countdownValue}s</span>
                       </div>
-                      <div className="mt-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/85 backdrop-blur-md border border-emerald-400 text-emerald-300 font-black text-xs shadow-lg flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                        <span>{realtimeScore !== null ? `${realtimeScore}%` : 'สแกน...'}</span>
-                      </div>
-                    </div>
+                      {/* Bottom Live Score Badge */}
+                      {realtimeScore !== null && (
+                        <div className="absolute -bottom-6 px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-emerald-400 text-emerald-300 font-extrabold text-[11px] shadow-lg flex items-center gap-1 z-30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                          <span>{realtimeScore}%</span>
+                        </div>
+                      )}
+                      {/* Gentle central scanning line */}
+                      <div className="w-[85%] h-0.5 bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent animate-pulse" />
+                    </>
                   ) : (
                     <div
                       className={`absolute left-[10%] w-[80%] h-0.5 ${
@@ -1724,6 +1764,82 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 className="text-xs text-slate-500 hover:text-slate-700 underline py-1 transition cursor-pointer"
               >
                 ไม่ใช่ฉัน (สแกนใหม่)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Ambiguous Candidate Identity Verification (PIN confirmation) */}
+      {ambiguousCandidate && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white border-2 border-amber-500/50 shadow-2xl p-6 text-center animate-scale-up">
+            <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto mb-3">
+              <KeyRound className="w-8 h-8 text-amber-500" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900">
+              {lang === 'zh-CN' ? '需进一步身份验证' : lang === 'en-US' ? 'Additional Verification Required' : '🔐 ยืนยันตัวตนเพิ่มเติม'}
+            </h3>
+            <div className="mt-2 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-left">
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
+                {lang === 'zh-CN' ? '匹配患者' : lang === 'en-US' ? 'Candidate Patient' : 'ข้อมูลคนไข้ที่ตรวจพบ'}
+              </div>
+              <div className="text-base font-extrabold text-slate-900 mt-0.5">
+                คุณ {ambiguousCandidate.name}
+              </div>
+              <div className="text-xs text-slate-500 font-mono">
+                HN: @{ambiguousCandidate.hn}
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 mt-3 leading-relaxed">
+              {lang === 'zh-CN'
+                ? `面部相似度为 ${ambiguousCandidate.score}%（处于临床复核区间）。为保障医疗隐私与安全，请点击下方输入4位PIN码以完成登入。`
+                : lang === 'en-US'
+                ? `Face similarity is ${ambiguousCandidate.score}% (Clinical borderline). For patient safety, please enter your 4-digit PIN to sign in.`
+                : `ความแม่นยำผลสแกนใบหน้า ${ambiguousCandidate.score}% (ก้ำกึ่ง) เพื่อความปลอดภัยทางคลินิก กรุณากรอกรหัส PIN 4 หลักเพื่อเข้าสู่ระบบ`}
+            </p>
+
+            <div className="mt-5 flex flex-col gap-2.5">
+              <button
+                type="button"
+                id="kiosk-candidate-pin-btn"
+                data-testid="kiosk-candidate-pin-btn"
+                onClick={() => {
+                  setAmbiguousCandidate(null);
+                  setIsPinModalOpen(true);
+                }}
+                className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-sm shadow-lg shadow-amber-500/25 active:scale-95 transition cursor-pointer flex items-center justify-center gap-2"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>{lang === 'zh-CN' ? '输入4位PIN码直接登入' : lang === 'en-US' ? 'Enter 4-Digit PIN to Sign In' : '🔢 กรอกรหัส PIN 4 หลักเพื่อเข้าใช้งาน'}</span>
+              </button>
+              <button
+                type="button"
+                id="kiosk-candidate-retry-btn"
+                data-testid="kiosk-candidate-retry-btn"
+                onClick={() => {
+                  setAmbiguousCandidate(null);
+                  handleResetScan();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs active:scale-95 transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>{lang === 'zh-CN' ? '重新对准并扫描' : lang === 'en-US' ? 'Re-align & Scan Again' : '🔄 สแกนใบหน้าใหม่อีกครั้ง'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAmbiguousCandidate(null);
+                  if (onStaffAssistedRegister) {
+                    onStaffAssistedRegister(pendingRegistrationBiometricsRef.current);
+                  } else if (onOpenStaffLoginModal) {
+                    onOpenStaffLoginModal();
+                  }
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs active:scale-95 transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>{lang === 'zh-CN' ? '医护人员协助办理' : lang === 'en-US' ? 'Staff-Assisted Support' : '👨‍⚕️ เจ้าหน้าที่ลงทะเบียนให้'}</span>
               </button>
             </div>
           </div>
