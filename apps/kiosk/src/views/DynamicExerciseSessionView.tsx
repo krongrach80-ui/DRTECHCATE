@@ -1240,15 +1240,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             <span>
               {showSkeletonOverlay
                 ? lang === 'zh-CN'
-                  ? '🦴 骨骼线: 开'
+                  ? '🦴 显示骨骼线: 开'
                   : lang === 'en-US'
-                  ? '🦴 Skeleton: ON'
-                  : '🦴 เส้นลำตัว: เปิด'
+                  ? '🦴 Show Skeleton: ON'
+                  : '🦴 แสดงเส้นลำตัว: เปิด'
                 : lang === 'zh-CN'
-                ? '🦴 骨骼线: 关'
+                ? '🦴 显示骨骼线: 关'
                 : lang === 'en-US'
-                ? '🦴 Skeleton: OFF'
-                : '🦴 เส้นลำตัว: ปิด'}
+                ? '🦴 Show Skeleton: OFF'
+                : '🦴 แสดงเส้นลำตัว: ปิด'}
             </span>
           </button>
 

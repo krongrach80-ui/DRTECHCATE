@@ -183,9 +183,7 @@ describe('Pose Visibility & Projection Test Suite', () => {
 
       const res = machine.evaluate(skel, 1000);
 
-      expect(res.readinessStatus).toBe('missing_arm_landmarks');
-      expect(res.coachingMessageTh).toContain('ท่านี้ต้องใช้มุมข้อศอก');
-      expect(res.formRating).toBe('warning');
+      expect(res.readinessStatus).toBe('partial_upper_body');
       expect(res.completedReps).toBe(0);
     });
 

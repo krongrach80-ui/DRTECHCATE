@@ -5,3 +5,4 @@
 
 export * from './PatientCoursePrescriptionModal';
 export { PatientCoursePrescriptionModal as default } from './PatientCoursePrescriptionModal';
+

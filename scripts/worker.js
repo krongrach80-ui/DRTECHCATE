@@ -91,30 +91,46 @@ export default {
       });
     }
 
-    // 4. SPA Deep-linking fallback for clinical portals (always use GET for index.html)
+    // 4. SPA Deep-linking fallback for clinical portals (always use GET for index.html with fresh no-cache headers)
     const spaGetReq = (targetPath) =>
       new Request(new URL(targetPath, request.url), {
         method: 'GET',
         headers: request.headers,
       });
 
+    const addNoCacheHeaders = (res) => {
+      const newHeaders = new Headers(res.headers);
+      newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      newHeaders.set('Pragma', 'no-cache');
+      newHeaders.set('Expires', '0');
+      return new Response(res.body, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: newHeaders,
+      });
+    };
+
     if (url.pathname.startsWith('/admin')) {
       const adminRes = await env.ASSETS.fetch(spaGetReq('/admin/index.html'));
-      if (adminRes.status < 400) return adminRes;
-      return env.ASSETS.fetch(spaGetReq('/index.html'));
+      if (adminRes.status < 400) return addNoCacheHeaders(adminRes);
+      const rootRes = await env.ASSETS.fetch(spaGetReq('/index.html'));
+      return addNoCacheHeaders(rootRes);
     }
     if (url.pathname.startsWith('/pt')) {
       const ptRes = await env.ASSETS.fetch(spaGetReq('/pt/index.html'));
-      if (ptRes.status < 400) return ptRes;
-      return env.ASSETS.fetch(spaGetReq('/index.html'));
+      if (ptRes.status < 400) return addNoCacheHeaders(ptRes);
+      const rootRes = await env.ASSETS.fetch(spaGetReq('/index.html'));
+      return addNoCacheHeaders(rootRes);
     }
     if (url.pathname.startsWith('/kiosk')) {
       const kioskRes = await env.ASSETS.fetch(spaGetReq('/kiosk/index.html'));
-      if (kioskRes.status < 400) return kioskRes;
-      return env.ASSETS.fetch(spaGetReq('/index.html'));
+      if (kioskRes.status < 400) return addNoCacheHeaders(kioskRes);
+      const rootRes = await env.ASSETS.fetch(spaGetReq('/index.html'));
+      return addNoCacheHeaders(rootRes);
     }
 
     // 5. Root SPA fallback
-    return env.ASSETS.fetch(spaGetReq('/index.html'));
+    const rootRes = await env.ASSETS.fetch(spaGetReq('/index.html'));
+    return addNoCacheHeaders(rootRes);
   },
 };

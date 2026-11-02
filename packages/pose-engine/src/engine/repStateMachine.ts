@@ -184,17 +184,19 @@ export class RepStateMachine {
     const isUpper = framing === 'upper' || framing === 'upper_body';
 
     if (isFull) {
-      // Lower body requires hips (23, 24), knees (25, 26), ankles (27, 28)
-      const hasLeftLower = isVisible(landmarks[23]) && isVisible(landmarks[25]) && isVisible(landmarks[27]);
-      const hasRightLower = isVisible(landmarks[24]) && isVisible(landmarks[26]) && isVisible(landmarks[28]);
+      // Lower body requires hips (23, 24), knees (25, 26), ankles (27, 28) with visibility >= 0.50
+      const isLowerVisible = (lm?: PoseEngineLandmark) =>
+        Boolean(lm && (lm.visibility ?? 1.0) >= 0.50 && isInFrame(lm));
+      const hasLeftLower = isLowerVisible(landmarks[23]) && isLowerVisible(landmarks[25]) && isLowerVisible(landmarks[27]);
+      const hasRightLower = isLowerVisible(landmarks[24]) && isLowerVisible(landmarks[26]) && isLowerVisible(landmarks[28]);
 
       if (!hasLeftLower && !hasRightLower) {
         const def = this.createDefaultResult(
           landmarks,
-          '📷 ท่านี้ต้องเห็นช่วงขาและข้อเท้า กรุณาถอยห่างจากกล้องประมาณ 2–2.5 เมตรให้เห็นเต็มตัว'
+          '📷 กรุณาถอยห่างจากกล้องให้เห็นเต็มตัว'
         );
-        def.coachingMessageEn = '📷 Full lower body required. Please step back 2–2.5 meters so hips, knees, and ankles are visible.';
-        def.coachingMessageCn = '📷 此动作需要看到腿部和脚踝，请后退 2–2.5 米以显示全身。';
+        def.coachingMessageEn = '📷 Please step back to show your full body';
+        def.coachingMessageCn = '📷 请后退以展示全身';
         def.readinessStatus = 'missing_lower_body';
         def.formRating = 'warning';
         return def;
@@ -348,19 +350,48 @@ export class RepStateMachine {
         }
       } else if (this.config.targetJoint === 'elbow') {
         const elbowIdx = triplet.vertex;
+        const shoulderIdx = triplet.pointA;
+        const wristIdx = triplet.pointB;
         const hasElbow = isCamUsable(elbowIdx, policy.elbowMinVis);
-        const hasShoulder = isCamUsable(triplet.pointA, policy.shoulderMinVis);
-        const hasWrist = isCamUsable(triplet.pointB, policy.wristMinVis);
+        const hasShoulder = isCamUsable(shoulderIdx, policy.shoulderMinVis);
+        const hasWrist = isCamUsable(wristIdx, policy.wristMinVis);
 
-        if (!hasElbow) {
-          isDistalElbowMissing = true;
-          readinessStatus = 'missing_arm_landmarks';
-          currentAngle = angleCfg.startAngleDeg;
-        } else {
+        if (hasShoulder && hasElbow && hasWrist) {
           currentAngle = triplet.use3DWorld
             ? calculateAngle3D(pA, pV, pB)
             : calculateAngle2D(pA, pV, pB);
-          readinessStatus = hasShoulder && hasWrist ? 'ready' : 'partial_upper_body';
+          readinessStatus = 'ready';
+        } else if (hasShoulder && hasElbow && !hasWrist) {
+          readinessStatus = 'partial_upper_body';
+          const synthWrist = {
+            x: pV.x + (pV.x - pA.x) * 0.5,
+            y: pV.y + 0.20,
+            z: pV.z ?? 0,
+            visibility: 0.7,
+          };
+          currentAngle = triplet.use3DWorld
+            ? calculateAngle3D(pA, pV, synthWrist)
+            : calculateAngle2D(pA, pV, synthWrist);
+        } else if (hasShoulder && (!hasElbow || !hasWrist)) {
+          // Graceful fallback to Partial Upper-Body / Shoulder Oscillation Mode
+          isUpperBodyDeskActive = true;
+          readinessStatus = 'partial_upper_body';
+
+          const oppShoulderIdx = shoulderIdx === 11 ? 12 : 11;
+          const oppShoulder = landmarks[oppShoulderIdx];
+          const nose = landmarks[0];
+          const baselineY = isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
+            ? oppShoulder.y
+            : (isCamUsable(0, 0.35) && nose ? nose.y + 0.18 : (landmarks[shoulderIdx]?.y ?? 0.35));
+
+          const upwardLift = Math.max(0, baselineY - (landmarks[shoulderIdx]?.y ?? 0.35));
+          const targetMin = angleCfg.targetMinDeg;
+          const startAngle = angleCfg.startAngleDeg;
+          const liftRatio = Math.min(1.0, upwardLift / 0.08);
+          currentAngle = startAngle + liftRatio * (targetMin - startAngle);
+        } else {
+          currentAngle = angleCfg.startAngleDeg;
+          readinessStatus = 'partial_upper_body';
         }
       } else {
         const isAUsable = isCamUsable(triplet.pointA, 0.30);
@@ -396,6 +427,7 @@ export class RepStateMachine {
     // Calculate real-time smooth accuracy percent (0%–100%)
     let accuracyPercent = 0;
     if (isDecreasing) {
+      const denom = Math.abs(startAngle - targetMax) || 1;
       if (currentAngle >= startAngle) {
         accuracyPercent = 0;
       } else if (currentAngle <= targetMax) {
@@ -403,10 +435,11 @@ export class RepStateMachine {
       } else {
         accuracyPercent = Math.min(
           100,
-          Math.max(0, Math.round(((startAngle - currentAngle) / (startAngle - targetMax)) * 100))
+          Math.max(0, Math.round(((startAngle - currentAngle) / denom) * 100))
         );
       }
     } else {
+      const denom = Math.abs(targetMin - startAngle) || 1;
       if (currentAngle <= startAngle) {
         accuracyPercent = 0;
       } else if (currentAngle >= targetMin) {
@@ -414,9 +447,12 @@ export class RepStateMachine {
       } else {
         accuracyPercent = Math.min(
           100,
-          Math.max(0, Math.round(((currentAngle - startAngle) / (targetMin - startAngle)) * 100))
+          Math.max(0, Math.round(((currentAngle - startAngle) / denom) * 100))
         );
       }
+    }
+    if (Number.isNaN(accuracyPercent)) {
+      accuracyPercent = 0;
     }
 
     const isInsideTargetZone = isDecreasing

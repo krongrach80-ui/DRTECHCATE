@@ -378,6 +378,6 @@ describe('10-Exercise Biomechanical State Machine Trajectory Simulations', () =>
 
     const res = sm.evaluate(sk, 1000);
     expect(res.readinessStatus).toBe('missing_lower_body');
-    expect(res.coachingMessageTh).toContain('กรุณาถอยห่างจากกล้องประมาณ 2–2.5 เมตร');
+    expect(res.coachingMessageTh).toContain('กรุณาถอยห่างจากกล้องให้เห็นเต็มตัว');
   });
 });
