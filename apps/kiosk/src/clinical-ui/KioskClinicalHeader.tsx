@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { StaffLoginModal } from '../../../admin/src/clinical-ui/StaffLoginModal';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
-import { LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
+import { LanguageSwitcher, useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 
 interface KioskClinicalHeaderProps {
   kioskId?: string;
@@ -41,6 +41,7 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
   onExitStaffAssistMode,
   currentStaffUser: _currentStaffUser = null,
 }) => {
+  const { lang } = useClinicalI18n();
   const [isStaffLoginOpen, setIsStaffLoginOpen] = useState(false);
 
   const handleStaffLogin = async (credentials: { username: string; password: string }) => {
@@ -120,16 +121,17 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
               )}
             </div>
           ) : (
-            /* New Patient Registration Button (Staff Protected) */
+            /* New Patient Registration Button (Strictly Staff Protected) */
             onOpenNewPatientModal && (
               <button
                 type="button"
                 id="header-open-new-patient-btn"
                 data-testid="header-open-new-patient-btn"
-                onClick={handleTriggerStaffModal}
+                onClick={onOpenNewPatientModal}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold shadow-md shadow-emerald-950/30 transition active:scale-95 cursor-pointer"
+                title="ต้องเข้าสู่ระบบเจ้าหน้าที่ก่อนลงทะเบียนผู้ป่วยใหม่"
               >
-                <span>+ ลงทะเบียนคนไข้ใหม่</span>
+                <span>👨‍⚕️ {lang === 'zh-CN' ? '医护人员注册新患者' : lang === 'en-US' ? 'Staff: Register Patient' : 'เจ้าหน้าที่ลงทะเบียนผู้ป่วยใหม่'}</span>
               </button>
             )
           )}
@@ -149,7 +151,7 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
           {/* Hospital Staff Portal Trigger */}
           <button
             id="header-open-staff-login-btn"
-            data-testid="header-open-staff-login-btn"
+            data-testid="open-staff-login-btn"
             type="button"
             onClick={handleTriggerStaffModal}
             title="เข้าสู่ระบบบุคลากร / รพ."

@@ -1152,383 +1152,279 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       <div className="absolute top-0 right-0 w-[480px] h-[480px] bg-[radial-gradient(circle_at_85%_15%,rgba(16,185,129,0.16)_0%,rgba(14,165,233,0.10)_40%,transparent_70%)] pointer-events-none z-0" />
       <div className="absolute top-6 right-7 w-52 h-52 bg-[radial-gradient(#0EA5E9_1px,transparent_1px)] bg-[size:16px_16px] opacity-20 pointer-events-none z-0" />
 
-      {/* Centered Vertical Kiosk Card */}
-      <div className="w-full max-w-[440px] bg-white border-[1.5px] border-[#1E293B] rounded-[28px] shadow-2xl shadow-emerald-950/10 p-6 flex flex-col relative z-10 animate-scale-up">
-        
-        {/* 1. Camera Box */}
-        <div className="w-full min-h-[160px] rounded-2xl relative overflow-hidden">
-          {!cameraReady ? (
-            /* Fallback Box: Yellow Amber Dashed */
-            <div className="w-full bg-[#FFFBEB] border-[1.5px] border-dashed border-[#F59E0B] rounded-2xl p-4 text-center flex flex-col items-center justify-center">
-              <div className="w-7 h-7 rounded-full border-2 border-[#F59E0B] text-[#F59E0B] flex items-center justify-center font-bold text-xs mb-1.5">
-                {userDisabledCamera || isScanningPaused ? '⏸️' : '!'}
-              </div>
-              <h3 className="text-sm font-bold text-[#78350F]">
-                {userDisabledCamera || isScanningPaused ? 'หยุดการสแกนชั่วคราว' : 'กล้องยังไม่พร้อมใช้งาน'}
-              </h3>
-              <p className="text-[11px] text-[#B45309] font-medium mt-0.5 mb-3.5">
-                {userDisabledCamera || isScanningPaused
-                  ? 'ระบบหยุดตรวจจับใบหน้าอัตโนมัติขณะเปิดเมนูอื่น หรือเมื่อกดหยุดสแกน'
-                  : 'กรุณาอนุญาตการใช้กล้อง หรือใช้รหัส PIN แทน'}
-              </p>
-
-              <button
-                type="button"
-                onClick={handleRetryCamera}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#10B981] to-[#2563EB] text-white text-xs font-bold shadow-md shadow-emerald-500/25 hover:brightness-105 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>{userDisabledCamera || isScanningPaused ? 'เปิดกล้องเริ่มสแกนใหม่' : 'ลองเปิดกล้องอีกครั้ง'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  stopCamera();
-                  setEnteredPin('');
-                  setIsPinModalOpen(true);
-                }}
-                className="w-full py-2 rounded-xl bg-white border border-[#CBD5E1] text-[#334155] text-xs font-semibold shadow-xs hover:bg-slate-50 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5 mt-2"
-              >
-                <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                <span>ใช้รหัส PIN แทน</span>
-              </button>
+      {/* Centered Vertical Full-Bleed Clinical Kiosk Card */}
+      <div className="w-full max-w-[440px] p-0 overflow-hidden aspect-[9/14] min-h-[600px] rounded-[32px] bg-[#02201C] border-[2px] border-emerald-500/40 shadow-2xl relative z-10 flex flex-col items-center justify-center animate-scale-up select-none">
+        {!cameraReady ? (
+          /* Fallback State */
+          <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-[#02201C]">
+            <div className="w-16 h-16 rounded-full border-2 border-[#F59E0B] text-[#F59E0B] flex items-center justify-center font-bold text-2xl mb-4 bg-amber-500/10">
+              {userDisabledCamera || isScanningPaused ? '⏸️' : '!'}
             </div>
-          ) : (
-            /* Active Live Camera Box */
-            <div
-              onClick={() => executeScanLogin()}
-              className="w-full h-52 rounded-2xl bg-[#02201C] border-2 border-[#10B981] relative overflow-hidden flex items-center justify-center cursor-pointer group hover:border-emerald-300 transition"
-              title="แตะที่นี่เพื่อสแกนใบหน้าทันที"
-            >
-              <canvas ref={previewCanvasRef} className="w-full h-full object-cover" />
+            <h3 className="text-base font-bold text-amber-200">
+              {userDisabledCamera || isScanningPaused ? 'หยุดการสแกนชั่วคราว' : 'กล้องยังไม่พร้อมใช้งาน'}
+            </h3>
+            <p className="text-xs text-amber-400/80 font-medium mt-1 mb-6 max-w-xs leading-relaxed">
+              {userDisabledCamera || isScanningPaused
+                ? 'ระบบหยุดตรวจจับใบหน้าอัตโนมัติขณะเปิดเมนูอื่น หรือเมื่อกดหยุดสแกน'
+                : 'กรุณาอนุญาตการใช้กล้อง หรือใช้รหัส PIN แทน'}
+            </p>
 
-              {/* Real-time Liveness Telemetry Badge */}
-              <div className="absolute top-2 inset-x-0 flex justify-center z-20 pointer-events-none">
-                <LivenessTelemetryBadge
-                  state={livenessResult?.state || 'checking'}
-                  statusMessageThai={livenessResult?.statusMessageThai}
-                  depthScore={livenessResult?.depthScore}
-                  ear={livenessResult?.ear}
-                  isBlinking={livenessResult?.blinkVerified}
-                />
-              </div>
-
-              {/* Reticle Circle / Face scan guide with 3s Countdown & Live Score % */}
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-                <div
-                  className={`w-32 h-40 rounded-full transition-all duration-300 relative flex items-center justify-center ${
-                    countdownValue !== null
-                      ? 'border-4 border-emerald-400 shadow-[0_0_35px_rgba(16,185,129,0.95)] ring-4 ring-emerald-500/40 animate-pulse'
-                      : !faceInCircle
-                      ? 'border-2 border-dashed border-amber-400/90 shadow-[0_0_20px_rgba(245,158,11,0.45)]'
-                      : livenessResult?.state === 'live_verified'
-                      ? 'border-2 border-emerald-400 shadow-[0_0_22px_rgba(16,185,129,0.55)]'
-                      : livenessResult?.state === 'spoof_blocked'
-                      ? 'border-2 border-rose-400 shadow-[0_0_22px_rgba(244,63,94,0.55)]'
-                      : 'border-2 border-dashed border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.35)]'
-                  }`}
-                >
-                  {/* Floating Clean Countdown & Percentage Indicators that do not obscure the face */}
-                  {countdownValue !== null ? (
-                    <>
-                      {/* Top Timer Pill */}
-                      <div className="absolute -top-7 px-3 py-1 rounded-full bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-500/50 flex items-center gap-1.5 animate-bounce z-30">
-                        <span>⏱️</span>
-                        <span>{countdownValue}s</span>
-                      </div>
-                      {/* Bottom Live Score Badge */}
-                      {realtimeScore !== null && (
-                        <div className="absolute -bottom-6 px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-emerald-400 text-emerald-300 font-extrabold text-[11px] shadow-lg flex items-center gap-1 z-30">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                          <span>{realtimeScore}%</span>
-                        </div>
-                      )}
-                      {/* Gentle central scanning line */}
-                      <div className="w-[85%] h-0.5 bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent animate-pulse" />
-                    </>
-                  ) : (
-                    <div
-                      className={`absolute left-[10%] w-[80%] h-0.5 ${
-                        !faceInCircle
-                          ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent'
-                          : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-bounce'
-                      } top-1/2`}
-                    />
-                  )}
-                </div>
-
-                {/* Status Pill Badge at bottom of camera box */}
-                <div className="absolute bottom-2 px-3 py-1 rounded-full bg-[#042924]/85 backdrop-blur-md border border-emerald-500/40 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5 shadow-md max-w-[90%] truncate">
-                  {countdownValue !== null ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-emerald-300 shrink-0" />
-                      <span className="text-emerald-300 truncate">
-                        {lang === 'zh-CN' ? `正在识别倒计时 ${countdownValue}...` : lang === 'en-US' ? `Counting down ${countdownValue}...` : `กำลังนับถอยหลัง ${countdownValue} วินาที...`}
-                      </span>
-                    </>
-                  ) : isScanning ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-cyan-300 shrink-0" />
-                      <span className="truncate">{statusText || t('kiosk_verifying_identity')}</span>
-                    </>
-                  ) : matchedPatient ? (
-                    <>
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                      <span className="truncate">{t('kiosk_identity_verified')}: คุณ {matchedPatient.first_name}</span>
-                    </>
-                  ) : rateLimitCooldownSec > 0 ? (
-                    <>
-                      <span className="text-amber-300 font-bold shrink-0">⏳ คูลดาวน์ {rateLimitCooldownSec}s</span>
-                    </>
-                  ) : !presenceDetected || !faceInCircle ? (
-                    <>
-                      <span className="text-amber-300 font-semibold truncate">🟡 {statusText || t('kiosk_align_face')}</span>
-                    </>
-                  ) : livenessResult?.state === 'spoof_blocked' ? (
-                    <>
-                      <span className="text-rose-300 font-semibold truncate">{t('kiosk_spoof_blocked')}</span>
-                    </>
-                  ) : livenessResult?.state === 'live_verified' ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-emerald-300 shrink-0" />
-                      <span className="text-emerald-300 font-semibold truncate">พร้อมเริ่มนับถอยหลัง</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-cyan-300 font-medium truncate">🟡 {t('kiosk_checking_liveness')}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Calibration Mode HUD Overlay */}
-              {isCalibrationOpen && (
-                <div
-                  className="absolute top-9 left-2 right-2 bg-slate-950/90 backdrop-blur-md border border-cyan-400/50 rounded-xl p-2.5 text-[10px] font-mono text-cyan-200 z-30 shadow-2xl space-y-1"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex items-center justify-between border-b border-cyan-500/30 pb-1">
-                    <span className="font-bold text-white flex items-center gap-1">
-                      🎯 Calibration HUD (250ms Median)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsCalibrationOpen(false)}
-                      className="text-slate-400 hover:text-white px-1 cursor-pointer"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 pt-0.5">
-                    <div>cos(θ): <b className="text-white">{calibrationStats?.currentCos.toFixed(3) ?? '0.000'}</b></div>
-                    <div>Euclid: <b className="text-white">{calibrationStats?.currentDist.toFixed(3) ?? '2.000'}</b></div>
-                    <div>Score: <b className="text-emerald-400">{calibrationStats?.currentPercent ?? 0}%</b></div>
-                    <div>3D Depth: <b className="text-white">{livenessResult?.depthScore.toFixed(3) ?? '0.000'}</b></div>
-                    <div>EAR: <b className="text-white">{livenessResult?.ear?.toFixed(2) ?? '0.00'}</b></div>
-                    <div>Liveness: <b className={livenessResult?.isLive ? 'text-emerald-400' : 'text-amber-400'}>{livenessResult?.state ?? 'idle'}</b></div>
-                  </div>
-                  <div className="text-[10px] text-slate-300 pt-0.5 border-t border-slate-800">
-                    Samples: <b className="text-white">{calibrationStats?.samplesCount ?? 0}</b> | Median: <b className="text-emerald-300">{calibrationStats?.medianPercent ?? 0}%</b> (Min: {calibrationStats?.minPercent ?? 0}% / Max: {calibrationStats?.maxPercent ?? 0}%)
-                  </div>
-                  {calibrationStats?.top1 && (
-                    <div className="text-[10px] text-emerald-300 truncate">
-                      Top 1: {calibrationStats.top1.name} ({calibrationStats.top1.hn}) - {calibrationStats.top1.score}%
-                    </div>
-                  )}
-                  {calibrationStats?.top2 && (
-                    <div className="text-[10px] text-slate-400 truncate">
-                      Top 2: {calibrationStats.top2.name} ({calibrationStats.top2.hn}) - {calibrationStats.top2.score}%
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Camera Orientation Controls & Calibration Button */}
-              <div className="absolute top-2 left-2 flex items-center gap-1.5 z-20" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const rotations: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
-                    const next = rotations[(rotations.indexOf(cameraRotation) + 1) % rotations.length];
-                    setCameraRotation(next);
-                    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
-                    services.camera.setRotation(next);
-                  }}
-                  className="px-2 py-1 rounded-lg bg-black/60 hover:bg-black/80 text-white text-[10px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer"
-                  title="หมุนกล้อง 90 องศา"
-                >
-                  <RotateCw className="w-3 h-3 text-cyan-300" />
-                  <span>{cameraRotation}°</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMirrored((prev) => !prev);
-                    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
-                    services.camera.setMirrorPreview(!isMirrored);
-                  }}
-                  className={`p-1.5 rounded-lg text-white text-[10px] font-semibold flex items-center backdrop-blur-sm transition border border-white/20 cursor-pointer ${
-                    isMirrored ? 'bg-emerald-600/70' : 'bg-black/60'
-                  }`}
-                  title="สลับกลับหัว / กระจก"
-                >
-                  <FlipHorizontal className="w-3 h-3 text-emerald-300" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsCalibrationOpen((prev) => !prev)}
-                  className={`px-2 py-1 rounded-lg text-white text-[10px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer ${
-                    isCalibrationOpen ? 'bg-cyan-600/80 border-cyan-400' : 'bg-black/60 hover:bg-black/80'
-                  }`}
-                  title="เปิด/ปิดโหมดสอบเทียบ (Calibration Mode)"
-                >
-                  <Activity className="w-3 h-3 text-cyan-300" />
-                  <span>Calib</span>
-                </button>
-              </div>
-
-              {/* Close/Toggle Camera button */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setUserDisabledCamera(true);
-                  stopCamera();
-                }}
-                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 text-white text-xs flex items-center justify-center hover:bg-rose-600 transition cursor-pointer z-20"
-                title="หยุดสแกน / ปิดกล้อง"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* 2. Middle Emblem & Manual Trigger */}
-        <div
-          onClick={() => executeScanLogin()}
-          className="relative w-36 h-36 mx-auto my-3 flex items-center justify-center cursor-pointer group"
-          title="แตะเพื่อเริ่มสแกนใบหน้าเข้าใช้งาน"
-        >
-          <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#38BDF8] rounded-tl-sm pointer-events-none group-hover:scale-110 transition-transform" />
-          <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#38BDF8] rounded-tr-sm pointer-events-none group-hover:scale-110 transition-transform" />
-          <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#38BDF8] rounded-bl-sm pointer-events-none group-hover:scale-110 transition-transform" />
-          <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#38BDF8] rounded-br-sm pointer-events-none group-hover:scale-110 transition-transform" />
-
-          <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-[#10B981] to-[#0EA5E9] p-0.5 flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-105 active:scale-95 transition-transform">
-            <div className="w-full h-full bg-white rounded-full border border-slate-100 flex flex-col items-center justify-center p-2 text-center">
-              <svg className="w-10 h-10 mb-0.5" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M48 20 C30 20 18 34 18 52 C18 69 31 82 48 82 C44 76 40 68 40 52 C40 38 43 27 48 20 Z" fill="#0284C7" />
-                <path d="M52 80 C70 80 82 66 82 48 C82 31 69 18 52 18 C56 24 60 32 60 48 C60 62 57 73 52 80 Z" fill="#10B981" />
-                <path d="M44 38 H56 V44 H62 V56 H56 V62 H44 V56 H38 V44 H44 Z" fill="#10B981" />
-                <path d="M47 41 H53 V47 H59 V53 H53 V59 H47 V53 H41 V47 H47 Z" fill="#0284C7" />
-                <circle cx="50" cy="50" r="4" fill="#FFFFFF" />
-              </svg>
-              <div className="text-[9px] font-extrabold text-[#0369A1] tracking-wider leading-tight">
-                DR TECH CARE
-              </div>
-              <div className="text-[6px] font-semibold text-slate-400 tracking-wider uppercase">
-                Health Technology
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. AI Instructions Green Pill Banner */}
-        <div
-          onClick={() => executeScanLogin()}
-          className="bg-[#ECFDF5] border border-[#6EE7B7] rounded-xl p-2.5 flex items-center gap-2.5 mb-2.5 text-left cursor-pointer hover:bg-emerald-100/70 active:scale-[0.99] transition shadow-xs"
-          title="แตะเพื่อเริ่มสแกน"
-        >
-          <span className="text-xl leading-none shrink-0 animate-bounce">🙌</span>
-          <div>
-            <div className="font-bold text-xs text-[#065F46] leading-snug">
-              {lang === 'zh-CN' ? '您准备好进行康复训练了吗？请举起双手或点击此处' : lang === 'en-US' ? 'Ready for rehab? Raise both hands or tap here' : 'คุณพร้อมจะกายภาพรึยัง? ยก 2 มือขึ้น หรือแตะที่นี่'}
-            </div>
-            <div className="text-[10px] text-[#059669] leading-snug mt-0.5 font-medium">
-              {lang === 'zh-CN' ? '人脸即时自动识别，或点击下方按钮登录' : lang === 'en-US' ? 'Instant auto-face scan or tap below to login' : 'สแกนใบหน้าอัตโนมัติทันที หรือแตะปุ่มด้านล่างเพื่อเข้าสู่ระบบ'}
-            </div>
-          </div>
-        </div>
-
-        {/* Action Buttons Section */}
-        <div className="w-full flex flex-col gap-2 mb-2">
-          {/* Primary Action Button: Scan Face Now */}
-          <button
-            type="button"
-            id="kiosk-scan-face-btn"
-            data-testid="kiosk-scan-face-btn"
-            disabled={isScanning || countdownValue !== null}
-            onClick={() => executeScanLogin()}
-            className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-[#10B981] via-[#059669] to-[#0284C7] hover:from-[#059669] hover:to-[#0369A1] text-white font-extrabold text-sm shadow-md shadow-emerald-500/25 active:scale-[0.98] transition cursor-pointer flex items-center justify-center gap-2 border border-emerald-400/30"
-          >
-            {countdownValue !== null ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                <span>กำลังนับถอยหลัง {countdownValue}...</span>
-              </>
-            ) : isScanning ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                <span>{t('kiosk_verifying_identity')}</span>
-              </>
-            ) : (
-              <>
-                <Camera className="w-4 h-4 text-emerald-100" />
-                <span>{t('kiosk_scan_face_now')}</span>
-              </>
-            )}
-          </button>
-
-          {/* Secondary Action Row: PIN Login & New Patient */}
-          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              id="kiosk-pin-login-btn"
-              data-testid="kiosk-pin-login-btn"
+              onClick={handleRetryCamera}
+              className="w-full max-w-xs py-3 rounded-2xl bg-gradient-to-r from-[#10B981] to-[#2563EB] text-white text-xs font-bold shadow-lg shadow-emerald-500/25 hover:brightness-105 active:scale-98 transition cursor-pointer flex items-center justify-center gap-2 mb-3"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>{userDisabledCamera || isScanningPaused ? 'เปิดกล้องเริ่มสแกนใหม่' : 'ลองเปิดกล้องอีกครั้ง'}</span>
+            </button>
+
+            <button
+              type="button"
+              id="kiosk-pin-login-btn-fallback"
               onClick={() => {
                 stopCamera();
                 setEnteredPin('');
                 setIsPinModalOpen(true);
               }}
-              className="py-2.5 px-3 rounded-xl bg-white border border-[#CBD5E1] text-[#1E293B] text-xs font-bold hover:bg-slate-50 hover:border-slate-400 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+              className="w-full max-w-xs py-3 rounded-2xl bg-slate-900/80 border border-slate-700 text-slate-200 text-xs font-semibold shadow-xs hover:bg-slate-800 active:scale-98 transition cursor-pointer flex items-center justify-center gap-2"
             >
-              <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-              <span>ใช้รหัส PIN 4 หลัก</span>
+              <KeyRound className="w-4 h-4 text-amber-400" />
+              <span>ใช้รหัส PIN แทน</span>
             </button>
+          </div>
+        ) : (
+          /* Active Live Full-Bleed Camera View */
+          <div
+            id="kiosk-scan-face-btn"
+            data-testid="kiosk-scan-face-btn"
+            onClick={() => executeScanLogin()}
+            className="w-full h-full relative inset-0 flex items-center justify-center cursor-pointer group"
+            title="แตะเพื่อสแกนใบหน้าทันที"
+          >
+            {/* Full-Bleed Canvas */}
+            <canvas ref={previewCanvasRef} className="absolute inset-0 w-full h-full object-cover" />
 
+            {/* Top-Left Camera Orientation Controls & Calibration Button */}
+            <div className="absolute top-4 left-4 flex items-center gap-1.5 z-20" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => {
+                  const rotations: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
+                  const next = rotations[(rotations.indexOf(cameraRotation) + 1) % rotations.length];
+                  setCameraRotation(next);
+                  const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+                  services.camera.setRotation(next);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold flex items-center gap-1 backdrop-blur-md transition border border-white/20 cursor-pointer shadow-md"
+                title="หมุนกล้อง 90 องศา"
+              >
+                <RotateCw className="w-3.5 h-3.5 text-cyan-300" />
+                <span>{cameraRotation}°</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMirrored((prev) => !prev);
+                  const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+                  services.camera.setMirrorPreview(!isMirrored);
+                }}
+                className={`p-2 rounded-xl text-white text-[11px] font-semibold flex items-center backdrop-blur-md transition border border-white/20 cursor-pointer shadow-md ${
+                  isMirrored ? 'bg-emerald-600/80 border-emerald-400' : 'bg-black/60 hover:bg-black/80'
+                }`}
+                title="สลับกลับหัว / กระจก"
+              >
+                <FlipHorizontal className="w-3.5 h-3.5 text-emerald-300" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCalibrationOpen((prev) => !prev)}
+                className={`px-2.5 py-1.5 rounded-xl text-white text-[11px] font-semibold flex items-center gap-1 backdrop-blur-md transition border border-white/20 cursor-pointer shadow-md ${
+                  isCalibrationOpen ? 'bg-cyan-600/80 border-cyan-400' : 'bg-black/60 hover:bg-black/80'
+                }`}
+                title="เปิด/ปิดโหมดสอบเทียบ (Calibration Mode)"
+              >
+                <Activity className="w-3.5 h-3.5 text-cyan-300" />
+                <span>Calib</span>
+              </button>
+            </div>
+
+            {/* Top-Right Close/Toggle Camera button */}
             <button
               type="button"
-              id="kiosk-enroll-new-btn"
-              data-testid="kiosk-enroll-new-btn"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
+                setUserDisabledCamera(true);
                 stopCamera();
-                if (onOpenNewPatientModal) {
-                  onOpenNewPatientModal();
-                } else {
-                  onNavigateToEnroll();
-                }
               }}
-              className="py-2.5 px-3 rounded-xl bg-white border border-blue-200 text-blue-700 text-xs font-bold hover:bg-blue-50 hover:border-blue-300 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/60 text-white text-sm flex items-center justify-center hover:bg-rose-600 backdrop-blur-md transition cursor-pointer z-20 border border-white/20 shadow-md"
+              title="หยุดสแกน / ปิดกล้อง"
             >
-              <UserPlus className="w-3.5 h-3.5 text-blue-600" />
-              <span>➕ สมัครคนไข้ใหม่</span>
+              ✕
             </button>
-          </div>
-        </div>
 
-        {/* 4. Footer Branding */}
-        <div className="text-center mt-0.5">
-          <h2 className="text-lg sm:text-xl font-extrabold text-[#064E3B] tracking-normal">
-            Dr.Tech.Care
-          </h2>
-          <div>
-            <span className="inline-block mt-1 px-3.5 py-0.5 rounded-full bg-[#ECFDF5] border border-[#A7F3D0] text-[#047857] text-[11px] font-bold">
-              ระบบกายภาพบำบัดและดูแลสุขภาพอัจฉริยะ
-            </span>
+            {/* Top-Center Real-time Liveness Telemetry Badge */}
+            <div className="absolute top-4 inset-x-0 flex justify-center z-20 pointer-events-none">
+              <LivenessTelemetryBadge
+                state={livenessResult?.state || 'checking'}
+                statusMessageThai={livenessResult?.statusMessageThai}
+                depthScore={livenessResult?.depthScore}
+                ear={livenessResult?.ear}
+                isBlinking={livenessResult?.blinkVerified}
+              />
+            </div>
+
+            {/* Calibration Mode HUD Overlay */}
+            {isCalibrationOpen && (
+              <div
+                className="absolute top-16 left-4 right-4 bg-slate-950/95 backdrop-blur-md border border-cyan-400/50 rounded-2xl p-3 text-[10px] font-mono text-cyan-200 z-30 shadow-2xl space-y-1.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-cyan-500/30 pb-1">
+                  <span className="font-bold text-white flex items-center gap-1">
+                    🎯 Calibration HUD (250ms Median)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsCalibrationOpen(false)}
+                    className="text-slate-400 hover:text-white px-1.5 py-0.5 rounded cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-1 pt-0.5">
+                  <div>cos(θ): <b className="text-white">{calibrationStats?.currentCos.toFixed(3) ?? '0.000'}</b></div>
+                  <div>Euclid: <b className="text-white">{calibrationStats?.currentDist.toFixed(3) ?? '2.000'}</b></div>
+                  <div>Score: <b className="text-emerald-400">{calibrationStats?.currentPercent ?? 0}%</b></div>
+                  <div>3D Depth: <b className="text-white">{livenessResult?.depthScore.toFixed(3) ?? '0.000'}</b></div>
+                  <div>EAR: <b className="text-white">{livenessResult?.ear?.toFixed(2) ?? '0.00'}</b></div>
+                  <div>Liveness: <b className={livenessResult?.isLive ? 'text-emerald-400' : 'text-amber-400'}>{livenessResult?.state ?? 'idle'}</b></div>
+                </div>
+                <div className="text-[10px] text-slate-300 pt-1 border-t border-slate-800">
+                  Samples: <b className="text-white">{calibrationStats?.samplesCount ?? 0}</b> | Median: <b className="text-emerald-300">{calibrationStats?.medianPercent ?? 0}%</b> (Min: {calibrationStats?.minPercent ?? 0}% / Max: {calibrationStats?.maxPercent ?? 0}%)
+                </div>
+                {calibrationStats?.top1 && (
+                  <div className="text-[10px] text-emerald-300 truncate">
+                    Top 1: {calibrationStats.top1.name} ({calibrationStats.top1.hn}) - {calibrationStats.top1.score}%
+                  </div>
+                )}
+                {calibrationStats?.top2 && (
+                  <div className="text-[10px] text-slate-400 truncate">
+                    Top 2: {calibrationStats.top2.name} ({calibrationStats.top2.hn}) - {calibrationStats.top2.score}%
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Reticle Circle / Face scan guide with 3s Countdown & Live Score % */}
+            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+              <div
+                className={`w-48 h-60 rounded-full transition-all duration-300 relative flex items-center justify-center ${
+                  countdownValue !== null
+                    ? 'border-4 border-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.95)] ring-4 ring-emerald-500/40 animate-pulse'
+                    : !faceInCircle
+                    ? 'border-2 border-dashed border-amber-400/90 shadow-[0_0_24px_rgba(245,158,11,0.45)]'
+                    : livenessResult?.state === 'live_verified'
+                    ? 'border-2 border-emerald-400 shadow-[0_0_28px_rgba(16,185,129,0.55)]'
+                    : livenessResult?.state === 'spoof_blocked'
+                    ? 'border-2 border-rose-400 shadow-[0_0_28px_rgba(244,63,94,0.55)]'
+                    : 'border-2 border-dashed border-cyan-400 shadow-[0_0_24px_rgba(6,182,212,0.35)]'
+                }`}
+              >
+                {/* Countdown Timer Pill: -top-10 */}
+                {countdownValue !== null && (
+                  <div className="absolute -top-10 px-4 py-1.5 rounded-full bg-emerald-500 text-white font-black text-sm shadow-xl shadow-emerald-500/60 flex items-center gap-1.5 animate-bounce z-30 border border-emerald-300">
+                    <span>⏱️</span>
+                    <span>{countdownValue}s</span>
+                  </div>
+                )}
+
+                {/* Live Score Badge: -bottom-9 */}
+                {realtimeScore !== null && (
+                  <div className="absolute -bottom-9 px-3.5 py-1 rounded-full bg-slate-950/95 border-2 border-emerald-400 text-emerald-300 font-black text-xs shadow-xl flex items-center gap-1.5 z-30">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span>{realtimeScore}%</span>
+                  </div>
+                )}
+
+                {/* Subtle scanning beam (does not obstruct landmarks) */}
+                {countdownValue !== null ? (
+                  <div className="w-[85%] h-0.5 bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent animate-pulse" />
+                ) : (
+                  <div
+                    className={`absolute left-[10%] w-[80%] h-0.5 ${
+                      !faceInCircle
+                        ? 'bg-gradient-to-r from-transparent via-amber-400/70 to-transparent'
+                        : 'bg-gradient-to-r from-transparent via-cyan-400/70 to-transparent animate-bounce'
+                    } top-1/2`}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Floating Overlays: Status Pill & PIN Button */}
+            <div className="absolute bottom-5 inset-x-4 flex flex-col items-center gap-2.5 z-20 pointer-events-none">
+              {/* Status Pill Badge */}
+              <div className="px-4 py-1.5 rounded-full bg-[#042924]/90 backdrop-blur-md border border-emerald-500/50 text-xs font-bold text-emerald-300 flex items-center gap-2 shadow-lg max-w-[90%] truncate">
+                {countdownValue !== null ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-300 shrink-0" />
+                    <span className="text-emerald-300 truncate">
+                      {lang === 'zh-CN' ? `正在识别倒计时 ${countdownValue}...` : lang === 'en-US' ? `Counting down ${countdownValue}...` : `กำลังนับถอยหลัง ${countdownValue} วินาที...`}
+                    </span>
+                  </>
+                ) : isScanning ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-300 shrink-0" />
+                    <span className="truncate">{statusText || t('kiosk_verifying_identity')}</span>
+                  </>
+                ) : matchedPatient ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">{t('kiosk_identity_verified')}: คุณ {matchedPatient.first_name}</span>
+                  </>
+                ) : rateLimitCooldownSec > 0 ? (
+                  <>
+                    <span className="text-amber-300 font-bold shrink-0">⏳ คูลดาวน์ {rateLimitCooldownSec}s</span>
+                  </>
+                ) : !presenceDetected || !faceInCircle ? (
+                  <>
+                    <span className="text-amber-300 font-semibold truncate">🟡 {statusText || t('kiosk_align_face')}</span>
+                  </>
+                ) : livenessResult?.state === 'spoof_blocked' ? (
+                  <>
+                    <span className="text-rose-300 font-semibold truncate">{t('kiosk_spoof_blocked')}</span>
+                  </>
+                ) : livenessResult?.state === 'live_verified' ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-300 shrink-0" />
+                    <span className="text-emerald-300 font-semibold truncate">พร้อมเริ่มนับถอยหลัง</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-cyan-300 font-medium truncate">🟡 {t('kiosk_checking_liveness')}</span>
+                  </>
+                )}
+              </div>
+
+              {/* Floating PIN Button Shortcut */}
+              <button
+                type="button"
+                id="kiosk-pin-login-btn"
+                data-testid="kiosk-pin-login-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  stopCamera();
+                  setEnteredPin('');
+                  setIsPinModalOpen(true);
+                }}
+                className="pointer-events-auto py-2.5 px-5 rounded-2xl bg-white/95 hover:bg-white border border-emerald-500/30 text-slate-900 text-xs font-bold shadow-xl hover:-translate-y-0.5 active:scale-95 transition cursor-pointer flex items-center justify-center gap-2 backdrop-blur-md"
+              >
+                <KeyRound className="w-4 h-4 text-amber-600" />
+                <span>ใช้รหัส PIN 4 หลัก</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Bottom Smooth Mint Waves */}
@@ -1552,21 +1448,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         >
           <Info className="w-3.5 h-3.5 text-slate-500" />
           <span>เกี่ยวกับระบบ</span>
-        </button>
-
-        <button
-          id="open-staff-login-btn"
-          data-testid="open-staff-login-btn"
-          type="button"
-          onClick={() => {
-            stopCamera();
-            onOpenStaffLoginModal?.();
-          }}
-          title="เข้าสู่ระบบบุคลากร / รพ."
-          className="px-4 py-1.5 rounded-full bg-white border-[1.5px] border-[#10B981] text-[#065F46] text-xs font-bold shadow-md shadow-emerald-500/15 hover:-translate-y-0.5 active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
-        >
-          <Shield className="w-3.5 h-3.5 text-emerald-600" />
-          <span>🛡️ เข้าสู่ระบบบุคลากร / รพ.</span>
         </button>
       </div>
 

@@ -2,21 +2,21 @@ import { describe, it, expect } from 'vitest';
 import { calibrateCosineSimilarity, evaluateBiometricMatch } from '../src/vectorMath';
 
 describe('Biometric Cosine Similarity Calibration Curve', () => {
-  it('maps raw cosine >= 0.48 to >= 82% similarity (genuine patient range)', () => {
+  it('maps raw cosine >= 0.48 to >= 85% similarity (genuine patient range)', () => {
     // 0.48 threshold
     const at48 = calibrateCosineSimilarity(0.48);
-    expect(at48).toBeGreaterThanOrEqual(0.82);
-    expect(Math.round(at48 * 100)).toBe(82);
+    expect(at48).toBeGreaterThanOrEqual(0.85);
+    expect(Math.round(at48 * 100)).toBe(85);
 
     // 0.52 (live test scenario: คุณ พัทดนย์ ผ่องอารมย์)
     const at52 = calibrateCosineSimilarity(0.52);
-    expect(at52).toBeGreaterThanOrEqual(0.83);
-    expect(Math.round(at52 * 100)).toBeGreaterThanOrEqual(83);
+    expect(at52).toBeGreaterThanOrEqual(0.86);
+    expect(Math.round(at52 * 100)).toBeGreaterThanOrEqual(86);
 
     // High cosine 0.70
     const at70 = calibrateCosineSimilarity(0.70);
-    expect(at70).toBeGreaterThanOrEqual(0.90);
-    expect(Math.round(at70 * 100)).toBeGreaterThanOrEqual(90);
+    expect(at70).toBeGreaterThanOrEqual(0.91);
+    expect(Math.round(at70 * 100)).toBeGreaterThanOrEqual(91);
 
     // Near 1.0
     const at95 = calibrateCosineSimilarity(0.95);
@@ -70,3 +70,4 @@ describe('Biometric Cosine Similarity Calibration Curve', () => {
     expect(match35.isMatch).toBe(false);
   });
 });
+

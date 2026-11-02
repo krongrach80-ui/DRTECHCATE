@@ -10506,11 +10506,11 @@ function computeAverageVector(vectors) {
 }
 function calibrateCosineSimilarity(rawCos) {
   if (rawCos >= 0.85) {
-    return Math.min(1, 0.98 + Math.max(0, (rawCos - 0.85) / 0.15) * 0.02);
+    return Math.min(1, 0.96 + Math.max(0, (rawCos - 0.85) / 0.15) * 0.04);
   }
   if (rawCos >= 0.48) {
     const t = (rawCos - 0.48) / (0.85 - 0.48);
-    return 0.82 + t * (0.98 - 0.82);
+    return 0.85 + t * (0.96 - 0.85);
   }
   if (rawCos >= 0.38) {
     const t = (rawCos - 0.38) / (0.48 - 0.38);

@@ -78,12 +78,12 @@ export function computeAverageVector(vectors: number[][]): number[] {
  */
 export function calibrateCosineSimilarity(rawCos: number): number {
   if (rawCos >= 0.85) {
-    return Math.min(1.0, 0.98 + Math.max(0, (rawCos - 0.85) / 0.15) * 0.02);
+    return Math.min(1.0, 0.96 + Math.max(0, (rawCos - 0.85) / 0.15) * 0.04);
   }
   if (rawCos >= 0.48) {
-    // [0.48, 0.85) -> [0.82, 0.98)
+    // [0.48, 0.85) -> [0.85, 0.96) (85%–96% for genuine patient range)
     const t = (rawCos - 0.48) / (0.85 - 0.48);
-    return 0.82 + t * (0.98 - 0.82);
+    return 0.85 + t * (0.96 - 0.85);
   }
   if (rawCos >= 0.38) {
     // [0.38, 0.48) -> [0.45, 0.80) (Ambiguous candidate zone)
