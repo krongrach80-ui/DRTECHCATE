@@ -19,6 +19,7 @@ interface SmartFlowControllerProps {
   customDetector?: FaceDetector;
   onOpenStaffLoginModal?: () => void;
   onOpenNewPatientModal?: () => void;
+  onStaffAssistedRegister?: (biometrics: any) => void;
   onStepChange?: (step: SmartFlowStep) => void;
   isPaused?: boolean;
 }
@@ -27,6 +28,7 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
   customDetector,
   onOpenStaffLoginModal,
   onOpenNewPatientModal,
+  onStaffAssistedRegister,
   onStepChange,
   isPaused,
 }) => {
@@ -82,6 +84,7 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
             customDetector={customDetector}
             onOpenStaffLoginModal={onOpenStaffLoginModal}
             onOpenNewPatientModal={onOpenNewPatientModal}
+            onStaffAssistedRegister={onStaffAssistedRegister}
             isPaused={isPaused}
           />
         )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   KioskStateMachine,
   KioskState,
@@ -64,6 +64,8 @@ function getInitialAuthState(): { mode: RoleMode; user: UserProfile | null } {
   return { mode: 'kiosk', user: storedUser };
 }
 
+const STAFF_ASSIST_TIMEOUT_MS = 10 * 60 * 1000;
+
 export const App: React.FC = () => {
   const initialAuth = useMemo(() => getInitialAuthState(), []);
   const [roleMode, setRoleMode] = useState<RoleMode>(initialAuth.mode);
@@ -81,6 +83,69 @@ export const App: React.FC = () => {
   const [isPaired, setIsPaired] = useState<boolean>(true);
   const [isDetectorReady, setIsDetectorReady] = useState<boolean>(false);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
+
+  // Staff-Assisted Kiosk Patient Registration States
+  const [authIntent, setAuthIntent] = useState<'kiosk_patient_registration' | 'general'>('general');
+  const [pendingRegistrationBiometrics, setPendingRegistrationBiometrics] = useState<any | null>(null);
+  const [staffAssistRemainingSec, setStaffAssistRemainingSec] = useState<number | null>(null);
+  const staffAssistWatchdogRef = useRef<number>(0);
+
+  const handleExitStaffAssistMode = useCallback(() => {
+    setStaffAssistRemainingSec(null);
+    setPendingRegistrationBiometrics(null);
+    setAuthIntent('general');
+    setIsNewPatientModalOpen(false);
+    setIsStaffLoginModalOpen(false);
+    defaultApiClient.setAuthToken(null);
+    defaultApiClient.setUserProfile(null);
+    try {
+      localStorage.removeItem('drtech_user_profile');
+      sessionStorage.removeItem('drtech_auth_token');
+    } catch {}
+    setRoleMode('kiosk');
+  }, []);
+
+  const isStaffAssistActive = staffAssistRemainingSec !== null;
+
+  // 10-Minute Activity Watchdog Timer for Staff-Assisted Mode
+  useEffect(() => {
+    if (!isStaffAssistActive) return;
+
+    staffAssistWatchdogRef.current = Date.now() + STAFF_ASSIST_TIMEOUT_MS;
+
+    const interval = setInterval(() => {
+      const remainingMs = staffAssistWatchdogRef.current - Date.now();
+      const sec = Math.max(0, Math.floor(remainingMs / 1000));
+      setStaffAssistRemainingSec(sec);
+      if (sec <= 0) {
+        clearInterval(interval);
+        handleExitStaffAssistMode();
+      }
+    }, 1000);
+
+    // Reset watchdog on user interaction
+    const resetWatchdog = () => {
+      staffAssistWatchdogRef.current = Date.now() + STAFF_ASSIST_TIMEOUT_MS;
+      setStaffAssistRemainingSec(600);
+    };
+
+    window.addEventListener('pointerdown', resetWatchdog);
+    window.addEventListener('keydown', resetWatchdog);
+    window.addEventListener('touchstart', resetWatchdog);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('pointerdown', resetWatchdog);
+      window.removeEventListener('keydown', resetWatchdog);
+      window.removeEventListener('touchstart', resetWatchdog);
+    };
+  }, [isStaffAssistActive, handleExitStaffAssistMode]);
+
+  const handleStaffAssistedRegister = useCallback((biometrics: any) => {
+    setPendingRegistrationBiometrics(biometrics);
+    setAuthIntent('kiosk_patient_registration');
+    setIsStaffLoginModalOpen(true);
+  }, []);
 
   const fetchStaffCalls = useCallback(async () => {
     if (!currentStaffUser) return;
@@ -181,6 +246,23 @@ export const App: React.FC = () => {
       if (user) {
         const uname = (user.username || credentials.username || '').toLowerCase();
         const role = (user.role || res.role || '').toLowerCase();
+
+        const isAllowedStaff =
+          role === 'admin' ||
+          role === 'super_admin' ||
+          role === 'director' ||
+          uname === 'director' ||
+          uname === 'admin' ||
+          role === 'pt' ||
+          role === 'therapist' ||
+          uname.startsWith('pt');
+
+        if (!isAllowedStaff) {
+          throw new Error(
+            '⛔ บัญชีนี้ไม่มีสิทธิ์ลงทะเบียนผู้ป่วยใหม่ (อนุญาตเฉพาะ Admin, Super Admin และนักกายภาพบำบัดเท่านั้น)'
+          );
+        }
+
         const fullUser: UserProfile = {
           ...user,
           username: user.username || credentials.username,
@@ -193,6 +275,14 @@ export const App: React.FC = () => {
         } catch {
           // ignore localStorage error
         }
+
+        if (authIntent === 'kiosk_patient_registration') {
+          setIsStaffLoginModalOpen(false);
+          setStaffAssistRemainingSec(600); // Start 10-minute session
+          setIsNewPatientModalOpen(true);
+          return;
+        }
+
         setIsStaffLoginModalOpen(false);
         await fetchStaffCalls();
         if (role === 'admin' || role === 'director' || uname === 'director' || uname === 'admin') {
@@ -210,7 +300,7 @@ export const App: React.FC = () => {
         }
       }
     },
-    [fetchStaffCalls]
+    [authIntent, fetchStaffCalls]
   );
 
   const handleStaffLogout = useCallback(async () => {
@@ -234,11 +324,15 @@ export const App: React.FC = () => {
 
   const handleReturnToKiosk = useCallback(() => {
     setIsStaffLoginModalOpen(false);
+    if (authIntent === 'kiosk_patient_registration') {
+      setPendingRegistrationBiometrics(null);
+      setAuthIntent('general');
+    }
     setRoleMode('kiosk');
     if (window.location.pathname !== '/') {
       window.history.pushState({ mode: 'kiosk' }, '', '/');
     }
-  }, []);
+  }, [authIntent]);
 
   const handleOpenStaffLoginModal = useCallback(async () => {
     if (currentStaffUser) {
@@ -442,15 +536,31 @@ export const App: React.FC = () => {
         <KioskClinicalHeader
           kioskId={kioskId}
           onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากตู้ Kiosk')}
-          onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
-          onOpenStaffLoginModal={handleOpenStaffLoginModal}
+          onOpenNewPatientModal={() => {
+            setAuthIntent('kiosk_patient_registration');
+            setIsStaffLoginModalOpen(true);
+          }}
+          onOpenStaffLoginModal={() => {
+            setAuthIntent('general');
+            handleOpenStaffLoginModal();
+          }}
+          staffAssistRemainingSec={staffAssistRemainingSec}
+          onExitStaffAssistMode={handleExitStaffAssistMode}
+          currentStaffUser={currentStaffUser}
         />
 
         <div className="flex-1 overflow-hidden relative">
           <SmartFlowController
             onStepChange={setSmartStep}
-            onOpenStaffLoginModal={handleOpenStaffLoginModal}
-            onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
+            onOpenStaffLoginModal={() => {
+              setAuthIntent('general');
+              handleOpenStaffLoginModal();
+            }}
+            onOpenNewPatientModal={() => {
+              setAuthIntent('kiosk_patient_registration');
+              setIsStaffLoginModalOpen(true);
+            }}
+            onStaffAssistedRegister={handleStaffAssistedRegister}
             isPaused={isStaffLoginModalOpen || isNewPatientModalOpen || isPairingOpen || roleMode !== 'kiosk'}
           />
         </div>
@@ -458,8 +568,13 @@ export const App: React.FC = () => {
         {/* Staff Login Modal */}
         <StaffLoginModal
           isOpen={isStaffLoginModalOpen}
+          authIntent={authIntent}
           onClose={() => {
             setIsStaffLoginModalOpen(false);
+            if (authIntent === 'kiosk_patient_registration') {
+              setPendingRegistrationBiometrics(null);
+              setAuthIntent('general');
+            }
             if (roleMode === 'kiosk' && window.location.pathname !== '/') {
               window.history.pushState({ mode: 'kiosk' }, '', '/');
             }
@@ -471,9 +586,17 @@ export const App: React.FC = () => {
         {/* 3-Step New Patient Registration Modal */}
         <NewPatientRegistrationModal
           isOpen={isNewPatientModalOpen}
-          onClose={() => setIsNewPatientModalOpen(false)}
+          staffUser={currentStaffUser}
+          initialBiometrics={pendingRegistrationBiometrics}
+          onClose={() => {
+            setIsNewPatientModalOpen(false);
+            if (staffAssistRemainingSec !== null) {
+              handleExitStaffAssistMode();
+            }
+          }}
           onSuccess={(_newPatientId) => {
             setIsNewPatientModalOpen(false);
+            handleExitStaffAssistMode();
           }}
         />
       </div>

@@ -20,7 +20,16 @@ interface KioskClinicalHeaderProps {
   onStaffLoginSuccess?: () => void;
   onOpenNewPatientModal?: () => void;
   onOpenStaffLoginModal?: () => void;
+  staffAssistRemainingSec?: number | null;
+  onExitStaffAssistMode?: () => void;
+  currentStaffUser?: any | null;
 }
+
+const formatRemainingTime = (totalSeconds: number) => {
+  const m = Math.floor(Math.max(0, totalSeconds) / 60);
+  const s = Math.max(0, totalSeconds) % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
 
 export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
   kioskId = 'kiosk-01',
@@ -28,6 +37,9 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
   onStaffLoginSuccess,
   onOpenNewPatientModal,
   onOpenStaffLoginModal,
+  staffAssistRemainingSec = null,
+  onExitStaffAssistMode,
+  currentStaffUser: _currentStaffUser = null,
 }) => {
   const [isStaffLoginOpen, setIsStaffLoginOpen] = useState(false);
 
@@ -87,15 +99,39 @@ export const KioskClinicalHeader: React.FC<KioskClinicalHeaderProps> = ({
             <span>Cloud Online ●</span>
           </div>
 
-          {/* New Patient Registration Button */}
-          {onOpenNewPatientModal && (
-            <button
-              type="button"
-              onClick={onOpenNewPatientModal}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold shadow-md shadow-emerald-950/30 transition active:scale-95 cursor-pointer"
+          {/* Staff Assisted Active Session Badge */}
+          {staffAssistRemainingSec !== null ? (
+            <div
+              id="kiosk-staff-session-indicator"
+              data-testid="kiosk-staff-session-indicator"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-teal-500/20 border border-teal-400/50 text-teal-200 text-xs font-bold animate-pulse"
             >
-              <span>+ ลงทะเบียนคนไข้ใหม่</span>
-            </button>
+              <span>👨‍⚕️ โหมดเจ้าหน้าที่ ({formatRemainingTime(staffAssistRemainingSec)})</span>
+              {onExitStaffAssistMode && (
+                <button
+                  type="button"
+                  id="kiosk-exit-staff-assist-btn"
+                  data-testid="kiosk-exit-staff-assist-btn"
+                  onClick={onExitStaffAssistMode}
+                  className="ml-1 px-2.5 py-0.5 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white text-[11px] font-bold transition shadow-xs cursor-pointer"
+                >
+                  ออกจากโหมด
+                </button>
+              )}
+            </div>
+          ) : (
+            /* New Patient Registration Button (Staff Protected) */
+            onOpenNewPatientModal && (
+              <button
+                type="button"
+                id="header-open-new-patient-btn"
+                data-testid="header-open-new-patient-btn"
+                onClick={handleTriggerStaffModal}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold shadow-md shadow-emerald-950/30 transition active:scale-95 cursor-pointer"
+              >
+                <span>+ ลงทะเบียนคนไข้ใหม่</span>
+              </button>
+            )
           )}
 
           {/* Call Staff Emergency Button */}

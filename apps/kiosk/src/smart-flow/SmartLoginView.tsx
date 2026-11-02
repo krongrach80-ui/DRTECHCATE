@@ -10,7 +10,6 @@ import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 import {
   FaceDetector,
   averageAndNormalize,
-  cosineSimilarity,
   FastLoginLivenessVerifier,
   LivenessTelemetryBadge,
   LivenessVerificationResult,
@@ -38,9 +37,16 @@ import {
   FlipHorizontal,
   Camera,
   Activity,
-  PhoneCall,
+  Bell,
+  UserCheck,
 } from 'lucide-react';
 import { PatientRecordFile } from '../../../../packages/smart-biometric-core/src/index.js';
+
+export interface PendingRegistrationBiometrics {
+  probeEmbedding: number[];
+  faceCropDataUrl?: string;
+  capturedAt: string;
+}
 
 interface SmartLoginViewProps {
   onLoginSuccess: (patient: PatientRecordFile) => void;
@@ -48,6 +54,7 @@ interface SmartLoginViewProps {
   customDetector?: FaceDetector;
   onOpenStaffLoginModal?: () => void;
   onOpenNewPatientModal?: () => void;
+  onStaffAssistedRegister?: (biometrics: PendingRegistrationBiometrics | null) => void;
   isPaused?: boolean;
 }
 
@@ -77,6 +84,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   customDetector,
   onOpenStaffLoginModal,
   onOpenNewPatientModal,
+  onStaffAssistedRegister,
   isPaused = false,
 }) => {
   const { t, lang } = useClinicalI18n();
@@ -133,6 +141,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(350));
   const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastProbeVectorRef = useRef<number[] | null>(null);
+  // Ephemeral in-memory biometrics buffer for staff-assisted patient onboarding (Zero premature storage)
+  const pendingRegistrationBiometricsRef = useRef<PendingRegistrationBiometrics | null>(null);
   const scanFailureCountRef = useRef<number>(0);
   const consecutiveSteadyFramesRef = useRef<number>(0);
   const isProcessingScanRef = useRef<boolean>(false);
@@ -575,6 +585,15 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       setStatusText(failMsg);
       setUnrecognizedAlert(failMsg);
 
+      // Ephemeral Biometric Invariant: Hold in-memory probe embedding and snapshot only (zero persistent storage)
+      if (lastProbeVectorRef.current && lastProbeVectorRef.current.length > 0) {
+        pendingRegistrationBiometricsRef.current = {
+          probeEmbedding: lastProbeVectorRef.current.slice(),
+          faceCropDataUrl: snapshotBase64 || undefined,
+          capturedAt: new Date().toISOString(),
+        };
+      }
+
       if (scanFailureCountRef.current >= 2) {
         setTimeout(() => {
           if (isMountedRef.current && !matchedPatient) {
@@ -1008,6 +1027,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   }, [cameraReady, isScanningPaused, customDetector, isScanning, matchedPatient, rateLimitCooldownSec, startCountdown, cancelCountdown, t]);
 
   const handleResetScan = () => {
+    pendingRegistrationBiometricsRef.current = null;
     resetConfirmation();
     setIdentityAnchor(null);
     setUnrecognizedAlert(null);
@@ -1399,7 +1419,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             type="button"
             id="kiosk-scan-face-btn"
             data-testid="kiosk-scan-face-btn"
-            disabled={isScanning || isCountingDownRef.current}
+            disabled={isScanning || countdownValue !== null}
             onClick={() => executeScanLogin()}
             className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-[#10B981] via-[#059669] to-[#0284C7] hover:from-[#059669] hover:to-[#0369A1] text-white font-extrabold text-sm shadow-md shadow-emerald-500/25 active:scale-[0.98] transition cursor-pointer flex items-center justify-center gap-2 border border-emerald-400/30"
           >
@@ -1724,68 +1744,89 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               {unrecognizedAlert}
             </p>
 
-            <div className="mt-5 grid grid-cols-2 gap-2">
+            <div className="mt-5 flex flex-col gap-2.5">
+              {/* Button 1: Staff-Assisted Registration (Primary, Large, Emerald/Teal) */}
               <button
                 type="button"
+                id="kiosk-staff-assisted-reg-btn"
+                data-testid="kiosk-staff-assisted-reg-btn"
                 onClick={() => {
                   setUnrecognizedAlert(null);
-                  handleResetScan();
-                  if (faceInCircle) {
-                    startCountdown();
+                  if (onStaffAssistedRegister) {
+                    onStaffAssistedRegister(pendingRegistrationBiometricsRef.current);
+                  } else if (onOpenStaffLoginModal) {
+                    onOpenStaffLoginModal();
                   }
                 }}
-                className="py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
+                className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-700/25 flex items-center justify-center gap-2 cursor-pointer transition active:scale-[0.98]"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>{lang === 'zh-CN' ? '🔄 重试' : lang === 'en-US' ? '🔄 Retry' : '🔄 ลองอีกครั้ง'}</span>
+                <UserCheck className="w-4 h-4 text-emerald-100" />
+                <span>
+                  {lang === 'zh-CN'
+                    ? '👨‍⚕️ 医护人员协助建档'
+                    : lang === 'en-US'
+                    ? '👨‍⚕️ Staff Register Patient'
+                    : '👨‍⚕️ เจ้าหน้าที่ลงทะเบียนให้'}
+                </span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setUnrecognizedAlert(null);
-                  setEnteredPin('');
-                  setIsPinModalOpen(true);
-                }}
-                className="py-3 px-3 rounded-xl bg-white border border-slate-300 text-slate-800 font-bold text-xs hover:bg-slate-50 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs active:scale-95"
-              >
-                <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                <span>{lang === 'zh-CN' ? '🔑 PIN码' : lang === 'en-US' ? '🔑 4-digit PIN' : '🔑 ใช้รหัส PIN'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setUnrecognizedAlert(null);
-                  if (onOpenNewPatientModal) {
-                    onOpenNewPatientModal();
-                  } else {
-                    onNavigateToEnroll();
-                  }
-                }}
-                className="py-2.5 px-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 font-bold text-xs hover:bg-blue-100 transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
-              >
-                <UserPlus className="w-3.5 h-3.5 text-blue-600" />
-                <span>{lang === 'zh-CN' ? '➕ 注册新患者' : lang === 'en-US' ? '➕ Register' : '➕ สมัครคนไข้ใหม่'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setUnrecognizedAlert(null);
-                  setStatusText(
-                    lang === 'zh-CN'
-                      ? '📞 请前往1号前台联系工作人员'
+              <div className="grid grid-cols-2 gap-2">
+                {/* Button 2: Scan Face Again (Secondary, White/Slate) */}
+                <button
+                  type="button"
+                  id="kiosk-retry-scan-btn"
+                  data-testid="kiosk-retry-scan-btn"
+                  onClick={() => {
+                    pendingRegistrationBiometricsRef.current = null;
+                    setUnrecognizedAlert(null);
+                    handleResetScan();
+                    if (faceInCircle) {
+                      startCountdown();
+                    }
+                  }}
+                  className="py-3 px-3 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+                  <span>
+                    {lang === 'zh-CN'
+                      ? '🔄 重新识别人脸'
                       : lang === 'en-US'
-                      ? '📞 Please contact staff at Counter 1'
-                      : '📞 กรุณาติดต่อเจ้าหน้าที่เวชระเบียนที่เคาน์เตอร์ 1'
-                  );
-                }}
-                className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
-              >
-                <PhoneCall className="w-3.5 h-3.5 text-slate-500" />
-                <span>{lang === 'zh-CN' ? '📞 联系工作人员' : lang === 'en-US' ? '📞 Call Staff' : '📞 ติดต่อเจ้าหน้าที่'}</span>
-              </button>
+                      ? '🔄 Scan Face Again'
+                      : '🔄 ลองสแกนใหม่อีกครั้ง'}
+                  </span>
+                </button>
+
+                {/* Button 3: Call Staff (Tertiary, Amber/Slate soft tone) */}
+                <button
+                  type="button"
+                  id="kiosk-call-staff-btn"
+                  data-testid="kiosk-call-staff-btn"
+                  onClick={() => {
+                    pendingRegistrationBiometricsRef.current = null;
+                    setUnrecognizedAlert(null);
+                    defaultApiClient.kiosk
+                      .callStaff({ kiosk_id: 'kiosk-01', reason: 'unrecognized_face_kiosk' })
+                      .catch(() => {});
+                    setStatusText(
+                      lang === 'zh-CN'
+                        ? '🔔 已呼叫医护人员，请稍候...'
+                        : lang === 'en-US'
+                        ? '🔔 Staff alerted, please wait...'
+                        : '🔔 เรียกเจ้าหน้าที่เรียบร้อยแล้ว กรุณารอสักครู่...'
+                    );
+                  }}
+                  className="py-3 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 shadow-xs"
+                >
+                  <Bell className="w-3.5 h-3.5 text-amber-600" />
+                  <span>
+                    {lang === 'zh-CN'
+                      ? '🔔 呼叫医护人员'
+                      : lang === 'en-US'
+                      ? '🔔 Call Staff'
+                      : '🔔 เรียกเจ้าหน้าที่'}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

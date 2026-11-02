@@ -46,6 +46,8 @@ interface NewPatientRegistrationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (newPatientId: string) => void;
+  staffUser?: any;
+  initialBiometrics?: any;
 }
 
 export interface EnrollmentPoseSpec {
@@ -104,6 +106,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   isOpen,
   onClose,
   onSuccess,
+  staffUser: _staffUser,
+  initialBiometrics: _initialBiometrics,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
 

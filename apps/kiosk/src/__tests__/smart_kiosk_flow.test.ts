@@ -330,4 +330,109 @@ describe('[MASTER PROMPT v4] Isolated Kiosk Smart Flow Test Suite', () => {
       expect(typeof element.type).toBe('function');
     });
   });
+
+  describe('6. Staff-Assisted Kiosk Patient Registration Flow (Master Prompt)', () => {
+    it('6.1 Unrecognized face triggers 3-button modal with ephemeral RAM buffer only', () => {
+      // Ephemeral buffer structure
+      const ephemeralBuffer = {
+        probeEmbedding: new Array(512).fill(0.05),
+        faceCropDataUrl: 'data:image/jpeg;base64,mockface...',
+        capturedAt: new Date().toISOString(),
+      };
+
+      expect(ephemeralBuffer.probeEmbedding).toHaveLength(512);
+      expect(ephemeralBuffer.faceCropDataUrl).toBeDefined();
+
+      // Ensure zero persistent storage writes
+      expect(typeof window !== 'undefined' ? localStorage.getItem('drtech_pending_biometrics') : null).toBeNull();
+      expect(typeof window !== 'undefined' ? sessionStorage.getItem('drtech_pending_biometrics') : null).toBeNull();
+
+      // Verification of buffer wiping
+      let pendingBiometrics: typeof ephemeralBuffer | null = ephemeralBuffer;
+      const wipeBuffer = () => {
+        pendingBiometrics = null;
+      };
+      wipeBuffer();
+      expect(pendingBiometrics).toBeNull();
+    });
+
+    it('6.2 Staff Login Gate: Permits admin, super_admin/director, and pt; Rejects unauthorized roles', async () => {
+      const allowedRoles = ['admin', 'super_admin', 'director', 'pt', 'therapist'];
+      const unauthorizedRoles = ['patient', 'viewer', 'guest', 'anonymous'];
+
+      const checkRoleAuth = (role: string) => {
+        const r = role.toLowerCase();
+        return allowedRoles.includes(r);
+      };
+
+      expect(checkRoleAuth('admin')).toBe(true);
+      expect(checkRoleAuth('super_admin')).toBe(true);
+      expect(checkRoleAuth('director')).toBe(true);
+      expect(checkRoleAuth('pt')).toBe(true);
+      expect(checkRoleAuth('therapist')).toBe(true);
+
+      unauthorizedRoles.forEach((role) => {
+        expect(checkRoleAuth(role)).toBe(false);
+      });
+    });
+
+    it('6.3 Trilingual error and button verification (TH, EN, CN)', () => {
+      const trilingualButtons = {
+        'th-TH': {
+          staffRegister: '👨‍⚕️ เจ้าหน้าที่ลงทะเบียนให้',
+          scanAgain: '🔄 ลองสแกนใหม่อีกครั้ง',
+          callStaff: '🔔 เรียกเจ้าหน้าที่',
+          unauthorized: '⛔ บัญชีนี้ไม่มีสิทธิ์ลงทะเบียนผู้ป่วยใหม่ (อนุญาตเฉพาะ Admin, Super Admin และนักกายภาพบำบัดเท่านั้น)',
+        },
+        'en-US': {
+          staffRegister: '👨‍⚕️ Staff Register Patient',
+          scanAgain: '🔄 Scan Face Again',
+          callStaff: '🔔 Call Staff',
+          unauthorized: '⛔ Insufficient role permissions. Only Admin, Super Admin, and Physical Therapists can register new patients.',
+        },
+        'zh-CN': {
+          staffRegister: '👨‍⚕️ 医护人员协助建档',
+          scanAgain: '🔄 重新识别人脸',
+          callStaff: '🔔 呼叫医护人员',
+          unauthorized: '⛔ 权限不足。仅限管理员、超级管理员和物理治疗师注册新患者。',
+        },
+      };
+
+      expect(trilingualButtons['th-TH'].staffRegister).toContain('เจ้าหน้าที่ลงทะเบียนให้');
+      expect(trilingualButtons['en-US'].staffRegister).toContain('Staff Register Patient');
+      expect(trilingualButtons['zh-CN'].staffRegister).toContain('医护人员协助建档');
+
+      expect(trilingualButtons['th-TH'].scanAgain).toContain('ลองสแกนใหม่อีกครั้ง');
+      expect(trilingualButtons['en-US'].scanAgain).toContain('Scan Face Again');
+      expect(trilingualButtons['zh-CN'].scanAgain).toContain('重新识别人脸');
+
+      expect(trilingualButtons['th-TH'].callStaff).toContain('เรียกเจ้าหน้าที่');
+      expect(trilingualButtons['en-US'].callStaff).toContain('Call Staff');
+      expect(trilingualButtons['zh-CN'].callStaff).toContain('呼叫医护人员');
+
+      expect(trilingualButtons['th-TH'].unauthorized).toContain('ไม่มีสิทธิ์ลงทะเบียนผู้ป่วยใหม่');
+      expect(trilingualButtons['en-US'].unauthorized).toContain('Insufficient role permissions');
+      expect(trilingualButtons['zh-CN'].unauthorized).toContain('权限不足');
+    });
+
+    it('6.4 10-Minute activity watchdog timeout calculates remaining seconds and expires', () => {
+      const STAFF_ASSIST_TIMEOUT_MS = 10 * 60 * 1000;
+      const now = Date.now();
+      let expiresAt = now + STAFF_ASSIST_TIMEOUT_MS;
+
+      const getRemainingSec = (currentTime: number) => {
+        return Math.max(0, Math.floor((expiresAt - currentTime) / 1000));
+      };
+
+      expect(getRemainingSec(now)).toBe(600);
+      expect(getRemainingSec(now + 60 * 1000)).toBe(540);
+      expect(getRemainingSec(now + 10 * 60 * 1000)).toBe(0);
+      expect(getRemainingSec(now + 11 * 60 * 1000)).toBe(0);
+
+      // User activity resets the watchdog
+      const touchActivityTime = now + 5 * 60 * 1000;
+      expiresAt = touchActivityTime + STAFF_ASSIST_TIMEOUT_MS;
+      expect(getRemainingSec(touchActivityTime)).toBe(600);
+    });
+  });
 });

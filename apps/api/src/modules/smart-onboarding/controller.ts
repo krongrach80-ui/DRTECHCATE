@@ -15,6 +15,28 @@ export class SmartOnboardingController {
 
   register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+      const staffRole = ((req.headers['x-staff-role'] || (req.user as any)?.role || '') as string).toLowerCase();
+      // Server-side role authorization enforcement
+      if (staffRole) {
+        const isAllowed =
+          staffRole === 'admin' ||
+          staffRole === 'super_admin' ||
+          staffRole === 'director' ||
+          staffRole === 'pt' ||
+          staffRole === 'therapist';
+
+        if (!isAllowed) {
+          res.status(403).json({
+            ok: false,
+            error: {
+              code: 'FORBIDDEN',
+              message: '⛔ Insufficient role permissions. Only Admin, Super Admin, and Physical Therapists can register new patients.',
+            },
+          });
+          return;
+        }
+      }
+
       const data = await this.service.registerPatient(req.body);
       res.status(201).json({
         ok: true,

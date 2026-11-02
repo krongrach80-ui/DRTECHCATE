@@ -28,13 +28,16 @@ interface StaffLoginModalProps {
   onClose: () => void;
   onLogin: (credentials: { username: string; password: string }) => Promise<void>;
   onReturnToKiosk?: () => void;
+  authIntent?: 'kiosk_patient_registration' | 'general';
 }
 
 const MODAL_I18N = {
   'th-TH': {
     badge: '+ Dr.Tech.Care • Hospital Staff Portal',
+    registrationBadge: '👨‍⚕️ เจ้าหน้าที่ลงทะเบียนคนไข้ (Staff-Assisted Mode)',
     title: 'เข้าสู่ระบบบุคลากร Dr.Tech.Care',
     subtitle: 'เข้าถึงระบบบริหารเวชระเบียนคลินิกและตารางกายภาพบำบัด',
+    registrationSubtitle: 'กรุณาเข้าสู่ระบบด้วยบัญชี Admin, ผอ.รพ. หรือ นักกายภาพบำบัด (PT)',
     usernameLabel: 'Username (ชื่อผู้ใช้) *',
     usernamePlaceholder: 'เช่น director หรือ pt_somchai',
     passwordLabel: 'Password (รหัสผ่าน) *',
@@ -49,11 +52,14 @@ const MODAL_I18N = {
     securityNotice: 'Hospital Clinical Grade Security • HttpOnly Session Cookie • Zero-PII Leak',
     requiredFields: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่านให้ครบถ้วน',
     invalidCreds: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+    unauthorizedRole: '⛔ บัญชีนี้ไม่มีสิทธิ์ลงทะเบียนผู้ป่วยใหม่ (อนุญาตเฉพาะ Admin, Super Admin และนักกายภาพบำบัดเท่านั้น)',
   },
   'en-US': {
     badge: '+ Dr.Tech.Care • Hospital Staff Portal',
+    registrationBadge: '👨‍⚕️ Staff-Assisted Patient Registration Mode',
     title: 'Dr.Tech.Care Hospital Staff Login',
     subtitle: 'Access clinical medical records and physical therapy schedule management',
+    registrationSubtitle: 'Please sign in with Admin, Hospital Director, or Physical Therapist (PT) credentials',
     usernameLabel: 'Username *',
     usernamePlaceholder: 'e.g. director or pt_somchai',
     passwordLabel: 'Password *',
@@ -68,11 +74,14 @@ const MODAL_I18N = {
     securityNotice: 'Hospital Clinical Grade Security • HttpOnly Session Cookie • Zero-PII Leak',
     requiredFields: 'Please fill in both username and password',
     invalidCreds: 'Invalid username or password',
+    unauthorizedRole: '⛔ Insufficient role permissions. Only Admin, Super Admin, and Physical Therapists can register new patients.',
   },
   'zh-CN': {
     badge: '+ Dr.Tech.Care • Hospital Staff Portal',
+    registrationBadge: '👨‍⚕️ 医护人员协助建档模式',
     title: 'Dr.Tech.Care 医院员工登录',
     subtitle: '访问临床病历管理系统与物理康复治疗日程',
+    registrationSubtitle: '请使用管理员、院长或物理康复理疗师 (PT) 账号登录验证',
     usernameLabel: '用户名 (Username) *',
     usernamePlaceholder: '例如 director 或 pt_somchai',
     passwordLabel: '密码 (Password) *',
@@ -87,6 +96,7 @@ const MODAL_I18N = {
     securityNotice: 'Hospital Clinical Grade Security • HttpOnly Session Cookie • Zero-PII Leak',
     requiredFields: '请填写完整的用户名和密码',
     invalidCreds: '用户名或密码错误',
+    unauthorizedRole: '⛔ 权限不足。仅限管理员、超级管理员和物理治疗师注册新患者。',
   },
 };
 
@@ -95,23 +105,19 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
   onClose,
   onLogin,
   onReturnToKiosk,
+  authIntent = 'general',
 }) => {
   const { lang } = useClinicalI18n();
   const text = MODAL_I18N[lang] || MODAL_I18N['th-TH'];
+  const isRegistrationIntent = authIntent === 'kiosk_patient_registration';
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Determine if running in local development mode
-  const isDev = Boolean(
-    (import.meta as any)?.env?.DEV ||
-      (typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' ||
-          window.location.hostname === '127.0.0.1' ||
-          window.location.hostname.includes('.local')))
-  );
+  // Strictly rely on compile-time DEV flag for zero credentials leak in production bundle
+  const isDev = Boolean((import.meta as any)?.env?.DEV);
 
   // Unified return to patient main / Kiosk handler
   const handleReturn = useCallback(() => {
@@ -190,14 +196,14 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
           </div>
 
           <span className="inline-block px-3.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold uppercase tracking-wider mb-2.5">
-            {text.badge}
+            {isRegistrationIntent ? text.registrationBadge : text.badge}
           </span>
 
           <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-normal">
             {text.title}
           </h2>
           <p className="text-sm sm:text-base text-slate-600 mt-2 leading-relaxed max-w-md mx-auto">
-            {text.subtitle}
+            {isRegistrationIntent ? text.registrationSubtitle : text.subtitle}
           </p>
         </div>
 

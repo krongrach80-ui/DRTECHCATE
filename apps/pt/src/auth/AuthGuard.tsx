@@ -9,7 +9,7 @@
  */
 
 import React from 'react';
-import { usePTState, spaNavigate } from './PTStateProvider';
+import { usePTState } from './PTStateProvider';
 import { StaffLoginModal } from '../../../admin/src/clinical-ui/StaffLoginModal';
 import { Lock } from 'lucide-react';
 

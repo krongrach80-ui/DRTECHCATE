@@ -1229,12 +1229,13 @@ export class ApiClient {
       fetchError = err;
     }
 
-    // Detect if primary backend was 404, 405, 502, 503, network failure, or non-JSON HTML (SPA redirect)
+    // Detect if primary backend was 404, 405, 402, 502, 503, network failure, or non-JSON HTML (SPA redirect)
     const isPrimaryHtml = res && res.headers.get('content-type')?.includes('text/html');
     const isPrimary404OrFailed =
       !res ||
       res.status === 404 ||
       res.status === 405 ||
+      res.status === 402 ||
       res.status === 502 ||
       res.status === 503 ||
       (isPrimaryHtml && cleanEndpoint !== '/health');
@@ -1293,6 +1294,16 @@ export class ApiClient {
     const data = isJson ? await res.json() : null;
 
     if (!res.ok) {
+      if (res.status === 405 || res.status === 404 || res.status >= 500) {
+        try {
+          const fallback = await this.executeDirectSupabaseFallback<T>(cleanEndpoint, options);
+          if (fallback !== undefined) {
+            return fallback;
+          }
+        } catch {
+          // Fall through to standard error throw
+        }
+      }
       let errorMessage = data?.error?.message || data?.message;
       if (!errorMessage) {
         if (res.status === 401) {

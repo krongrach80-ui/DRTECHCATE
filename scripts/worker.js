@@ -17,7 +17,7 @@ export default {
     }
 
     // 2. API Endpoints: Return clean 404 JSON with CORS to trigger client-side live Supabase fallback
-    if (url.pathname.startsWith('/api')) {
+    if (url.pathname.startsWith('/api') || url.pathname.startsWith('/.netlify')) {
       if (url.pathname === '/api/health' || url.pathname === '/api/health/') {
         return new Response(JSON.stringify({ ok: true, status: 'healthy', provider: 'cloudflare-worker' }), {
           status: 200,
