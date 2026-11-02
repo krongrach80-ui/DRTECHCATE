@@ -618,3 +618,113 @@ export function getClinicalExerciseConfig(idOrName?: string | null): ExerciseDet
 
   return null;
 }
+
+export interface PatientClinicalSummary {
+  contraindications?: string | null;
+  underlying_diseases?: string | null;
+  injury?: string | null;
+  target_joint?: string | null;
+  history?: {
+    contraindications?: string | null;
+    chronic_diseases?: string | null;
+    target_joint?: string | null;
+  } | null;
+  [key: string]: any;
+}
+
+export function evaluateContraindications(
+  exerciseId: string,
+  targetJoint: string,
+  patient?: PatientClinicalSummary | null
+): { hasWarning: boolean; warningMessage: string; reason?: string } {
+  if (!patient) return { hasWarning: false, warningMessage: '' };
+
+  const rawContra = `${patient.contraindications || ''} ${patient.history?.contraindications || ''}`.toLowerCase();
+  const rawDiseases = `${patient.underlying_diseases || ''} ${patient.history?.chronic_diseases || ''}`.toLowerCase();
+  const rawInjury = `${patient.injury || ''} ${patient.diagnosis || ''}`.toLowerCase();
+  const combinedText = `${rawContra} ${rawDiseases} ${rawInjury}`;
+
+  const pJoint = (patient.target_joint || patient.history?.target_joint || '').toLowerCase();
+  const exJoint = (targetJoint || '').toLowerCase();
+
+  // 1. Shoulder constraints (e.g. Abduction restriction / Rotator cuff / Post-op)
+  if (exerciseId.includes('shoulder') || exJoint.includes('ไหล่') || exJoint.includes('shoulder')) {
+    if (
+      combinedText.includes('ห้ามกางแขน') ||
+      combinedText.includes('ห้ามยกแขน') ||
+      combinedText.includes('ผ่าตัดไหล่') ||
+      combinedText.includes('เอ็นไหล่') ||
+      combinedText.includes('rotator cuff') ||
+      combinedText.includes('impingement') ||
+      combinedText.includes('90') ||
+      combinedText.includes('acute')
+    ) {
+      return {
+        hasWarning: true,
+        warningMessage:
+          '⚠️ คำเตือนทางคลินิก: ท่านี้ใช้ข้อต่อไหล่/ช่วงมุมที่อาจกระทบข้อห้ามของผู้ป่วย (มีประวัติจำกัดการกางแขน/ผ่าตัดไหล่) กรุณาปรับลดมุมเป้าหมาย (targetMaxDeg) ไม่ให้เกิน 90° หรือตรวจสอบความเหมาะสม',
+        reason: 'shoulder_contraindication',
+      };
+    }
+  }
+
+  // 2. Weight-bearing / Fall risk / Standing constraints
+  if (
+    exerciseId === 'sit-to-stand' ||
+    exerciseId === 'standing-hip-abd' ||
+    exerciseId === 'heel-raise' ||
+    exerciseId === 'wall-pushup' ||
+    exerciseId.includes('squat') ||
+    exerciseId.includes('stand')
+  ) {
+    if (
+      combinedText.includes('ห้ามลงน้ำหนัก') ||
+      combinedText.includes('หกล้ม') ||
+      combinedText.includes('balance') ||
+      combinedText.includes('กระดูกหัก') ||
+      combinedText.includes('ข้อเข่าเสื่อมรุนแรง') ||
+      combinedText.includes('non-weight bearing') ||
+      combinedText.includes('เสี่ยงล้ม')
+    ) {
+      return {
+        hasWarning: true,
+        warningMessage:
+          '⚠️ คำเตือนความปลอดภัย: ผู้ป่วยมีความเสี่ยงล้ม หรือมีข้อห้ามลงน้ำหนัก (Non-weight bearing) ควรมีนักกายภาพบำบัดดูแลใกล้ชิด หรือพิจารณาเปลี่ยนเป็นท่ายกขาท่านั่ง (Seated Knee Extension) แทน',
+        reason: 'fall_risk_weight_bearing',
+      };
+    }
+  }
+
+  // 3. Neck / Cervical constraints
+  if (exerciseId === 'neck-side-tilt' || exJoint.includes('คอ') || exJoint.includes('neck')) {
+    if (
+      combinedText.includes('กระดูกคอเสื่อม') ||
+      combinedText.includes('cervical') ||
+      combinedText.includes('มึนงง') ||
+      combinedText.includes('หมอนรองกระดูกคอ')
+    ) {
+      return {
+        hasWarning: true,
+        warningMessage:
+          '⚠️ คำเตือนระวัง: ผู้ป่วยมีประวัติเกี่ยวกับกระดูกสันหลังระดับคอ/มึนงง ให้ควบคุมมุมเอียงไม่เกิน 25° และหยุดทันทีหากมีอาการเวียนศีรษะหรือชาลงแขน',
+        reason: 'cervical_spine_warning',
+      };
+    }
+  }
+
+  // 4. Joint discrepancy advisory
+  if (pJoint && exJoint && !pJoint.includes(exJoint) && !exJoint.includes(pJoint)) {
+    if (
+      (pJoint.includes('เข่า') && !exJoint.includes('เข่า')) ||
+      (pJoint.includes('ไหล่') && !exJoint.includes('ไหล่'))
+    ) {
+      return {
+        hasWarning: true,
+        warningMessage: `ℹ️ ข้อสังเกต: ท่านี้บริหาร ${targetJoint} ซึ่งต่างจากข้อต่อเป้าหมายหลักของผู้ป่วย (${patient.target_joint}) แนะนำให้ตรวจสอบว่าเป็นการฝึกเสริมหรือไม่`,
+        reason: 'target_joint_mismatch',
+      };
+    }
+  }
+
+  return { hasWarning: false, warningMessage: '' };
+}

@@ -160,6 +160,17 @@ export class SmartOnboardingController {
 
   saveSchedule = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+      // Clinical role validation: admin, super_admin, director, pt, therapist allowed; unauthorized returns 403 Forbidden
+      const staffRole = (req.user?.role || (req.headers['x-staff-role'] as string) || '').toLowerCase();
+      const allowedRoles = ['admin', 'super_admin', 'director', 'pt', 'therapist'];
+      if (staffRole && !allowedRoles.includes(staffRole)) {
+        res.status(403).json({
+          ok: false,
+          error: { code: 'FORBIDDEN', message: 'Insufficient permissions: Only clinical staff (PT/Admin) can prescribe exercise courses' },
+        });
+        return;
+      }
+
       const rawParam = req.params.patientId;
       const paramPatientId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
       const patientId = req.body.patient_id || req.body.patientId || paramPatientId;
@@ -190,6 +201,7 @@ export class SmartOnboardingController {
       res.status(200).json({
         ok: true,
         data,
+        ...data,
       });
     } catch (err) {
       next(err);

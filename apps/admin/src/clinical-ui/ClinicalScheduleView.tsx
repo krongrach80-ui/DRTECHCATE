@@ -24,6 +24,7 @@ import {
 } from '../../../../packages/hospital-ui-kit/src/index.js';
 import { defaultApiClient, PatientRecord } from '../../../../packages/api-client/src/index.js';
 import { SmartScheduleWizardModal } from '../smart-portal/SmartScheduleWizardModal';
+import { PatientCoursePrescriptionModal } from './PatientCoursePrescriptionModal';
 
 interface ClinicalScheduleViewProps {
   onOpenCreateScheduleModal?: (patientId?: string) => void;
@@ -80,6 +81,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
 
   // Modal State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [wizardPatientId, setWizardPatientId] = useState<string | undefined>(preselectedPatientId);
   const [wizardPreselectedDate, setWizardPreselectedDate] = useState<string | undefined>(undefined);
 
@@ -87,7 +89,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     if (preselectedPatientId) {
       setWizardPatientId(preselectedPatientId);
       if (autoOpenWizard) {
-        setIsWizardOpen(true);
+        setIsPrescriptionModalOpen(true);
       }
     }
   }, [preselectedPatientId, autoOpenWizard]);
@@ -153,7 +155,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     const targetId = patientId || selectedPatient?.id;
     setWizardPatientId(targetId);
     setWizardPreselectedDate(dateStr);
-    setIsWizardOpen(true);
+    setIsPrescriptionModalOpen(true);
     onOpenCreateScheduleModal?.(targetId);
   };
 
@@ -949,6 +951,21 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         }}
         preselectedPatientId={wizardPatientId}
         preselectedDate={wizardPreselectedDate}
+      />
+
+      {/* Patient Course Prescription Modal with Clinical Contraindications & Angle Controls */}
+      <PatientCoursePrescriptionModal
+        isOpen={isPrescriptionModalOpen}
+        onClose={() => {
+          setIsPrescriptionModalOpen(false);
+          setWizardPreselectedDate(undefined);
+        }}
+        preselectedPatientId={wizardPatientId}
+        onSuccess={() => {
+          setIsPrescriptionModalOpen(false);
+          setWizardPreselectedDate(undefined);
+          void loadData();
+        }}
       />
     </div>
   );

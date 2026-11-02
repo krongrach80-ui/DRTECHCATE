@@ -12,5 +12,7 @@ export * from './PhysiotherapistDirectoryView';
 export * from './MiniGameQuestionsView';
 export * from './SystemAuditLogView';
 export * from './SystemAiSettingsView';
+export * from './PatientCoursePrescriptionModal';
+export * from './PatientCoursePrescriptionView';
 export * from './ClinicalAdminShell';
 export * from './ErrorBoundary';

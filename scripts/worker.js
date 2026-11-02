@@ -99,13 +99,19 @@ export default {
       });
 
     if (url.pathname.startsWith('/admin')) {
-      return env.ASSETS.fetch(spaGetReq('/admin/index.html'));
+      const adminRes = await env.ASSETS.fetch(spaGetReq('/admin/index.html'));
+      if (adminRes.status < 400) return adminRes;
+      return env.ASSETS.fetch(spaGetReq('/index.html'));
     }
     if (url.pathname.startsWith('/pt')) {
-      return env.ASSETS.fetch(spaGetReq('/pt/index.html'));
+      const ptRes = await env.ASSETS.fetch(spaGetReq('/pt/index.html'));
+      if (ptRes.status < 400) return ptRes;
+      return env.ASSETS.fetch(spaGetReq('/index.html'));
     }
     if (url.pathname.startsWith('/kiosk')) {
-      return env.ASSETS.fetch(spaGetReq('/kiosk/index.html'));
+      const kioskRes = await env.ASSETS.fetch(spaGetReq('/kiosk/index.html'));
+      if (kioskRes.status < 400) return kioskRes;
+      return env.ASSETS.fetch(spaGetReq('/index.html'));
     }
 
     // 5. Root SPA fallback

@@ -6,6 +6,7 @@ import {
 import { ClinicalTopHeader } from './ClinicalTopHeader';
 import { StaffLoginModal } from './StaffLoginModal';
 import { NewPatientRegistrationModal } from './NewPatientRegistrationModal';
+import { PatientCoursePrescriptionModal } from './PatientCoursePrescriptionModal';
 import { ClinicalScheduleView } from './ClinicalScheduleView';
 
 // Master Prompt v3 Spec 8.1: 6 Main Admin Windows
@@ -51,6 +52,8 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   // Modals state
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | undefined>(undefined);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPhysicalCardGameOpen, setIsPhysicalCardGameOpen] = useState(false);
   const [schedulePreselectedPatientId, setSchedulePreselectedPatientId] = useState<string | undefined>(undefined);
@@ -275,8 +278,22 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
         onClose={() => setIsNewPatientModalOpen(false)}
         onSuccess={(newPatientId, action) => {
           if (action === 'course') {
-            setSchedulePreselectedPatientId(newPatientId);
-            setAutoOpenScheduleWizard(true);
+            setPrescriptionPatientId(newPatientId);
+            setIsPrescriptionModalOpen(true);
+          } else {
+            setActiveTab('patients');
+          }
+        }}
+      />
+
+      {/* Patient Course Prescription Modal (Entry Point 1 from Registration) */}
+      <PatientCoursePrescriptionModal
+        isOpen={isPrescriptionModalOpen}
+        onClose={() => setIsPrescriptionModalOpen(false)}
+        preselectedPatientId={prescriptionPatientId}
+        onSuccess={(_targetId, action) => {
+          setIsPrescriptionModalOpen(false);
+          if (action === 'schedule') {
             setActiveTab('schedule');
           } else {
             setActiveTab('patients');

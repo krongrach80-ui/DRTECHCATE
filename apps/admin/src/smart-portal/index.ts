@@ -12,3 +12,4 @@ export * from './SmartModpackModal';
 export * from './LiveMotionCaptureCalibrator';
 export * from './ExerciseBuilderModal';
 export * from './PatientPrescriptionOverrideModal';
+export * from '../clinical-ui/PatientCoursePrescriptionModal';

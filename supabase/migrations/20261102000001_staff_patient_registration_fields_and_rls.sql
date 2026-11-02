@@ -215,3 +215,4 @@ REVOKE ALL ON FUNCTION public.register_patient_with_biometrics(
 GRANT EXECUTE ON FUNCTION public.register_patient_with_biometrics(
   TEXT, TEXT, TEXT, DATE, INTEGER, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, BOOLEAN, TEXT, TEXT, JSONB, TEXT, TEXT[], extensions.vector[]
 ) TO authenticated, service_role;
+

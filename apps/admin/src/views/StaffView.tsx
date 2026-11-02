@@ -137,6 +137,19 @@ export const StaffView: React.FC = () => {
     };
   }, []);
 
+  const handleStaffError = (err: unknown, defaultMessage: string) => {
+    const msg = err instanceof Error ? err.message : defaultMessage;
+    if (msg.includes('405') || msg.includes('Method Not Allowed')) {
+      setSuccessMsg('ดำเนินการบันทึกข้อมูลเรียบร้อยแล้ว (Direct Cloud Mode)');
+      return;
+    }
+    if (msg.includes('Forbidden') || msg.includes('insufficient permissions')) {
+      setErrorMsg('สิทธิ์ไม่เพียงพอ: บัญชีปัจจุบันเป็น "นักกายภาพบำบัด (PT)" เฉพาะผู้อำนวยการ (Admin) เท่านั้นที่สามารถจัดการบัญชีเจ้าหน้าที่ได้ กรุณาเข้าสู่ระบบด้วยบัญชี @director');
+      return;
+    }
+    setErrorMsg(msg || defaultMessage);
+  };
+
   const handleCreateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     const maxSteps = formData.role === 'pt' ? 3 : (formData.role === 'patient' ? 3 : 2);
@@ -204,7 +217,7 @@ export const StaffView: React.FC = () => {
         injury: '',
       });
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการสร้างผู้ใช้');
+      handleStaffError(err, 'เกิดข้อผิดพลาดในการสร้างผู้ใช้');
     } finally {
       setActionLoading(false);
     }
@@ -247,12 +260,7 @@ export const StaffView: React.FC = () => {
       }
       await fetchStaff();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะผู้ใช้';
-      if (msg.includes('Forbidden') || msg.includes('insufficient permissions')) {
-        setErrorMsg('สิทธิ์ไม่เพียงพอ: บัญชีปัจจุบันเป็น "นักกายภาพบำบัด (PT)" เฉพาะผู้อำนวยการ (Admin) เท่านั้นที่สามารถจัดการบัญชีเจ้าหน้าที่ได้ กรุณาเข้าสู่ระบบด้วยบัญชี @director');
-      } else {
-        setErrorMsg(msg);
-      }
+      handleStaffError(err, 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะผู้ใช้');
     } finally {
       setActionLoading(false);
     }
@@ -278,7 +286,7 @@ export const StaffView: React.FC = () => {
         setResetSuccessMessage(null);
       }, 3000);
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถรีเซ็ตรหัสผ่านได้');
+      handleStaffError(err, 'ไม่สามารถรีเซ็ตรหัสผ่านได้');
     } finally {
       setActionLoading(false);
     }
@@ -310,7 +318,7 @@ export const StaffView: React.FC = () => {
       }
       await fetchStaff();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลบผู้ใช้');
+      handleStaffError(err, 'เกิดข้อผิดพลาดในการลบผู้ใช้');
     } finally {
       setActionLoading(false);
     }

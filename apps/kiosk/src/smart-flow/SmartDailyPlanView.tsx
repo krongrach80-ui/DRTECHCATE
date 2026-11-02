@@ -267,7 +267,26 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       findPresetForExercise(exerciseItem.exercise_id || exerciseItem.id);
 
     if (config) {
-      setActiveGuideConfig({ exercise: exerciseItem, config });
+      // Merge custom angle overrides, side, and sets/reps from prescription builder
+      const mergedConfig: ExerciseDetectionConfig = {
+        ...config,
+        side: (exerciseItem.side as any) || config.side,
+        angleMechanics: config.angleMechanics
+          ? {
+              ...config.angleMechanics,
+              ...(typeof exerciseItem.start_angle_deg === 'number' ? { startAngleDeg: exerciseItem.start_angle_deg } : {}),
+              ...(typeof exerciseItem.target_min_deg === 'number' ? { targetMinDeg: exerciseItem.target_min_deg } : {}),
+              ...(typeof exerciseItem.target_max_deg === 'number' ? { targetMaxDeg: exerciseItem.target_max_deg } : {}),
+              ...(typeof exerciseItem.hold_duration_sec === 'number' ? { holdDurationSec: exerciseItem.hold_duration_sec } : {}),
+            }
+          : undefined,
+        defaultPrescription: {
+          ...config.defaultPrescription,
+          totalSets: Number(exerciseItem.sets) || config.defaultPrescription?.totalSets || 3,
+          repsPerSet: Number(exerciseItem.reps) || config.defaultPrescription?.repsPerSet || 10,
+        },
+      };
+      setActiveGuideConfig({ exercise: exerciseItem, config: mergedConfig });
     } else {
       setUnconfiguredExercise(exerciseItem);
     }

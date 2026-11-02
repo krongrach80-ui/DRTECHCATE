@@ -25,6 +25,9 @@ export function createCoursesRouter(controller: CourseController = defaultCourse
   // "ปฏิทิน" (calendar view for month / date range)
   router.get('/calendar', controller.getCalendarView);
 
+  // Per-Patient Course Prescription Builder (Atomic sync)
+  router.post('/prescriptions', csrfGuard, controller.createPrescriptionCourse);
+
   // 4. Course CRUD
   router.get('/', controller.listCourses);
   router.post('/', csrfGuard, controller.createCourse);

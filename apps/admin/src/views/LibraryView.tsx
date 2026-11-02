@@ -13,7 +13,8 @@ import {
   Sparkles,
   Sliders,
   Copy,
-  Video
+  Video,
+  Calendar,
 } from 'lucide-react';
 import {
   ExerciseRecord,
@@ -27,6 +28,7 @@ import {
   SmartModpackModal,
   ExerciseBuilderModal
 } from '../smart-portal/index.js';
+import { PatientCoursePrescriptionModal } from '../clinical-ui/PatientCoursePrescriptionModal';
 import { ALL_99_PHYSICAL_CARD_QUESTIONS } from '../../../kiosk/src/minigame-cards/index.js';
 import { ALL_CLINICAL_EXERCISES } from '../../../../packages/pose-engine/src/index';
 
@@ -98,6 +100,7 @@ export const LibraryView: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [isSmartExerciseModalOpen, setIsSmartExerciseModalOpen] = useState<boolean>(false);
   const [isSmartModpackModalOpen, setIsSmartModpackModalOpen] = useState<boolean>(false);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState<boolean>(false);
 
   // AI Pose Studio State
   const [isExerciseBuilderOpen, setIsExerciseBuilderOpen] = useState<boolean>(false);
@@ -355,6 +358,14 @@ export const LibraryView: React.FC = () => {
             title="รีเฟรชข้อมูล"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsPrescriptionModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition shadow-lg shadow-emerald-950/40"
+          >
+            <Calendar className="w-4 h-4" />
+            <span>👨‍⚕️ สั่งจ่ายคอร์สให้ผู้ป่วยรายคน</span>
           </button>
           {activeTab === 'exercises' && (
             <div className="flex items-center gap-2">
@@ -1088,6 +1099,15 @@ export const LibraryView: React.FC = () => {
           setIsExerciseBuilderOpen(false);
           setSuccessMsg(`บันทึกการตั้งค่า AI สำหรับท่า "${savedConfig?.nameTh || 'ใหม่'}" เรียบร้อย`);
           await fetchData();
+        }}
+      />
+
+      {/* Patient Course Prescription Modal */}
+      <PatientCoursePrescriptionModal
+        isOpen={isPrescriptionModalOpen}
+        onClose={() => setIsPrescriptionModalOpen(false)}
+        onSuccess={() => {
+          fetchData();
         }}
       />
     </div>

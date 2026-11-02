@@ -25,6 +25,22 @@ export class CourseController {
     }
   };
 
+  createPrescriptionCourse = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
+      const patientId = req.body.patient_id || req.body.patientId;
+      const schedule = req.body.schedule || req.body;
+      if (!patientId || !schedule) {
+        throw new AppError('patient_id and schedule are required', 400, 'BAD_REQUEST');
+      }
+      const { defaultSmartOnboardingService } = await import('../smart-onboarding/service');
+      const data = await defaultSmartOnboardingService.saveSchedule(patientId, schedule);
+      res.status(201).json({ ok: true, data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   getCourseById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.user) throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
