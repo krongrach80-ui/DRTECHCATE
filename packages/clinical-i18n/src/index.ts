@@ -325,6 +325,48 @@ export const CLINICAL_DICTIONARY = {
     'th-TH': 'พร้อมแล้ว เริ่มเซ็ตถัดไปทันที ➔',
     'en-US': 'Ready, Start Next Set ➔',
   },
+
+  // Kiosk Face Scan & Login
+  kiosk_searching_face: {
+    'zh-CN': '正在搜寻人脸...',
+    'th-TH': 'กำลังหาใบหน้า...',
+    'en-US': 'Searching for face...',
+  },
+  kiosk_align_face: {
+    'zh-CN': '请将面部对准圆框中央',
+    'th-TH': 'กรุณาจัดตำแหน่งใบหน้าให้อยู่ในกรอบวงกลม',
+    'en-US': 'Please align face inside circle',
+  },
+  kiosk_checking_liveness: {
+    'zh-CN': '正在检测面部活体...',
+    'th-TH': 'กำลังตรวจสอบใบหน้า...',
+    'en-US': 'Checking face liveness...',
+  },
+  kiosk_verifying_identity: {
+    'zh-CN': '⚡ 正在验证身份...',
+    'th-TH': '⚡ กำลังยืนยันตัวตน...',
+    'en-US': '⚡ Verifying identity...',
+  },
+  kiosk_identity_verified: {
+    'zh-CN': '✅ 身份验证成功',
+    'th-TH': '✅ ยืนยันตัวตนสำเร็จ',
+    'en-US': '✅ Identity Verified',
+  },
+  kiosk_scan_face_now: {
+    'zh-CN': '📷 立即扫描面部登录',
+    'th-TH': '📷 สแกนใบหน้าเข้าใช้งานทันที',
+    'en-US': '📷 Scan Face Login Now',
+  },
+  kiosk_pin_fallback_hint: {
+    'zh-CN': '💡 耗时较长，建议使用4位数PIN码登录',
+    'th-TH': '💡 ใช้เวลานานกว่าปกติ แนะนำให้เข้าสู่ระบบด้วยรหัส PIN 4 หลัก',
+    'en-US': '💡 Taking longer than usual. Try 4-digit PIN login',
+  },
+  kiosk_spoof_blocked: {
+    'zh-CN': '⚠️ 检测到非真人面部，请面对镜头并眨眼',
+    'th-TH': '⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง กรุณามองกล้องด้วยใบหน้าจริงและกะพริบตา',
+    'en-US': '⚠️ Spoof detected. Please face the camera and blink',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof CLINICAL_DICTIONARY;
