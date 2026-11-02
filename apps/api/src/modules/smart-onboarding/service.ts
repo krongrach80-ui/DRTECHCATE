@@ -67,15 +67,148 @@ export class SmartOnboardingService {
    * 0. Atomic Patient Registration for Kiosk / NewPatientRegistrationModal
    * Writes directly to Supabase public.patients and biometric vault
    */
+  public async checkDuplicate(params: {
+    hn?: string;
+    full_name?: string;
+    birth_date?: string;
+  }): Promise<{
+    duplicate_hn: boolean;
+    duplicate_name_dob: boolean;
+    existing_patient?: {
+      id: string;
+      hn: string;
+      full_name: string;
+      birth_date?: string;
+    };
+    message?: string;
+  }> {
+    const cleanHn = (params.hn || '').trim();
+    const cleanName = (params.full_name || '').trim().toLowerCase();
+    const cleanDob = (params.birth_date || '').trim();
+
+    // 1. Check local vault first for fast instant duplicate detection
+    if (cleanHn) {
+      const localRecord = this.vaultService.getPatientRecord(cleanHn);
+      if (localRecord) {
+        const fullName = `${localRecord.first_name || ''} ${localRecord.last_name || ''}`.trim();
+        return {
+          duplicate_hn: true,
+          duplicate_name_dob: false,
+          existing_patient: {
+            id: localRecord.patient_id,
+            hn: localRecord.hn,
+            full_name: fullName,
+            birth_date: (localRecord as any).birth_date,
+          },
+          message: `หมายเลขประจำตัวคนไข้ (HN) "${cleanHn}" มีอยู่ในระบบแล้ว (${fullName})`,
+        };
+      }
+    }
+
+    const supabase = getAdminClient();
+
+    // 2. Check Supabase DB for duplicate HN
+    if (cleanHn) {
+      try {
+        const queryPromise = supabase
+          .from('patients')
+          .select('id, hn, first_name, last_name, birth_date')
+          .ilike('hn', cleanHn)
+          .maybeSingle();
+
+        const timeoutPromise = new Promise<{ data: null; error: Error }>((_, reject) =>
+          setTimeout(() => reject(new Error('Supabase query timed out')), 1200)
+        );
+
+        const { data: hnMatch } = (await Promise.race([queryPromise, timeoutPromise])) as any;
+
+        if (hnMatch) {
+          const fullName = `${hnMatch.first_name || ''} ${hnMatch.last_name || ''}`.trim();
+          return {
+            duplicate_hn: true,
+            duplicate_name_dob: false,
+            existing_patient: {
+              id: hnMatch.id,
+              hn: hnMatch.hn,
+              full_name: fullName,
+              birth_date: hnMatch.birth_date,
+            },
+            message: `หมายเลขประจำตัวคนไข้ (HN) "${cleanHn}" มีอยู่ในระบบแล้ว (${fullName})`,
+          };
+        }
+      } catch (err) {
+        logger.warn({ err, hn: cleanHn }, 'Supabase error during checkDuplicate HN');
+      }
+    }
+
+    // 3. Check Name + BirthDate duplicate
+    if (cleanName && cleanDob) {
+      try {
+        const queryPromise = supabase
+          .from('patients')
+          .select('id, hn, first_name, last_name, birth_date')
+          .eq('birth_date', cleanDob);
+
+        const timeoutPromise = new Promise<{ data: null; error: Error }>((_, reject) =>
+          setTimeout(() => reject(new Error('Supabase query timed out')), 1200)
+        );
+
+        const { data: matches } = (await Promise.race([queryPromise, timeoutPromise])) as any;
+
+        if (Array.isArray(matches) && matches.length > 0) {
+          const matched = matches.find((m: any) => {
+            const mFull = `${m.first_name || ''} ${m.last_name || ''}`.trim().toLowerCase();
+            return mFull === cleanName || mFull.includes(cleanName) || cleanName.includes(mFull);
+          });
+          if (matched) {
+            const fullName = `${matched.first_name || ''} ${matched.last_name || ''}`.trim();
+            return {
+              duplicate_hn: false,
+              duplicate_name_dob: true,
+              existing_patient: {
+                id: matched.id,
+                hn: matched.hn,
+                full_name: fullName,
+                birth_date: matched.birth_date,
+              },
+              message: `พบผู้ป่วยชื่อ "${fullName}" และวันเกิดตรงกับในระบบ (HN: ${matched.hn})`,
+            };
+          }
+        }
+      } catch (err) {
+        logger.warn({ err, cleanName, cleanDob }, 'Supabase error during checkDuplicate Name+DOB');
+      }
+    }
+
+    return {
+      duplicate_hn: false,
+      duplicate_name_dob: false,
+    };
+  }
+
   public async registerPatient(payload: {
     hn?: string;
     first_name: string;
     last_name?: string;
+    birth_date?: string;
     age?: number;
     sex?: string;
+    gender?: string;
     phone?: string;
+    target_joint?: string;
     injury?: string;
     initial_symptoms?: string;
+    contraindications?: string;
+    underlying_diseases?: string;
+    allergies?: string;
+    doctor_notes?: string;
+    emergency_contact_name?: string;
+    emergency_contact_relation?: string;
+    emergency_contact_phone?: string;
+    pdpa_consent?: boolean;
+    pdpa_consented_at?: string;
+    registered_by_staff_id?: string;
+    registered_by_staff_name?: string;
     pin?: string;
     responsible_pt_id?: string;
     frames?: Array<{ pose: string; embedding: number[]; jpeg_base64?: string }>;
@@ -105,7 +238,15 @@ export class SmartOnboardingService {
       lastName = '-';
     }
 
-    const hn = (payload.hn && payload.hn.trim()) || `P-${Math.floor(1000 + Math.random() * 9000)}`;
+    const explicitHn = payload.hn?.trim();
+    if (explicitHn) {
+      const dupCheck = await this.checkDuplicate({ hn: explicitHn });
+      if (dupCheck.duplicate_hn) {
+        throw new AppError(dupCheck.message || `หมายเลขประจำตัวคนไข้ (HN) "${explicitHn}" มีอยู่ในระบบแล้ว`, 409, 'DUPLICATE_HN');
+      }
+    }
+
+    const hn = explicitHn || `P-${Math.floor(1000 + Math.random() * 9000)}`;
     const patient_id = hn;
 
     // Calculate average biometric vector & frontal centroid
@@ -189,13 +330,27 @@ export class SmartOnboardingService {
       hn,
       first_name: firstName,
       last_name: lastName,
+      birth_date: payload.birth_date || null,
       age: typeof payload.age === 'number' && !isNaN(payload.age) ? payload.age : 30,
       sex: (payload.sex && (payload.sex.toLowerCase() === 'female' || payload.sex.toLowerCase() === 'f')) ? 'female' : (payload.sex && (payload.sex.toLowerCase() === 'male' || payload.sex.toLowerCase() === 'm')) ? 'male' : 'other',
+      gender: payload.gender || payload.sex || 'other',
       phone: payload.phone?.trim() || '-',
+      target_joint: payload.target_joint?.trim() || 'เข่า',
       injury: payload.injury?.trim() || payload.initial_symptoms?.trim() || 'กายภาพทั่วไป',
+      contraindications: payload.contraindications?.trim() || '-',
+      underlying_diseases: payload.underlying_diseases?.trim() || '-',
+      allergies: payload.allergies?.trim() || '-',
+      doctor_notes: payload.doctor_notes?.trim() || '-',
+      emergency_contact_name: payload.emergency_contact_name?.trim() || null,
+      emergency_contact_relation: payload.emergency_contact_relation?.trim() || null,
+      emergency_contact_phone: payload.emergency_contact_phone?.trim() || null,
+      pdpa_consent: payload.pdpa_consent ?? true,
+      pdpa_consented_at: payload.pdpa_consented_at || now,
+      registered_by_staff_id: payload.registered_by_staff_id || null,
+      registered_by_staff_name: payload.registered_by_staff_name || null,
       responsible_pt_id: payload.responsible_pt_id || null,
       registration_status: 'active',
-      registered_via: 'kiosk',
+      registered_via: 'reception',
       version: 1,
       history: {
         patient_record: newRecord,
@@ -208,18 +363,40 @@ export class SmartOnboardingService {
         pin: payload.pin?.trim() || '1234',
         liveness_passed: payload.liveness_passed ?? true,
         liveness_score: payload.liveness_score ?? 0.98,
-        chronic_diseases: '-',
-        allergies: '-',
-        notes: '-',
+        target_joint: payload.target_joint?.trim() || 'เข่า',
+        contraindications: payload.contraindications?.trim() || '-',
+        chronic_diseases: payload.underlying_diseases?.trim() || '-',
+        allergies: payload.allergies?.trim() || '-',
+        notes: payload.doctor_notes?.trim() || '-',
+        emergency_contact: {
+          name: payload.emergency_contact_name?.trim() || '-',
+          relation: payload.emergency_contact_relation?.trim() || '-',
+          phone: payload.emergency_contact_phone?.trim() || '-',
+        },
+        pdpa_consent: payload.pdpa_consent ?? true,
+        pdpa_consented_at: payload.pdpa_consented_at || now,
+        registered_by_staff: {
+          id: payload.registered_by_staff_id || null,
+          name: payload.registered_by_staff_name || null,
+        },
       },
     };
 
     try {
-      let { data, error } = await supabase
+      const dbPromise = supabase
         .from('patients')
         .insert(insertPayload)
         .select('*')
         .maybeSingle();
+
+      const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase insert timed out')), 1500)
+      );
+
+      let { data, error } = (await Promise.race([dbPromise, timeoutPromise]).catch((e) => ({
+        data: null,
+        error: { message: e.message, code: 'TIMEOUT' },
+      }))) as any;
 
       // Duplicate HN auto-retry with non-duplicate HN
       if (error && (error.code === '23505' || error.message?.includes('hn'))) {

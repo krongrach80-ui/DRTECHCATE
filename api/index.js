@@ -13357,6 +13357,89 @@ var SmartOnboardingService = class {
    * 0. Atomic Patient Registration for Kiosk / NewPatientRegistrationModal
    * Writes directly to Supabase public.patients and biometric vault
    */
+  async checkDuplicate(params) {
+    const cleanHn = (params.hn || "").trim();
+    const cleanName = (params.full_name || "").trim().toLowerCase();
+    const cleanDob = (params.birth_date || "").trim();
+    if (cleanHn) {
+      const localRecord = this.vaultService.getPatientRecord(cleanHn);
+      if (localRecord) {
+        const fullName = `${localRecord.first_name || ""} ${localRecord.last_name || ""}`.trim();
+        return {
+          duplicate_hn: true,
+          duplicate_name_dob: false,
+          existing_patient: {
+            id: localRecord.patient_id,
+            hn: localRecord.hn,
+            full_name: fullName,
+            birth_date: localRecord.birth_date
+          },
+          message: `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${cleanHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27 (${fullName})`
+        };
+      }
+    }
+    const supabase = getAdminClient();
+    if (cleanHn) {
+      try {
+        const queryPromise = supabase.from("patients").select("id, hn, first_name, last_name, birth_date").ilike("hn", cleanHn).maybeSingle();
+        const timeoutPromise = new Promise(
+          (_, reject) => setTimeout(() => reject(new Error("Supabase query timed out")), 1200)
+        );
+        const { data: hnMatch } = await Promise.race([queryPromise, timeoutPromise]);
+        if (hnMatch) {
+          const fullName = `${hnMatch.first_name || ""} ${hnMatch.last_name || ""}`.trim();
+          return {
+            duplicate_hn: true,
+            duplicate_name_dob: false,
+            existing_patient: {
+              id: hnMatch.id,
+              hn: hnMatch.hn,
+              full_name: fullName,
+              birth_date: hnMatch.birth_date
+            },
+            message: `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${cleanHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27 (${fullName})`
+          };
+        }
+      } catch (err) {
+        logger.warn({ err, hn: cleanHn }, "Supabase error during checkDuplicate HN");
+      }
+    }
+    if (cleanName && cleanDob) {
+      try {
+        const queryPromise = supabase.from("patients").select("id, hn, first_name, last_name, birth_date").eq("birth_date", cleanDob);
+        const timeoutPromise = new Promise(
+          (_, reject) => setTimeout(() => reject(new Error("Supabase query timed out")), 1200)
+        );
+        const { data: matches } = await Promise.race([queryPromise, timeoutPromise]);
+        if (Array.isArray(matches) && matches.length > 0) {
+          const matched = matches.find((m) => {
+            const mFull = `${m.first_name || ""} ${m.last_name || ""}`.trim().toLowerCase();
+            return mFull === cleanName || mFull.includes(cleanName) || cleanName.includes(mFull);
+          });
+          if (matched) {
+            const fullName = `${matched.first_name || ""} ${matched.last_name || ""}`.trim();
+            return {
+              duplicate_hn: false,
+              duplicate_name_dob: true,
+              existing_patient: {
+                id: matched.id,
+                hn: matched.hn,
+                full_name: fullName,
+                birth_date: matched.birth_date
+              },
+              message: `\u0E1E\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E0A\u0E37\u0E48\u0E2D "${fullName}" \u0E41\u0E25\u0E30\u0E27\u0E31\u0E19\u0E40\u0E01\u0E34\u0E14\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A (HN: ${matched.hn})`
+            };
+          }
+        }
+      } catch (err) {
+        logger.warn({ err, cleanName, cleanDob }, "Supabase error during checkDuplicate Name+DOB");
+      }
+    }
+    return {
+      duplicate_hn: false,
+      duplicate_name_dob: false
+    };
+  }
   async registerPatient(payload) {
     const rawName = (payload.first_name || "").trim();
     if (!rawName) {
@@ -13371,7 +13454,14 @@ var SmartOnboardingService = class {
     } else if (!lastName) {
       lastName = "-";
     }
-    const hn = payload.hn && payload.hn.trim() || `P-${Math.floor(1e3 + Math.random() * 9e3)}`;
+    const explicitHn = payload.hn?.trim();
+    if (explicitHn) {
+      const dupCheck = await this.checkDuplicate({ hn: explicitHn });
+      if (dupCheck.duplicate_hn) {
+        throw new AppError(dupCheck.message || `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${explicitHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27`, 409, "DUPLICATE_HN");
+      }
+    }
+    const hn = explicitHn || `P-${Math.floor(1e3 + Math.random() * 9e3)}`;
     const patient_id = hn;
     let avgVector = [];
     let frontalCentroid = [];
@@ -13439,13 +13529,27 @@ var SmartOnboardingService = class {
       hn,
       first_name: firstName,
       last_name: lastName,
+      birth_date: payload.birth_date || null,
       age: typeof payload.age === "number" && !isNaN(payload.age) ? payload.age : 30,
       sex: payload.sex && (payload.sex.toLowerCase() === "female" || payload.sex.toLowerCase() === "f") ? "female" : payload.sex && (payload.sex.toLowerCase() === "male" || payload.sex.toLowerCase() === "m") ? "male" : "other",
+      gender: payload.gender || payload.sex || "other",
       phone: payload.phone?.trim() || "-",
+      target_joint: payload.target_joint?.trim() || "\u0E40\u0E02\u0E48\u0E32",
       injury: payload.injury?.trim() || payload.initial_symptoms?.trim() || "\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B",
+      contraindications: payload.contraindications?.trim() || "-",
+      underlying_diseases: payload.underlying_diseases?.trim() || "-",
+      allergies: payload.allergies?.trim() || "-",
+      doctor_notes: payload.doctor_notes?.trim() || "-",
+      emergency_contact_name: payload.emergency_contact_name?.trim() || null,
+      emergency_contact_relation: payload.emergency_contact_relation?.trim() || null,
+      emergency_contact_phone: payload.emergency_contact_phone?.trim() || null,
+      pdpa_consent: payload.pdpa_consent ?? true,
+      pdpa_consented_at: payload.pdpa_consented_at || now,
+      registered_by_staff_id: payload.registered_by_staff_id || null,
+      registered_by_staff_name: payload.registered_by_staff_name || null,
       responsible_pt_id: payload.responsible_pt_id || null,
       registration_status: "active",
-      registered_via: "kiosk",
+      registered_via: "reception",
       version: 1,
       history: {
         patient_record: newRecord,
@@ -13458,13 +13562,33 @@ var SmartOnboardingService = class {
         pin: payload.pin?.trim() || "1234",
         liveness_passed: payload.liveness_passed ?? true,
         liveness_score: payload.liveness_score ?? 0.98,
-        chronic_diseases: "-",
-        allergies: "-",
-        notes: "-"
+        target_joint: payload.target_joint?.trim() || "\u0E40\u0E02\u0E48\u0E32",
+        contraindications: payload.contraindications?.trim() || "-",
+        chronic_diseases: payload.underlying_diseases?.trim() || "-",
+        allergies: payload.allergies?.trim() || "-",
+        notes: payload.doctor_notes?.trim() || "-",
+        emergency_contact: {
+          name: payload.emergency_contact_name?.trim() || "-",
+          relation: payload.emergency_contact_relation?.trim() || "-",
+          phone: payload.emergency_contact_phone?.trim() || "-"
+        },
+        pdpa_consent: payload.pdpa_consent ?? true,
+        pdpa_consented_at: payload.pdpa_consented_at || now,
+        registered_by_staff: {
+          id: payload.registered_by_staff_id || null,
+          name: payload.registered_by_staff_name || null
+        }
       }
     };
     try {
-      let { data, error } = await supabase.from("patients").insert(insertPayload).select("*").maybeSingle();
+      const dbPromise = supabase.from("patients").insert(insertPayload).select("*").maybeSingle();
+      const timeoutPromise = new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Supabase insert timed out")), 1500)
+      );
+      let { data, error } = await Promise.race([dbPromise, timeoutPromise]).catch((e) => ({
+        data: null,
+        error: { message: e.message, code: "TIMEOUT" }
+      }));
       if (error && (error.code === "23505" || error.message?.includes("hn"))) {
         logger.warn({ error, hn: insertPayload.hn }, "HN duplicate detected during smart registration, retrying with unique suffix");
         const uniqueHn = `P-${Math.floor(1e3 + Math.random() * 9e3)}-${Date.now().toString().slice(-4)}`;
@@ -15208,6 +15332,21 @@ var SmartOnboardingController = class {
         next(err);
       }
     };
+    this.checkDuplicate = async (req, res, next) => {
+      try {
+        const hn = req.query.hn;
+        const full_name = req.query.full_name || req.query.name;
+        const birth_date = req.query.birth_date;
+        const result = await this.service.checkDuplicate({ hn, full_name, birth_date });
+        res.status(200).json({
+          ok: true,
+          data: result,
+          ...result
+        });
+      } catch (err) {
+        next(err);
+      }
+    };
     this.pinLogin = async (req, res, _next) => {
       try {
         const { pin, hn, probe } = req.body;
@@ -15478,6 +15617,7 @@ var defaultSmartOnboardingController = new SmartOnboardingController();
 function createSmartOnboardingRouter(controller = defaultSmartOnboardingController) {
   const router3 = (0, import_express13.Router)();
   router3.post("/register", controller.register);
+  router3.get("/check-duplicate", controller.checkDuplicate);
   router3.post("/pin-login", controller.pinLogin);
   router3.post("/scan-login", controller.scanLogin);
   router3.post("/create-pending", controller.createPending);

@@ -172,9 +172,7 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
           const match = patientsList.find((p) => p.id === preselectedPatientId || p.hn === preselectedPatientId);
           if (match) {
             setSelectedPatient(match);
-            if (preselectedDate) {
-              setStep(2);
-            }
+            setStep(2);
           }
         }
       } catch {

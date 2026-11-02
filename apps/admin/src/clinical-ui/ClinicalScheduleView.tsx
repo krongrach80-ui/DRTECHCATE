@@ -27,6 +27,8 @@ import { SmartScheduleWizardModal } from '../smart-portal/SmartScheduleWizardMod
 
 interface ClinicalScheduleViewProps {
   onOpenCreateScheduleModal?: (patientId?: string) => void;
+  preselectedPatientId?: string;
+  autoOpenWizard?: boolean;
 }
 
 const DEMO_PATIENTS: PatientRecord[] = [];
@@ -53,6 +55,8 @@ function broadcastScheduleSync(patientId?: string): void {
 
 export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   onOpenCreateScheduleModal,
+  preselectedPatientId,
+  autoOpenWizard,
 }) => {
   const [calendarMode, setCalendarMode] = useState<'individual' | 'all'>('individual');
   const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
@@ -76,8 +80,17 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
 
   // Modal State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
-  const [wizardPatientId, setWizardPatientId] = useState<string | undefined>(undefined);
+  const [wizardPatientId, setWizardPatientId] = useState<string | undefined>(preselectedPatientId);
   const [wizardPreselectedDate, setWizardPreselectedDate] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (preselectedPatientId) {
+      setWizardPatientId(preselectedPatientId);
+      if (autoOpenWizard) {
+        setIsWizardOpen(true);
+      }
+    }
+  }, [preselectedPatientId, autoOpenWizard]);
 
   // Dynamic current month state
   const now = useMemo(() => new Date(), []);
@@ -109,7 +122,12 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           return d;
         });
       });
-      setSelectedPatient((prev) => prev ?? patientArr[0]);
+      if (preselectedPatientId) {
+        const matched = patientArr.find((p) => p.id === preselectedPatientId || p.hn === preselectedPatientId);
+        setSelectedPatient(matched || patientArr[0] || null);
+      } else {
+        setSelectedPatient((prev) => prev ?? patientArr[0]);
+      }
     } catch {
       setPatients(DEMO_PATIENTS);
       setDossiers(DEMO_DOSSIERS);
@@ -117,7 +135,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [preselectedPatientId]);
 
   useEffect(() => {
     void loadData();

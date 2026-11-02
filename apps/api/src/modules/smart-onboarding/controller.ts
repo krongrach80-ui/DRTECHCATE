@@ -49,6 +49,23 @@ export class SmartOnboardingController {
     }
   };
 
+  checkDuplicate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const hn = req.query.hn as string | undefined;
+      const full_name = (req.query.full_name || req.query.name) as string | undefined;
+      const birth_date = req.query.birth_date as string | undefined;
+
+      const result = await this.service.checkDuplicate({ hn, full_name, birth_date });
+      res.status(200).json({
+        ok: true,
+        data: result,
+        ...result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   pinLogin = async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
     try {
       const { pin, hn, probe } = req.body;

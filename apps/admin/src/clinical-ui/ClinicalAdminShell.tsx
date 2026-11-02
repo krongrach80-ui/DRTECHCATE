@@ -53,6 +53,8 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPhysicalCardGameOpen, setIsPhysicalCardGameOpen] = useState(false);
+  const [schedulePreselectedPatientId, setSchedulePreselectedPatientId] = useState<string | undefined>(undefined);
+  const [autoOpenScheduleWizard, setAutoOpenScheduleWizard] = useState<boolean>(false);
 
   const fetchCalls = useCallback(async () => {
     if (!currentUser) return;
@@ -241,7 +243,13 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
             {activeTab === 'patients' && <PatientsView />}
             {activeTab === 'pts' && <PtsView />}
             {activeTab === 'library' && <LibraryView />}
-            {activeTab === 'schedule' && <ClinicalScheduleView />}
+            {activeTab === 'schedule' && (
+              <ClinicalScheduleView
+                preselectedPatientId={schedulePreselectedPatientId}
+                autoOpenWizard={autoOpenScheduleWizard}
+                onOpenCreateScheduleModal={() => setAutoOpenScheduleWizard(false)}
+              />
+            )}
             {activeTab === 'audit' && (
               <SecurityView
                 staffCalls={staffCalls}
@@ -265,8 +273,14 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
       <NewPatientRegistrationModal
         isOpen={isNewPatientModalOpen}
         onClose={() => setIsNewPatientModalOpen(false)}
-        onSuccess={(_newPatientId) => {
-          setActiveTab('patients');
+        onSuccess={(newPatientId, action) => {
+          if (action === 'course') {
+            setSchedulePreselectedPatientId(newPatientId);
+            setAutoOpenScheduleWizard(true);
+            setActiveTab('schedule');
+          } else {
+            setActiveTab('patients');
+          }
         }}
       />
 

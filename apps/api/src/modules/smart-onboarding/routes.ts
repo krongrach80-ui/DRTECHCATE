@@ -17,6 +17,7 @@ export function createSmartOnboardingRouter(
 
   // 0. Public Self-Registration for Kiosk (Zero Mock - Writes to Supabase public.patients)
   router.post('/register', controller.register);
+  router.get('/check-duplicate', controller.checkDuplicate);
   router.post('/pin-login', controller.pinLogin);
 
   // 1. Biometric Presence Scan & Login
