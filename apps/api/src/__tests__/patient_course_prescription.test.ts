@@ -26,6 +26,7 @@ describe('Patient Course Prescription & Clinical Schedule Sync Test Suite', () =
   const patientB_Hn = `HN-PB-${Date.now().toString().slice(-4)}`;
 
   const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+  const todayDayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Asia/Bangkok' }).format(new Date());
 
   // Helper to create test patient
   async function registerTestPatient(id: string, hn: string, name: string, contraindications: string = '-') {
@@ -77,7 +78,7 @@ describe('Patient Course Prescription & Clinical Schedule Sync Test Suite', () =
             start_date: todayBkk,
             end_date: todayBkk,
             scheduled_dates: [todayBkk],
-            days_of_week: ['Mon', 'Wed', 'Fri'],
+            days_of_week: [todayDayOfWeek],
             time_slot: '10:00 - 11:00',
             prescribed_exercises: [
               {
@@ -107,7 +108,7 @@ describe('Patient Course Prescription & Clinical Schedule Sync Test Suite', () =
         start_date: todayBkk,
         end_date: todayBkk,
         scheduled_dates: [todayBkk],
-        days_of_week: ['Mon', 'Wed', 'Fri'],
+        days_of_week: [todayDayOfWeek],
         time_slot: '09:00 - 10:00',
         include_minigame: true,
         prescribed_exercises: [
@@ -237,6 +238,7 @@ describe('Patient Course Prescription & Clinical Schedule Sync Test Suite', () =
         start_date: todayBkk,
         end_date: '2026-12-31',
         scheduled_dates: [pastDate, todayBkk, '2026-12-31'],
+        days_of_week: [todayDayOfWeek],
         preserve_past_dates: true,
         prescribed_exercises: [
           {

@@ -1460,14 +1460,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         )}
 
         {/* Floating Camera & View Controls */}
-        <div className="absolute bottom-4 right-4 z-20 flex items-center flex-wrap gap-2.5 bg-slate-950/90 border border-slate-700/80 rounded-2xl p-2.5 backdrop-blur-md shadow-xl">
+        <div className="absolute bottom-3 right-4 z-20 flex items-center flex-wrap gap-1.5 bg-slate-950/85 border border-slate-800 rounded-xl p-1.5 backdrop-blur-md shadow-lg text-xs">
           {/* Skeleton Overlay Toggle Button (Default = False/Off) */}
           <button
             type="button"
             id="kiosk-toggle-skeleton-btn"
             data-testid="kiosk-toggle-skeleton-btn"
             onClick={() => setShowSkeletonOverlay((prev) => !prev)}
-            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+            className={`min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer border ${
               showSkeletonOverlay
                 ? 'bg-cyan-500/20 border-cyan-500 text-cyan-200 shadow-md shadow-cyan-500/20'
                 : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
@@ -1496,7 +1496,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               id="kiosk-toggle-debug-btn"
               data-testid="kiosk-toggle-debug-btn"
               onClick={() => setShowDebugHud((prev) => !prev)}
-              className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+              className={`min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer border ${
                 showDebugHud
                   ? 'bg-emerald-500/25 border-emerald-500 text-emerald-200 shadow-sm'
                   : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
@@ -1511,7 +1511,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <button
             type="button"
             onClick={() => setFitMode((m) => (m === 'contain' ? 'cover' : 'contain'))}
-            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm sm:text-base font-bold transition cursor-pointer border ${
+            className={`min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
               fitMode === 'contain'
                 ? 'bg-teal-500/20 border-teal-500 text-teal-300'
                 : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
@@ -1525,7 +1525,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <button
             type="button"
             onClick={() => setShowGuideSilhouette((prev) => !prev)}
-            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm sm:text-base font-bold transition cursor-pointer border ${
+            className={`min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
               showGuideSilhouette
                 ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
                 : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
@@ -1539,7 +1539,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <button
             type="button"
             onClick={() => setBoostLighting((prev) => !prev)}
-            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-sm sm:text-base font-bold transition cursor-pointer border ${
+            className={`min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
               boostLighting
                 ? 'bg-amber-500/20 border-amber-500 text-amber-300'
                 : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
@@ -1551,11 +1551,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           {/* Hardware Zoom Slider / Zoom Out Button */}
           {zoomInfo.supported && (
-            <div className="flex items-center gap-2 pl-2 border-l border-slate-700">
+            <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-700">
               <button
                 type="button"
                 onClick={() => handleZoomChange(zoomInfo.min)}
-                className="min-h-[44px] px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-sm font-bold text-teal-300 border border-slate-700 cursor-pointer"
+                className="min-h-[36px] px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-xs font-bold text-teal-300 border border-slate-700 cursor-pointer"
                 title="ซูมออกสุดเพื่อให้เห็นมุมกว้างที่สุด"
               >
                 มุมกว้าง ({zoomInfo.min.toFixed(1)}x)
@@ -1568,7 +1568,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   step={zoomInfo.step}
                   value={zoomInfo.current}
                   onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
-                  className="w-20 sm:w-28 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                  className="w-16 sm:w-20 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-400"
                   title={`ระดับซูม: ${zoomInfo.current.toFixed(1)}x`}
                 />
               )}
@@ -1599,123 +1599,121 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           );
 
           // Calculate smooth motion progress towards target (0.0 to 1.0)
-          const startAngle = resolvedConfig.angleMechanics?.startAngleDeg || 20;
-          const targetMin = resolvedConfig.angleMechanics?.targetMinDeg || 80;
-          const curAngle = evalResult?.currentAngleDeg ?? hudState.currentAngle ?? 0;
-
           let motionProgress = 0;
           if (isPendulum) {
             motionProgress = evalResult?.pendulumCircleProgressRatio || 0;
           } else if (evalResult?.phase === 'HOLDING_TARGET' || evalResult?.isInsideTargetZone) {
             motionProgress = evalResult?.holdProgressRatio ? Math.max(0.85, evalResult.holdProgressRatio) : 1.0;
           } else if (evalResult?.phase === 'MOVING_TO_TARGET') {
-            const range = Math.max(1, targetMin - startAngle);
-            motionProgress = Math.max(0, Math.min(0.95, (curAngle - startAngle) / range));
+            const startAngle = resolvedConfig.angleMechanics?.startAngleDeg || 20;
+            const targetMin = resolvedConfig.angleMechanics?.targetMinDeg || 80;
+            const curAngle = evalResult?.currentAngleDeg ?? hudState.currentAngle ?? 0;
+            motionProgress = Math.max(0, Math.min(0.95, (curAngle - startAngle) / Math.max(1, targetMin - startAngle)));
           } else if (evalResult?.phase === 'RETURNING_TO_START') {
-            const range = Math.max(1, targetMin - startAngle);
-            motionProgress = Math.max(0, Math.min(0.5, (curAngle - startAngle) / range));
+            const startAngle = resolvedConfig.angleMechanics?.startAngleDeg || 20;
+            const targetMin = resolvedConfig.angleMechanics?.targetMinDeg || 80;
+            const curAngle = evalResult?.currentAngleDeg ?? hudState.currentAngle ?? 0;
+            motionProgress = Math.max(0, Math.min(0.5, (curAngle - startAngle) / Math.max(1, targetMin - startAngle)));
           }
 
           let friendlyMessage = '';
           let friendlyBadge = '';
           let bannerIcon = '🎯';
-          let bannerTheme = 'emerald'; // emerald | amber | rose | cyan | rest | celebrate
 
+          // 1. ตรวจสอบเงื่อนไข Pendulum เป็นลำดับแรก
           if (celebratingRep !== null) {
             friendlyMessage = lang === 'zh-CN'
               ? `🌟 太棒了！计数 1 次（第 ${celebratingRep} 次）`
               : lang === 'en-US'
               ? `🌟 Great job! Rep counted (#${celebratingRep})`
-              : `🌟 เก่งมาก! นับ 1 ครั้ง (ครั้งที่ ${celebratingRep})`;
-            friendlyBadge = '🌟 เยี่ยมมาก!';
+              : `🌟 ยอดเยี่ยม! นับ 1 ครั้ง (ครั้งที่ ${celebratingRep})`;
+            friendlyBadge = lang === 'zh-CN' ? '🌟 +1 次' : lang === 'en-US' ? '🌟 +1 Rep' : '🌟 +1 ครั้ง';
             bannerIcon = '🎉';
-            bannerTheme = 'celebrate';
           } else if (isResting) {
-            friendlyMessage = lang === 'zh-CN' ? '☕ 请稍作休息...' : lang === 'en-US' ? '☕ Rest comfortably...' : '☕ พักผ่อนตามอัธยาศัย...';
-            friendlyBadge = '☕ พักผ่อน';
+            friendlyMessage = lang === 'zh-CN' ? '☕ 请稍作休息...' : lang === 'en-US' ? '☕ Rest comfortably...' : '☕ พักผ่อนกล้ามเนื้อตามอัธยาศัย...';
+            friendlyBadge = lang === 'zh-CN' ? '☕ 休息' : lang === 'en-US' ? '☕ Rest' : '☕ พักผ่อน';
             bannerIcon = '☕';
-            bannerTheme = 'rest';
+          } else if (isPendulum) {
+            bannerIcon = '🌀';
+            if (evalResult?.readinessStatus === 'missing_shoulder') {
+              friendlyMessage = lang === 'zh-CN'
+                ? '📷 请后退约 1.5–2 米，确保身体和手臂完整入镜'
+                : lang === 'en-US'
+                ? '📷 Please step back 1.5–2 meters so your torso and arm are visible'
+                : '📷 กรุณาถอยห่างประมาณ 1.5–2 เมตร ให้เห็นลำตัวและแขนชัดเจน';
+              friendlyBadge = lang === 'zh-CN' ? '📷 调整距离' : lang === 'en-US' ? '📷 Distance' : '📷 จัดระยะ';
+            } else if (evalResult?.coachingMessageTh) {
+              friendlyMessage = lang === 'zh-CN'
+                ? (evalResult.coachingMessageEn || evalResult.coachingMessageTh)
+                : lang === 'en-US'
+                ? (evalResult.coachingMessageEn || evalResult.coachingMessageTh)
+                : evalResult.coachingMessageTh;
+              friendlyBadge = lang === 'zh-CN' ? '🌀 摆动中' : lang === 'en-US' ? '🌀 Swinging' : '🌀 กำลังแกว่ง';
+            } else {
+              friendlyMessage = lang === 'zh-CN'
+                ? '身体向前微倾，放松手臂顺畅做圆周摆动'
+                : lang === 'en-US'
+                ? 'Lean forward slightly, relax arm and swing in a circular motion'
+                : 'โน้มตัวไปข้างหน้า ปล่อยแขนสบายๆ แล้วแกว่งวนเป็นวงกลม';
+              friendlyBadge = lang === 'zh-CN' ? '🎯 开始' : lang === 'en-US' ? '🎯 Start' : '🎯 เริ่มต้น';
+            }
           } else if (evalResult?.formRating === 'error') {
             friendlyMessage = coachingMsg || (lang === 'zh-CN' ? '请注意动作规范' : lang === 'en-US' ? 'Please adjust form carefully' : 'ระวังอย่าฝืนข้อต่อนะคะ');
             friendlyBadge = '🚨 ปรับท่า';
             bannerIcon = '🚨';
-            bannerTheme = 'rose';
           } else if (evalResult?.formRating === 'warning') {
-            friendlyMessage = coachingMsg || (lang === 'zh-CN' ? '请保持躯干挺直' : lang === 'en-US' ? 'Keep your back straight' : 'ระวังอย่าเอียงลำตัว ยืนหลังตรงนะคะ');
+            friendlyMessage = coachingMsg || (lang === 'zh-CN' ? '请保持躯干挺直' : lang === 'en-US' ? 'Keep your back straight' : 'รักษาลำตัวให้ตรง ยืนหลังตรงนะคะ');
             friendlyBadge = '⚠️ ปรับท่า';
             bannerIcon = '⚠️';
-            bannerTheme = 'amber';
           } else if (isWaitingPose) {
             friendlyMessage = lang === 'zh-CN' ? '📷 请站到摄像头前 1.5–2 米处做好准备' : lang === 'en-US' ? '📷 Stand in front of camera at 1.5–2 meters' : '📷 ยืนให้กล้องมองเห็นตัวในระยะ 1.5 - 2 เมตร';
             friendlyBadge = '📷 ยืนตรง';
             bannerIcon = '📷';
-            bannerTheme = 'cyan';
-          } else if (evalResult?.phase === 'HOLDING_TARGET' || evalResult?.isInsideTargetZone) {
-            friendlyMessage = lang === 'zh-CN' ? '🌟 很好！请在目标位置保持稳定...' : lang === 'en-US' ? '🌟 Great! Hold steady at target...' : '🌟 เก่งมาก! ค้างไว้นิ่งๆ อีกนิด...';
+          } else if (evalResult?.phase === 'HOLDING_TARGET') {
+            friendlyMessage = lang === 'zh-CN' ? '🌟 很好！请在目标位置保持稳定...' : lang === 'en-US' ? '🌟 Great! Hold steady at target...' : '🌟 ค้างไว้นิ่งๆ อีกนิด...';
             friendlyBadge = '⏱️ ค้างไว้';
             bannerIcon = '🌟';
-            bannerTheme = 'emerald';
           } else if (evalResult?.phase === 'MOVING_TO_TARGET') {
             friendlyMessage = isLowerBody
               ? (lang === 'zh-CN' ? '⬆️ 慢慢向上抬腿...' : lang === 'en-US' ? '⬆️ Lift leg up slowly...' : '⬆️ ยกขาขึ้นอีกนิด ช้าๆ...')
               : (lang === 'zh-CN' ? '⬆️ 慢慢向上抬臂...' : lang === 'en-US' ? '⬆️ Lift arm up slowly...' : '⬆️ ยกแขนขึ้นอีกนิด ช้าๆ...');
             friendlyBadge = '⬆️ กำลังยก';
             bannerIcon = '⬆️';
-            bannerTheme = 'emerald';
           } else if (evalResult?.phase === 'RETURNING_TO_START') {
             friendlyMessage = isLowerBody
-              ? (lang === 'zh-CN' ? '☕ 慢慢放下腿部回到起始位置...' : lang === 'en-US' ? '☕ Lower leg down slowly...' : '☕ ค่อยๆ ผ่อนขาลงช้าๆ...')
-              : (lang === 'zh-CN' ? '☕ 慢慢放下手臂回到起始位置...' : lang === 'en-US' ? '☕ Lower arm down slowly...' : '☕ ค่อยๆ ผ่อนแขนลงช้าๆ...');
+              ? (lang === 'zh-CN' ? '☕ 慢慢放下腿部回到起始位置...' : lang === 'en-US' ? '☕ Lower leg down slowly...' : '☕ ค่อยๆ ผ่อนลงช้าๆ...')
+              : (lang === 'zh-CN' ? '☕ 慢慢放下手臂回到起始位置...' : lang === 'en-US' ? '☕ Lower arm down slowly...' : '☕ ค่อยๆ ผ่อนลงช้าๆ...');
             friendlyBadge = '⬇️ ผ่อนลง';
             bannerIcon = '☕';
-            bannerTheme = 'rest';
           } else {
             // IDLE
             friendlyMessage = isLowerBody
-              ? (lang === 'zh-CN' ? '准备就绪，开始慢慢抬腿' : lang === 'en-US' ? 'Ready, slowly lift leg' : 'เตรียมพร้อม ยืนตัวตรง แล้วเริ่มยกขาช้าๆ')
-              : (lang === 'zh-CN' ? '准备就绪，开始慢慢抬臂' : lang === 'en-US' ? 'Ready, slowly lift arm' : 'เตรียมพร้อม ยืนตัวตรง แล้วเริ่มยกแขนช้าๆ');
+              ? (lang === 'zh-CN' ? '准备就绪，开始慢慢抬腿' : lang === 'en-US' ? 'Ready, slowly lift leg' : 'เตรียมพร้อม ยืนตัวตรง แล้วเริ่มเคลื่อนไหวช้าๆ')
+              : (lang === 'zh-CN' ? '准备就绪，开始慢慢抬臂' : lang === 'en-US' ? 'Ready, slowly lift arm' : 'เตรียมพร้อม ยืนตัวตรง แล้วเริ่มเคลื่อนไหวช้าๆ');
             friendlyBadge = '🎯 เริ่มต้น';
-            bannerIcon = isPendulum ? '🌀' : '🎯';
-            bannerTheme = 'emerald';
+            bannerIcon = '🎯';
           }
 
-          const bannerColorClasses =
-            bannerTheme === 'celebrate'
-              ? 'bg-emerald-950/95 border-3 border-amber-300 text-white shadow-2xl shadow-emerald-500/40 animate-pulse'
-              : bannerTheme === 'rose'
-              ? 'bg-rose-950/95 border-2 border-rose-400 text-white shadow-2xl shadow-rose-950/80'
-              : bannerTheme === 'amber'
-              ? 'bg-amber-950/95 border-2 border-amber-400 text-amber-100 shadow-2xl shadow-amber-950/80'
-              : bannerTheme === 'cyan'
-              ? 'bg-cyan-950/95 border-2 border-cyan-400 text-cyan-100 shadow-2xl shadow-cyan-950/80'
-              : bannerTheme === 'rest'
-              ? 'bg-slate-950/95 border-2 border-slate-600 text-slate-100 shadow-2xl'
-              : 'bg-emerald-950/95 border-2 border-emerald-400 text-emerald-100 shadow-2xl shadow-emerald-950/80';
-
           return (
-            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-3xl">
-              <div
-                className={`p-5 sm:p-6 rounded-3xl backdrop-blur-md border shadow-2xl transition-all duration-300 flex items-center gap-4 sm:gap-5 ${bannerColorClasses}`}
-              >
-                <div className="text-4xl sm:text-5xl shrink-0">
-                  {bannerIcon}
-                </div>
+            // ย้ายตำแหน่งลงมาด้านล่างก่อนถึง Emergency Bar (ไม่บังส่วนศีรษะและลำตัวคนไข้)
+            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-2xl pointer-events-none">
+              <div className="px-5 py-3 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-slate-700/80 shadow-2xl flex items-center gap-3">
+                <div className="text-3xl shrink-0">{bannerIcon}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-2xl sm:text-3xl font-black leading-relaxed tracking-normal text-white">
+                  <div className="text-lg sm:text-xl font-bold text-white truncate">
                     {friendlyMessage}
                   </div>
-                  {/* Smooth Motion Progress Bar */}
+                  {/* แถบ Progress บางและเรียบขึ้น */}
                   {!isWaitingPose && (
-                    <div className="w-full bg-slate-950/80 rounded-full h-4 mt-3 overflow-hidden border border-slate-700/80">
+                    <div className="w-full bg-slate-800 rounded-full h-2 mt-1.5 overflow-hidden border border-slate-700">
                       <div
-                        className="bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-300 h-full transition-all duration-150"
+                        className="bg-emerald-400 h-full transition-all duration-150"
                         style={{ width: `${Math.round(motionProgress * 100)}%` }}
                       />
                     </div>
                   )}
                 </div>
-                {/* Intuitive Visual Status Badge (No confusing degree numbers!) */}
-                <div className="px-5 py-3 rounded-2xl bg-slate-900/90 border-2 border-slate-700 text-xl sm:text-2xl font-black text-white shrink-0 shadow-inner flex items-center justify-center">
+                <div className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-emerald-300 shrink-0">
                   {celebratingRep !== null ? '🌟 +1' : friendlyBadge}
                 </div>
               </div>

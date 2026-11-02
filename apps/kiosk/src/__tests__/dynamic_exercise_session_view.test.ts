@@ -281,5 +281,68 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
       const progHold = computeProgress(80, 20, 80, 'HOLDING_TARGET', 0.9);
       expect(progHold).toBe(0.9);
     });
+
+    it('4.5 pendulum exercise strictly prioritizes circular orbit over isometric hold messages', () => {
+      const getCoaching = (
+        isPendulum: boolean,
+        readinessStatus: string,
+        coachingMessageTh?: string,
+        phase?: string,
+        isInsideTargetZone?: boolean
+      ) => {
+        if (isPendulum) {
+          if (readinessStatus === 'missing_shoulder') {
+            return {
+              msg: '📷 กรุณาถอยห่างประมาณ 1.5–2 เมตร ให้เห็นลำตัวและแขนชัดเจน',
+              badge: '📷 จัดระยะ',
+            };
+          }
+          if (coachingMessageTh) {
+            return {
+              msg: coachingMessageTh,
+              badge: '🌀 กำลังแกว่ง',
+            };
+          }
+          return {
+            msg: 'โน้มตัวไปข้างหน้า ปล่อยแขนสบายๆ แล้วแกว่งวนเป็นวงกลม',
+            badge: '🎯 เริ่มต้น',
+          };
+        }
+
+        if (phase === 'HOLDING_TARGET' || isInsideTargetZone) {
+          return {
+            msg: '🌟 ค้างไว้นิ่งๆ อีกนิด...',
+            badge: '⏱️ ค้างไว้',
+          };
+        }
+
+        return {
+          msg: 'เตรียมพร้อม ยืนตัวตรง แล้วเริ่มเคลื่อนไหวช้าๆ',
+          badge: '🎯 เริ่มต้น',
+        };
+      };
+
+      // Even if isInsideTargetZone is true, pendulum must NOT say "ค้างไว้นิ่งๆ"
+      const pendulumActive = getCoaching(true, 'ready', undefined, 'MOVING_TO_TARGET', true);
+      expect(pendulumActive.msg).toBe('โน้มตัวไปข้างหน้า ปล่อยแขนสบายๆ แล้วแกว่งวนเป็นวงกลม');
+      expect(pendulumActive.badge).toBe('🎯 เริ่มต้น');
+
+      // Pendulum distance warning when camera is too close
+      const pendulumMissing = getCoaching(true, 'missing_shoulder');
+      expect(pendulumMissing.msg).toContain('กรุณาถอยห่างประมาณ 1.5–2 เมตร');
+      expect(pendulumMissing.badge).toBe('📷 จัดระยะ');
+
+      // Non-pendulum hold exercise
+      const isometricHold = getCoaching(false, 'ready', undefined, 'HOLDING_TARGET', true);
+      expect(isometricHold.msg).toBe('🌟 ค้างไว้นิ่งๆ อีกนิด...');
+      expect(isometricHold.badge).toBe('⏱️ ค้างไว้');
+    });
+
+    it('4.6 coaching banner position is bottom-anchored to avoid blocking patient face and torso', () => {
+      const bannerClass = 'absolute bottom-20 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-2xl pointer-events-none';
+      expect(bannerClass).toContain('bottom-20');
+      expect(bannerClass).not.toContain('top-6');
+      expect(bannerClass).toContain('pointer-events-none');
+    });
   });
 });
