@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 import {
   PhysicalCardQuestion,
   ALL_99_PHYSICAL_CARD_QUESTIONS,
@@ -50,6 +51,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   maxQuestions,
   patientId,
 }) => {
+  const { t, lang } = useClinicalI18n();
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [sessionSeed, setSessionSeed] = useState<number>(0);
 
@@ -88,13 +90,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const rightProgressBarInnerRef = useRef<HTMLDivElement | null>(null);
   const leftProgressPercentRef = useRef<HTMLSpanElement | null>(null);
   const rightProgressPercentRef = useRef<HTMLSpanElement | null>(null);
-  const leftHudDotRef = useRef<HTMLSpanElement | null>(null);
-  const rightHudDotRef = useRef<HTMLSpanElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Camera & Real Hand Landmarker Detection
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const handLandmarkerRef = useRef<any>(null);
   const neutralGateRef = useRef<boolean>(false);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
@@ -300,8 +301,6 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
         if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
         if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-        if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
-        if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
 
         if (currentIndex + 1 < filteredList.length) {
           setCurrentIndex((i) => i + 1);
@@ -379,6 +378,15 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         if (!isCancelled) {
           handLandmarkerRef.current = landmarker;
           setIsModelLoading(false);
+          // Warm-up inference once so first frame doesn't stutter or freeze
+          try {
+            const warmUpCanvas = document.createElement('canvas');
+            warmUpCanvas.width = 160;
+            warmUpCanvas.height = 120;
+            landmarker.detectForVideo(warmUpCanvas, performance.now());
+          } catch {
+            // Warm-up non-blocking
+          }
         } else {
           landmarker?.close();
         }
@@ -405,13 +413,15 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     };
   }, []);
 
-  // 2. Strict Real Hand Detection Loop with 4-Layer Verification Gate, 600ms Dwell Time, & Neutral Reset
+  // 2. Strict Real Hand Detection Loop with Downscaling (480px), 20 FPS Throttle, Hysteresis & 600ms Dwell
   useEffect(() => {
     if (!cameraActive || isGameOver || answerState !== 'idle') {
       if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
       if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-      if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
-      if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
+      if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+      if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+      if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+      if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
       if (overlayCanvasRef.current) {
         const ctx = overlayCanvasRef.current.getContext('2d');
         if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
@@ -421,12 +431,15 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
     let animFrame: number;
     let lastDetectTime = 0;
-    const TARGET_INTERVAL_MS = 36; // ~28 FPS: buttery-smooth real-time tracking
+    const TARGET_INTERVAL_MS = 50; // ~20 FPS: optimal for ML tracking without GPU overload
     const HOLD_DWELL_MS = 600; // 0.6 seconds continuous hold requirement
 
     let activeZone: 'LEFT' | 'RIGHT' | null = null;
     let zoneHoldStart = 0;
     let handNeutralFrames = 0;
+    let candidateZone: 'LEFT' | 'RIGHT' | null = null;
+    let candidateCount = 0;
+    let graceFrames = 0;
 
     const detectHands = (timestamp: number) => {
       const video = videoRef.current;
@@ -443,10 +456,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
       ) {
         lastDetectTime = timestamp;
 
-        // Auto-fit canvas dimensions to video feed
-        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-          canvas.width = video.videoWidth || 640;
-          canvas.height = video.videoHeight || 480;
+        // Auto-fit overlay canvas dimensions to video feed
+        const vw = video.videoWidth || 640;
+        const vh = video.videoHeight || 480;
+        if (canvas.width !== vw || canvas.height !== vh) {
+          canvas.width = vw;
+          canvas.height = vh;
         }
 
         const ctx = canvas.getContext('2d');
@@ -455,7 +470,24 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         }
 
         try {
-          const result = landmarker.detectForVideo(video, timestamp);
+          // Downscale input frame to 480px width canvas to dramatically reduce ML latency and avoid lag
+          let dCanvas = detectCanvasRef.current;
+          if (!dCanvas) {
+            dCanvas = document.createElement('canvas');
+            detectCanvasRef.current = dCanvas;
+          }
+          const targetW = 480;
+          const targetH = Math.round((targetW * vh) / vw);
+          if (dCanvas.width !== targetW || dCanvas.height !== targetH) {
+            dCanvas.width = targetW;
+            dCanvas.height = targetH;
+          }
+          const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
+          if (dctx) {
+            dctx.drawImage(video, 0, 0, targetW, targetH);
+          }
+
+          const result = landmarker.detectForVideo(dCanvas, timestamp);
           const hands = result?.landmarks || [];
           const handedness = result?.handedness || [];
 
@@ -497,7 +529,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               if (isLowered) {
                 handNeutralFrames++;
-                if (handNeutralFrames >= 5) {
+                if (handNeutralFrames >= 4) {
                   neutralGateRef.current = false;
                   handNeutralFrames = 0;
                 }
@@ -507,7 +539,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               // Clear progress bars while awaiting hand reset
               activeZone = null;
+              candidateZone = null;
+              candidateCount = 0;
               zoneHoldStart = 0;
+              graceFrames = 0;
               if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
               if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
               if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
@@ -518,25 +553,26 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               // Draw neutral cyan skeleton to show camera still tracks their hand
               drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, 'CENTER', 0);
             } else {
-              // Active Answer Verification Mode
+              // Active Answer Verification Mode with Hysteresis
               if (bestVerification.isValidHand && bestVerification.side) {
-                const zone = bestVerification.zone as 'LEFT' | 'RIGHT';
+                const detectedZone = bestVerification.zone as 'LEFT' | 'RIGHT';
 
-                if (activeZone === zone) {
+                if (activeZone === detectedZone) {
+                  graceFrames = 0;
                   const elapsed = timestamp - zoneHoldStart;
                   const progress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
 
                   // Update GPU-accelerated progress bars and horizontal inner indicators
                   const progressScale = progress.toFixed(3);
                   const percentStr = `${Math.round(progress * 100)}%`;
-                  if (zone === 'LEFT' && leftProgressRef.current) {
+                  if (detectedZone === 'LEFT' && leftProgressRef.current) {
                     leftProgressRef.current.style.transform = `scaleY(${progressScale})`;
                     if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = percentStr;
                     if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = percentStr;
                     if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
                     if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
                     if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-                  } else if (zone === 'RIGHT' && rightProgressRef.current) {
+                  } else if (detectedZone === 'RIGHT' && rightProgressRef.current) {
                     rightProgressRef.current.style.transform = `scaleY(${progressScale})`;
                     if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = percentStr;
                     if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = percentStr;
@@ -545,26 +581,14 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                     if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
                   }
 
-                  // HUD indicator dots
-                  if (leftHudDotRef.current) {
-                    leftHudDotRef.current.className =
-                      zone === 'LEFT'
-                        ? 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-400 animate-pulse'
-                        : 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-600 transition-colors';
-                  }
-                  if (rightHudDotRef.current) {
-                    rightHudDotRef.current.className =
-                      zone === 'RIGHT'
-                        ? 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-400 animate-pulse'
-                        : 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-600 transition-colors';
-                  }
-
                   // Draw 21-point hand skeleton with dynamic hold dwell progress ring
-                  drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, zone, progress);
+                  drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, detectedZone, progress);
 
                   // Trigger answer after holding for 600ms continuously
                   if (progress >= 1.0) {
                     activeZone = null;
+                    candidateZone = null;
+                    candidateCount = 0;
                     zoneHoldStart = 0;
                     neutralGateRef.current = true; // Lock until player lowers hand
                     handNeutralFrames = 0;
@@ -579,56 +603,77 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                     handleAnswerRef.current(bestVerification.side);
                   }
                 } else {
-                  // Switched to a new zone
-                  activeZone = zone;
-                  zoneHoldStart = timestamp;
+                  // Hysteresis: Require 2 consecutive frames before switching activeZone
+                  if (candidateZone === detectedZone) {
+                    candidateCount++;
+                    if (candidateCount >= 2) {
+                      activeZone = detectedZone;
+                      zoneHoldStart = timestamp;
+                      candidateCount = 0;
+                      graceFrames = 0;
 
-                  if (zone === 'LEFT') {
-                    if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-                    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-                  }
-                  if (zone === 'RIGHT') {
-                    if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-                    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-                    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+                      if (detectedZone === 'LEFT') {
+                        if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                        if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+                        if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+                      }
+                      if (detectedZone === 'RIGHT') {
+                        if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                        if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+                        if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+                      }
+                    }
+                  } else {
+                    candidateZone = detectedZone;
+                    candidateCount = 1;
                   }
 
-                  drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, zone, 0);
+                  drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, detectedZone, 0);
                 }
               } else {
                 // Hand in center neutral zone or not fully meeting open-palm criteria
-                activeZone = null;
-                zoneHoldStart = 0;
-                if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-                if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-                if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-                if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-                if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-                if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-600 transition-colors';
-                if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-600 transition-colors';
+                if (activeZone && graceFrames < 1) {
+                  // 1-frame grace tolerance
+                  graceFrames++;
+                } else {
+                  activeZone = null;
+                  candidateZone = null;
+                  candidateCount = 0;
+                  zoneHoldStart = 0;
+                  graceFrames = 0;
+                  if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                  if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                  if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+                  if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+                  if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+                  if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+                }
 
                 drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, bestVerification.zone, 0);
               }
             }
           } else {
-            // No real hand detected (face, body, shirt motion or background pixels completely ignored)
-            activeZone = null;
-            zoneHoldStart = 0;
-            handNeutralFrames++;
-            if (handNeutralFrames >= 5) {
-              neutralGateRef.current = false;
-            }
+            // No real hand detected
+            if (activeZone && graceFrames < 1) {
+              graceFrames++;
+            } else {
+              activeZone = null;
+              candidateZone = null;
+              candidateCount = 0;
+              zoneHoldStart = 0;
+              graceFrames = 0;
+              handNeutralFrames++;
+              if (handNeutralFrames >= 4) {
+                neutralGateRef.current = false;
+              }
 
-            if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-            if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-            if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-            if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-            if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-            if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-            if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-600 transition-colors';
-            if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-600 transition-colors';
+              if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+              if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+              if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+              if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+              if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+              if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+            }
           }
         } catch {
           // Graceful skip on frame error
@@ -677,8 +722,6 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
     if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
     if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-    if (leftHudDotRef.current) leftHudDotRef.current.className = 'w-2 h-2 rounded-full bg-emerald-600 transition-colors';
-    if (rightHudDotRef.current) rightHudDotRef.current.className = 'w-2 h-2 rounded-full bg-orange-600 transition-colors';
   };
 
   return (
@@ -687,10 +730,14 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
       <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex items-center justify-between gap-2 shrink-0 pt-0.5">
         <div className="flex items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl font-black text-[#134E43] tracking-normal">
-            การ์ดกายภาพ
+            {t('card_minigame_title')}
           </h1>
           <span className="text-xs font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300/80 px-3 py-1 rounded-full shadow-xs">
-            ข้อ {currentIndex + 1} / {filteredList.length}
+            {lang === 'zh-CN'
+              ? `题目 ${currentIndex + 1} / ${filteredList.length}`
+              : lang === 'en-US'
+              ? `Question ${currentIndex + 1} / ${filteredList.length}`
+              : `ข้อ ${currentIndex + 1} / ${filteredList.length}`}
           </span>
         </div>
 
@@ -708,7 +755,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
           {/* Score Pill Badge (ตามภาพต้นฉบับ: แถบสีเขียวเข้มพร้อมวงกลมคะแนนสีขาว) */}
           <div className="flex items-center gap-2 bg-[#134E43] text-white pl-4 pr-1.5 py-1 rounded-full shadow-md border border-emerald-800">
-            <span className="text-xs sm:text-sm font-bold tracking-wide">คะแนน</span>
+            <span className="text-xs sm:text-sm font-bold tracking-wide">{t('card_score_label')}</span>
             <div className="w-7 h-7 rounded-full bg-white text-[#134E43] font-black flex items-center justify-center text-sm shadow-inner">
               {score}
             </div>
@@ -794,18 +841,18 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               <div className="flex-1 flex flex-col items-center justify-center my-1 sm:my-2">
                 <div className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#16A34A] tracking-tight">
-                  ใช่
+                  {t('card_yes_label')}
                 </div>
               </div>
 
               <div className="w-full mt-auto space-y-2 shrink-0 z-10">
                 <span className="inline-block w-full py-1.5 sm:py-2 px-2.5 rounded-full bg-[#DCFCE7] text-[#15803D] text-xs sm:text-sm font-black shadow-xs tracking-wide">
-                  ✋ ยกมือซ้าย
+                  {t('card_raise_left_hand')}
                 </span>
                 {/* Horizontal Mini Progress Track with Percent Indicator */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11px] font-bold text-[#15803D] px-1">
-                    <span>ค้างมือเพื่อตอบ</span>
+                    <span>{t('card_hold_to_answer')}</span>
                     <span ref={leftProgressPercentRef} className="font-mono font-black">0%</span>
                   </div>
                   <div className="w-full bg-emerald-100/90 rounded-full h-2 sm:h-2.5 overflow-hidden border border-emerald-200">
@@ -837,30 +884,11 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
               />
 
-              {/* Left Hand Zone Guide (mirrored x < 0.42) */}
-              <div className="absolute top-0 bottom-0 left-0 w-[42%] border-r-2 border-dashed border-emerald-400/40 bg-emerald-500/5 pointer-events-none z-15 p-2.5 sm:p-3">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-emerald-300 border border-emerald-500/40 text-[10px] sm:text-xs font-black shadow-md">
-                  <span
-                    ref={leftHudDotRef}
-                    className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-500 transition-colors"
-                  />
-                  <span>โซนซ้าย (ใช่)</span>
-                </div>
-              </div>
-
-              {/* Right Hand Zone Guide (mirrored x > 0.58) */}
-              <div className="absolute top-0 bottom-0 right-0 w-[42%] border-l-2 border-dashed border-orange-400/40 bg-orange-500/5 pointer-events-none z-15 p-2.5 sm:p-3 flex justify-end">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-orange-300 border border-orange-500/40 text-[10px] sm:text-xs font-black shadow-md">
-                  <span>โซนขวา (ไม่)</span>
-                  <span
-                    ref={rightHudDotRef}
-                    className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-orange-500 transition-colors"
-                  />
-                </div>
-              </div>
+              {/* Subtle Center Guide Line (เส้นแบ่งโซนกึ่งกลางจาง ๆ ไม่บดบังภาพ) */}
+              <div className="absolute top-4 bottom-14 left-1/2 -translate-x-1/2 w-px border-l border-dashed border-white/20 pointer-events-none z-10" />
 
               {/* Center Floating Question Illustration Badge (อยู่ตรงกลางด้านบน ไม่บังหน้าและมือ) */}
-              <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-2xl bg-white/95 backdrop-blur-md border border-emerald-200/90 shadow-xl flex items-center gap-2.5 pointer-events-none max-w-[85%]">
+              <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-2xl bg-white/95 border border-emerald-200/90 shadow-lg flex items-center gap-2.5 pointer-events-none max-w-[85%]">
                 <div className="w-9 h-9 sm:w-11 sm:h-11 shrink-0 bg-emerald-50/80 rounded-xl flex items-center justify-center p-0.5 border border-emerald-100 overflow-hidden">
                   <PhysicalCardVisual
                     visualKey={activeQuestion.visualKey}
@@ -902,7 +930,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 whitespace-nowrap">
                 <div className="px-4 sm:px-5 py-1.5 rounded-full bg-white text-[#0F2D24] text-xs sm:text-sm font-extrabold shadow-lg flex items-center gap-2 border border-emerald-100">
                   <Camera className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                  <span>ยืนให้เห็นมือทั้งสองข้าง (ค้างมือ 0.6 วินาทีเพื่อตอบ)</span>
+                  <span>{t('card_stand_visible_hint')}</span>
                 </div>
               </div>
             </div>
@@ -931,18 +959,18 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               <div className="flex-1 flex flex-col items-center justify-center my-1 sm:my-2">
                 <div className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#EA580C] tracking-tight">
-                  ไม่
+                  {t('card_no_label')}
                 </div>
               </div>
 
               <div className="w-full mt-auto space-y-2 shrink-0 z-10">
                 <span className="inline-block w-full py-1.5 sm:py-2 px-2.5 rounded-full bg-[#FFEDD5] text-[#C2410C] text-xs sm:text-sm font-black shadow-xs tracking-wide">
-                  ✋ ยกมือขวา
+                  {t('card_raise_right_hand')}
                 </span>
                 {/* Horizontal Mini Progress Track with Percent Indicator */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11px] font-bold text-[#C2410C] px-1">
-                    <span>ค้างมือเพื่อตอบ</span>
+                    <span>{t('card_hold_to_answer')}</span>
                     <span ref={rightProgressPercentRef} className="font-mono font-black">0%</span>
                   </div>
                   <div className="w-full bg-orange-100/90 rounded-full h-2 sm:h-2.5 overflow-hidden border border-orange-200">
@@ -959,7 +987,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
           {/* Assistive Hint */}
           <div className="flex items-center justify-center gap-2 pt-1 text-xs text-slate-500 font-medium shrink-0">
-            <span>แตะการ์ดบนหน้าจอ หรือยกมือซ้าย/ขวาผ่านกล้องค้างไว้ 0.6 วินาทีเพื่อตอบ</span>
+            <span>{t('card_bottom_hint')}</span>
           </div>
         </div>
       ) : (

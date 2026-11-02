@@ -367,6 +367,58 @@ export const CLINICAL_DICTIONARY = {
     'th-TH': '⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง กรุณามองกล้องด้วยใบหน้าจริงและกะพริบตา',
     'en-US': '⚠️ Spoof detected. Please face the camera and blink',
   },
+
+  // Physical Cards Minigame
+  card_minigame_title: {
+    'zh-CN': '康复认知训练卡片',
+    'th-TH': 'การ์ดกายภาพ',
+    'en-US': 'Physical & Cognitive Cards',
+  },
+  card_yes_label: {
+    'zh-CN': 'ใช่ / 是',
+    'th-TH': 'ใช่',
+    'en-US': 'Yes',
+  },
+  card_no_label: {
+    'zh-CN': 'ไม่ใช่ / 否',
+    'th-TH': 'ไม่',
+    'en-US': 'No',
+  },
+  card_raise_left_hand: {
+    'zh-CN': '✋ 举起左手',
+    'th-TH': '✋ ยกมือซ้าย',
+    'en-US': '✋ Raise Left Hand',
+  },
+  card_raise_right_hand: {
+    'zh-CN': '✋ 举起右手',
+    'th-TH': '✋ ยกมือขวา',
+    'en-US': '✋ Raise Right Hand',
+  },
+  card_hold_to_answer: {
+    'zh-CN': '保持手势以确认',
+    'th-TH': 'ค้างมือเพื่อตอบ',
+    'en-US': 'Hold to answer',
+  },
+  card_bottom_hint: {
+    'zh-CN': '点击屏幕卡片，或面对镜头举起左/右手保持0.6秒以作答',
+    'th-TH': 'แตะการ์ดบนหน้าจอ หรือยกมือซ้าย/ขวาผ่านกล้องค้างไว้ 0.6 วินาทีเพื่อตอบ',
+    'en-US': 'Tap card on screen, or raise left/right hand and hold for 0.6s to answer',
+  },
+  card_stand_visible_hint: {
+    'zh-CN': '请退后至能看清双手的位置（保持0.6秒作答）',
+    'th-TH': 'ยืนให้เห็นมือทั้งสองข้าง (ค้างมือ 0.6 วินาทีเพื่อตอบ)',
+    'en-US': 'Ensure both hands are visible (Hold for 0.6s to answer)',
+  },
+  card_score_label: {
+    'zh-CN': '得分',
+    'th-TH': 'คะแนน',
+    'en-US': 'Score',
+  },
+  card_question_label: {
+    'zh-CN': '题目',
+    'th-TH': 'ข้อ',
+    'en-US': 'Question',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof CLINICAL_DICTIONARY;
