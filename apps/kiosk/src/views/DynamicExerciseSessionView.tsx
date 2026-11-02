@@ -1460,7 +1460,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         )}
 
         {/* Floating Camera & View Controls */}
-        <div className="absolute bottom-3 right-4 z-20 flex items-center flex-wrap gap-1.5 bg-slate-950/85 border border-slate-800 rounded-xl p-1.5 backdrop-blur-md shadow-lg text-xs">
+        <div className="absolute bottom-24 right-4 z-20 flex items-center flex-wrap gap-1.5 bg-slate-950/85 border border-slate-800 rounded-xl p-1.5 backdrop-blur-md shadow-lg text-xs">
           {/* Skeleton Overlay Toggle Button (Default = False/Off) */}
           <button
             type="button"
@@ -1637,25 +1637,32 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             bannerIcon = '🌀';
             if (evalResult?.readinessStatus === 'missing_shoulder') {
               friendlyMessage = lang === 'zh-CN'
-                ? '📷 请后退约 1.5–2 米，确保身体和手臂完整入镜'
+                ? '📷 请后退约 1.5–2 米并微倾上身，确保手臂完整入镜'
                 : lang === 'en-US'
-                ? '📷 Please step back 1.5–2 meters so your torso and arm are visible'
-                : '📷 กรุณาถอยห่างประมาณ 1.5–2 เมตร ให้เห็นลำตัวและแขนชัดเจน';
+                ? '📷 Please step back 1.5–2 meters and lean 45° so arm circle is visible'
+                : '📷 กรุณาถอยห่างจากกล้อง 1.5–2 เมตร และยืนโน้มตัวเฉียง 45° เพื่อให้กล้องจับวงแกว่งแขนได้ชัดเจน';
               friendlyBadge = lang === 'zh-CN' ? '📷 调整距离' : lang === 'en-US' ? '📷 Distance' : '📷 จัดระยะ';
+            } else if (evalResult?.readinessStatus === 'partial_upper_body') {
+              friendlyMessage = lang === 'zh-CN'
+                ? (evalResult.coachingMessageCn || '💡 半身检测模式：正在分析肩部摆动')
+                : lang === 'en-US'
+                ? (evalResult.coachingMessageEn || '💡 Upper-body mode: tracking shoulder oscillation')
+                : (evalResult.coachingMessageTh || '💡 ตรวจจับโหมดครึ่งตัวบน: กำลังวิเคราะห์การแกว่งหัวไหล่');
+              friendlyBadge = lang === 'zh-CN' ? '💡 半身模式' : lang === 'en-US' ? '💡 Upper Body' : '💡 ครึ่งตัวบน';
             } else if (evalResult?.coachingMessageTh) {
               friendlyMessage = lang === 'zh-CN'
-                ? (evalResult.coachingMessageEn || evalResult.coachingMessageTh)
+                ? (evalResult.coachingMessageCn || evalResult.coachingMessageTh)
                 : lang === 'en-US'
                 ? (evalResult.coachingMessageEn || evalResult.coachingMessageTh)
                 : evalResult.coachingMessageTh;
-              friendlyBadge = lang === 'zh-CN' ? '🌀 摆动中' : lang === 'en-US' ? '🌀 Swinging' : '🌀 กำลังแกว่ง';
+              friendlyBadge = lang === 'zh-CN' ? '🌀 360° 摆动' : lang === 'en-US' ? '🌀 360° Orbit' : '🌀 วงแกว่ง 360°';
             } else {
               friendlyMessage = lang === 'zh-CN'
                 ? '身体向前微倾，放松手臂顺畅做圆周摆动'
                 : lang === 'en-US'
                 ? 'Lean forward slightly, relax arm and swing in a circular motion'
                 : 'โน้มตัวไปข้างหน้า ปล่อยแขนสบายๆ แล้วแกว่งวนเป็นวงกลม';
-              friendlyBadge = lang === 'zh-CN' ? '🎯 开始' : lang === 'en-US' ? '🎯 Start' : '🎯 เริ่มต้น';
+              friendlyBadge = lang === 'zh-CN' ? '🌀 摆动中' : lang === 'en-US' ? '🌀 Swinging' : '🌀 กำลังแกว่ง';
             }
           } else if (evalResult?.formRating === 'error') {
             friendlyMessage = coachingMsg || (lang === 'zh-CN' ? '请注意动作规范' : lang === 'en-US' ? 'Please adjust form carefully' : 'ระวังอย่าฝืนข้อต่อนะคะ');
@@ -1695,15 +1702,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
 
           return (
-            // ย้ายตำแหน่งลงมาด้านล่างก่อนถึง Emergency Bar (ไม่บังส่วนศีรษะและลำตัวคนไข้)
-            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-2xl pointer-events-none">
-              <div className="px-5 py-3 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-slate-700/80 shadow-2xl flex items-center gap-3">
+            // Zero Occlusion Zone: Anchored at lower third resting directly above the bottom safety bar
+            <div className="absolute bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-2xl pointer-events-none">
+              <div className="px-5 sm:px-6 py-3 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-slate-700/80 shadow-2xl flex items-center gap-3">
                 <div className="text-3xl shrink-0">{bannerIcon}</div>
                 <div className="flex-1 min-w-0">
                   <div className="text-lg sm:text-xl font-bold text-white truncate">
                     {friendlyMessage}
                   </div>
-                  {/* แถบ Progress บางและเรียบขึ้น */}
+                  {/* Integrated Slim High-Contrast Progress Bar (h-2) */}
                   {!isWaitingPose && (
                     <div className="w-full bg-slate-800 rounded-full h-2 mt-1.5 overflow-hidden border border-slate-700">
                       <div
@@ -1776,9 +1783,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       {/* 3. Bottom Safety & Emergency Bar */}
       <PainStopEmergencyBar
         isPaused={isPaused}
-        onTogglePause={() => setIsPaused((prev) => !prev)}
         onReportPainStop={handleReportPainStop}
-        onExitSession={onExit}
       />
 
       {/* MODAL A: Rest Between Sets Countdown */}

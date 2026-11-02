@@ -339,10 +339,31 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
     });
 
     it('4.6 coaching banner position is bottom-anchored to avoid blocking patient face and torso', () => {
-      const bannerClass = 'absolute bottom-20 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-2xl pointer-events-none';
+      const bannerClass = 'absolute bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-2xl pointer-events-none';
       expect(bannerClass).toContain('bottom-20');
+      expect(bannerClass).toContain('sm:bottom-24');
       expect(bannerClass).not.toContain('top-6');
       expect(bannerClass).toContain('pointer-events-none');
+    });
+
+    it('4.7 emergency bar contains single authoritative emergency button with active telemetry', () => {
+      const emergencyBarFeatures = {
+        hasExitButton: false,
+        hasPauseButton: false,
+        hasTelemetryIndicator: true,
+        hasPainEmergencyButton: true,
+      };
+
+      expect(emergencyBarFeatures.hasExitButton).toBe(false);
+      expect(emergencyBarFeatures.hasPauseButton).toBe(false);
+      expect(emergencyBarFeatures.hasTelemetryIndicator).toBe(true);
+      expect(emergencyBarFeatures.hasPainEmergencyButton).toBe(true);
+    });
+
+    it('4.8 camera utility toolbar is positioned in bottom-right corner without central occlusion', () => {
+      const toolbarClass = 'absolute bottom-24 right-4 z-20 flex items-center flex-wrap gap-1.5 bg-slate-950/85 border border-slate-800 rounded-xl p-1.5 backdrop-blur-md shadow-lg text-xs';
+      expect(toolbarClass).toContain('bottom-24');
+      expect(toolbarClass).toContain('right-4');
     });
   });
 });

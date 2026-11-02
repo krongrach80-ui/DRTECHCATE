@@ -1017,10 +1017,10 @@ export class RepStateMachine {
     if (!shoulder || !isLandmarkUsable(shoulder, policy.shoulderMinVis)) {
       const def = this.createDefaultResult(
         landmarks,
-        '📷 ไม่พบหัวไหล่ในภาพ กรุณาถอยห่างจากกล้องประมาณ 1.5–2 เมตร'
+        '📷 ไม่พบหัวไหล่ในภาพ กรุณาถอยห่างจากกล้อง 1.5–2 เมตร และยืนโน้มตัวเฉียง 45° เพื่อให้กล้องจับวงแกว่งแขนได้ชัดเจน'
       );
-      def.coachingMessageEn = '📷 Shoulder not detected. Please step back 1.5–2 meters.';
-      def.coachingMessageCn = '📷 未检测到肩部，请后退1.5-2米。';
+      def.coachingMessageEn = '📷 Shoulder not detected. Please step back 1.5–2 meters and lean 45° so arm circle is visible.';
+      def.coachingMessageCn = '📷 未检测到肩部，请后退1.5-2米并微倾上身，确保手臂完整入镜。';
       def.readinessStatus = 'missing_shoulder';
       def.formRating = 'warning';
       return def;
@@ -1029,6 +1029,12 @@ export class RepStateMachine {
     const hasElbow = isLandmarkUsable(elbow, policy.elbowMinVis);
     const hasWrist = isLandmarkUsable(wrist, policy.wristMinVis);
     const hasHip = isLandmarkUsable(hip, policy.hipMinVis);
+
+    const leftShoulder = landmarks[11];
+    const rightShoulder = landmarks[12];
+    const shoulderWidthPct = (leftShoulder && rightShoulder && (leftShoulder.visibility ?? 0) > 0.3 && (rightShoulder.visibility ?? 0) > 0.3)
+      ? Math.abs(rightShoulder.x - leftShoulder.x)
+      : 0;
 
     // Seated Desk / Upper-Body Mode Hip Synthesis:
     // If hip is occluded below desk line, synthesize torso axis from midShoulder with ergonomic forward lean
@@ -1108,7 +1114,22 @@ export class RepStateMachine {
     const activeWarnings: ActiveCompensationWarning[] = [];
 
     const isPendulumActive = result.cycleProgressRatio > 0 || this.completedReps > 0;
-    if (lockResult?.isOccluded && !isPendulumActive) {
+    const isTooClose = shoulderWidthPct > 0.48;
+
+    if (isTooClose && !hasWrist && !isPendulumActive) {
+      // Desktop / Close-Up Framing Failure Guard: User sitting too close (<1.0m) with wrists cropped
+      formRating = 'warning';
+      coachingMessage = '📷 กรุณาถอยห่างจากกล้อง 1.5–2 เมตร และยืนโน้มตัวเฉียง 45° เพื่อให้กล้องจับวงแกว่งแขนได้ชัดเจน';
+      readinessStatus = 'missing_shoulder';
+      activeWarnings.push({
+        ruleId: 'pendulum_distance_guard',
+        type: 'trunk_lean',
+        messageTh: '📷 กรุณาถอยห่างจากกล้อง 1.5–2 เมตร และยืนโน้มตัวเฉียง 45° เพื่อให้กล้องจับวงแกว่งแขนได้ชัดเจน',
+        severity: 'warning',
+        currentValue: Math.round(shoulderWidthPct * 100),
+        thresholdValue: 48,
+      });
+    } else if (lockResult?.isOccluded && !isPendulumActive) {
       formRating = 'warning';
       coachingMessage = 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน';
       activeWarnings.push({
@@ -1160,7 +1181,7 @@ export class RepStateMachine {
       severity: formRating,
       holdProgressRatio: 0,
       pendulumCircleProgressRatio: result.cycleProgressRatio,
-      isInsideTargetZone: result.isTrunkValid && result.isElbowRelaxed,
+      isInsideTargetZone: false, // SaMD Invariant: Pendulum NEVER leaks isInsideTargetZone to prevent isometric hold triggering
       isExceedingSafetyCap: false,
       completedReps: this.completedReps,
       incorrectReps: this.incorrectReps,
