@@ -1954,6 +1954,7 @@ export class SmartOnboardingService {
     is_completed_today?: boolean;
     reason?: string;
     schedule?: any;
+    allowed_start_hand?: 'both' | 'left' | 'right';
     exercises: PrescribedExercise[];
     include_minigame: boolean;
   }> {
@@ -2123,6 +2124,7 @@ export class SmartOnboardingService {
               weekdays: activeCourse.weekdays,
               time_slot: activeCourse.start_time,
               assigned_kiosk_id: activeCourse.kiosk_id,
+              allowed_start_hand: (activeCourse as any).allowed_start_hand || 'both',
               include_minigame: Boolean(activeCourse.include_minigame),
               prescribed_exercises: prescribed,
             };
@@ -2236,6 +2238,7 @@ export class SmartOnboardingService {
         is_completed_today: isCompletedToday,
         reason: isCompletedToday ? 'วันนี้คุณได้ทำการฝึกกายภาพบำบัดครบถ้วนตามนัดแล้ว' : undefined,
         schedule: effectiveSchedule,
+        allowed_start_hand: (effectiveSchedule as any).allowed_start_hand || 'both',
         exercises,
         include_minigame: includeMinigame,
       };

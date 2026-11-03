@@ -363,3 +363,139 @@ export function drawHandSkeleton(
 
   ctx.restore();
 }
+
+/**
+ * Anatomical Left vs Right Hand Evaluation
+ * Accurately determines if the patient is raising their real anatomical Left Hand or Right Hand.
+ *
+ * Principles:
+ * 1. Comfortable elevation: Hand at or above chest level (y <= maxYThreshold 0.78).
+ * 2. Extended open palm: At least 3 extended fingers (tip to wrist > 1.25 * mcp to wrist).
+ * 3. Spatial and anatomical handedness:
+ *    - In un-mirrored raw camera feed: MediaPipe returns categoryName 'Left' for person's real Left Hand.
+ *    - In mirrored screen space (what user sees): User's Left hand is on the Left half (mirroredX < 0.65).
+ *    - User's Right hand is on the Right half (mirroredX > 0.35).
+ */
+export interface AnatomicalHandEvaluation {
+  isValid: boolean;
+  anatomicalSide: 'left' | 'right' | null;
+  confidence: number;
+  extendedFingers: number;
+  palmCenter: { x: number; y: number; mirroredX: number };
+  palmSize: number;
+  rejectionReason?: string;
+}
+
+export function evaluateAnatomicalHand(
+  landmarks: HandLandmarkPoint[] | null | undefined,
+  categoryName?: string, // 'Left' | 'Right' from MediaPipe handedness
+  confidence: number = 0.85,
+  options: {
+    minConfidence?: number;
+    isMirrored?: boolean;
+    maxYThreshold?: number;
+    raisedTipMargin?: number;
+  } = {}
+): AnatomicalHandEvaluation {
+  const {
+    minConfidence = 0.70,
+    isMirrored = true,
+    maxYThreshold = 0.78, // comfortable chest level, doesn't require stretching all the way up
+    raisedTipMargin = 0.04, // slight upward elevation
+  } = options;
+
+  const baseResult: AnatomicalHandEvaluation = {
+    isValid: false,
+    anatomicalSide: null,
+    confidence: typeof confidence === 'number' && !isNaN(confidence) ? confidence : 0,
+    extendedFingers: 0,
+    palmCenter: { x: 0.5, y: 0.5, mirroredX: 0.5 },
+    palmSize: 0,
+  };
+
+  if (!landmarks || !Array.isArray(landmarks) || landmarks.length < 21) {
+    return { ...baseResult, rejectionReason: 'NO_HAND_LANDMARKS' };
+  }
+
+  if (confidence < minConfidence) {
+    return { ...baseResult, rejectionReason: 'LOW_CONFIDENCE' };
+  }
+
+  const wrist = landmarks[0];
+  const middleMcp = landmarks[9];
+  const middleTip = landmarks[12];
+  const indexTip = landmarks[8];
+
+  const mirroredX = isMirrored ? 1.0 - middleMcp.x : middleMcp.x;
+  const palmSize = Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y);
+
+  baseResult.palmCenter = { x: middleMcp.x, y: middleMcp.y, mirroredX };
+  baseResult.palmSize = palmSize;
+
+  // Comfortable height check: wrist & middle MCP should be at chest or above (y <= maxYThreshold)
+  if (middleMcp.y > maxYThreshold || wrist.y > maxYThreshold) {
+    return { ...baseResult, rejectionReason: 'HAND_BELOW_CHEST' };
+  }
+
+  // Raised upward: fingertips higher than wrist
+  if (middleTip.y > wrist.y - raisedTipMargin && indexTip.y > wrist.y - raisedTipMargin) {
+    return { ...baseResult, rejectionReason: 'HAND_NOT_UPWARD' };
+  }
+
+  // Count extended fingers
+  const dist = (p1: HandLandmarkPoint, p2: HandLandmarkPoint) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+  const fingers = [
+    { tip: landmarks[8], mcp: landmarks[5] },
+    { tip: landmarks[12], mcp: landmarks[9] },
+    { tip: landmarks[16], mcp: landmarks[13] },
+    { tip: landmarks[20], mcp: landmarks[17] },
+  ];
+
+  let extendedCount = 0;
+  for (const finger of fingers) {
+    const tipToWrist = dist(finger.tip, wrist);
+    const mcpToWrist = dist(finger.mcp, wrist);
+    if (mcpToWrist > 0.02 && tipToWrist > 1.25 * mcpToWrist) {
+      extendedCount++;
+    }
+  }
+
+  baseResult.extendedFingers = extendedCount;
+  if (extendedCount < 3) {
+    return { ...baseResult, rejectionReason: 'FINGERS_NOT_OPEN' };
+  }
+
+  // Determine Anatomical Left vs Right:
+  // When raw webcam frame is processed (without horizontal flip):
+  // MediaPipe predicts categoryName 'Left' for anatomical Left hand, 'Right' for Right hand.
+  // In mirrored screen space (what user sees on screen):
+  // User's Left hand appears on the Left side of the screen (mirroredX < 0.55).
+  // User's Right hand appears on the Right side of the screen (mirroredX > 0.45).
+  let side: 'left' | 'right' | null = null;
+  const normalizedCategory = (categoryName || '').toLowerCase();
+
+  if (normalizedCategory === 'left') {
+    side = 'left';
+  } else if (normalizedCategory === 'right') {
+    side = 'right';
+  } else {
+    // Geometric fallback if categoryName is missing:
+    // User's Left hand in mirror screen is on the Left side (mirroredX < 0.5)
+    side = mirroredX < 0.5 ? 'left' : 'right';
+  }
+
+  // Spatial consistency guard: Left hand must be on the user's left side (mirroredX < 0.68),
+  // Right hand must be on the user's right side (mirroredX > 0.32)
+  if (side === 'left' && mirroredX > 0.68) {
+    return { ...baseResult, rejectionReason: 'LEFT_HAND_OVEREXTENDED_RIGHT' };
+  }
+  if (side === 'right' && mirroredX < 0.32) {
+    return { ...baseResult, rejectionReason: 'RIGHT_HAND_OVEREXTENDED_LEFT' };
+  }
+
+  return {
+    ...baseResult,
+    isValid: true,
+    anatomicalSide: side,
+  };
+}

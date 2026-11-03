@@ -1,7 +1,7 @@
 /**
  * apps/kiosk/src/smart-flow/SmartDailyPlanView.tsx
  * Dynamic Daily Rehab Plan & Interactive Quiz Engine
- * Conforms to Master Prompt v4 Section 4.3
+ * Conforms to Master Prompt v4 Section 4.3 & Clinical Touchless Kinematic Starter
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -13,17 +13,21 @@ import {
   Activity,
   ArrowRight,
   LogOut,
-  RefreshCw,
   Sun,
   Brain,
   Bell,
   Check,
   ChevronRight as _ChevronRight,
   Gamepad2 as _Gamepad2,
-  RotateCcw,
-  ArrowLeft,
   PhoneCall,
   AlertTriangle,
+  Hand,
+  Sparkles,
+  KeyRound,
+  ShieldAlert,
+  Video,
+  Clock,
+  RotateCcw,
 } from 'lucide-react';
 import { PhysicalCardGame } from '../minigame-cards/index.js';
 import {
@@ -37,6 +41,7 @@ import { CameraPositionGuideModal } from '../components/CameraPositionGuideModal
 import { UnconfiguredExerciseFallbackModal } from '../components/UnconfiguredExerciseFallbackModal';
 import { DynamicExerciseSessionView } from '../views/DynamicExerciseSessionView';
 import { ClinicalErrorBoundary } from '../../../../packages/hospital-ui-kit/src/index';
+import { useTouchlessGestureStarter } from '../hooks/useTouchlessGestureStarter';
 
 interface SmartDailyPlanViewProps {
   patient: PatientRecordFile;
@@ -56,6 +61,8 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   const [includeMinigame, setIncludeMinigame] = useState(false);
   const [callStaffStatus, setCallStaffStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [dailyPlanResponse, setDailyPlanResponse] = useState<any>(null);
+  const [painAlertActive, setPainAlertActive] = useState<boolean>(false);
 
   // Exercise tracking
   const [completedExerciseIds, setCompletedExerciseIds] = useState<Set<string>>(new Set());
@@ -72,8 +79,8 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   // Minigame states
   const [isPlayingQuiz, setIsPlayingQuiz] = useState(false);
-  const [quizQuestionIndex, setQuizQuestionIndex] = useState(0);
-  const [quizScore, setQuizScore] = useState(0);
+  const [_quizQuestionIndex, _setQuizQuestionIndex] = useState(0);
+  const [quizScore, _setQuizScore] = useState(0);
 
   // Final session completed state
   const [isSessionCompleted, setIsSessionCompleted] = useState(false);
@@ -81,8 +88,25 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   const isMountedRef = useRef(true);
 
+  // Next target uncompleted exercise for touchless starter
+  const nextUncompletedExercise = React.useMemo(() => {
+    if (!isScheduledToday || isCompletedToday || isSessionCompleted) return null;
+    return exercises.find((item) => {
+      const exId = item.exercise_id || item.id || '';
+      return !completedExerciseIds.has(exId);
+    }) || null;
+  }, [exercises, completedExerciseIds, isScheduledToday, isCompletedToday, isSessionCompleted]);
+
+  // Allowed hand side from patient's prescription schedule
+  const allowedHandSide: 'both' | 'left' | 'right' =
+    dailyPlanResponse?.allowed_start_hand ||
+    dailyPlanResponse?.schedule?.allowed_start_hand ||
+    (patient?.schedule as any)?.allowed_start_hand ||
+    (patient as any)?.allowed_start_hand ||
+    'both';
+
   // Cognitive Quiz questions
-  const quizQuestions = [
+  const _quizQuestions = [
     {
       prompt: 'ข้อใดคือท่าทางที่ช่วยยืดกล้ามเนื้อหัวไหล่ได้ถูกต้อง?',
       options: ['การหมุนแขนเป็นวงกลมช้าๆ', 'การสะบัดแขนอย่างรวดเร็ว', 'การห่อไหล่เกร็งไว้'],
@@ -110,6 +134,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       const res = await defaultApiClient.smartOnboarding.getDailyPlan(targetId);
       if (!isMountedRef.current) return;
 
+      setDailyPlanResponse(res);
       const scheduled = Boolean(res.is_scheduled_today);
       const completed = Boolean(res.is_completed_today);
       setIsScheduledToday(scheduled);
@@ -202,7 +227,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       setCallStaffStatus('sending');
       await defaultApiClient.kiosk.callStaff({
         kiosk_id: 'kiosk-01',
-        reason: `คนไข้ ${patient.first_name} (HN: ${patient.patient_id}) ขอความช่วยเหลือ / สอบถามตารางนัดหมาย`,
+        reason: `คนไข้ ${patient.first_name} (HN: ${patient.patient_id || patient.hn || '-'}) ขอความช่วยเหลือ / สอบถามตารางนัดหมาย`,
       });
       setCallStaffStatus('sent');
       setTimeout(() => {
@@ -213,6 +238,18 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       setTimeout(() => {
         if (isMountedRef.current) setCallStaffStatus('idle');
       }, 4000);
+    }
+  };
+
+  const handlePainEmergency = async () => {
+    try {
+      setPainAlertActive(true);
+      await defaultApiClient.kiosk.callStaff({
+        kiosk_id: 'kiosk-01',
+        reason: `[🚨 รู้สึกเจ็บ] ผู้ป่วย ${patient.first_name || ''} (HN: ${patient.patient_id || patient.hn || '-'}) กดหยุดฉุกเฉินเนื่องจากรู้สึกเจ็บปวด`,
+      });
+    } catch {
+      // non-blocking
     }
   };
 
@@ -238,7 +275,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   };
 
   // Launch AI Exercise Detection with Pre-Session Camera Guide
-  const handleStartExercise = (exerciseItem: any) => {
+  const handleStartExercise = (
+    exerciseItem: any,
+    mode: 'gesture' | 'staff_override' | 'manual' = 'manual',
+    meta?: Record<string, unknown>
+  ) => {
     if (!isScheduledToday) {
       alert(
         lang === 'zh-CN'
@@ -286,7 +327,30 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           repsPerSet: Number(exerciseItem.reps) || config.defaultPrescription?.repsPerSet || 10,
         },
       };
-      setActiveGuideConfig({ exercise: exerciseItem, config: mergedConfig });
+
+      // Non-blocking audit log of gesture / staff initiation
+      if (meta) {
+        try {
+          void (defaultApiClient.courses as any)?.submitSessionLog?.({
+            patient_id: patient.patient_id || patient.hn || '',
+            course_id: (patient.schedule as any)?.course_id || (patient.schedule as any)?.id || null,
+            exercise_id: exerciseItem.exercise_id || exerciseItem.id || 'ex',
+            kiosk_id: 'kiosk-01',
+            completion_mode: mode === 'gesture' ? 'patient_touchless_gesture' : 'staff_override',
+            telemetry_summary: meta,
+          });
+        } catch {
+          // non-blocking
+        }
+      }
+
+      // If launched via touchless hand gesture or staff override, start session directly without blocking modals!
+      if (mode === 'gesture' || mode === 'staff_override') {
+        setActiveGuideConfig(null);
+        setActiveSession({ exercise: exerciseItem, config: mergedConfig });
+      } else {
+        setActiveGuideConfig({ exercise: exerciseItem, config: mergedConfig });
+      }
     } else {
       setUnconfiguredExercise(exerciseItem);
     }
@@ -382,20 +446,6 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     setUnconfiguredExercise(null);
   };
 
-  // Minigame Answer click (fallback quiz mode)
-  const _handleAnswerQuiz = (selectedOptionIndex: number) => {
-    const isCorrect = selectedOptionIndex === quizQuestions[quizQuestionIndex].answerIndex;
-    const addedScore = isCorrect ? 35 : 10;
-    const newTotal = quizScore + addedScore;
-    setQuizScore(newTotal);
-
-    if (quizQuestionIndex + 1 < quizQuestions.length) {
-      setQuizQuestionIndex(quizQuestionIndex + 1);
-    } else {
-      handleFinalSessionCompletion(100, newTotal);
-    }
-  };
-
   // Final Session Completion
   const handleFinalSessionCompletion = async (exerciseRate: number, minigamePts: number) => {
     try {
@@ -445,58 +495,66 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     return `${day} ${months[d.getMonth()]} ${d.getFullYear() + 543} (09:00 - 10:00 น.)`;
   }, []);
 
+  // Clinical Touchless Gesture Starter Hook
+  const isGestureStarterEnabled = Boolean(
+    isScheduledToday &&
+    !isCompletedToday &&
+    !isSessionCompleted &&
+    !activeSession &&
+    !isPlayingQuiz &&
+    Boolean(nextUncompletedExercise)
+  );
+
+  const {
+    targetSide,
+    holdProgress,
+    detectedSide,
+    secondsLeft,
+    attemptCount,
+    showFailureHelp,
+    isCameraActive,
+    statusMessage,
+    videoRef,
+    handleRetry,
+    handleStaffOverride,
+  } = useTouchlessGestureStarter({
+    enabled: isGestureStarterEnabled,
+    targetExercise: nextUncompletedExercise,
+    allowedSide: allowedHandSide,
+    onStartExercise: (ex, mode, meta) => handleStartExercise(ex, mode, meta),
+    onCallStaff: handleCallStaff,
+    lang: (lang as any) || 'th-TH',
+  });
+
   if (loading) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-slate-950 text-white select-none">
-        <RefreshCw className="w-10 h-10 animate-spin text-emerald-400 mb-3" />
-        <span className="text-sm font-medium text-slate-300">
-          กำลังโหลดตารางกายภาพประจำวัน (Asia/Bangkok)...
-        </span>
+        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <div className="text-base font-semibold text-slate-300">
+          {lang === 'zh-CN' ? '正在载入今日康复方案...' : lang === 'en-US' ? 'Loading daily rehab plan...' : 'กำลังโหลดตารางกายภาพบำบัดประจำวัน...'}
+        </div>
       </div>
     );
   }
 
-  // Error Screen: Network or Server 500 error (Must NEVER show white blank screen)
   if (loadError) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-6 sm:p-8 bg-slate-950 text-white select-none">
-        <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-rose-500/40 p-6 sm:p-8 text-center shadow-2xl">
-          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto mb-4 text-rose-400">
-            <AlertTriangle className="w-8 h-8" />
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">
-            {lang === 'zh-CN' ? '系统连接或加载失败' : lang === 'en-US' ? 'Connection or Loading Error' : 'เกิดข้อผิดพลาดในการโหลดข้อมูลตาราง'}
+      <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-slate-950 text-white select-none">
+        <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl p-6 text-center shadow-2xl">
+          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
+          <h2 className="text-lg font-bold text-white mb-2">
+            {lang === 'zh-CN' ? '无法载入康复数据' : lang === 'en-US' ? 'Unable to load schedule' : 'ไม่สามารถโหลดข้อมูลได้'}
           </h2>
-          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-            {loadError}
-          </p>
-
-          <div className="flex flex-col gap-3">
+          <p className="text-xs text-slate-400 mb-6">{loadError}</p>
+          <div className="flex flex-col gap-2">
             <button
-              type="button"
-              id="plan-retry-btn"
-              data-testid="plan-retry-btn"
-              onClick={() => loadPlan()}
-              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-emerald-950/40"
+              onClick={loadPlan}
+              className="w-full py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>{lang === 'zh-CN' ? '重试 (Try Again)' : lang === 'en-US' ? 'Try Again' : 'ลองใหม่อีกครั้ง (Try Again)'}</span>
+              <span>{lang === 'zh-CN' ? '重试 (Retry)' : lang === 'en-US' ? 'Retry' : 'ลองใหม่อีกครั้ง (Retry)'}</span>
             </button>
-
             <button
-              type="button"
-              id="plan-home-btn"
-              data-testid="plan-home-btn"
-              onClick={onLogout}
-              className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer border border-slate-700"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>{lang === 'zh-CN' ? '返回主页 (Back to Home)' : lang === 'en-US' ? 'Back to Home' : 'กลับสู่หน้าหลัก (Back to Home)'}</span>
-            </button>
-
-            <button
-              type="button"
-              id="plan-call-staff-btn"
               data-testid="plan-call-staff-btn"
               onClick={handleCallStaff}
               className="w-full py-2.5 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer"
@@ -510,7 +568,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     );
   }
 
-  // 1. Rest Day View (Friendly notice when no appointment today)
+  // 1. Rest Day View (Friendly notice when no appointment today - camera never opened)
   if (!isScheduledToday) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-between p-8 bg-slate-950 text-white select-none">
@@ -718,6 +776,20 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   // 4. Prescribed Daily Exercises List View
   const allExercisesDone = exercises.length > 0 && completedExerciseIds.size === exercises.length;
 
+  const targetPreset = nextUncompletedExercise
+    ? nextUncompletedExercise.detection_config || findPresetForExercise(nextUncompletedExercise.exercise_id || nextUncompletedExercise.id || nextUncompletedExercise.name)
+    : null;
+
+  const targetExerciseTitle = targetPreset
+    ? lang === 'zh-CN'
+      ? targetPreset.nameCn
+      : lang === 'en-US'
+      ? targetPreset.nameEn
+      : targetPreset.nameTh
+    : nextUncompletedExercise?.name || nextUncompletedExercise?.title || 'ท่าฝึกถัดไป';
+
+  const isTargetLeft = targetSide === 'left';
+
   return (
     <div className="w-full h-full flex flex-col justify-between p-6 sm:p-8 bg-slate-950 text-white select-none overflow-y-auto">
       {/* Top Header */}
@@ -747,17 +819,258 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Pain Alert Emergency Button */}
+          <button
+            type="button"
+            onClick={handlePainEmergency}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-500/50 text-red-200 text-xs font-semibold transition active:scale-95 shadow-md shadow-red-950/40 cursor-pointer"
+            title="หากรู้สึกเจ็บ กดปุ่มนี้เพื่อหยุดและแจ้งเจ้าหน้าที่"
+          >
+            <ShieldAlert className="w-4 h-4 text-red-400 animate-pulse" />
+            <span>{lang === 'zh-CN' ? '感觉疼痛 (呼叫协助)' : lang === 'en-US' ? 'Feel Pain (Alert)' : 'รู้สึกเจ็บ (แจ้งนักกายภาพ)'}</span>
+          </button>
+
+          {/* Call Staff Button */}
+          <button
+            type="button"
+            data-testid="plan-call-staff-header-btn"
+            onClick={handleCallStaff}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/80 border border-amber-500/40 text-amber-200 text-xs font-medium transition active:scale-95 cursor-pointer"
+          >
+            <PhoneCall className="w-3.5 h-3.5 text-amber-400" />
+            <span>
+              {callStaffStatus === 'sent'
+                ? (lang === 'zh-CN' ? '已通知' : lang === 'en-US' ? 'Notified' : 'แจ้งแล้ว')
+                : (lang === 'zh-CN' ? '呼叫人员' : lang === 'en-US' ? 'Staff' : 'เรียกเจ้าหน้าที่')}
+            </span>
+          </button>
+
           <LanguageSwitcher variant="dark" />
+
           <button
             onClick={onLogout}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
           >
-            <LogOut className="w-4 h-4" />
-            <span>{lang === 'zh-CN' ? '退出系统' : lang === 'en-US' ? 'Sign Out' : 'ออกจากระบบ'}</span>
+            <LogOut className="w-3.5 h-3.5" />
+            <span>{lang === 'zh-CN' ? '退出' : lang === 'en-US' ? 'Exit' : 'ออกจากระบบ'}</span>
           </button>
         </div>
       </div>
+
+      {/* Pain Alert Banner Notification */}
+      {painAlertActive && (
+        <div className="max-w-4xl mx-auto w-full mb-4 p-4 rounded-2xl bg-red-950/90 border-2 border-red-500 text-red-100 flex items-center justify-between gap-4 shadow-xl shadow-red-950/60 animate-bounce">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-6 h-6 text-red-400 shrink-0" />
+            <div className="text-sm font-bold">
+              {lang === 'zh-CN'
+                ? '🚨 已接收到疼痛反馈！工作人员与物理治疗师已收到提醒，请坐下休息。'
+                : lang === 'en-US'
+                ? '🚨 Pain alert triggered! Clinical staff notified. Please sit down and rest comfortably.'
+                : '🚨 แจ้งอาการเจ็บเรียบร้อยแล้ว! เจ้าหน้าที่และนักกายภาพบำบัดกำลังมาดูแล กรุณานั่งพักผ่อนครับ'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPainAlertActive(false)}
+            className="text-xs px-3 py-1.5 rounded-lg bg-red-900/60 hover:bg-red-800 text-red-200 cursor-pointer"
+          >
+            {lang === 'zh-CN' ? '关闭提示' : lang === 'en-US' ? 'Dismiss' : 'ปิดการแจ้งเตือน'}
+          </button>
+        </div>
+      )}
+
+      {/* TOUCHLESS GESTURE STARTER HUD (ZERO-TOUCH REHAB KINEMATICS) */}
+      {isGestureStarterEnabled && nextUncompletedExercise && (
+        <div
+          data-testid="touchless-starter-banner"
+          className={`max-w-4xl mx-auto w-full mb-6 p-6 rounded-3xl border-2 transition-all duration-300 relative overflow-hidden shadow-2xl ${
+            isTargetLeft
+              ? 'bg-gradient-to-r from-sky-950/90 via-cyan-950/80 to-slate-950 border-cyan-400 shadow-cyan-950/50'
+              : 'bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-950 border-emerald-400 shadow-emerald-950/50'
+          }`}
+        >
+          {/* Subtle Background Glow */}
+          <div
+            className={`absolute -top-12 -right-12 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-40 ${
+              isTargetLeft ? 'bg-cyan-500' : 'bg-emerald-500'
+            }`}
+          />
+
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+            {/* Left: Huge Touchless Instruction & Hold Progress */}
+            <div className="flex-1 w-full text-center md:text-left">
+              <div className="flex items-center justify-center md:justify-start gap-2 mb-2 flex-wrap">
+                <span
+                  className={`text-xs px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1.5 border shadow-sm ${
+                    isTargetLeft
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/50'
+                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
+                  }`}
+                >
+                  <Hand className="w-3.5 h-3.5 animate-pulse" />
+                  <span>{lang === 'zh-CN' ? '免触控体感启动' : lang === 'en-US' ? 'Touchless Gesture Starter' : 'ระบบเริ่มฝึกด้วยการยกมือ (ไม่ต้องแตะจอ)'}</span>
+                </span>
+
+                <span className="text-xs px-2.5 py-1 rounded-full bg-slate-900/80 border border-slate-700 text-slate-300 font-mono flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-amber-400" />
+                  <span>{secondsLeft}s ({lang === 'zh-CN' ? `第 ${attemptCount + 1}/3 次` : lang === 'en-US' ? `Try ${attemptCount + 1}/3` : `รอบที่ ${attemptCount + 1}/3`})</span>
+                </span>
+
+                {allowedHandSide !== 'both' && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-purple-950/80 border border-purple-500/40 text-purple-300 font-medium">
+                    {lang === 'zh-CN'
+                      ? `锁定使用: ${allowedHandSide === 'left' ? '左手' : '右手'}`
+                      : lang === 'en-US'
+                      ? `Locked Side: ${allowedHandSide.toUpperCase()}`
+                      : `จำกัดข้าง: มือ${allowedHandSide === 'left' ? 'ซ้าย' : 'ขวา'} (เพื่อความปลอดภัย)`}
+                  </span>
+                )}
+              </div>
+
+              {/* Massive Main Prompt Banner (>= 28px) */}
+              <div
+                className={`text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight leading-tight mb-2 ${
+                  isTargetLeft ? 'text-cyan-100' : 'text-emerald-100'
+                }`}
+              >
+                {isTargetLeft ? (
+                  <span>
+                    ✋{' '}
+                    {lang === 'zh-CN'
+                      ? `举起左手开始: ${targetExerciseTitle}`
+                      : lang === 'en-US'
+                      ? `Raise LEFT Hand to Start: ${targetExerciseTitle}`
+                      : `ยกมือซ้ายเพื่อเริ่ม: ${targetExerciseTitle}`}
+                  </span>
+                ) : (
+                  <span>
+                    ✋{' '}
+                    {lang === 'zh-CN'
+                      ? `举起右手开始: ${targetExerciseTitle}`
+                      : lang === 'en-US'
+                      ? `Raise RIGHT Hand to Start: ${targetExerciseTitle}`
+                      : `ยกมือขวาเพื่อเริ่ม: ${targetExerciseTitle}`}
+                  </span>
+                )}
+              </div>
+
+              {/* Clinical Ergonomic Guideline Notice */}
+              <p className="text-xs sm:text-sm text-slate-300 mb-3 flex items-center justify-center md:justify-start gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+                <span>
+                  {lang === 'zh-CN'
+                    ? '只需将手举至胸部/肩部高度并保持静止约 0.6 秒，无需过度伸展手臂。'
+                    : lang === 'en-US'
+                    ? 'Raise hand comfortably to chest/shoulder height and hold steady for 0.6s.'
+                    : 'ยกมือระดับอกหรือไหล่ในท่าที่สบาย ค้างไว้นิ่งๆ 0.6 วินาที (ไม่ต้องเหยียดสุดแขน)'}
+                </span>
+              </p>
+
+              {/* Hold Dwell Progress Bar */}
+              <div className="w-full bg-slate-900/90 border border-slate-700/80 rounded-full h-4 overflow-hidden p-0.5 shadow-inner">
+                <div
+                  className={`h-full rounded-full transition-all duration-75 ${
+                    isTargetLeft
+                      ? 'bg-gradient-to-r from-sky-400 via-cyan-400 to-teal-300 shadow-lg shadow-cyan-400/50'
+                      : 'bg-gradient-to-r from-teal-400 via-emerald-400 to-green-300 shadow-lg shadow-emerald-400/50'
+                  }`}
+                  style={{ width: `${Math.round(holdProgress * 100)}%` }}
+                />
+              </div>
+
+              {/* Real-time Status Caption */}
+              <div className="flex items-center justify-between text-xs mt-2 px-1">
+                <span className="font-medium text-slate-300">
+                  {statusMessage ||
+                    (detectedSide
+                      ? (lang === 'zh-CN' ? `已检测到${detectedSide === 'both' ? '双手' : detectedSide === 'left' ? '左手' : '右手'}` : lang === 'en-US' ? `Detected: ${detectedSide}` : `ตรวจพบ: ${detectedSide === 'both' ? '2 มือ' : detectedSide === 'left' ? 'มือซ้าย' : 'มือขวา'}`)
+                      : (lang === 'zh-CN'
+                        ? `等待举起${isTargetLeft ? '左' : '右'}手...`
+                        : lang === 'en-US'
+                        ? `Waiting for ${targetSide.toUpperCase()} hand...`
+                        : `กำลังรอยกมือ${isTargetLeft ? 'ซ้าย' : 'ขวา'}...`))}
+                </span>
+                <span className="font-mono font-bold text-slate-200">
+                  {Math.round(holdProgress * 100)}%
+                </span>
+              </div>
+            </div>
+
+            {/* Right: Floating PIP Mirrored Camera & Staff Override */}
+            <div className="flex flex-col items-center gap-2 shrink-0">
+              <div className="relative w-36 h-28 sm:w-44 sm:h-32 rounded-2xl overflow-hidden border-2 border-slate-700 bg-slate-900 shadow-xl flex items-center justify-center">
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  autoPlay
+                  className="w-full h-full object-cover scale-x-[-1]"
+                />
+                {!isCameraActive && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 text-slate-400 text-[11px] p-2 text-center">
+                    <Video className="w-6 h-6 mb-1 text-slate-500 animate-pulse" />
+                    <span>กำลังเปิดกล้อง...</span>
+                  </div>
+                )}
+                {isCameraActive && (
+                  <div className="absolute top-2 left-2 bg-emerald-500/90 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                    <span>ตรวจจับมือ</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Discrete Staff Override Button */}
+              <button
+                type="button"
+                data-testid="kiosk-staff-override-hud-btn"
+                onClick={() => handleStaffOverride('เจ้าหน้าที่')}
+                className="text-[11px] text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/60 transition flex items-center gap-1.5 cursor-pointer mt-1"
+                title="หากผู้ป่วยยกมือไม่ได้ เจ้าหน้าที่สามารถกดยืนยันเริ่มแทนได้"
+              >
+                <KeyRound className="w-3 h-3 text-amber-400" />
+                <span>{lang === 'zh-CN' ? '工作人员代替开始' : lang === 'en-US' ? 'Staff Override' : 'กดเริ่มแทน (สำหรับเจ้าหน้าที่)'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 3-Attempt Failure Help Alert Modal inside Banner */}
+          {showFailureHelp && (
+            <div className="mt-4 pt-4 border-t border-amber-500/40 bg-amber-950/40 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-fadeIn">
+              <div className="flex items-center gap-2.5 text-amber-200 text-xs sm:text-sm">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                <span>
+                  {lang === 'zh-CN'
+                    ? '未检测到手部动作，请确保站在镜头视野内并将手举至胸前。'
+                    : lang === 'en-US'
+                    ? 'No hand detected. Please stand in camera view and raise hand to chest level.'
+                    : 'ไม่พบมือ กรุณาอยู่ในกรอบกล้องและยกมือให้อยู่ระดับอก'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{lang === 'zh-CN' ? '再试一次' : lang === 'en-US' ? 'Retry' : 'ลองใหม่'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCallStaff}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition cursor-pointer flex items-center gap-1"
+                >
+                  <PhoneCall className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{lang === 'zh-CN' ? '呼叫工作人员' : lang === 'en-US' ? 'Call Staff' : 'เรียกเจ้าหน้าที่'}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Exercise Cards */}
       <div className="max-w-4xl mx-auto w-full flex flex-col gap-4 mb-6 flex-1">
@@ -777,9 +1090,10 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         </div>
 
         {exercises.map((item, idx) => {
-          const isDone = completedExerciseIds.has(item.exercise_id || item.id || `ex-${idx}`);
           const exerciseId = item.exercise_id || item.id || `ex-${idx}`;
-          const preset = item.detection_config || findPresetForExercise(item.exercise_id || item.id || item.name);
+          const isDone = completedExerciseIds.has(exerciseId);
+          const isTarget = Boolean(nextUncompletedExercise && (nextUncompletedExercise.exercise_id === exerciseId || nextUncompletedExercise.id === exerciseId));
+          const preset = item.detection_config || findPresetForExercise(exerciseId || item.name);
 
           const title = lang === 'zh-CN'
             ? (preset?.nameCn || item.name_cn || item.name)
@@ -801,7 +1115,9 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               className={`p-5 rounded-2xl border transition duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                 isDone
                   ? 'bg-emerald-950/20 border-emerald-500/40 text-slate-300'
-                  : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-white'
+                  : isTarget
+                  ? 'bg-slate-900/90 border-2 border-emerald-400 ring-4 ring-emerald-500/30 text-white shadow-xl shadow-emerald-950/50'
+                  : 'bg-slate-900/60 border-slate-800 text-slate-400 opacity-80'
               }`}
             >
               <div className="flex items-center gap-4">
@@ -809,6 +1125,8 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
                   className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
                     isDone
                       ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                      : isTarget
+                      ? 'bg-emerald-500 text-slate-950 font-extrabold shadow-md'
                       : 'bg-slate-800 text-slate-400'
                   }`}
                 >
@@ -821,6 +1139,12 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
                       {framingBadge}
                     </span>
                     {isDone && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+                    {isTarget && (
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/60 text-emerald-300 font-bold flex items-center gap-1 animate-pulse">
+                        <Sparkles className="w-3 h-3" />
+                        <span>{lang === 'zh-CN' ? '当前目标动作' : lang === 'en-US' ? 'Active Target' : 'ท่าเป้าหมายปัจจุบัน'}</span>
+                      </span>
+                    )}
                   </h3>
                   <div className="text-xs text-slate-400 mt-1 flex items-center gap-2">
                     <span>{lang === 'zh-CN' ? `关节: ${preset?.targetJoint || item.target_joint || '通用'}` : lang === 'en-US' ? `Joint: ${preset?.targetJoint || item.target_joint || 'General'}` : `ข้อต่อ: ${preset?.targetJoint || item.target_joint || 'ทั่วไป'}`}</span>
@@ -832,22 +1156,48 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {/* Touchless Initiation Status Badge & Discrete Staff Action */}
+                {isTarget && !isDone && (
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 shadow-sm ${
+                        isTargetLeft
+                          ? 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200'
+                          : 'bg-emerald-500/15 border-emerald-400/50 text-emerald-200'
+                      }`}
+                    >
+                      <Hand className="w-4 h-4 animate-bounce" />
+                      <span>
+                        {lang === 'zh-CN'
+                          ? `举起${isTargetLeft ? '左' : '右'}手以开始`
+                          : lang === 'en-US'
+                          ? `Raise ${targetSide.toUpperCase()} Hand`
+                          : `ยกมือ${isTargetLeft ? 'ซ้าย' : 'ขวา'}เพื่อเริ่ม`}
+                      </span>
+                    </div>
+
+                    {/* Discrete staff override button */}
+                    <button
+                      type="button"
+                      id={`kiosk-start-scan-btn-${idx}`}
+                      data-testid={`kiosk-start-scan-btn-${idx}`}
+                      onClick={() => handleStaffOverride('เจ้าหน้าที่')}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+                      title="กดเริ่มแทน (สำหรับเจ้าหน้าที่)"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{lang === 'zh-CN' ? '代开始' : lang === 'en-US' ? 'Override' : 'เริ่มแทน'}</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Mark Done / Repeat Button (Always Available) */}
                 <button
                   type="button"
-                  id={`kiosk-start-scan-btn-${idx}`}
-                  data-testid={`kiosk-start-scan-btn-${idx}`}
-                  onClick={() => handleStartExercise(item)}
-                  className="px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/50 hover:to-teal-600/50 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition active:scale-95 flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-950/40"
-                  title="เริ่มตรวจจับท่าทางกายภาพบำบัดด้วย AI"
-                >
-                  <Activity className="w-4 h-4 text-emerald-400" />
-                  <span>{lang === 'zh-CN' ? '开始 AI 动作检测' : lang === 'en-US' ? 'Start AI Scan' : 'เริ่มสแกนท่าฝึก'}</span>
-                </button>
-                <button
-                  type="button"
+                  data-testid={`kiosk-toggle-done-btn-${idx}`}
                   onClick={() => toggleExerciseComplete(exerciseId)}
-                  className={`px-5 py-3 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-2 cursor-pointer ${
+                  className={`px-4 py-2.5 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
                     isDone
                       ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
                       : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30'
@@ -885,7 +1235,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         </button>
       </div>
 
-      {/* 1. Camera & Posture Positioning Guide Modal */}
+      {/* 1. Camera & Posture Positioning Guide Modal (Used when manual flow triggers) */}
       {activeGuideConfig && (
         <CameraPositionGuideModal
           config={activeGuideConfig.config}

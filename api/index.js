@@ -12188,6 +12188,7 @@ var init_service10 = __esm({
                   weekdays: activeCourse.weekdays,
                   time_slot: activeCourse.start_time,
                   assigned_kiosk_id: activeCourse.kiosk_id,
+                  allowed_start_hand: activeCourse.allowed_start_hand || "both",
                   include_minigame: Boolean(activeCourse.include_minigame),
                   prescribed_exercises: prescribed
                 };
@@ -12273,6 +12274,7 @@ var init_service10 = __esm({
             is_completed_today: isCompletedToday,
             reason: isCompletedToday ? "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E04\u0E38\u0E13\u0E44\u0E14\u0E49\u0E17\u0E33\u0E01\u0E32\u0E23\u0E1D\u0E36\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E15\u0E32\u0E21\u0E19\u0E31\u0E14\u0E41\u0E25\u0E49\u0E27" : void 0,
             schedule: effectiveSchedule,
+            allowed_start_hand: effectiveSchedule.allowed_start_hand || "both",
             exercises,
             include_minigame: includeMinigame
           };

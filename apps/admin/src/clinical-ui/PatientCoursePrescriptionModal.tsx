@@ -362,6 +362,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
   const [timeSlot, setTimeSlot] = useState('09:00 - 10:00');
   const [assignedKioskId, setAssignedKioskId] = useState('kiosk-01');
   const [includeMinigame, setIncludeMinigame] = useState(true);
+  const [allowedStartHand, setAllowedStartHand] = useState<'both' | 'left' | 'right'>('both');
 
   // Interactive Calendar View Month/Year
   const [calendarViewDate, setCalendarViewDate] = useState(() => new Date());
@@ -433,6 +434,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
           }
           if (sched.include_minigame !== undefined) {
             setIncludeMinigame(Boolean(sched.include_minigame));
+          }
+          if (sched.allowed_start_hand) {
+            setAllowedStartHand(sched.allowed_start_hand);
           }
 
           // Populate existing prescribed exercises
@@ -691,6 +695,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
         assigned_kiosk_id: assignedKioskId,
         kioskId: assignedKioskId,
         include_minigame: includeMinigame,
+        allowed_start_hand: allowedStartHand,
         prescribed_exercises: prescribedExercises.map((e) => ({
           exercise_id: e.exercise_id,
           id: e.exercise_id,
@@ -1425,6 +1430,51 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 </div>
               </div>
             )}
+
+            {/* Allowed Hand to Start (Clinical Safety Guard) */}
+            <div className="pt-2 border-t border-slate-800 space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                <span>ข้างที่อนุญาตให้ยกมือเริ่มท่า (Touchless Start Hand)</span>
+                <span className="text-[10px] text-emerald-400 font-normal">ความปลอดภัยทางคลินิก (ป้องกันการบังคับข้างที่บาดเจ็บ)</span>
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAllowedStartHand('both')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                    allowedStartHand === 'both'
+                      ? 'bg-emerald-600/30 border-emerald-500 text-emerald-200 shadow-sm'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  🙌 ทั้งสองข้าง (สุ่มซ้าย/ขวา)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllowedStartHand('left')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                    allowedStartHand === 'left'
+                      ? 'bg-cyan-600/30 border-cyan-500 text-cyan-200 shadow-sm'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                  title="เหมาะสำหรับผู้ป่วยที่มีอาการบาดเจ็บแขนขวา"
+                >
+                  ✋ ซ้ายเท่านั้น
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllowedStartHand('right')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                    allowedStartHand === 'right'
+                      ? 'bg-emerald-600/30 border-emerald-500 text-emerald-200 shadow-sm'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                  title="เหมาะสำหรับผู้ป่วยที่มีอาการบาดเจ็บแขนซ้าย"
+                >
+                  ✋ ขวาเท่านั้น
+                </button>
+              </div>
+            </div>
 
             {/* Total Days Calculated & Quiz Option */}
             <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">

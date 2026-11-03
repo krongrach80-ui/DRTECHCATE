@@ -90,3 +90,4 @@ describe('Kiosk & Clinical Portal Course Prescription Wiring Test Suite', () => 
     expect(element.props.directPatient).toEqual(mockPatient);
   });
 });
+
