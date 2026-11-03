@@ -1005,98 +1005,129 @@ export class RepStateMachine {
     const sIdx = isRight ? 12 : 11;
     const eIdx = isRight ? 14 : 13;
     const wIdx = isRight ? 16 : 15;
+    const oppSIdx = isRight ? 11 : 12;
     const hIdx = isRight ? 24 : 23;
 
-    const policy = DEFAULT_LANDMARK_VISIBILITY_POLICY;
     const shoulder = landmarks[sIdx];
     const elbow = landmarks[eIdx];
     const wrist = landmarks[wIdx];
+    const oppShoulder = landmarks[oppSIdx];
     const hip = landmarks[hIdx];
 
-    // Tier 4 / Baseline Gate: Shoulder landmark must be detected
-    if (!shoulder || !isLandmarkUsable(shoulder, policy.shoulderMinVis)) {
+    // Normalized shoulder width ratio for distance estimation
+    const shoulderWidthRatio =
+      shoulder && oppShoulder
+        ? Math.hypot(shoulder.x - oppShoulder.x, shoulder.y - oppShoulder.y)
+        : 0.28;
+
+    const isShoulderUsable = Boolean(
+      shoulder &&
+      isLandmarkUsable(shoulder, 0.45) &&
+      shoulder.x >= 0.02 && shoulder.x <= 0.98 &&
+      shoulder.y >= 0.02 && shoulder.y <= 0.98
+    );
+
+    // 1. Baseline Gate: Shoulder must be visible
+    if (!isShoulderUsable) {
       const def = this.createDefaultResult(
         landmarks,
-        '📷 ไม่พบหัวไหล่ในภาพ กรุณาถอยห่างจากกล้อง 1.5–2 เมตร และยืนโน้มตัวเฉียง 45° เพื่อให้กล้องจับวงแกว่งแขนได้ชัดเจน'
+        '📷 ไม่พบหัวไหล่ในภาพ กรุณายืนหรือนั่งให้กล้องเห็นหัวไหล่และลำตัวชัดเจน'
       );
-      def.coachingMessageEn = '📷 Shoulder not detected. Please step back 1.5–2 meters and lean 45° so arm circle is visible.';
-      def.coachingMessageCn = '📷 未检测到肩部，请后退1.5-2米并微倾上身，确保手臂完整入镜。';
+      def.phase = 'WAITING_FOR_FRAMING';
+      def.coachingMessageEn = 'Please position yourself so your shoulder is visible.';
       def.readinessStatus = 'missing_shoulder';
+      def.blockingReason = 'missing_shoulder';
       def.formRating = 'warning';
+      def.shoulderWidthRatio = Number(shoulderWidthRatio.toFixed(3));
+      def.distanceStatus = 'ไม่พบหัวไหล่';
       return def;
     }
 
-    const hasElbow = isLandmarkUsable(elbow, policy.elbowMinVis);
-    const hasWrist = isLandmarkUsable(wrist, policy.wristMinVis);
-    const hasHip = isLandmarkUsable(hip, policy.hipMinVis);
+    const isUpperDeskConfigured =
+      this.config.framing === 'upper' || this.config.framing === 'upper_body';
 
-    const leftShoulder = landmarks[11];
-    const rightShoulder = landmarks[12];
-    const shoulderWidthPct = (leftShoulder && rightShoulder && (leftShoulder.visibility ?? 0) > 0.3 && (rightShoulder.visibility ?? 0) > 0.3)
-      ? Math.abs(rightShoulder.x - leftShoulder.x)
-      : 0;
+    const isElbowUsable = Boolean(
+      elbow &&
+      isLandmarkUsable(elbow, 0.40) &&
+      elbow.x >= 0.02 && elbow.x <= 0.98 &&
+      elbow.y >= 0.02 && elbow.y <= 0.96
+    );
 
-    // Seated Desk / Upper-Body Mode Hip Synthesis:
-    // If hip is occluded below desk line, synthesize torso axis from midShoulder with ergonomic forward lean
-    // (forward tilt ~24.5° relative to gravity vertical axis, within safe clinical envelope [18°, 65°])
-    const effectiveHip: PoseEngineLandmark = hasHip
-      ? hip!
-      : {
-          x: shoulder.x,
-          y: shoulder.y + 0.35,
-          z: (shoulder.z ?? 0) + 0.16,
-          visibility: 0.85,
-        };
+    const isWristUsable = Boolean(
+      wrist &&
+      isLandmarkUsable(wrist, 0.35) &&
+      wrist.x >= 0.02 && wrist.x <= 0.98 &&
+      wrist.y >= 0.02 && wrist.y <= 0.96
+    );
 
-    // 3-Tier Upper-Body Adaptive Arm Trajectory Synthesis
-    let effectiveElbow: PoseEngineLandmark;
-    let effectiveWrist: PoseEngineLandmark;
-    let isUpperBodyOnly = false;
-    let isElbowFallback = false;
-
-    if (hasElbow && hasWrist) {
-      // Tier 1: Full Arm - Shoulder + Elbow + Wrist visible -> Full Wrist Circular Trajectory
-      effectiveElbow = elbow!;
-      effectiveWrist = wrist!;
-    } else if (hasElbow && !hasWrist) {
-      // Tier 2: Forearm occluded / desk edge - Elbow visible -> Elbow Trajectory replaces wrist
-      isElbowFallback = true;
-      effectiveElbow = elbow!;
-      effectiveWrist = {
-        x: effectiveElbow.x + (effectiveElbow.x - shoulder.x) * 0.4,
-        y: effectiveElbow.y + 0.20,
-        z: effectiveElbow.z ?? 0,
-        visibility: 0.85,
-      };
-    } else {
-      // Tier 3: Sitting close / Desktop webcam mode - Only Shoulder + Upper-Torso visible
-      // Use Shoulder & Upper-Torso Circular Sway/Oscillation
-      isUpperBodyOnly = true;
-      effectiveElbow = {
-        x: shoulder.x,
-        y: shoulder.y + 0.15,
-        z: shoulder.z ?? 0,
-        visibility: 0.85,
-      };
-      effectiveWrist = {
-        x: shoulder.x,
-        y: shoulder.y + 0.30,
-        z: shoulder.z ?? 0,
-        visibility: 0.85,
-      };
+    // 2. Framing Gate: Sitting too close (> 50% shoulder width or arm cropped below bottom edge)
+    const isCroppedBelow = Boolean(elbow && (elbow.y ?? 0) > 0.95) || Boolean(wrist && (wrist.y ?? 0) > 0.98);
+    const isTooClose = !isUpperDeskConfigured && (shoulderWidthRatio > 0.50 || (isCroppedBelow && !isElbowUsable));
+    if (isTooClose) {
+      const def = this.createDefaultResult(
+        landmarks,
+        '🪑 ถอยหลังอีกนิด ให้เห็นแขนถึงข้อศอก'
+      );
+      def.phase = 'WAITING_FOR_FRAMING';
+      def.coachingMessageEn = '🪑 Step back slightly so your arm and elbow are visible';
+      def.coachingMessageCn = '🪑 请稍微后退，确保手臂和肘部完整入镜';
+      def.readinessStatus = 'too_close_missing_arm';
+      def.blockingReason = 'too_close_or_arm_out_of_frame';
+      def.formRating = 'warning';
+      def.shoulderWidthRatio = Number(shoulderWidthRatio.toFixed(3));
+      def.distanceStatus = 'ใกล้เกินไป (>50%)';
+      return def;
     }
 
+    // 3. Framing Gate: Standing too far (< 18% shoulder width)
+    const isHorizontallySeparated = Math.abs(shoulder.x - oppShoulder.x) >= 0.08;
+    if (isHorizontallySeparated && shoulderWidthRatio < 0.18) {
+      const def = this.createDefaultResult(
+        landmarks,
+        'ขยับเข้ามาใกล้กล้องอีกนิด'
+      );
+      def.phase = 'WAITING_FOR_FRAMING';
+      def.coachingMessageEn = 'Move slightly closer to the camera';
+      def.coachingMessageCn = '请靠近摄像头一些';
+      def.readinessStatus = 'too_far';
+      def.blockingReason = 'patient_too_far';
+      def.formRating = 'warning';
+      def.shoulderWidthRatio = Number(shoulderWidthRatio.toFixed(3));
+      def.distanceStatus = 'ไกลเกินไป (<18%)';
+      return def;
+    }
+
+    const isUpperBodyMode = !isElbowUsable;
+
+    // 5. Clinical Kinematic Tracking
+    const effectiveElbow: PoseEngineLandmark = isUpperBodyMode
+      ? { x: shoulder.x, y: shoulder.y + 0.15, z: shoulder.z ?? 0, visibility: 0.85 }
+      : elbow!;
+    const effectiveWrist: PoseEngineLandmark = isUpperBodyMode
+      ? { x: shoulder.x, y: shoulder.y + 0.30, z: shoulder.z ?? 0, visibility: 0.85 }
+      : (isWristUsable ? wrist! : elbow!);
+
+    const hasHip = Boolean(hip && isLandmarkUsable(hip, 0.30));
+
+    // In upper body mode without hips, synthesize forward lean within safe bounds
+    const effectiveHip: PoseEngineLandmark | undefined = hasHip
+      ? hip
+      : isUpperBodyMode
+      ? { x: shoulder.x, y: shoulder.y + 0.35, z: (shoulder.z ?? 0) + 0.16, visibility: 0.85 }
+      : undefined;
+
     const result = this.pendulumAnalyzer.update({
-      shoulder,
+      shoulder: isUpperBodyMode ? { x: oppShoulder.x, y: oppShoulder.y, z: oppShoulder.z ?? 0 } : shoulder!,
       elbow: effectiveElbow,
       wrist: effectiveWrist,
       hip: effectiveHip,
+      oppositeShoulder: oppShoulder,
       timestampMs,
     });
 
     if (result.completedRep) {
       const nowMs = timestampMs;
-      if (nowMs - this.lastRepCompletedTimeMs >= 350) {
+      if (nowMs - this.lastRepCompletedTimeMs >= 350 && !this.isSetCompleted) {
         this.completedReps++;
         this.lastRepCompletedTimeMs = nowMs;
         if (this.completedReps >= targetReps) {
@@ -1108,52 +1139,16 @@ export class RepStateMachine {
       }
     }
 
-    let coachingMessage = 'แกว่งแขนเบาๆ เป็นวงกลมตามแรงโน้มถ่วง';
+    let coachingMessage = 'ตำแหน่งพอดี เริ่มแกว่งแขนเป็นวงกลมผ่อนคลายได้เลย';
     let formRating: 'good' | 'warning' | 'error' = 'good';
-    let readinessStatus: RepEvaluationResult['readinessStatus'] = 'ready';
     const activeWarnings: ActiveCompensationWarning[] = [];
 
-    const isPendulumActive = result.cycleProgressRatio > 0 || this.completedReps > 0;
-    const isTooClose = shoulderWidthPct > 0.48;
-
-    if (isTooClose && !hasWrist && !isPendulumActive) {
-      // Desktop / Close-Up Framing Failure Guard: User sitting too close (<1.0m) with wrists cropped
-      formRating = 'warning';
-      coachingMessage = '📷 กรุณาถอยห่างจากกล้อง 1.5–2 เมตร และยืนโน้มตัวเฉียง 45° เพื่อให้กล้องจับวงแกว่งแขนได้ชัดเจน';
-      readinessStatus = 'missing_shoulder';
-      activeWarnings.push({
-        ruleId: 'pendulum_distance_guard',
-        type: 'trunk_lean',
-        messageTh: '📷 กรุณาถอยห่างจากกล้อง 1.5–2 เมตร และยืนโน้มตัวเฉียง 45° เพื่อให้กล้องจับวงแกว่งแขนได้ชัดเจน',
-        severity: 'warning',
-        currentValue: Math.round(shoulderWidthPct * 100),
-        thresholdValue: 48,
-      });
-    } else if (lockResult?.isOccluded && !isPendulumActive) {
-      formRating = 'warning';
-      coachingMessage = 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน';
-      activeWarnings.push({
-        ruleId: 'pendulum_occlusion_guard',
-        type: 'trunk_lean',
-        messageTh: 'กรุณาขยับให้อยู่ในกรอบกล้องอย่างชัดเจน',
-        severity: 'warning',
-        currentValue: lockResult.averageVisibility,
-        thresholdValue: 0.50,
-      });
-    } else if (isUpperBodyOnly) {
-      // Upper-Body Mode Active Sway: Never block rep counting and never freeze at 0%!
-      readinessStatus = 'partial_upper_body';
+    if (isUpperBodyMode) {
       formRating = 'good';
       if (result.cycleProgressRatio > 0) {
         coachingMessage = `💡 โหมดครึ่งตัวบน: กำลังวิเคราะห์การแกว่งหัวไหล่ (${Math.round(result.cycleProgressRatio * 100)}%)`;
       } else {
-        coachingMessage = '💡 ตรวจจับโหมดครึ่งตัวบน (เห็นเฉพาะช่วงไหล่) — ขยับหัวไหล่และต้นแขนตามจังหวะเพื่อฝึกได้เลย (หรือถอยห่างเล็กน้อยหากต้องการตรวจจับเต็มแขน)';
-      }
-    } else if (isElbowFallback) {
-      if (result.cycleProgressRatio > 0) {
-        coachingMessage = `ตรวจจับได้บางส่วน (ติดตามข้อศอก) — แกว่งเป็นวงกลมต่อเนื่อง (${Math.round(result.cycleProgressRatio * 100)}%)`;
-      } else {
-        coachingMessage = 'ตรวจจับได้บางส่วน (ติดตามข้อศอก) — พร้อมแล้วเริ่มแกว่งแขนเป็นวงกลม';
+        coachingMessage = '💡 โหมดครึ่งตัวบน: ตรวจจับเฉพาะช่วงไหล่ — ขยับหัวไหล่ตามจังหวะเพื่อฝึกได้เลย';
       }
     } else if (result.warningTh) {
       coachingMessage = result.warningTh;
@@ -1167,10 +1162,13 @@ export class RepStateMachine {
         thresholdValue: this.config.pendulumMechanics?.minTrunkForwardTiltDeg || 18,
       });
     } else if (result.cycleProgressRatio > 0) {
-      coachingMessage = `แกว่งเป็นวงกลมต่อเนื่อง... (${Math.round(result.cycleProgressRatio * 100)}%)`;
+      coachingMessage = `แกว่งแขนผ่อนคลายต่อเนื่อง... (${Math.round(result.cycleProgressRatio * 100)}%)`;
     }
 
     const accuracyPercent = Math.min(100, Math.round((result.cycleProgressRatio || 0) * 100));
+    const readinessStatus: RepEvaluationResult['readinessStatus'] = isUpperBodyMode
+      ? 'partial_upper_body'
+      : 'ready';
 
     return {
       phase: result.cycleProgressRatio > 0 ? 'MOVING_TO_TARGET' : 'IDLE',
@@ -1181,7 +1179,7 @@ export class RepStateMachine {
       severity: formRating,
       holdProgressRatio: 0,
       pendulumCircleProgressRatio: result.cycleProgressRatio,
-      isInsideTargetZone: false, // SaMD Invariant: Pendulum NEVER leaks isInsideTargetZone to prevent isometric hold triggering
+      isInsideTargetZone: false,
       isExceedingSafetyCap: false,
       completedReps: this.completedReps,
       incorrectReps: this.incorrectReps,
@@ -1191,15 +1189,15 @@ export class RepStateMachine {
       isSetCompleted: this.isSetCompleted,
       isExerciseCompleted: this.isExerciseCompleted,
       coachingMessageTh: coachingMessage,
-      coachingMessageEn: isUpperBodyOnly
+      coachingMessageEn: isUpperBodyMode
         ? result.cycleProgressRatio > 0
           ? `💡 Upper-body mode: tracking shoulder swing (${Math.round(result.cycleProgressRatio * 100)}%)`
-          : '💡 Upper-body partial detection active — move your shoulder and upper arm rhythmically (step back slightly for full-arm tracking).'
+          : '💡 Upper-body partial detection active — move your shoulder and upper arm rhythmically.'
         : undefined,
-      coachingMessageCn: isUpperBodyOnly
+      coachingMessageCn: isUpperBodyMode
         ? result.cycleProgressRatio > 0
           ? `💡 半身模式：正在分析肩部摆动 (${Math.round(result.cycleProgressRatio * 100)}%)`
-          : '💡 半身检测模式已启用 — 请按节奏活动肩部和上臂（稍微后退可进行全臂检测）。'
+          : '💡 半身检测模式已启用 — 请按节奏活动肩部和上臂。'
         : undefined,
       activeWarnings,
       formRating,
@@ -1210,6 +1208,16 @@ export class RepStateMachine {
       isFrameDropped: lockResult?.isFrameDropped ?? false,
       frameDropReason: lockResult?.frameDropReason,
       readinessStatus,
+      distanceStatus: isUpperBodyMode
+        ? 'โหมดครึ่งตัวบน'
+        : isWristUsable
+        ? 'ตำแหน่งพอดี (30-50%)'
+        : 'ติดตามข้อศอก',
+      shoulderWidthRatio: Number(shoulderWidthRatio.toFixed(3)),
+      hysteresisState: result.hysteresisState,
+      normalizedSignal: result.normalizedSignal,
+      calibratedThreshold: result.calibratedThreshold,
+      blockingReason: result.blockingReason,
       filteredLandmarks: landmarks,
     };
   }

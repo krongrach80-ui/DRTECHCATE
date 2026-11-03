@@ -27,6 +27,9 @@ import { RepStateMachine } from '../../../../packages/pose-engine/src/engine/rep
 import { CameraStreamWatchdog, WatchdogHealthStatus } from '../../../../packages/pose-engine/src/hardwareWatchdog';
 import { projectLandmarkToCanvas } from '../../../../packages/pose-engine/src/math/projection';
 import { VoiceFeedbackController } from '../../../../packages/hospital-ui-kit/src/VoiceFeedbackController';
+import { BacklightCompensator } from '../../../../packages/pose-engine/src/backlightCompensator';
+import { ClinicalOneEuroLandmarkFilter } from '../../../../packages/pose-engine/src/math/oneEuroFilter';
+import { selectPrimarySubjectPose } from '../../../../packages/pose-engine/src/subjectLock';
 import { PainStopEmergencyBar } from '../components/PainStopEmergencyBar';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
@@ -91,6 +94,13 @@ export const BODY_JOINT_INDICES = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 2
 export const ANATOMICAL_BODY_JOINTS = BODY_JOINT_INDICES;
 
 export function getRequiredKeypointsForExercise(config?: ExerciseDetectionConfig): number[] {
+  if (config?.requiredLandmarks) {
+    const side = config.side || 'bilateral';
+    if (side === 'left' && config.requiredLandmarks.left) return config.requiredLandmarks.left;
+    if (side === 'right' && config.requiredLandmarks.right) return config.requiredLandmarks.right;
+    if (config.requiredLandmarks.bilateral) return config.requiredLandmarks.bilateral;
+    return config.requiredLandmarks.right || config.requiredLandmarks.left || [11, 12, 13, 14];
+  }
   const framing = config?.framing;
   if (framing === 'head_shoulders') {
     return [7, 8, 11, 12];
@@ -178,6 +188,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       rate: 1.05,
     })
   );
+  const backlightCompensatorRef = useRef<BacklightCompensator>(new BacklightCompensator(15));
+  const oneEuroFilterRef = useRef<ClinicalOneEuroLandmarkFilter>(
+    new ClinicalOneEuroLandmarkFilter({ minCutoff: 1.2, beta: 0.04 })
+  );
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const consecutiveLowFpsFramesRef = useRef<number>(0);
+  const currentModelVariantRef = useRef<'full' | 'lite'>('full');
 
   // Loop & Timing Control Refs
   const rafIdRef = useRef<number | null>(null);
@@ -251,6 +268,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [fitMode, setFitMode] = useState<'contain' | 'cover'>('cover');
   const [boostLighting, setBoostLighting] = useState<boolean>(false);
   const [showGuideSilhouette, setShowGuideSilhouette] = useState<boolean>(true);
+  const [replayVideoSrc, setReplayVideoSrc] = useState<string | null>(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('replay=1')) {
+      return resolvedConfig.mediaUrl || '/assets/exercises/shoulder_pendulum.mp4';
+    }
+    return null;
+  });
 
   // Diagnostic HUD live state
   const [hudState, setHudState] = useState({
@@ -469,36 +492,48 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         setCameraStatus('initializing');
         setModelStatus('loading');
 
-        // 1. Initialize Webcam Stream
-        let stream: MediaStream;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              facingMode: 'user',
-            },
-            audio: false,
-          });
-        } catch {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false,
-          });
-        }
-
-        if (!isMountedRef.current) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-
-        streamRef.current = stream;
         const videoEl = videoRef.current;
         if (!videoEl) return;
 
-        videoEl.srcObject = stream;
-        videoEl.muted = true;
-        videoEl.playsInline = true;
+        if (replayVideoSrc) {
+          // Replay Mode: Play synthetic or uploaded test video file
+          videoEl.srcObject = null;
+          videoEl.src = replayVideoSrc;
+          videoEl.loop = true;
+          videoEl.muted = true;
+          videoEl.playsInline = true;
+        } else {
+          // 1. Initialize Webcam Stream (1280x720)
+          let stream: MediaStream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: 'user',
+              },
+              audio: false,
+            });
+          } catch {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false,
+            });
+          }
+
+          if (!isMountedRef.current) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+
+          streamRef.current = stream;
+          videoEl.srcObject = stream;
+          videoEl.muted = true;
+          videoEl.playsInline = true;
+
+          // Attempt hardware exposure compensation for backlight
+          backlightCompensatorRef.current.applyHardwareExposure(stream);
+        }
 
         // Explicitly wait until video metadata is loaded and videoWidth is valid (> 0)
         await new Promise<void>((resolve) => {
@@ -526,7 +561,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         });
 
         // Query & apply lowest hardware zoom for widest FOV without cropping
-        const videoTrack = stream.getVideoTracks()[0];
+        const videoTrack = streamRef.current?.getVideoTracks()[0];
         let supportedZoom = { supported: false, min: 1, max: 1, step: 0.1, current: 1 };
         if (videoTrack && typeof videoTrack.getCapabilities === 'function') {
           try {
@@ -687,10 +722,27 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
           lastTimestampMsRef.current = monotonicTs;
 
-          // Non-blocking detection: a single dropped frame never crashes the animation loop
+          // Non-blocking detection with backlight compensation
+          const backlightRes = backlightCompensatorRef.current.analyzeLuminance(vEl);
+          let inputSource: CanvasImageSource = vEl;
+          if (backlightRes.needsPreprocessing) {
+            if (!offscreenCanvasRef.current) {
+              offscreenCanvasRef.current = document.createElement('canvas');
+            }
+            if (
+              offscreenCanvasRef.current.width !== (vEl.videoWidth || 1280) ||
+              offscreenCanvasRef.current.height !== (vEl.videoHeight || 720)
+            ) {
+              offscreenCanvasRef.current.width = vEl.videoWidth || 1280;
+              offscreenCanvasRef.current.height = vEl.videoHeight || 720;
+            }
+            backlightCompensatorRef.current.preprocessForInference(vEl, offscreenCanvasRef.current);
+            inputSource = offscreenCanvasRef.current;
+          }
+
           let result: any = null;
           try {
-            result = detector.detectForVideo(vEl, monotonicTs);
+            result = detector.detectForVideo(inputSource, monotonicTs);
           } catch (detectErr) {
             console.warn('[PoseEngine] detectForVideo transient frame warning:', detectErr);
             return;
@@ -720,88 +772,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             return;
           }
 
-          // 1. Multi-Person Detection & Continuous Primary Subject Locking
+          // 1. Multi-Pose Subject Locking (Center-weighted + IoU/Centroid continuity)
           const allPoses = result.landmarks;
           const detectedPeopleCount = allPoses.length;
-          let bestIdx = 0;
+          const { selectedPose: chosenPose, selectedIndex: bestIdx, newLockedCoM } =
+            selectPrimarySubjectPose(allPoses, lockedSubjectCoMRef.current);
+          lockedSubjectCoMRef.current = newLockedCoM;
 
-          if (detectedPeopleCount > 1) {
-            let maxScore = -Infinity;
-            allPoses.forEach((pose: any[], idx: number) => {
-              const ls = pose[11];
-              const rs = pose[12];
-              if (!ls || !rs) return;
-
-              const midX = (ls.x + rs.x) / 2;
-              const midY = (ls.y + rs.y) / 2;
-              const shoulderWidth = Math.abs(ls.x - rs.x);
-
-              // Size score (closer/primary user has wider shoulders)
-              const sizeScore = shoulderWidth * 2.5;
-
-              // Center score (primary user stands in front of kiosk/screen center)
-              const distFromCenter = Math.hypot(midX - 0.5, midY - 0.5);
-              const centerScore = Math.max(0, 1.0 - distFromCenter * 1.8);
-
-              // Persistence lock bonus (prevents swapping to bystanders walking behind)
-              let persistenceScore = 0;
-              if (lockedSubjectCoMRef.current) {
-                const distFromPrev = Math.hypot(
-                  midX - lockedSubjectCoMRef.current.x,
-                  midY - lockedSubjectCoMRef.current.y
-                );
-                persistenceScore = Math.max(0, (1.0 - distFromPrev * 2.2) * 2.0);
-              }
-
-              const totalScore = sizeScore * 1.5 + centerScore * 1.2 + persistenceScore * 2.0;
-              if (totalScore > maxScore) {
-                maxScore = totalScore;
-                bestIdx = idx;
-              }
-            });
-          }
-
-          const chosenPose = allPoses[bestIdx];
-          const rawLs = chosenPose[11];
-          const rawRs = chosenPose[12];
-          if (rawLs && rawRs) {
-            const curMidX = (rawLs.x + rawRs.x) / 2;
-            const curMidY = (rawLs.y + rawRs.y) / 2;
-            if (!lockedSubjectCoMRef.current) {
-              lockedSubjectCoMRef.current = { x: curMidX, y: curMidY };
-            } else {
-              lockedSubjectCoMRef.current = {
-                x: 0.82 * lockedSubjectCoMRef.current.x + 0.18 * curMidX,
-                y: 0.82 * lockedSubjectCoMRef.current.y + 0.18 * curMidY,
-              };
-            }
-          }
-
-          // 2. Velocity-Adaptive Landmark Smoothing (EMA Filter)
-          const prevSmoothed = smoothedLandmarksRef.current;
-          const smoothedPose: PoseEngineLandmark[] = chosenPose.map((lm: any, idx: number) => {
-            const rawVis = lm.visibility ?? 0.9;
-            const rawPresence = lm.presence ?? 0.9;
-            if (!prevSmoothed || !prevSmoothed[idx]) {
-              return { x: lm.x, y: lm.y, z: lm.z ?? 0, visibility: rawVis, presence: rawPresence };
-            }
-
-            const prev = prevSmoothed[idx];
-            const dist = Math.hypot(lm.x - prev.x, lm.y - prev.y);
-            // Higher smoothing (lower alpha) when stationary to suppress jitter from harsh lighting/noise
-            const alpha = Math.min(0.85, Math.max(0.28, dist * 15.0));
-
-            return {
-              x: alpha * lm.x + (1 - alpha) * prev.x,
-              y: alpha * lm.y + (1 - alpha) * prev.y,
-              z: alpha * (lm.z ?? 0) + (1 - alpha) * (prev.z ?? 0),
-              visibility: rawVis,
-              presence: rawPresence,
-            };
-          });
+          // 2. Clinical One Euro Filter (1€ Filter - low tremor at rest, low latency in motion)
+          const smoothedPose = oneEuroFilterRef.current.filter(chosenPose, monotonicTs);
           smoothedLandmarksRef.current = smoothedPose;
 
-          // Hardware Watchdog Update
+          // Hardware Watchdog & Clinical State Machine Update
           const wdStatus = watchdogRef.current.update(smoothedPose, monotonicTs);
           const evalRes = stateMachineRef.current.evaluate(smoothedPose, monotonicTs);
 
@@ -811,27 +793,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             projectLandmarkToCanvas(lm, vEl, cEl, true, currentFitMode)
           );
 
-          // Shoulder width & distance estimation
-          const smoothLs = smoothedPose[11];
-          const smoothRs = smoothedPose[12];
-          let shoulderWidthPct = 0;
-          let distanceStatus = 'กำลังวัดระยะ...';
-          let distanceWarning: string | null = null;
-
-          if (smoothLs && smoothRs && (smoothLs.visibility ?? 1) > 0.35 && (smoothRs.visibility ?? 1) > 0.35) {
-            const sw = Math.abs(smoothLs.x - smoothRs.x);
-            shoulderWidthPct = Math.round(sw * 100);
-            if (sw > 0.55) {
-              distanceStatus = 'ใกล้เกินไป';
-              distanceWarning = '⚠️ ยืนใกล้กล้องเกินไป — กรุณาถอยห่างประมาณ 1–1.5 เมตร ให้เห็นศีรษะถึงเอว';
-            } else if (sw < 0.18) {
-              distanceStatus = 'ไกลเกินไป';
-              distanceWarning = '⚠️ อยู่ไกลเกินไป — กรุณาขยับเข้าใกล้กล้องอีกเล็กน้อย';
-            } else {
-              distanceStatus = 'ระยะเหมาะสม (1-1.5 ม.)';
-              distanceWarning = null;
-            }
-          }
+          // Shoulder width & distance estimation from clinical evaluation
+          const shoulderWidthPct = Math.round((evalRes.shoulderWidthRatio ?? 0.28) * 100);
+          const distanceStatus = evalRes.distanceStatus || 'ระยะเหมาะสม';
+          const distanceWarning = evalRes.phase === 'WAITING_FOR_FRAMING' ? evalRes.coachingMessageTh : null;
 
           const strokeColor =
             evalRes.formRating === 'error'
@@ -979,9 +944,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               distanceWarning,
               detectedPeople: detectedPeopleCount,
               lockedTargetIdx: bestIdx,
-              hasLightingWarning: isLightingLow,
+              hasLightingWarning: backlightRes.isBacklightDetected || backlightRes.isSubjectDark,
               requiredKeypointsStatus,
-              readinessReason,
+              readinessReason: evalRes.blockingReason || (evalRes.phase === 'WAITING_FOR_FRAMING' ? 'รอจัดตำแหน่ง' : 'พร้อมเริ่มฝึก'),
             });
             setEvalResult(evalRes);
             setWatchdogStatus(wdStatus);
@@ -1081,6 +1046,31 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     };
 
     cleanupResources();
+
+    // Log telemetry to Supabase / API asynchronously (strictly numeric telemetry - never upload video)
+    if (defaultApiClient?.courses?.submitSessionLog) {
+      defaultApiClient.courses.submitSessionLog({
+        patient_id: patient.patient_id || patient.hn || 'unknown',
+        exercise_id: exercise.id || exercise.exercise_id || resolvedConfig.id || null,
+        kiosk_id: 'kiosk-01',
+        completion_mode: mode,
+        correct_reps: telemetry.completedReps,
+        incorrect_reps: telemetry.incorrectReps,
+        target_reps: telemetry.totalRepsTarget,
+        current_set: telemetry.totalSetsCompleted,
+        total_sets: resolvedConfig.defaultPrescription?.totalSets || 3,
+        max_angle_achieved: telemetry.maxAngleAchievedDeg,
+        consistency_score: telemetry.consistencyScorePercent,
+        pain_reported: mode === 'stopped_pain',
+        duration_seconds: totalDurationSec,
+        telemetry_summary: {
+          hysteresisState: evalResult?.hysteresisState,
+          calibratedThreshold: evalResult?.calibratedThreshold,
+          backlightCompensated: hudState.hasLightingWarning,
+          framingStatus: evalResult?.distanceStatus,
+        },
+      }).catch((err) => console.warn('[PoseEngine] Session log sync warning:', err));
+    }
 
     if (onSessionCompleted) {
       onSessionCompleted(telemetry);
@@ -1527,20 +1517,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           className="absolute inset-0 w-full h-full pointer-events-none z-10"
         />
 
-        {/* Half-body Silhouette Guide Overlay (Controlled via Staff Settings) */}
-        {showGuideSilhouette && (
-          <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center opacity-25">
+        {/* Half-body Silhouette Guide Overlay (Auto-shown when WAITING_FOR_FRAMING or enabled by staff) */}
+        {(showGuideSilhouette || hudState.repPhase === 'WAITING_FOR_FRAMING') && (
+          <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center opacity-30">
             <svg
               viewBox="0 0 400 400"
               className={`w-80 h-80 sm:w-96 sm:h-96 transition-colors duration-300 ${
-                hudState.shoulderWidthPct > 55
-                  ? 'text-amber-400 stroke-amber-400'
-                  : hudState.shoulderWidthPct > 0 && hudState.shoulderWidthPct < 18
-                  ? 'text-amber-400 stroke-amber-400'
+                hudState.repPhase === 'WAITING_FOR_FRAMING' || hudState.shoulderWidthPct > 52
+                  ? 'text-amber-400 stroke-amber-400 animate-pulse'
                   : 'text-teal-400 stroke-teal-400'
               }`}
               fill="none"
-              strokeWidth="2"
+              strokeWidth="2.5"
               strokeDasharray="6 4"
             >
               <circle cx="200" cy="100" r="48" stroke="currentColor" />
@@ -1610,9 +1598,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                       {' '}/ {resolvedConfig.defaultPrescription?.repsPerSet || 10}
                     </span>
                   </div>
-                  <div className="text-xs sm:text-sm font-bold text-emerald-400">
-                    {Math.round(ringProgress * 100)}%
-                  </div>
+                  {hudState.repPhase === 'WAITING_FOR_FRAMING' ? (
+                    <div className="text-xs sm:text-sm font-black text-amber-400 animate-pulse tracking-wide mt-1">
+                      รอจัดระยะ
+                    </div>
+                  ) : (
+                    <div className="text-xs sm:text-sm font-bold text-emerald-400">
+                      {Math.round(ringProgress * 100)}%
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1663,16 +1657,22 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ⚡ FPS จริง: <span className="text-white font-bold">{hudState.fps} FPS</span> {lowPowerMode ? '<โหมดประหยัด>' : ''}
             </div>
             <div>
-              📍 Landmarks: <span className="text-white font-bold">{hudState.landmarkCount} จุด</span> (ความชัดเฉลี่ย: {hudState.avgVisibility}) | กรอง: <span className="text-emerald-400">EMA Smooth</span>
+              📍 Landmarks: <span className="text-white font-bold">{hudState.landmarkCount} จุด</span> (ความชัดเฉลี่ย: {hudState.avgVisibility}) | กรอง: <span className="text-emerald-400 font-bold">One Euro (1€)</span>
             </div>
             <div>
               📐 มุมปัจจุบัน: <span className="text-white font-bold">{hudState.currentAngle}°</span> | ความแม่นยำ: <span className="text-white font-bold">{hudState.accuracyPct}%</span>
             </div>
             <div>
-              🔄 สถานะตัวนับ: <span className="text-amber-300 font-bold">{hudState.repPhase}</span> | ข้าง: <span className="text-cyan-300 font-bold">{activeSide}</span> | ครั้งที่: <span className="text-white font-bold">{hudState.completedReps}</span>
+              🔄 สถานะตัวนับ: <span className="text-amber-300 font-bold">{hudState.repPhase}</span> | Hysteresis: <span className="text-teal-300 font-bold">{evalResult?.hysteresisState || 'N/A'}</span>
             </div>
             <div>
-              🔍 เงื่อนไขความพร้อม: <span className="text-white font-bold">{hudState.readinessReason}</span>
+              📊 สัญญาณสัมพัทธ์: <span className="text-white font-bold">{evalResult?.normalizedSignal ?? 0}</span> | เกณฑ์: <span className="text-cyan-300 font-bold">{evalResult?.calibratedThreshold ?? 0.14}</span>
+            </div>
+            <div>
+              🛑 เหตุผลที่ยังไม่นับ (Blocking): <span className="text-amber-300 font-bold">{evalResult?.blockingReason || 'none'}</span>
+            </div>
+            <div>
+              ☀️ แสงย้อน (Backlight): <span className={hudState.hasLightingWarning ? 'text-amber-400 font-bold' : 'text-emerald-400'}>{hudState.hasLightingWarning ? '⚠️ ตรวจพบ (เปิดระบบชดเชยแสง)' : 'ปกติ'}</span>
             </div>
           </div>
         )}
@@ -2151,6 +2151,44 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   />
                 </div>
               )}
+
+              {/* 8. Staff Video Replay Harness Mode */}
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-white text-base">🎥 วิดีโอ Replay ทดสอบ (Video Harness)</div>
+                    <div className="text-xs text-slate-400">เล่นไฟล์วิดีโอเพื่อทดสอบความแม่นยำของ AI</div>
+                  </div>
+                  <label className="px-3 py-1.5 rounded-xl font-bold bg-teal-500/20 text-teal-300 hover:bg-teal-500 hover:text-slate-950 border border-teal-500/40 cursor-pointer text-xs transition">
+                    เลือกไฟล์วิดีโอ
+                    <input
+                      type="file"
+                      accept="video/mp4,video/webm"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const fileUrl = URL.createObjectURL(file);
+                          setReplayVideoSrc(fileUrl);
+                          setShowStaffSettingsModal(false);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                {replayVideoSrc && (
+                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+                    <span className="truncate max-w-[220px]">เล่น: {replayVideoSrc}</span>
+                    <button
+                      type="button"
+                      onClick={() => setReplayVideoSrc(null)}
+                      className="text-rose-400 hover:underline cursor-pointer font-bold"
+                    >
+                      กลับใช้กล้องสด
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <button

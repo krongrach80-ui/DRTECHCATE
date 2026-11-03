@@ -66,6 +66,19 @@ export const SHOULDER_PENDULUM_PRESET: ExerciseDetectionConfig = {
     stopOnPainMessageTh: 'หากมีอาการเจ็บแปลบบริเวณข้อไหล่หรือแขน ให้หยุดทันทีและแจ้งนักกายภาพบำบัด',
     maxSafeAngleCapDeg: 90,
   },
+  requiredLandmarks: {
+    right: [12, 14, 16],
+    left: [11, 13, 15],
+    bilateral: [11, 12, 13, 14],
+  },
+  minLandmarkVisibility: {
+    11: 0.50,
+    12: 0.50,
+    13: 0.50,
+    14: 0.50,
+    15: 0.40,
+    16: 0.40,
+  },
 };
 
 /**

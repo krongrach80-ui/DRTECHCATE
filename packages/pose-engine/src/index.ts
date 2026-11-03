@@ -19,3 +19,5 @@ export * from './presets/exercises.config';
 export * from './privacy';
 export * from './subjectLock';
 export * from './hardwareWatchdog';
+export * from './backlightCompensator';
+export * from './math/oneEuroFilter';

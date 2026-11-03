@@ -308,3 +308,65 @@ export class ForegroundSubjectLocker {
     this.isCurrentlyOccluded = false;
   }
 }
+
+/**
+ * Multi-Pose Subject Selector:
+ * Selects and locks onto primary patient among detected poses (numPoses: 2+)
+ * using torso size, distance to center (0.5, 0.5), and centroid temporal continuity
+ * so background bystanders walking behind never steal the tracking lock.
+ */
+export function selectPrimarySubjectPose(
+  allPoses: PoseEngineLandmark[][],
+  prevLockedCoM?: { x: number; y: number } | null
+): { selectedPose: PoseEngineLandmark[]; selectedIndex: number; newLockedCoM: { x: number; y: number } } {
+  if (!allPoses || allPoses.length === 0) {
+    return { selectedPose: [], selectedIndex: -1, newLockedCoM: prevLockedCoM || { x: 0.5, y: 0.5 } };
+  }
+  if (allPoses.length === 1) {
+    const com = calculateCenterOfMass(allPoses[0]);
+    return { selectedPose: allPoses[0], selectedIndex: 0, newLockedCoM: { x: com.x, y: com.y } };
+  }
+
+  let bestIdx = 0;
+  let maxScore = -Infinity;
+
+  for (let i = 0; i < allPoses.length; i++) {
+    const pose = allPoses[i];
+    const ls = pose[11];
+    const rs = pose[12];
+    const com = calculateCenterOfMass(pose);
+    const bbox = calculateBoundingBox(pose);
+
+    // Torso size score (closer person has wider shoulders / larger bbox)
+    const shoulderWidth = ls && rs ? Math.hypot(ls.x - rs.x, ls.y - rs.y) : bbox.width;
+    const sizeScore = shoulderWidth * 2.5 + bbox.area * 1.5;
+
+    // Center distance score (closest to screen center (0.5, 0.5))
+    const distFromCenter = Math.hypot(com.x - 0.5, com.y - 0.5);
+    const centerScore = Math.max(0, 1.0 - distFromCenter * 1.8);
+
+    // Centroid continuity bonus with previous locked CoM (anti-hijack)
+    let persistenceScore = 0;
+    if (prevLockedCoM) {
+      const distFromPrev = Math.hypot(com.x - prevLockedCoM.x, com.y - prevLockedCoM.y);
+      persistenceScore = Math.max(0, (1.0 - distFromPrev * 2.2) * 3.0);
+    }
+
+    const totalScore = sizeScore * 1.8 + centerScore * 1.5 + persistenceScore * 2.5;
+    if (totalScore > maxScore) {
+      maxScore = totalScore;
+      bestIdx = i;
+    }
+  }
+
+  const chosenPose = allPoses[bestIdx];
+  const chosenCoM = calculateCenterOfMass(chosenPose);
+  const newLockedCoM = prevLockedCoM
+    ? {
+        x: 0.80 * prevLockedCoM.x + 0.20 * chosenCoM.x,
+        y: 0.80 * prevLockedCoM.y + 0.20 * chosenCoM.y,
+      }
+    : { x: chosenCoM.x, y: chosenCoM.y };
+
+  return { selectedPose: chosenPose, selectedIndex: bestIdx, newLockedCoM };
+}

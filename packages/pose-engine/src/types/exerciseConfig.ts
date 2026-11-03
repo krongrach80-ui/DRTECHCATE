@@ -130,6 +130,12 @@ export interface ExerciseDetectionConfig {
   compensationRules: CompensationRule[];
   safetyContraindications: SafetyContraindications;
   maxSafeVelocityDegPerSec?: number; // Shortcut or per-exercise velocity ceiling
+  requiredLandmarks?: {
+    right: number[];
+    left: number[];
+    bilateral?: number[];
+  };
+  minLandmarkVisibility?: Record<number, number>;
 }
 
 /**
@@ -148,6 +154,7 @@ export interface PoseEngineLandmark {
  */
 export type RepPhase =
   | 'IDLE'
+  | 'WAITING_FOR_FRAMING'
   | 'MOVING_TO_TARGET'
   | 'HOLDING_TARGET'
   | 'RETURNING_TO_START'
@@ -201,12 +208,31 @@ export interface RepEvaluationResult {
   frameDropReason?: string;
   readinessStatus?:
     | 'ready'
+    | 'optimal'
+    | 'too_close_missing_arm'
+    | 'too_far'
+    | 'waiting_for_framing'
     | 'missing_shoulder'
     | 'missing_arm_landmarks'
     | 'missing_lower_body'
     | 'missing_head_shoulders'
     | 'missing_full_body'
     | 'partial_upper_body';
+  blockingReason?: string;
+  distanceStatus?: string;
+  shoulderWidthRatio?: number;
+  normalizedSignal?: number;
+  hysteresisState?:
+    | 'IDLE'
+    | 'NEUTRAL'
+    | 'EXTREME_A'
+    | 'EXTREME_B'
+    | 'CROSS_NEUTRAL'
+    | 'RETURN_NEUTRAL';
+  backlightDetected?: boolean;
+  calibratedThreshold?: number;
+  activeRequiredLandmarks?: number[];
+  missingRequiredLandmarks?: number[];
   filteredLandmarks: PoseEngineLandmark[];
 }
 

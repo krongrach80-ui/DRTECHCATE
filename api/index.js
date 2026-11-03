@@ -3112,6 +3112,19 @@ var init_exercises_config = __esm({
           stopOnPainMessageEn: "Stop immediately if sharp shoulder pain occurs.",
           stopOnPainMessageCn: "\u82E5\u80A9\u90E8\u51FA\u73B0\u660E\u663E\u75BC\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62\u3002",
           maxSafeAngleCapDeg: 90
+        },
+        requiredLandmarks: {
+          right: [12, 14, 16],
+          left: [11, 13, 15],
+          bilateral: [11, 12, 13, 14]
+        },
+        minLandmarkVisibility: {
+          11: 0.5,
+          12: 0.5,
+          13: 0.5,
+          14: 0.5,
+          15: 0.4,
+          16: 0.4
         }
       },
       // 2. Shoulder Flexion
@@ -3715,6 +3728,19 @@ var init_shoulderPendulumPreset = __esm({
       safetyContraindications: {
         stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E1B\u0E25\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E02\u0E19 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35\u0E41\u0E25\u0E30\u0E41\u0E08\u0E49\u0E07\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14",
         maxSafeAngleCapDeg: 90
+      },
+      requiredLandmarks: {
+        right: [12, 14, 16],
+        left: [11, 13, 15],
+        bilateral: [11, 12, 13, 14]
+      },
+      minLandmarkVisibility: {
+        11: 0.5,
+        12: 0.5,
+        13: 0.5,
+        14: 0.5,
+        15: 0.4,
+        16: 0.4
       }
     };
     DEFAULT_CLINICAL_PRESETS = ALL_CLINICAL_EXERCISES;
