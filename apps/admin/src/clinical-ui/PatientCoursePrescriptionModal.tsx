@@ -376,6 +376,8 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
   useEffect(() => {
     if (!isOpen) return;
 
+    let isMounted = true;
+
     async function loadPatients() {
       try {
         let directMatch: PatientRecord | null = null;
@@ -388,10 +390,12 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
         }
 
         const list = await defaultApiClient.patients.list().catch(() => []);
-        const validList = Array.isArray(list) ? list : [];
+        const validList = Array.isArray(list) ? [...list] : [];
         if (directMatch && !validList.some((p) => p.id === directMatch!.id || p.hn === directMatch!.hn)) {
           validList.unshift(directMatch);
         }
+
+        if (!isMounted) return;
         setPatients(validList);
 
         if (directMatch) {
@@ -406,9 +410,14 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             setIsSearchingPatient(false);
           } else if (validList.length > 0) {
             setSelectedPatient(validList[0]);
+          } else {
+            setSelectedPatient(null);
+            setIsSearchingPatient(true);
           }
         } else if (validList.length > 0 && !selectedPatient) {
           setSelectedPatient(validList[0]);
+        } else if (!selectedPatient) {
+          setIsSearchingPatient(true);
         }
       } catch {
         // non-blocking
@@ -416,6 +425,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
     }
 
     loadPatients();
+    return () => {
+      isMounted = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, preselectedPatientId]);
 
@@ -914,11 +926,13 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 <div className="max-h-48 overflow-y-auto space-y-1">
                   {patients
                     .filter((p) => {
+                      if (!patientSearchQuery.trim()) return true;
                       const q = patientSearchQuery.toLowerCase();
                       return (
-                        p.first_name.toLowerCase().includes(q) ||
+                        (p.first_name && p.first_name.toLowerCase().includes(q)) ||
                         (p.last_name && p.last_name.toLowerCase().includes(q)) ||
-                        (p.hn && p.hn.toLowerCase().includes(q))
+                        (p.hn && p.hn.toLowerCase().includes(q)) ||
+                        (p.phone && p.phone.toLowerCase().includes(q))
                       );
                     })
                     .map((p) => (

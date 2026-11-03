@@ -10808,7 +10808,13 @@ var init_service10 = __esm({
         let resultHn = hn;
         if (payload.patient_id) {
           try {
-            const { data, error } = await supabase.from("patients").update(draftData).eq("id", payload.patient_id).select("id, hn").maybeSingle();
+            let { data, error } = await supabase.from("patients").update(draftData).eq("id", payload.patient_id).select("id, hn").maybeSingle();
+            if (error && (error.message?.includes("draft") || error.code === "22P02")) {
+              draftData.registration_status = "awaiting_face";
+              const retry = await supabase.from("patients").update(draftData).eq("id", payload.patient_id).select("id, hn").maybeSingle();
+              data = retry.data;
+              error = retry.error;
+            }
             if (!error && data) {
               resultPatientId = data.id;
               resultHn = data.hn;
@@ -10819,7 +10825,13 @@ var init_service10 = __esm({
         }
         if (!resultPatientId) {
           try {
-            const { data, error } = await supabase.from("patients").insert(draftData).select("id, hn").maybeSingle();
+            let { data, error } = await supabase.from("patients").insert(draftData).select("id, hn").maybeSingle();
+            if (error && (error.message?.includes("draft") || error.code === "22P02")) {
+              draftData.registration_status = "awaiting_face";
+              const retry = await supabase.from("patients").insert(draftData).select("id, hn").maybeSingle();
+              data = retry.data;
+              error = retry.error;
+            }
             if (error) {
               logger.error({ error, draftData }, "Error inserting patient draft into Supabase");
               if (process.env.NODE_ENV !== "test") {

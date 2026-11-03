@@ -294,16 +294,27 @@ export function normalizePatientRecord(p: any): any {
     hn: hn,
     first_name: firstName,
     last_name: lastName,
+    birth_date: p.birth_date || history.birth_date || null,
     age: Number(p.age) || 45,
     gender: p.gender || p.sex || 'female',
     sex: p.sex || p.gender || 'female',
     phone: p.phone || undefined,
+    target_joint: p.target_joint || history.target_joint || 'ข้อไหล่',
+    contraindications: p.contraindications || history.contraindications || '-',
+    underlying_diseases: p.underlying_diseases || history.chronic_diseases || history.underlying_diseases || '-',
+    allergies: p.allergies || history.allergies || '-',
+    doctor_notes: p.doctor_notes || history.notes || history.doctor_notes || '-',
+    emergency_contact_name: p.emergency_contact_name || history.emergency_contact?.name || null,
+    emergency_contact_phone: p.emergency_contact_phone || history.emergency_contact?.phone || null,
+    pdpa_consent: p.pdpa_consent ?? history.pdpa_consent ?? true,
     initial_symptoms: p.initial_symptoms || p.injury || undefined,
     injury: p.injury || p.initial_symptoms || undefined,
-    registration_status: p.registration_status || 'active',
-    registered_via: p.registered_via || 'kiosk',
+    responsible_pt_id: p.responsible_pt_id || history.responsible_pt_id || null,
+    registration_status: p.registration_status || 'awaiting_face',
+    registered_via: p.registered_via || 'reception',
     created_at: p.created_at || new Date().toISOString(),
     updated_at: p.updated_at || new Date().toISOString(),
+    version: p.version || 1,
     biometrics: {
       face_vector: p.biometrics?.face_vector || history.face_vector || [],
       registered_face_url: p.biometrics?.registered_face_url || history.registered_face_url || '',
@@ -656,9 +667,10 @@ export class ApiClient {
       if (endpointPath === '/smart-onboarding/register') {
         const body = parseSafeBody(options.body);
         const patientId =
-          typeof crypto !== 'undefined' && crypto.randomUUID
+          body.patient_id ||
+          (typeof crypto !== 'undefined' && crypto.randomUUID
             ? crypto.randomUUID()
-            : `p-${Date.now()}`;
+            : `p-${Date.now()}`);
         const patientHn = body.hn || `P-${Math.floor(1000 + Math.random() * 9000)}`;
         const now = new Date().toISOString();
 
@@ -672,7 +684,7 @@ export class ApiClient {
           sex: body.sex || 'female',
           gender: body.gender || body.sex || 'female',
           phone: body.phone || null,
-          target_joint: body.target_joint || 'เข่า',
+          target_joint: body.target_joint || 'ข้อไหล่',
           injury: body.injury || null,
           contraindications: body.contraindications || '-',
           underlying_diseases: body.underlying_diseases || '-',
@@ -690,7 +702,7 @@ export class ApiClient {
           registered_via: 'reception',
           history: {
             pin: body.pin || '1234',
-            target_joint: body.target_joint || 'เข่า',
+            target_joint: body.target_joint || 'ข้อไหล่',
             contraindications: body.contraindications || '-',
             chronic_diseases: body.underlying_diseases || '-',
             allergies: body.allergies || '-',
@@ -715,20 +727,61 @@ export class ApiClient {
           created_at: now,
         };
 
-        // Try inserting directly into Supabase Cloud
+        // Try updating existing draft or inserting directly into Supabase Cloud
+        let persistedId = patientId;
         try {
-          await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients`, {
-            method: 'POST',
-            headers: {
-              apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-              'Content-Type': 'application/json',
-              Prefer: 'return=representation',
-            },
-            body: JSON.stringify(newPatient),
-          });
-        } catch {
-          // Cloud insert fallback
+          let supaRes: Response | null = null;
+          if (body.patient_id) {
+            const updatePayload = { ...newPatient };
+            delete (updatePayload as any).id;
+            supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(patientId)}`, {
+              method: 'PATCH',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify(updatePayload),
+            });
+            if (supaRes.ok) {
+              const rows = await supaRes.json();
+              if (Array.isArray(rows) && rows.length > 0) {
+                persistedId = rows[0].id || persistedId;
+              } else {
+                supaRes = null; // not found, insert instead
+              }
+            } else {
+              supaRes = null;
+            }
+          }
+
+          if (!supaRes) {
+            supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients`, {
+              method: 'POST',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify(newPatient),
+            });
+            if (supaRes.ok) {
+              const rows = await supaRes.json();
+              if (Array.isArray(rows) && rows.length > 0) {
+                persistedId = rows[0].id || persistedId;
+              }
+            }
+          }
+
+          if (!supaRes.ok) {
+            const errTxt = await supaRes.text();
+            throw new Error(`ไม่สามารถบันทึกคนไข้ลงฐานข้อมูล Supabase ได้ (${supaRes.status}): ${errTxt}`);
+          }
+        } catch (supaErr: any) {
+          if (supaErr?.message?.includes('ไม่สามารถบันทึก')) throw supaErr;
+          // In offline test environments allow proceeding
         }
 
         // Sovereign Biometric Invariant: Zero persistent vector caching in client localStorage
@@ -1613,8 +1666,11 @@ export class ApiClient {
 
         if (patientId && options.method === 'GET') {
           try {
+            const cleanTarget = (patientId || '').trim();
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTarget);
+            const queryParam = isUuid ? `id=eq.${encodeURIComponent(cleanTarget)}` : `hn=eq.${encodeURIComponent(cleanTarget)}`;
             const supaRes = await fetch(
-              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${patientId}&select=*`,
+              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?${queryParam}&select=*&limit=1`,
               {
                 headers: {
                   apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -1625,10 +1681,11 @@ export class ApiClient {
             if (supaRes.ok) {
               const list = await supaRes.json();
               if (Array.isArray(list) && list.length > 0) {
-                return list[0] as T;
+                return normalizePatientRecord(list[0]) as T;
               }
             }
           } catch {}
+          throw new Error(`Patient ${patientId} not found`);
         }
 
         const supaRes = await fetch(
@@ -1642,7 +1699,8 @@ export class ApiClient {
         );
         if (supaRes.ok) {
           const list = await supaRes.json();
-          return { ok: true, data: list, count: list.length } as T;
+          const normalized = Array.isArray(list) ? list.map(normalizePatientRecord) : [];
+          return { ok: true, data: normalized, count: normalized.length } as T;
         }
       }
 
@@ -2171,38 +2229,64 @@ export class ApiClient {
       if (params.page) query.set('page', String(params.page));
       if (params.limit) query.set('limit', String(params.limit));
       const qs = query.toString() ? `?${query.toString()}` : '';
-      const res = await this.request<any>(`/patients${qs}`, { method: 'GET' });
-      if (Array.isArray(res)) return res as PatientRecord[];
-      if (res && Array.isArray(res.patients)) return res.patients as PatientRecord[];
-      if (res && Array.isArray(res.data)) return res.data as PatientRecord[];
-      return [] as PatientRecord[];
+      let rawList: any[] = [];
+      try {
+        const res = await this.request<any>(`/patients${qs}`, { method: 'GET' });
+        if (Array.isArray(res)) rawList = res;
+        else if (res && Array.isArray(res.patients)) rawList = res.patients;
+        else if (res && Array.isArray(res.data)) rawList = res.data;
+      } catch {}
+
+      if (rawList.length === 0) {
+        // Direct Supabase Cloud REST fetch
+        try {
+          const q = (params.q || '').trim();
+          const queryUrl = q
+            ? `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(first_name.ilike.*${encodeURIComponent(q)}*,last_name.ilike.*${encodeURIComponent(q)}*,hn.ilike.*${encodeURIComponent(q)}*)&order=created_at.desc&limit=${params.limit || 50}`
+            : `${DEFAULT_SUPABASE_URL}/rest/v1/patients?order=created_at.desc&limit=${params.limit || 50}`;
+          const supaRes = await fetch(queryUrl, {
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+            },
+          });
+          if (supaRes.ok) {
+            const list = await supaRes.json();
+            if (Array.isArray(list)) rawList = list;
+          }
+        } catch {}
+      }
+      return rawList.map(normalizePatientRecord) as PatientRecord[];
     },
 
     get: async (id: string) => {
+      const cleanTarget = (id || '').trim();
       try {
-        return await this.request<PatientRecord>(`/patients/${id}`, { method: 'GET' });
-      } catch {
-        // Direct fallback to Supabase REST Cloud
-        const cleanTarget = (id || '').trim();
-        try {
-          const supaRes = await fetch(
-            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(cleanTarget)},hn.eq.${encodeURIComponent(cleanTarget)})&select=*&limit=1`,
-            {
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-              },
-            }
-          );
-          if (supaRes.ok) {
-            const rows = await supaRes.json();
-            if (Array.isArray(rows) && rows[0]) {
-              return normalizePatientRecord(rows[0]) as PatientRecord;
-            }
+        const rec = await this.request<PatientRecord>(`/patients/${cleanTarget}`, { method: 'GET' });
+        if (rec && (rec.id || rec.hn)) return normalizePatientRecord(rec);
+      } catch {}
+
+      // Direct fallback to Supabase REST Cloud
+      try {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTarget);
+        const queryParam = isUuid ? `id=eq.${encodeURIComponent(cleanTarget)}` : `hn=eq.${encodeURIComponent(cleanTarget)}`;
+        const supaRes = await fetch(
+          `${DEFAULT_SUPABASE_URL}/rest/v1/patients?${queryParam}&select=*&limit=1`,
+          {
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+            },
           }
-        } catch {}
-        throw new Error(`Patient ${id} not found`);
-      }
+        );
+        if (supaRes.ok) {
+          const rows = await supaRes.json();
+          if (Array.isArray(rows) && rows[0]) {
+            return normalizePatientRecord(rows[0]) as PatientRecord;
+          }
+        }
+      } catch {}
+      throw new Error(`Patient ${id} not found`);
     },
 
     create: async (data: {
@@ -2997,21 +3081,36 @@ export class ApiClient {
             registered_by_staff_id: payload.registered_by_staff_id || null,
             registered_by_staff_name: payload.registered_by_staff_name || null,
             responsible_pt_id: payload.responsible_pt_id || null,
-            registration_status: 'draft',
+            registration_status: 'awaiting_face',
             registered_via: 'reception',
             version: 1,
           };
 
-          const supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients`, {
-            method: 'POST',
-            headers: {
-              apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-              'Content-Type': 'application/json',
-              Prefer: 'return=representation',
-            },
-            body: JSON.stringify(draftData),
-          });
+          let supaRes: Response;
+          if (payload.patient_id) {
+            supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(payload.patient_id)}`, {
+              method: 'PATCH',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify(draftData),
+            });
+          } else {
+            supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients`, {
+              method: 'POST',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify(draftData),
+            });
+          }
+
           if (supaRes.ok) {
             const rows = await supaRes.json();
             if (Array.isArray(rows) && rows[0]) {
@@ -3019,11 +3118,16 @@ export class ApiClient {
                 ok: true,
                 patient_id: rows[0].id,
                 hn: rows[0].hn,
-                registration_status: 'draft',
+                registration_status: 'awaiting_face',
               };
             }
+          } else {
+            const errBody = await supaRes.text();
+            throw new Error(`ไม่สามารถสร้างแบบร่างคนไข้ใน Supabase (${supaRes.status}): ${errBody}`);
           }
-        } catch {}
+        } catch (supaErr: any) {
+          if (supaErr?.message?.includes('ไม่สามารถสร้างแบบร่างคนไข้')) throw supaErr;
+        }
         throw apiErr;
       }
     },

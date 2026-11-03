@@ -4,8 +4,17 @@
 -- 1. เพิ่มค่า 'draft' ใน enum สถานะการลงทะเบียน (หากยังไม่มี)
 DO $$ 
 BEGIN 
+  ALTER TYPE public.patient_registration_status ADD VALUE IF NOT EXISTS 'draft' BEFORE 'awaiting_face';
+EXCEPTION 
+  WHEN undefined_object THEN NULL;
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ 
+BEGIN 
   ALTER TYPE public.patient_reg_status ADD VALUE IF NOT EXISTS 'draft' BEFORE 'awaiting_face';
 EXCEPTION 
+  WHEN undefined_object THEN NULL;
   WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -98,3 +107,4 @@ DO $$ BEGIN
     FOR ALL TO authenticated USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
