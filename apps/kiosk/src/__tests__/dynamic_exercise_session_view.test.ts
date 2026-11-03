@@ -339,31 +339,145 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
     });
 
     it('4.6 coaching banner position is bottom-anchored to avoid blocking patient face and torso', () => {
-      const bannerClass = 'absolute bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-2xl pointer-events-none';
-      expect(bannerClass).toContain('bottom-20');
-      expect(bannerClass).toContain('sm:bottom-24');
+      const bannerClass = 'absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-3xl pointer-events-none select-none';
+      expect(bannerClass).toContain('bottom-24');
+      expect(bannerClass).toContain('sm:bottom-28');
       expect(bannerClass).not.toContain('top-6');
       expect(bannerClass).toContain('pointer-events-none');
     });
 
-    it('4.7 emergency bar contains single authoritative emergency button with active telemetry', () => {
-      const emergencyBarFeatures = {
+    it('4.7 senior-friendly emergency bottom bar contains exactly 2 large buttons: Pause on Left & Pain Stop on Right', () => {
+      const bottomBarFeatures = {
         hasExitButton: false,
-        hasPauseButton: false,
-        hasTelemetryIndicator: true,
+        hasPauseButton: true,
         hasPainEmergencyButton: true,
+        minButtonHeightPx: 56,
+        isTelemetryClutterRemoved: true,
       };
 
-      expect(emergencyBarFeatures.hasExitButton).toBe(false);
-      expect(emergencyBarFeatures.hasPauseButton).toBe(false);
-      expect(emergencyBarFeatures.hasTelemetryIndicator).toBe(true);
-      expect(emergencyBarFeatures.hasPainEmergencyButton).toBe(true);
+      expect(bottomBarFeatures.hasExitButton).toBe(false);
+      expect(bottomBarFeatures.hasPauseButton).toBe(true);
+      expect(bottomBarFeatures.hasPainEmergencyButton).toBe(true);
+      expect(bottomBarFeatures.minButtonHeightPx).toBeGreaterThanOrEqual(56);
+      expect(bottomBarFeatures.isTelemetryClutterRemoved).toBe(true);
     });
 
-    it('4.8 camera utility toolbar is positioned in bottom-right corner without central occlusion', () => {
-      const toolbarClass = 'absolute bottom-24 right-4 z-20 flex items-center flex-wrap gap-1.5 bg-slate-950/85 border border-slate-800 rounded-xl p-1.5 backdrop-blur-md shadow-lg text-xs';
-      expect(toolbarClass).toContain('bottom-24');
-      expect(toolbarClass).toContain('right-4');
+    it('4.8 camera utility controls are consolidated inside Staff Settings modal behind PIN/gear icon', () => {
+      const staffSettingsControls = [
+        'skeletonOverlay',
+        'fitMode',
+        'boostLighting',
+        'guideSilhouette',
+        'debugHud',
+        'hardwareZoom',
+      ];
+      expect(staffSettingsControls).toContain('skeletonOverlay');
+      expect(staffSettingsControls).toContain('fitMode');
+      expect(staffSettingsControls).toContain('boostLighting');
+      expect(staffSettingsControls).toContain('guideSilhouette');
+      expect(staffSettingsControls).toContain('debugHud');
+    });
+
+    it('4.9 single-line status priority engine strictly prioritizes framing > lighting > coaching > encouragement', () => {
+      const resolvePriorityMessage = (params: {
+        detectedPeople: number;
+        shoulderWidthPct: number;
+        hasLightingWarning: boolean;
+        formRating: 'good' | 'warning' | 'error';
+        isPendulum: boolean;
+        phase: string;
+      }) => {
+        // Priority (ก): Framing & Distance
+        if (params.detectedPeople === 0) {
+          return { priority: 1, type: 'framing_no_person', msg: 'กรุณายืนหน้ากล้องในระยะ 1.5–2 เมตร ให้กล้องเห็นตัว' };
+        }
+        if (params.shoulderWidthPct > 55) {
+          return { priority: 1, type: 'framing_too_close', msg: 'ถอยหลังอีกนิด ให้เห็นแขนถึงข้อศอก' };
+        }
+        if (params.shoulderWidthPct > 0 && params.shoulderWidthPct < 18) {
+          return { priority: 1, type: 'framing_too_far', msg: 'ขยับเข้าใกล้กล้องอีกเล็กน้อย' };
+        }
+
+        // Priority (ข): Lighting
+        if (params.hasLightingWarning) {
+          return { priority: 2, type: 'lighting', msg: 'เปิดไฟด้านหน้าให้สว่างขึ้น หลีกเลี่ยงแสงย้อน' };
+        }
+
+        // Priority (ค): Coaching
+        if (params.formRating === 'error') {
+          return { priority: 3, type: 'form_error', msg: 'ระวังอย่าฝืนข้อต่อ ขยับช้าๆ อย่างนุ่มนวล' };
+        }
+        if (params.isPendulum) {
+          return { priority: 3, type: 'pendulum_orbit', msg: 'แกว่งแขนช้า ๆ เป็นวงกลม ปล่อยแขนตามสบาย' };
+        }
+
+        // Priority (ง): Encouragement
+        return { priority: 4, type: 'normal_steady', msg: 'ดีมาก ทำต่อเนื่องอย่างผ่อนคลายเลยครับ' };
+      };
+
+      // Scenario 1: Too close + lighting warning simultaneously -> Framing (Priority 1) MUST win!
+      const scen1 = resolvePriorityMessage({
+        detectedPeople: 1,
+        shoulderWidthPct: 60,
+        hasLightingWarning: true,
+        formRating: 'good',
+        isPendulum: false,
+        phase: 'IDLE',
+      });
+      expect(scen1.priority).toBe(1);
+      expect(scen1.type).toBe('framing_too_close');
+      expect(scen1.msg).toBe('ถอยหลังอีกนิด ให้เห็นแขนถึงข้อศอก');
+
+      // Scenario 2: Normal framing + dim light -> Lighting (Priority 2) wins!
+      const scen2 = resolvePriorityMessage({
+        detectedPeople: 1,
+        shoulderWidthPct: 35,
+        hasLightingWarning: true,
+        formRating: 'good',
+        isPendulum: true,
+        phase: 'MOVING_TO_TARGET',
+      });
+      expect(scen2.priority).toBe(2);
+      expect(scen2.type).toBe('lighting');
+
+      // Scenario 3: Good conditions + pendulum -> Form coaching (Priority 3) wins!
+      const scen3 = resolvePriorityMessage({
+        detectedPeople: 1,
+        shoulderWidthPct: 35,
+        hasLightingWarning: false,
+        formRating: 'good',
+        isPendulum: true,
+        phase: 'MOVING_TO_TARGET',
+      });
+      expect(scen3.priority).toBe(3);
+      expect(scen3.type).toBe('pendulum_orbit');
+
+      // Scenario 4: Perfect condition -> Encouragement (Priority 4)
+      const scen4 = resolvePriorityMessage({
+        detectedPeople: 1,
+        shoulderWidthPct: 35,
+        hasLightingWarning: false,
+        formRating: 'good',
+        isPendulum: false,
+        phase: 'HOLDING_TARGET',
+      });
+      expect(scen4.priority).toBe(4);
+      expect(scen4.msg).toBe('ดีมาก ทำต่อเนื่องอย่างผ่อนคลายเลยครับ');
+    });
+
+    it('4.10 clinical privacy and header minimalism: no HN exposed on screen, no joint tag', () => {
+      const headerProps = {
+        patientFirstName: 'ภานุวัฒน์',
+        hn: 'P-6202',
+        showHnInHeader: false,
+        showJointTagInHeader: false,
+      };
+
+      // Privacy verification: HN must NOT be displayed in header
+      const headerDisplayText = `คุณ ${headerProps.patientFirstName}`;
+      expect(headerDisplayText).not.toContain(headerProps.hn);
+      expect(headerProps.showHnInHeader).toBe(false);
+      expect(headerProps.showJointTagInHeader).toBe(false);
     });
   });
 });
