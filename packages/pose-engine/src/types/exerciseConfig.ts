@@ -10,19 +10,23 @@ export type EvaluationMode =
   | 'angle_rep_hold'
   | 'pendulum_circular'
   | 'neck_tilt'
-  | 'heel_raise';
+  | 'heel_raise'
+  | 'hold_balance'
+  | 'timer';
 
 export type BodySide = 'left' | 'right' | 'bilateral';
 
 export type TargetJoint =
   | 'shoulder'
+  | 'scapula'
   | 'elbow'
   | 'wrist'
   | 'hip'
   | 'knee'
   | 'ankle'
   | 'neck'
-  | 'trunk';
+  | 'trunk'
+  | 'balance';
 
 export type CameraViewOrientation = 'front' | 'side_45' | 'side_90';
 
@@ -78,6 +82,8 @@ export interface PrescriptionConfig {
   repsPerSet: number;
   totalSets: number;
   restBetweenSetsSec: number;
+  holdDurationSec?: number;
+  durationSec?: number;
 }
 
 export type CompensationType =
@@ -118,6 +124,13 @@ export interface ExerciseDetectionConfig {
   descriptionTh?: string;
   descriptionEn?: string;
   descriptionCn?: string;
+  mode?: 'camera' | 'timer';
+  clinicalSource?: string;
+  clinicalDisclaimerTh?: string;
+  defaultSets?: number;
+  defaultReps?: number;
+  defaultHoldSec?: number;
+  defaultDurationSec?: number;
   framing?: FramingRequirement;
   mediaUrl?: string;
   evaluationMode: EvaluationMode;

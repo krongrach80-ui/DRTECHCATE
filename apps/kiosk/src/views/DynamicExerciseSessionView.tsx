@@ -753,7 +753,45 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           ctx.clearRect(0, 0, cEl.width, cEl.height);
 
           const hasPose = Boolean(result && result.landmarks && result.landmarks.length > 0);
+          const isTimerExercise = (resolvedConfigRef.current as any).mode === 'timer' || resolvedConfigRef.current.evaluationMode === 'timer';
+
           if (!hasPose) {
+            if (isTimerExercise) {
+              const evalRes = stateMachineRef.current.evaluate([], monotonicTs);
+              if (evalRes.completedReps > lastCompletedRepsRef.current) {
+                lastCompletedRepsRef.current = evalRes.completedReps;
+                setCelebratingRep(evalRes.completedReps);
+                setTimeout(() => setCelebratingRep(null), 2000);
+                playRepChime();
+                speakThai(`ครั้งที่ ${evalRes.completedReps}`, 'rep_count', 1200);
+              }
+              if (evalRes.isSetCompleted && !evalRes.isExerciseCompleted && !isRestingRef.current) {
+                setIsResting(true);
+                isRestingRef.current = true;
+                speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`, 'set_complete', 2500);
+              } else if (evalRes.isExerciseCompleted && !isSummaryOpenRef.current) {
+                setIsSummaryOpen(true);
+                isSummaryOpenRef.current = true;
+                speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว', 'exercise_complete', 2500);
+              }
+              if (nowMs - lastUiUpdateMsRef.current > 100) {
+                lastUiUpdateMsRef.current = nowMs;
+                setHudState((prev) => ({
+                  ...prev,
+                  fps: Math.round(smoothedFpsRef.current),
+                  landmarkCount: 0,
+                  currentAngle: 0,
+                  completedReps: evalRes.completedReps,
+                  repPhase: evalRes.phase,
+                  accuracyScore: Math.round(evalRes.accuracyPercent ?? 100),
+                  coachingMessage: evalRes.coachingMessageTh || 'กำลังจับเวลาตามจังหวะกายภาพ...',
+                  statusColor: '#10b981',
+                }));
+                setEvalResult(evalRes);
+              }
+              return;
+            }
+
             if (nowMs - lastUiUpdateMsRef.current > 150) {
               lastUiUpdateMsRef.current = nowMs;
               setHudState((prev) => ({
@@ -1064,6 +1102,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         pain_reported: mode === 'stopped_pain',
         duration_seconds: totalDurationSec,
         telemetry_summary: {
+          exerciseMode: (resolvedConfig as any).mode || (resolvedConfig.evaluationMode === 'timer' ? 'timer' : 'camera'),
           hysteresisState: evalResult?.hysteresisState,
           calibratedThreshold: evalResult?.calibratedThreshold,
           backlightCompensated: hudState.hasLightingWarning,
@@ -1150,6 +1189,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
   };
 
+  const isTimerMode = (resolvedConfig as any).mode === 'timer' || resolvedConfig.evaluationMode === 'timer';
   const isPendulum = resolvedConfig.evaluationMode === 'pendulum_circular';
 
   const isLowerBody =
@@ -1173,7 +1213,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
   // Calculate smooth motion progress towards target (0.0 to 1.0) for SVG Progress Ring
   let ringProgress = 0;
-  if (isPendulum) {
+  if (isTimerMode) {
+    ringProgress = evalResult?.holdProgressRatio || evalResult?.pendulumCircleProgressRatio || 0;
+  } else if (isPendulum) {
     ringProgress = evalResult?.pendulumCircleProgressRatio || 0;
   } else if (evalResult?.phase === 'HOLDING_TARGET' || evalResult?.isInsideTargetZone) {
     ringProgress = evalResult?.holdProgressRatio ? Math.max(0.85, evalResult.holdProgressRatio) : 1.0;
@@ -1189,7 +1231,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     ringProgress = targetReps > 0 ? (hudState.completedReps % targetReps) / targetReps : 0;
   }
 
-  const isWaitingPose = Boolean(
+  const isWaitingPose = !isTimerMode && Boolean(
     evalResult?.readinessStatus &&
     evalResult.readinessStatus !== 'ready' &&
     evalResult.readinessStatus !== 'partial_upper_body' &&
@@ -1859,13 +1901,23 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
               <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800">
                 <div className="text-sm font-bold text-slate-300">
-                  {isPendulum ? (lang === 'zh-CN' ? '360° 全环轨迹' : lang === 'en-US' ? '360° Circular Orbit' : 'วิถีวงกลม (360°)') : (lang === 'zh-CN' ? '最高达标角度' : lang === 'en-US' ? 'Max Angle Achieved' : 'มุมสูงสุดที่ทำได้')}
+                  {isTimerMode
+                    ? (lang === 'zh-CN' ? '计时 / 节拍' : lang === 'en-US' ? 'Timer / Pacing' : 'จังหวะนับเวลา')
+                    : isPendulum
+                    ? (lang === 'zh-CN' ? '360° 全环轨迹' : lang === 'en-US' ? '360° Circular Orbit' : 'วิถีวงกลม (360°)')
+                    : (lang === 'zh-CN' ? '最高达标角度' : lang === 'en-US' ? 'Max Angle Achieved' : 'มุมสูงสุดที่ทำได้')}
                 </div>
                 <div className="text-2xl sm:text-3xl font-black text-teal-300 mt-1 font-mono">
-                  {isPendulum ? '100%' : `${evalResult?.currentAngleDeg || hudState.currentAngle || 0}°`}
+                  {isTimerMode
+                    ? `${Math.round((evalResult?.holdProgressRatio || 0) * 100)}%`
+                    : isPendulum
+                    ? '100%'
+                    : `${evalResult?.currentAngleDeg || hudState.currentAngle || 0}°`}
                 </div>
                 <div className="text-xs text-slate-400 mt-1 font-semibold">
-                  {isPendulum
+                  {isTimerMode
+                    ? (lang === 'zh-CN' ? '跟随节拍呼吸与保持' : lang === 'en-US' ? 'Hold and pace rhythm' : 'เกร็งค้างและผ่อนตามจังหวะ')
+                    : isPendulum
                     ? (lang === 'zh-CN' ? '速度与半径达标' : lang === 'en-US' ? 'Steady radius & pace' : 'ความเร็วและรัศมีอยู่ในเกณฑ์')
                     : `${resolvedConfig.angleMechanics?.targetMinDeg || 80}° - ${resolvedConfig.angleMechanics?.targetMaxDeg || 100}°`}
                 </div>

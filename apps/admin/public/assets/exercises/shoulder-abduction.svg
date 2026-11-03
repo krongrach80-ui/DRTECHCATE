@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="primaryTeal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#14b8a6" />
+    </linearGradient>
+    <linearGradient id="accentCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#22d3ee" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <marker id="arrowTeal" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#14b8a6" />
+    </marker>
+    <marker id="arrowCyan" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#22d3ee" />
+    </marker>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="400" height="400" rx="32" fill="url(#bgGrad)" stroke="#334155" stroke-width="2" />
+  
+  <!-- Subtle Clinical Grid -->
+  <circle cx="200" cy="200" r="160" fill="none" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,6" />
+  <circle cx="200" cy="200" r="100" fill="none" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,6" />
+  
+  <!-- Title Badge -->
+  <rect x="20" y="20" width="360" height="36" rx="10" fill="#0f172a" fill-opacity="0.8" stroke="#1e293b" />
+  <text x="200" y="43" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">
+    2. ยกแขนไปด้านข้าง (Shoulder Abduction)
+  </text>
+
+      <!-- Frontal Torso & Head -->
+      <circle cx="200" cy="100" r="22" fill="#475569" />
+      <path d="M200,125 L200,230 M170,340 L190,230 L210,230 L230,340" fill="none" stroke="#64748b" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+      <line x1="160" y1="145" x2="240" y2="145" stroke="#64748b" stroke-width="16" stroke-linecap="round" />
+      <!-- Left resting arm -->
+      <path d="M160,145 L150,250" fill="none" stroke="#475569" stroke-width="10" stroke-linecap="round" />
+      <!-- Right resting arm (faded start) -->
+      <path d="M240,145 L250,250" fill="none" stroke="#334155" stroke-width="10" stroke-dasharray="6,4" stroke-linecap="round" />
+      <!-- Abducted Arm (Target position) -->
+      <path d="M240,145 L340,110" fill="none" stroke="url(#accentCyan)" stroke-width="12" stroke-linecap="round" filter="url(#glow)" />
+      <circle cx="240" cy="145" r="9" fill="#0d9488" stroke="#22d3ee" stroke-width="3" />
+      <!-- Movement Arc & Arrow -->
+      <path d="M270,240 A110,110 0 0,0 330,135" fill="none" stroke="#14b8a6" stroke-width="3.5" marker-end="url(#arrowTeal)" stroke-dasharray="5,3" />
+      <text x="325" y="190" fill="#2dd4bf" font-family="system-ui" font-size="12" font-weight="bold">Abduct ↗</text>
+    
+  <!-- Bottom Clinical Badge -->
+  <g transform="translate(200, 365)">
+    <rect x="-120" y="-14" width="240" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
+    <text x="0" y="3" fill="#5eead4" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-anchor="middle">
+      เป้าหมาย: กางไหล่ 0° → 150° (AAOS)
+    </text>
+  </g>
+</svg>

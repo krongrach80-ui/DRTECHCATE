@@ -74,6 +74,10 @@ export class RepStateMachine {
   private isExerciseCompleted: boolean = false;
   private lastRepCompletedTimeMs: number = 0;
   private baselineHeelY: number | null = null;
+  private baselineHipY: number | null = null;
+  private timerStartTimeMs: number | null = null;
+  private balanceHoldStartTimeMs: number | null = null;
+  private balanceHoldAccumulatedMs: number = 0;
 
   constructor(config: ExerciseDetectionConfig) {
     this.config = config;
@@ -145,6 +149,10 @@ export class RepStateMachine {
     let result: RepEvaluationResult;
     if (this.config.evaluationMode === 'pendulum_circular') {
       result = this.evaluatePendulumCircular(filteredLandmarks, timestampMs, lockResult);
+    } else if (this.config.evaluationMode === 'timer' || this.config.mode === 'timer') {
+      result = this.evaluateTimerMode(filteredLandmarks, timestampMs, lockResult);
+    } else if (this.config.evaluationMode === 'hold_balance') {
+      result = this.evaluateHoldBalance(filteredLandmarks, timestampMs, lockResult);
     } else if (this.config.evaluationMode === 'neck_tilt') {
       result = this.evaluateNeckTilt(filteredLandmarks, timestampMs, lockResult);
     } else if (this.config.evaluationMode === 'heel_raise') {
@@ -163,6 +171,11 @@ export class RepStateMachine {
   private checkFramingReadiness(landmarks: PoseEngineLandmark[]): RepEvaluationResult | null {
     const framing = this.config.framing;
     if (!framing || landmarks.length === 0) return null;
+
+    // Never block with framing check if user is in timer mode
+    if (this.config.mode === 'timer' || this.config.evaluationMode === 'timer') {
+      return null;
+    }
 
     // Never block with framing check if user is actively in middle of a rep or has completed reps
     if (
@@ -455,9 +468,40 @@ export class RepStateMachine {
       accuracyPercent = 0;
     }
 
-    const isInsideTargetZone = isDecreasing
+    // Biomechanical Anti-Cheat Guards
+    const isSitToStand = this.config.id === 'sit-to-stand';
+    const isHipAbduction = this.config.id === 'standing-hip-abduction' || this.config.id === 'standing-hip-abd';
+
+    const curHipY = (normalizedLandmarks[23]?.y !== undefined && normalizedLandmarks[24]?.y !== undefined)
+      ? (normalizedLandmarks[23].y + normalizedLandmarks[24].y) / 2
+      : (normalizedLandmarks[23]?.y ?? normalizedLandmarks[24]?.y ?? null);
+
+    if (isSitToStand && curHipY !== null) {
+      if (this.phase === 'IDLE' && (this.baselineHipY === null || Math.abs(currentAngle - startAngle) < 15)) {
+        this.baselineHipY = curHipY;
+      }
+    }
+
+    let isSitToStandCheating = false;
+    if (isSitToStand) {
+      const kneeIdx = triplet.vertex;
+      const ankleIdx = triplet.pointB;
+      const kneeY = normalizedLandmarks[kneeIdx]?.y ?? 0.7;
+      const ankleY = normalizedLandmarks[ankleIdx]?.y ?? 0.9;
+      // Biomechanical check: If knee is extended but shank is horizontal (ankle near knee height), user is kicking leg seated
+      const isShankHorizontal = Math.abs(ankleY - kneeY) < 0.08;
+      if (currentAngle >= targetMin - tolerance && isShankHorizontal) {
+        isSitToStandCheating = true;
+      }
+    }
+
+    let isInsideTargetZone = isDecreasing
       ? currentAngle <= targetMax + tolerance && currentAngle >= targetMin - tolerance
       : currentAngle >= targetMin - tolerance && currentAngle <= targetMax + tolerance;
+
+    if (isSitToStand && isSitToStandCheating) {
+      isInsideTargetZone = false;
+    }
 
     const isAtStartZone = isDecreasing
       ? currentAngle >= startAngle - tolerance - 5
@@ -471,6 +515,11 @@ export class RepStateMachine {
     );
     const activeWarnings = [...compResult.warnings];
 
+    let isHipAbductionCheating = false;
+    if (isHipAbduction && compResult.lateralTiltDeg > 10.0) {
+      isHipAbductionCheating = true;
+    }
+
     let coachingMessage = 'เริ่มขยับข้อต่อเข้าสู่มุมเป้าหมาย';
     let coachingMessageEn: string | undefined;
     let coachingMessageCn: string | undefined;
@@ -479,7 +528,33 @@ export class RepStateMachine {
     let isRepRejected = false;
     let repRejectionReasonTh: string | undefined = undefined;
 
-    if (isDistalElbowMissing) {
+    if (isSitToStandCheating) {
+      formRating = 'error';
+      coachingMessage = 'กรุณาลุกขึ้นยืนจากเก้าอี้จริง (อย่ายกเฉพาะขาขณะนั่ง)';
+      coachingMessageEn = 'Please stand up fully from the chair (do not just kick legs while seated)';
+      coachingMessageCn = '请完全从椅子上站起（切勿坐着踢腿借力）';
+      activeWarnings.push({
+        ruleId: 'stand_anti_cheat_hip_lift',
+        type: 'trunk_lean',
+        messageTh: 'กรุณาลุกขึ้นยืนจากเก้าอี้จริง (อย่ายกเฉพาะขาขณะนั่ง)',
+        severity: 'error',
+        currentValue: 0,
+        thresholdValue: 4,
+      });
+    } else if (isHipAbductionCheating) {
+      formRating = 'error';
+      coachingMessage = 'รักษาลำตัวให้ตรง อย่ายักสะโพกหรือเอียงตัวช่วยยกขา';
+      coachingMessageEn = 'Keep body upright, do not hike hip or lean sideways to lift leg';
+      coachingMessageCn = '请保持身体垂直，切勿耸胯或侧倾身体借力';
+      activeWarnings.push({
+        ruleId: 'hip_anti_cheat_trunk_lean',
+        type: 'trunk_lateral_flexion',
+        messageTh: 'รักษาลำตัวให้ตรง อย่ายักสะโพกหรือเอียงตัวช่วยยกขา',
+        severity: 'error',
+        currentValue: Math.round(compResult.lateralTiltDeg),
+        thresholdValue: 10,
+      });
+    } else if (isDistalElbowMissing) {
       formRating = 'warning';
       coachingMessage = '📷 ท่านี้ต้องใช้มุมข้อศอก กรุณาปรับมุมกล้องลงเล็กน้อยหรือถอยห่างให้เห็นข้อศอก';
       coachingMessageEn = '📷 This exercise requires elbow visibility. Please adjust camera down or step back.';
@@ -608,13 +683,17 @@ export class RepStateMachine {
           const nowMs = timestampMs;
           const isDebounced = nowMs - this.lastRepCompletedTimeMs >= 350;
 
-          if (this.compensationDetector.getVelocityGuard().hasRepViolation()) {
-            // Rep rejected due to excessive velocity / jerky movement
+          if (this.compensationDetector.getVelocityGuard().hasRepViolation() || isSitToStandCheating || isHipAbductionCheating) {
+            // Rep rejected due to excessive velocity / jerky movement or anti-cheat violation
             this.incorrectReps++;
             this.phase = 'REP_COMPLETED';
             isRepRejected = true;
-            repRejectionReasonTh = 'เคลื่อนไหวช้าลง ควบคุมจังหวะให้สม่ำเสมอ';
-            coachingMessage = '⚠️ ท่าไม่ผ่าน: เคลื่อนไหวช้าลง ควบคุมจังหวะให้สม่ำเสมอ';
+            repRejectionReasonTh = isSitToStandCheating
+              ? 'กรุณาลุกขึ้นยืนจากเก้าอี้จริง (อย่ายกเฉพาะขาขณะนั่ง)'
+              : isHipAbductionCheating
+              ? 'รักษาลำตัวให้ตรง อย่ายักสะโพกหรือเอียงตัวช่วยยกขา'
+              : 'เคลื่อนไหวช้าลง ควบคุมจังหวะให้สม่ำเสมอ';
+            coachingMessage = `⚠️ ท่าไม่ผ่าน: ${repRejectionReasonTh}`;
             this.compensationDetector.getVelocityGuard().resetRepViolation();
           } else if (isDebounced) {
             // Rep completed successfully!
@@ -1222,6 +1301,252 @@ export class RepStateMachine {
     };
   }
 
+  /**
+   * Evaluates Timer-based Exercises (Chin Tuck pacing & Codman Pendulum timed duration)
+   */
+  private evaluateTimerMode(
+    landmarks: PoseEngineLandmark[],
+    timestampMs: number,
+    _lockResult?: SubjectLockResult
+  ): RepEvaluationResult {
+    const targetReps = this.config.defaultPrescription?.repsPerSet || 10;
+    const totalSets = this.config.defaultPrescription?.totalSets || 3;
+    const durationSec = this.config.defaultDurationSec || this.config.defaultPrescription?.durationSec;
+
+    if (this.timerStartTimeMs === null) {
+      this.timerStartTimeMs = timestampMs;
+    }
+
+    let accuracyPercent = 100;
+    let holdProgressRatio = 0.0;
+    let pendulumCircleProgressRatio = 0.0;
+    let coachingMessage = '';
+    let coachingMessageEn = '';
+    let coachingMessageCn = '';
+
+    if (durationSec && durationSec > 0) {
+      // Continuous timed exercise (e.g. Codman Shoulder Pendulum 45s)
+      const elapsedSec = (timestampMs - this.timerStartTimeMs) / 1000.0;
+      const remainingSec = Math.max(0, Math.ceil(durationSec - elapsedSec));
+      pendulumCircleProgressRatio = Math.min(1.0, elapsedSec / durationSec);
+      holdProgressRatio = pendulumCircleProgressRatio;
+
+      if (elapsedSec >= durationSec) {
+        this.completedReps = 1;
+        this.isSetCompleted = true;
+        if (this.currentSet >= totalSets) {
+          this.isExerciseCompleted = true;
+        }
+        this.phase = 'REP_COMPLETED';
+        coachingMessage = `ครบเวลา ${durationSec} วินาทีเรียบร้อยแล้ว!`;
+        coachingMessageEn = `Completed full ${durationSec} seconds!`;
+        coachingMessageCn = `已完成全套 ${durationSec} 秒训练！`;
+      } else {
+        this.phase = 'HOLDING_TARGET';
+        coachingMessage = `โน้มตัวไปข้างหน้า ปล่อยแขนแกว่งเป็นวงกลมผ่อนคลาย (เหลืออีก ${remainingSec} วินาที)`;
+        coachingMessageEn = `Lean forward, let arm swing loose (remaining: ${remainingSec}s)`;
+        coachingMessageCn = `微前倾，手臂自然画圈放松（剩余 ${remainingSec} 秒）`;
+      }
+    } else {
+      // Repetition & hold pacing cycle (e.g. Chin Tuck: 2s prep -> 5s hold -> 2s relax)
+      const holdDuration = this.config.defaultHoldSec || this.config.defaultPrescription?.holdDurationSec || 5.0;
+      const prepDuration = 2.0;
+      const relaxDuration = 2.0;
+      const cycleTotal = prepDuration + holdDuration + relaxDuration; // e.g. 9.0s
+
+      const totalElapsedMs = timestampMs - this.timerStartTimeMs;
+      const cycleElapsedSec = (totalElapsedMs % (cycleTotal * 1000)) / 1000.0;
+      const currentCycle = Math.floor(totalElapsedMs / (cycleTotal * 1000));
+
+      if (currentCycle > this.completedReps && this.completedReps < targetReps) {
+        this.completedReps = Math.min(targetReps, currentCycle);
+        if (this.completedReps >= targetReps) {
+          this.isSetCompleted = true;
+          if (this.currentSet >= totalSets) {
+            this.isExerciseCompleted = true;
+          }
+        }
+      }
+
+      if (this.isSetCompleted) {
+        this.phase = 'REP_COMPLETED';
+        holdProgressRatio = 1.0;
+        coachingMessage = `ครบ ${targetReps} ครั้งแล้ว! ทำได้ดีมาก`;
+        coachingMessageEn = `Set completed! ${targetReps}/${targetReps}`;
+        coachingMessageCn = `整组完成！ ${targetReps}/${targetReps}`;
+      } else if (cycleElapsedSec < prepDuration) {
+        this.phase = 'MOVING_TO_TARGET';
+        holdProgressRatio = 0.0;
+        coachingMessage = 'เตรียมตัว: ตามองตรง ดึงคางและศีรษะเข้าหาลำคอในแนวราบ';
+        coachingMessageEn = 'Prepare: Retract chin horizontally backward';
+        coachingMessageCn = '准备：水平向后收紧下巴';
+      } else if (cycleElapsedSec < prepDuration + holdDuration) {
+        this.phase = 'HOLDING_TARGET';
+        const activeHoldSec = cycleElapsedSec - prepDuration;
+        holdProgressRatio = Math.min(1.0, activeHoldSec / holdDuration);
+        const remainingHold = Math.max(0, holdDuration - activeHoldSec).toFixed(1);
+        coachingMessage = `ค้างท่าเก็บเหนียงไว้... (อีก ${remainingHold} วินาที)`;
+        coachingMessageEn = `Hold chin tuck... (${remainingHold}s)`;
+        coachingMessageCn = `保持收下颌体位...（还剩 ${remainingHold} 秒）`;
+      } else {
+        this.phase = 'RETURNING_TO_START';
+        holdProgressRatio = 0.0;
+        coachingMessage = 'ค่อยๆ ผ่อนคลายกล้ามเนื้อคอช้าๆ';
+        coachingMessageEn = 'Slowly relax neck muscles';
+        coachingMessageCn = '缓缓放松颈部肌群';
+      }
+    }
+
+    return {
+      phase: this.phase,
+      currentAngleDeg: Math.round(holdProgressRatio * 100),
+      targetAngleDeg: 100,
+      accuracyPercent,
+      accuracyPct: accuracyPercent,
+      severity: 'good',
+      holdProgressRatio,
+      pendulumCircleProgressRatio,
+      isInsideTargetZone: this.phase === 'HOLDING_TARGET',
+      isExceedingSafetyCap: false,
+      completedReps: this.completedReps,
+      incorrectReps: this.incorrectReps,
+      targetReps,
+      currentSet: this.currentSet,
+      totalSets,
+      isSetCompleted: this.isSetCompleted,
+      isExerciseCompleted: this.isExerciseCompleted,
+      coachingMessageTh: coachingMessage,
+      coachingMessageEn,
+      coachingMessageCn,
+      activeWarnings: [],
+      formRating: 'good',
+      instantaneousVelocity: 0,
+      readinessStatus: 'ready',
+      filteredLandmarks: landmarks,
+    };
+  }
+
+  /**
+   * Evaluates Balance & Sustained Stretch Hold Exercises (Single-Leg Stance Balance & Calf Stretch)
+   */
+  private evaluateHoldBalance(
+    landmarks: PoseEngineLandmark[],
+    timestampMs: number,
+    _lockResult?: SubjectLockResult
+  ): RepEvaluationResult {
+    const targetReps = this.config.defaultPrescription?.repsPerSet || 3;
+    const totalSets = this.config.defaultPrescription?.totalSets || 3;
+    const holdTargetSec = this.config.defaultHoldSec || this.config.defaultPrescription?.holdDurationSec || 20.0;
+
+    const isSingleLeg = this.config.id === 'single-leg-balance';
+    let isCriteriaMet = false;
+    let compWarningTh: string | null = null;
+    const activeWarnings: ActiveCompensationWarning[] = [];
+
+    if (isSingleLeg) {
+      const ankleL = landmarks[27];
+      const ankleR = landmarks[28];
+      const kneeL = landmarks[25];
+      const kneeR = landmarks[26];
+
+      const isAnkleVisible = (ankleL?.visibility ?? 0) > 0.35 && (ankleR?.visibility ?? 0) > 0.35;
+      const ankleDiffY = isAnkleVisible ? Math.abs((ankleL?.y ?? 0) - (ankleR?.y ?? 0)) : 0;
+      const isOneLegLifted = ankleDiffY > 0.035 || (Math.abs((kneeL?.y ?? 0) - (kneeR?.y ?? 0)) > 0.05);
+
+      const compResult = this.compensationDetector.evaluate(landmarks, 0, timestampMs);
+      const isTiltExcessive = compResult.lateralTiltDeg > 12.0;
+
+      if (isTiltExcessive) {
+        compWarningTh = 'รักษาลำตัวและเชิงกรานให้ขนานตรง อย่าเอียงตัว';
+        activeWarnings.push({
+          ruleId: 'balance_excessive_tilt',
+          type: 'trunk_lateral_flexion',
+          messageTh: compWarningTh,
+          severity: 'warning',
+          currentValue: Math.round(compResult.lateralTiltDeg),
+          thresholdValue: 12,
+        });
+      }
+
+      isCriteriaMet = isOneLegLifted && !isTiltExcessive;
+    } else {
+      // Calf stretch: staggered stance with feet visible
+      const heelL = landmarks[29] || landmarks[27];
+      const heelR = landmarks[30] || landmarks[28];
+      const hasFeetVisible = (heelL?.visibility ?? 0) > 0.35 && (heelR?.visibility ?? 0) > 0.35;
+      isCriteriaMet = hasFeetVisible;
+    }
+
+    let coachingMessage = '';
+    let holdProgressRatio = 0.0;
+
+    if (isCriteriaMet) {
+      if (this.balanceHoldStartTimeMs === null) {
+        this.balanceHoldStartTimeMs = timestampMs;
+      }
+      const currentHoldElapsed = (timestampMs - this.balanceHoldStartTimeMs + this.balanceHoldAccumulatedMs) / 1000.0;
+      holdProgressRatio = Math.min(1.0, currentHoldElapsed / holdTargetSec);
+      this.phase = 'HOLDING_TARGET';
+
+      if (currentHoldElapsed >= holdTargetSec) {
+        this.completedReps++;
+        this.balanceHoldStartTimeMs = null;
+        this.balanceHoldAccumulatedMs = 0;
+        this.phase = 'REP_COMPLETED';
+        coachingMessage = `ครบ 1 ครั้ง! ทรงตัวได้ดีมาก (${this.completedReps}/${targetReps})`;
+
+        if (this.completedReps >= targetReps) {
+          this.isSetCompleted = true;
+          if (this.currentSet >= totalSets) {
+            this.isExerciseCompleted = true;
+          }
+        }
+      } else {
+        const remaining = Math.max(0, holdTargetSec - currentHoldElapsed).toFixed(1);
+        coachingMessage = isSingleLeg
+          ? `ทรงตัวขาเดียวให้นิ่ง... ค้างไว้อีก ${remaining} วินาที`
+          : `ยืดน่องให้ตึงพอดี... ค้างไว้อีก ${remaining} วินาที`;
+      }
+    } else {
+      if (this.balanceHoldStartTimeMs !== null) {
+        this.balanceHoldAccumulatedMs += (timestampMs - this.balanceHoldStartTimeMs);
+        this.balanceHoldStartTimeMs = null;
+      }
+      this.phase = 'MOVING_TO_TARGET';
+      coachingMessage = compWarningTh
+        ? `⚠️ ${compWarningTh}`
+        : (isSingleLeg ? 'ยกขาข้างหนึ่งขึ้นเพื่อเริ่มทรงตัว' : 'ก้าวขาไปด้านหลัง วางส้นเท้าติดพื้นเพื่อเริ่มยืด');
+    }
+
+    const accuracyPercent = Math.round(holdProgressRatio * 100);
+
+    return {
+      phase: this.phase,
+      currentAngleDeg: Math.round(holdProgressRatio * holdTargetSec),
+      targetAngleDeg: Math.round(holdTargetSec),
+      accuracyPercent,
+      accuracyPct: accuracyPercent,
+      severity: activeWarnings.length > 0 ? 'warning' : 'good',
+      holdProgressRatio,
+      pendulumCircleProgressRatio: 0,
+      isInsideTargetZone: this.phase === 'HOLDING_TARGET',
+      isExceedingSafetyCap: false,
+      completedReps: this.completedReps,
+      incorrectReps: this.incorrectReps,
+      targetReps,
+      currentSet: this.currentSet,
+      totalSets,
+      isSetCompleted: this.isSetCompleted,
+      isExerciseCompleted: this.isExerciseCompleted,
+      coachingMessageTh: coachingMessage,
+      activeWarnings,
+      formRating: activeWarnings.length > 0 ? 'warning' : 'good',
+      instantaneousVelocity: 0,
+      readinessStatus: 'ready',
+      filteredLandmarks: landmarks,
+    };
+  }
+
   private createDefaultResult(
     landmarks: PoseEngineLandmark[],
     message: string
@@ -1262,6 +1587,10 @@ export class RepStateMachine {
     this.totalHoldPausedDurationMs = 0;
     this.lastRepCompletedTimeMs = 0;
     this.baselineHeelY = null;
+    this.baselineHipY = null;
+    this.timerStartTimeMs = null;
+    this.balanceHoldStartTimeMs = null;
+    this.balanceHoldAccumulatedMs = 0;
     this.pendulumAnalyzer.reset();
   }
 
@@ -1281,6 +1610,10 @@ export class RepStateMachine {
     this.isExerciseCompleted = false;
     this.lastRepCompletedTimeMs = 0;
     this.baselineHeelY = null;
+    this.baselineHipY = null;
+    this.timerStartTimeMs = null;
+    this.balanceHoldStartTimeMs = null;
+    this.balanceHoldAccumulatedMs = 0;
     this.skeletonFilter.reset();
     this.pendulumAnalyzer.reset();
     this.compensationDetector.reset();

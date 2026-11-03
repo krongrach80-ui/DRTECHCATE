@@ -104,6 +104,12 @@ export interface ExerciseRecord {
   warnings?: string | null;
   default_sets: number;
   default_reps: number;
+  default_hold_sec?: number;
+  default_duration_sec?: number;
+  mode?: 'camera' | 'timer' | string;
+  clinical_source?: string | null;
+  source?: string | null;
+  pt_adjustable_notice?: string;
   duration_seconds?: number;
   difficulty: 'beginner' | 'intermediate' | 'advanced' | 'easy' | 'medium' | 'hard' | string;
   created_by?: string;
@@ -1020,26 +1026,33 @@ export class ApiClient {
 
         const standardExercises = [
           {
-            exercise_id: 'shoulder-pendulum',
-            id: 'shoulder-pendulum',
-            name: 'แกว่งแขนวงกลม (Shoulder Pendulum)',
-            name_th: 'แกว่งแขนวงกลม (Shoulder Pendulum)',
-            name_en: 'Shoulder Pendulum',
-            name_cn: '钟摆式肩关节运动',
+            exercise_id: 'active-shoulder-flexion',
+            id: 'active-shoulder-flexion',
+            name: 'ยกแขนไปข้างหน้า (Active Shoulder Flexion)',
+            name_th: 'ยกแขนไปข้างหน้า (Active Shoulder Flexion)',
+            name_en: 'Active Shoulder Flexion',
+            name_cn: '肩部前屈举臂',
             target_joint: 'shoulder',
+            mode: 'camera',
             sets: 3,
             reps: 10,
+            clinical_source: 'AAOS Clinical Standards / JOSPT Shoulder Impingement CPG',
+            pt_adjustable_notice: 'นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย',
           },
           {
-            exercise_id: 'overhead-arm-raise',
-            id: 'overhead-arm-raise',
-            name: 'ยกแขนเหนือศีรษะ (Overhead Arm Raise)',
-            name_th: 'ยกแขนเหนือศีรษะ (Overhead Arm Raise)',
-            name_en: 'Overhead Arm Raise',
-            name_cn: '过顶举臂伸展',
+            exercise_id: 'shoulder-pendulum',
+            id: 'shoulder-pendulum',
+            name: 'แกว่งแขนลูกตุ้ม (Codman Shoulder Pendulum)',
+            name_th: 'แกว่งแขนลูกตุ้ม (Codman Shoulder Pendulum)',
+            name_en: 'Codman Shoulder Pendulum',
+            name_cn: '考德曼肩部钟摆松动训练',
             target_joint: 'shoulder',
+            mode: 'timer',
             sets: 3,
-            reps: 10,
+            reps: 1,
+            default_duration_sec: 45,
+            clinical_source: 'Codman Classical Exercise / AAOS Frozen Shoulder Rehab',
+            pt_adjustable_notice: 'นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย',
           },
         ];
 

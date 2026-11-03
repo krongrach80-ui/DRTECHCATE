@@ -84,7 +84,7 @@ const I18N = {
     targetJoint: 'ข้อต่อเป้าหมาย',
     contraindicationsTitle: '⚠️ ข้อห้ามและข้อควรระวังทางคลินิก (Contraindications & Precautions)',
     noContraindications: 'ไม่มีข้อห้ามระบุไว้เป็นพิเศษ (Normal clinical precautions apply)',
-    tabAll: 'ทั้งหมด (10 ท่า)',
+    tabAll: 'ทั้งหมด (15 ท่า)',
     tabRecommended: 'แนะนำตามข้อต่อคนไข้',
     tabUpper: 'ครึ่งตัวบน (Upper Body)',
     tabLower: 'ครึ่งตัวล่าง / เต็มตัว (Lower & Core)',
@@ -129,7 +129,7 @@ const I18N = {
     targetJoint: 'Target Joint',
     contraindicationsTitle: '⚠️ Clinical Contraindications & Precautions',
     noContraindications: 'No specific contraindications recorded',
-    tabAll: 'All (10 Exercises)',
+    tabAll: 'All (15 Exercises)',
     tabRecommended: 'Recommended for Joint',
     tabUpper: 'Upper Body',
     tabLower: 'Lower & Core',
@@ -174,7 +174,7 @@ const I18N = {
     targetJoint: '目标关节',
     contraindicationsTitle: '⚠️ 临床禁忌与注意事项 (Contraindications & Precautions)',
     noContraindications: '未记录特殊禁忌症',
-    tabAll: '全部动作 (10 动作)',
+    tabAll: '全部动作 (15 动作)',
     tabRecommended: '根据目标关节推荐',
     tabUpper: '上半身 (肩/肘/颈)',
     tabLower: '下半身与核心 (膝/髋/踝)',
@@ -250,8 +250,16 @@ export function evaluateContraindications(
   const pJoint = (patient.target_joint || (patient as any).history?.target_joint || '').toLowerCase();
   const exJoint = (targetJoint || '').toLowerCase();
 
-  // 1. Shoulder constraints (e.g. Abduction restriction / Rotator cuff / Post-op)
-  if (exerciseId.includes('shoulder') || exJoint.includes('ไหล่') || exJoint.includes('shoulder')) {
+  // 1. Shoulder & Scapula constraints (e.g. Abduction restriction / Rotator cuff / Post-op)
+  if (
+    exerciseId.includes('shoulder') ||
+    exerciseId.includes('scapula') ||
+    exerciseId === 'shoulder-pendulum' ||
+    exJoint.includes('ไหล่') ||
+    exJoint.includes('shoulder') ||
+    exJoint.includes('สะบัก') ||
+    exJoint.includes('scapula')
+  ) {
     if (
       combinedText.includes('ห้ามกางแขน') ||
       combinedText.includes('ห้ามยกแขน') ||
@@ -271,11 +279,16 @@ export function evaluateContraindications(
     }
   }
 
-  // 2. Weight-bearing / Fall risk / Standing constraints
+  // 2. Weight-bearing / Fall risk / Balance / Standing constraints
   if (
     exerciseId === 'sit-to-stand' ||
     exerciseId === 'standing-hip-abd' ||
+    exerciseId === 'standing-hip-abduction' ||
     exerciseId === 'heel-raise' ||
+    exerciseId === 'calf-raise' ||
+    exerciseId === 'single-leg-balance' ||
+    exerciseId === 'calf-stretch' ||
+    exerciseId === 'mini-squat' ||
     exerciseId === 'wall-pushup'
   ) {
     if (
@@ -285,7 +298,8 @@ export function evaluateContraindications(
       combinedText.includes('กระดูกหัก') ||
       combinedText.includes('ข้อเข่าเสื่อมรุนแรง') ||
       combinedText.includes('non-weight bearing') ||
-      combinedText.includes('เสี่ยงล้ม')
+      combinedText.includes('เสี่ยงล้ม') ||
+      combinedText.includes('ทรงตัว')
     ) {
       return {
         hasWarning: true,
@@ -296,8 +310,14 @@ export function evaluateContraindications(
     }
   }
 
-  // 3. Neck constraints
-  if (exerciseId === 'neck-side-tilt' || exJoint.includes('คอ') || exJoint.includes('neck')) {
+  // 3. Neck & Cervical constraints
+  if (
+    exerciseId === 'neck-side-tilt' ||
+    exerciseId === 'chin-tuck' ||
+    exJoint.includes('คอ') ||
+    exJoint.includes('neck') ||
+    exJoint.includes('cervical')
+  ) {
     if (
       combinedText.includes('กระดูกคอ') ||
       combinedText.includes('cervical') ||
@@ -309,6 +329,31 @@ export function evaluateContraindications(
         warningMessage:
           '⚠️ คำเตือนทางคลินิก: ผู้ป่วยมีประวัติเกี่ยวกับกระดูกคอหรือมีอาการเวียนศีรษะ หลีกเลี่ยงการเอียงคอสุดช่วงมุม',
         reason: 'neck_contraindication',
+      };
+    }
+  }
+
+  // 4. Knee constraints (Deep flexion / Patellofemoral / Meniscus)
+  if (
+    exerciseId === 'mini-squat' ||
+    exerciseId === 'seated-knee-ext' ||
+    exerciseId === 'seated-knee-extension' ||
+    exerciseId === 'sit-to-stand' ||
+    exJoint.includes('เข่า') ||
+    exJoint.includes('knee')
+  ) {
+    if (
+      combinedText.includes('ห้ามงอเข่า') ||
+      combinedText.includes('ข้อเข่าเสื่อมรุนแรง') ||
+      combinedText.includes('severe oa') ||
+      combinedText.includes('meniscus') ||
+      combinedText.includes('หมอนรองข้อเข่า')
+    ) {
+      return {
+        hasWarning: true,
+        warningMessage:
+          '⚠️ คำเตือนทางคลินิก: ผู้ป่วยมีข้อจำกัดในการงอข้อเข่า/หมอนรองข้อเข่า หลีกเลี่ยงการงอเข่าลึกเกิน 45°',
+        reason: 'knee_contraindication',
       };
     }
   }
@@ -635,11 +680,11 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
       }
       if (activeCatalogFilter === 'upper') {
         const j = ex.targetJoint.toLowerCase();
-        return j.includes('ไหล่') || j.includes('ศอก') || j.includes('คอ') || j.includes('shoulder') || j.includes('elbow') || j.includes('neck');
+        return j.includes('ไหล่') || j.includes('ศอก') || j.includes('คอ') || j.includes('สะบัก') || j.includes('shoulder') || j.includes('elbow') || j.includes('neck') || j.includes('scapula') || j.includes('cervical');
       }
       if (activeCatalogFilter === 'lower') {
         const j = ex.targetJoint.toLowerCase();
-        return j.includes('เข่า') || j.includes('สะโพก') || j.includes('น่อง') || j.includes('ข้อเท้า') || j.includes('knee') || j.includes('hip') || j.includes('ankle');
+        return j.includes('เข่า') || j.includes('สะโพก') || j.includes('น่อง') || j.includes('ข้อเท้า') || j.includes('สมดุล') || j.includes('knee') || j.includes('hip') || j.includes('ankle') || j.includes('balance');
       }
       return true;
     });
@@ -978,13 +1023,17 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
           {/* Section 2: Selected Exercises Prescription Sequence */}
           <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-inner space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-teal-400" />
                 <h3 className="text-sm sm:text-base font-bold text-white">{t.prescribedListTitle}</h3>
                 <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">
                   {prescribedExercises.length} ท่า
                 </span>
+              </div>
+              <div className="text-emerald-400/90 font-medium text-xs flex items-center gap-1 bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+                <span>👩‍⚕️</span>
+                <span>นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย</span>
               </div>
             </div>
 
@@ -1192,12 +1241,12 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             )}
           </div>
 
-          {/* Section 3: 10-Exercise Catalog Selection */}
+          {/* Section 3: 15-Exercise Clinical Catalog Selection */}
           <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-inner space-y-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                  <span>คลังท่ากายภาพมาตรฐานคลินิก (10 Clinical Exercises)</span>
+                  <span>คลังท่ากายภาพมาตรฐานคลินิก (15 ท่ามาตรฐาน / 15 Standard Clinical Exercises)</span>
                   <span className="text-xs text-slate-400 font-normal">กดเลือกเพื่อเพิ่มเข้าคอร์ส</span>
                 </h3>
               </div>
@@ -1262,8 +1311,29 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                         </div>
                       )}
 
+                      {/* Medical Posture Illustration Thumbnail */}
+                      <div className="w-full h-20 bg-slate-950/70 rounded-lg mb-2 flex items-center justify-center overflow-hidden border border-slate-800/60 p-1.5">
+                        <img
+                          src={`/assets/exercises/${catalogEx.id}.svg`}
+                          alt={catalogEx.nameEn}
+                          className="max-h-16 w-auto object-contain opacity-85 group-hover:opacity-100 group-hover:scale-105 transition"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-mono text-slate-400">{catalogEx.targetJoint}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-mono text-slate-400">{catalogEx.targetJoint}</span>
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                            catalogEx.mode === 'timer' || catalogEx.id === 'chin-tuck' || catalogEx.id === 'shoulder-pendulum'
+                              ? 'bg-amber-500/20 text-amber-300'
+                              : 'bg-teal-500/20 text-teal-300'
+                          }`}>
+                            {catalogEx.mode === 'timer' || catalogEx.id === 'chin-tuck' || catalogEx.id === 'shoulder-pendulum' ? '⏱️ Timer' : '📷 Camera'}
+                          </span>
+                        </div>
                         {isSelected && (
                           <span className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-bold text-[10px]">
                             ✓

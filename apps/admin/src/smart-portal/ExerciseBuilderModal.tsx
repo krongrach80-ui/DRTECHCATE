@@ -67,6 +67,14 @@ const DEFAULT_JOINT_TRIPLETS: Record<TargetJoint, { left: LandmarkTriplet; right
     left: { pointA: 11, vertex: 23, pointB: 24, use3DWorld: true },
     right: { pointA: 12, vertex: 24, pointB: 23, use3DWorld: true },
   },
+  scapula: {
+    left: { pointA: 12, vertex: 11, pointB: 13, use3DWorld: true },
+    right: { pointA: 11, vertex: 12, pointB: 14, use3DWorld: true },
+  },
+  balance: {
+    left: { pointA: 23, vertex: 25, pointB: 27, use3DWorld: true },
+    right: { pointA: 24, vertex: 26, pointB: 28, use3DWorld: true },
+  },
 };
 
 export const ExerciseBuilderModal: React.FC<ExerciseBuilderModalProps> = ({

@@ -25,56 +25,33 @@ import {
   SmartModpackModal,
   ExerciseBuilderModal
 } from '../smart-portal/index.js';
+import { ALL_CLINICAL_EXERCISES } from '../../../../packages/pose-engine/src/index.js';
 
 interface ExerciseCatalogViewProps {
   currentUserId: string;
   onOpenPrescription?: () => void;
 }
 
-const DEMO_EXERCISES: ExerciseRecord[] = [
-  {
-    id: 'ex-shoulder-pendulum',
-    title: 'Shoulder Pendulum Exercise (แกว่งแขนวงกลมฟื้นฟูหัวไหล่)',
-    description: 'โน้มตัวไปข้างหน้า ปล่อยแขนข้างที่มีปัญหาห้อยลง แกว่งแขนเป็นวงกลมเบาๆ ตามแรงโน้มถ่วงเพื่อคลายข้อต่อหัวไหล่',
-    target_joint: 'shoulder',
-    target_muscle: 'Rotator Cuff, Deltoid',
-    suitable_for: 'ผู้ป่วยข้อไหล่ติดระยะเริ่มแรก (Frozen Shoulder)',
-    warnings: 'ห้ามออกแรงเกร็งกล้ามเนื้อไหล่ ให้ใช้แรงเหวี่ยงจากลำตัว',
-    default_sets: 3,
-    default_reps: 15,
-    difficulty: 'easy',
-    image_path: null,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-  {
-    id: 'ex-shoulder-external-rotation',
-    title: 'Shoulder External Rotation (หมุนข้อไหล่ออกด้านนอก)',
-    description: 'หนีบข้อศอกข้างลำตัว ตั้งฉาก 90 องศา ค่อยๆ หมุนมือออกด้านข้างเพื่อเพิ่มพิสัยการเคลื่อนไหวข้อไหล่',
-    target_joint: 'shoulder',
-    target_muscle: 'Infraspinatus, Teres Minor',
-    suitable_for: 'ผู้ป่วยข้อไหล่ติดระยะฟื้นฟูพิสัยการเคลื่อนไหว',
-    warnings: 'อย่าให้ข้อศอกกางออกจากลำตัว',
-    default_sets: 3,
-    default_reps: 10,
-    difficulty: 'medium',
-    image_path: null,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-  {
-    id: 'ex-cervical-retraction',
-    title: 'Cervical Retraction (เก็บคาง ยืดแนวกระดูกคอ)',
-    description: 'ตามองตรง ดึงคางเข้าหาลำคอในแนวราบ ค้างไว้ 5 วินาที แล้วคลาย เพื่อลดแรงกดกระดูกคอ',
-    target_joint: 'cervical',
-    target_muscle: 'Deep Neck Flexors, Rhomboids',
-    suitable_for: 'ผู้ป่วยออฟฟิศซินโดรมและหมอนรองกระดูกคอ',
-    warnings: 'ห้ามก้มหน้าลง ให้ดึงคางไปด้านหลังตรงๆ',
-    default_sets: 3,
-    default_reps: 10,
-    difficulty: 'easy',
-    image_path: null,
-    created_at: '2026-10-26T08:00:00.000Z',
-  },
-];
+const DEMO_EXERCISES: ExerciseRecord[] = ALL_CLINICAL_EXERCISES.map((ex) => ({
+  id: ex.id || 'ex-default',
+  title: `${ex.nameTh} (${ex.nameEn} / ${ex.nameCn})`,
+  description: ex.descriptionTh || '',
+  target_joint: ex.targetJoint,
+  target_muscle: ex.targetJoint === 'shoulder' ? 'Deltoid, Rotator Cuff' : ex.targetJoint === 'knee' ? 'Quadriceps, Hamstrings' : ex.targetJoint === 'hip' ? 'Gluteus, Hip Flexors' : ex.targetJoint === 'ankle' ? 'Gastrocnemius, Soleus' : ex.targetJoint === 'neck' ? 'Deep Neck Flexors' : 'Musculoskeletal',
+  suitable_for: 'ผู้ป่วยฟื้นฟูสมรรถภาพทางกายภาพบำบัด',
+  warnings: ex.safetyContraindications.stopOnPainMessageTh || 'หยุดทันทีเมื่อรู้สึกเจ็บ',
+  default_sets: ex.defaultPrescription?.totalSets || 3,
+  default_reps: ex.defaultPrescription?.repsPerSet || 10,
+  default_hold_sec: ex.angleMechanics?.holdDurationSec,
+  default_duration_sec: ex.defaultDurationSec || ex.defaultPrescription?.durationSec,
+  mode: (ex as any).mode || (ex.evaluationMode === 'timer' ? 'timer' : 'camera'),
+  clinical_source: ex.clinicalSource,
+  source: ex.clinicalSource,
+  pt_adjustable_notice: 'นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย',
+  difficulty: 'easy',
+  image_path: `/assets/exercises/${ex.id}.svg`,
+  created_at: '2026-10-31T00:00:00.000Z',
+}));
 
 export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
   currentUserId,
@@ -419,9 +396,21 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
             return (
               <div
                 key={ex.id}
-                className="bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-5 space-y-4 shadow-lg transition flex flex-col justify-between"
+                className="bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-5 space-y-4 shadow-lg transition flex flex-col justify-between group"
               >
-                <div className="space-y-2">
+                <div className="space-y-3">
+                  {/* Medical Posture Illustration */}
+                  <div className="w-full h-36 bg-slate-950/80 rounded-xl flex items-center justify-center overflow-hidden border border-slate-800/80 p-2">
+                    <img
+                      src={ex.image_path || `/assets/exercises/${ex.id}.svg`}
+                      alt={ex.title}
+                      className="max-h-32 w-auto object-contain opacity-90 group-hover:opacity-100 group-hover:scale-105 transition duration-200"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  </div>
+
                   <div className="flex items-start justify-between gap-2">
                     <h4 className="font-bold text-white text-base leading-snug">{ex.title}</h4>
                     {isMine ? (
@@ -442,6 +431,17 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                   </p>
 
                   <div className="flex flex-wrap gap-2 pt-1 text-xs">
+                    <span
+                      className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold ${
+                        ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum'
+                          ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                          : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                      }`}
+                    >
+                      {ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum'
+                        ? '⏱️ โหมดจับเวลา (Timer Mode)'
+                        : '📷 โหมดกล้อง AI (Camera Mode)'}
+                    </span>
                     <span className="px-2 py-0.5 rounded-lg bg-slate-950 text-slate-300 border border-slate-800">
                       🎯 {ex.target_muscle || 'กล้ามเนื้อรวม'}
                     </span>
@@ -463,12 +463,35 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                     <span className="px-2 py-0.5 rounded-lg bg-slate-950 font-mono text-teal-400 border border-slate-800">
                       {ex.default_sets} เซ็ต × {ex.default_reps} ครั้ง
                     </span>
+                    {ex.default_hold_sec ? (
+                      <span className="px-2 py-0.5 rounded-lg bg-teal-950/60 font-mono text-teal-300 border border-teal-800/60 text-[10px]">
+                        ค้าง {ex.default_hold_sec} วิ
+                      </span>
+                    ) : null}
+                    {ex.default_duration_sec ? (
+                      <span className="px-2 py-0.5 rounded-lg bg-amber-950/60 font-mono text-amber-300 border border-amber-800/60 text-[10px]">
+                        รอบละ {ex.default_duration_sec} วิ
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Clinical Citation & PT Adjustment Notice */}
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 text-[11px] space-y-1">
+                    {(ex.clinical_source || ex.source) && (
+                      <div className="text-slate-400 font-mono text-[10px] truncate" title={ex.clinical_source || ex.source || ''}>
+                        <span className="text-teal-400 font-bold">🏛️ แหล่งอ้างอิง:</span> {ex.clinical_source || ex.source}
+                      </div>
+                    )}
+                    <div className="text-emerald-400/90 font-medium text-[10px] flex items-center gap-1">
+                      <span>👩‍⚕️</span>
+                      <span>นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย</span>
+                    </div>
                   </div>
                 </div>
 
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
                   <span className="text-[11px] text-slate-500">
-                    ระยะเวลา ~{ex.duration_seconds || 30} วิ
+                    ระยะเวลา ~{ex.duration_seconds || ex.default_duration_sec || 30} วิ
                   </span>
 
                   <div className="flex items-center gap-1.5">

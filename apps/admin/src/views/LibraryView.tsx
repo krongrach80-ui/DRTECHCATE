@@ -39,10 +39,16 @@ const DEMO_EXERCISES: ExerciseRecord[] = ALL_CLINICAL_EXERCISES.map((ex) => ({
   target_joint: ex.targetJoint,
   suitable_for: 'ผู้ป่วยฟื้นฟูสมรรถภาพทางกายภาพบำบัด',
   warnings: ex.safetyContraindications.stopOnPainMessageTh || 'หยุดทันทีเมื่อรู้สึกเจ็บ',
-  default_sets: ex.defaultPrescription.totalSets,
-  default_reps: ex.defaultPrescription.repsPerSet,
+  default_sets: ex.defaultPrescription?.totalSets || 3,
+  default_reps: ex.defaultPrescription?.repsPerSet || 10,
+  default_hold_sec: ex.angleMechanics?.holdDurationSec,
+  default_duration_sec: ex.defaultDurationSec || ex.defaultPrescription?.durationSec,
+  mode: (ex as any).mode || (ex.evaluationMode === 'timer' ? 'timer' : 'camera'),
+  clinical_source: ex.clinicalSource,
+  source: ex.clinicalSource,
+  pt_adjustable_notice: 'นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย',
   difficulty: 'easy',
-  image_path: null,
+  image_path: `/assets/exercises/${ex.id}.svg`,
   created_at: '2026-10-31T00:00:00.000Z',
 }));
 
@@ -507,9 +513,21 @@ export const LibraryView: React.FC = () => {
               exercises.map((ex) => (
                 <div
                   key={ex.id}
-                  className="bg-slate-900 border border-slate-800 rounded-3xl p-5 flex flex-col justify-between hover:border-slate-700 transition"
+                  className="bg-slate-900 border border-slate-800 rounded-3xl p-5 flex flex-col justify-between hover:border-slate-700 transition group"
                 >
                   <div className="space-y-3">
+                    {/* Medical Posture Illustration */}
+                    <div className="w-full h-36 bg-slate-950/80 rounded-2xl flex items-center justify-center overflow-hidden border border-slate-800/80 p-2">
+                      <img
+                        src={ex.image_path || `/assets/exercises/${ex.id}.svg`}
+                        alt={ex.title}
+                        className="max-h-32 w-auto object-contain opacity-90 group-hover:opacity-100 group-hover:scale-105 transition duration-200"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
                         <span className="p-2 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20">
@@ -534,6 +552,30 @@ export const LibraryView: React.FC = () => {
                       </span>
                     </div>
 
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span
+                        className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold ${
+                          ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum'
+                            ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                            : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                        }`}
+                      >
+                        {ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum'
+                          ? '⏱️ โหมดจับเวลา (Timer Mode)'
+                          : '📷 โหมดกล้อง AI (Camera Mode)'}
+                      </span>
+                      {ex.default_hold_sec ? (
+                        <span className="px-2 py-0.5 rounded-lg bg-teal-950/60 font-mono text-teal-300 border border-teal-800/60 text-[10px]">
+                          ค้าง {ex.default_hold_sec} วิ
+                        </span>
+                      ) : null}
+                      {ex.default_duration_sec ? (
+                        <span className="px-2 py-0.5 rounded-lg bg-amber-950/60 font-mono text-amber-300 border border-amber-800/60 text-[10px]">
+                          {ex.default_duration_sec} วิ/เซ็ต
+                        </span>
+                      ) : null}
+                    </div>
+
                     <p className="text-xs text-slate-400 line-clamp-2">
                       {ex.description || 'ไม่มีคำอธิบาย'}
                     </p>
@@ -548,6 +590,19 @@ export const LibraryView: React.FC = () => {
                         <div className="font-semibold text-teal-400">
                           {ex.default_sets} เซ็ต × {ex.default_reps} ครั้ง
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Clinical Citation & PT Adjustment Notice */}
+                    <div className="p-2.5 rounded-2xl bg-slate-950 border border-slate-800/80 text-[11px] space-y-1">
+                      {(ex.clinical_source || ex.source) && (
+                        <div className="text-slate-400 font-mono text-[10px] truncate" title={ex.clinical_source || ex.source || ''}>
+                          <span className="text-teal-400 font-bold">🏛️ แหล่งอ้างอิง:</span> {ex.clinical_source || ex.source}
+                        </div>
+                      )}
+                      <div className="text-emerald-400/90 font-medium text-[10px] flex items-center gap-1">
+                        <span>👩‍⚕️</span>
+                        <span>นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย</span>
                       </div>
                     </div>
                   </div>
