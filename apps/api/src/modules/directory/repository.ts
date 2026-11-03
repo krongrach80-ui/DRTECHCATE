@@ -580,10 +580,11 @@ export class DirectoryRepository implements IDirectoryRepository {
         }
       }
 
-      return {
+      const fullPack = await this.getModpackById(id);
+      return fullPack || ({
         ...pack,
         items,
-      } as ModpackRecord;
+      } as ModpackRecord);
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, input }, 'Unexpected error in createModpack');
@@ -596,7 +597,7 @@ export class DirectoryRepository implements IDirectoryRepository {
       const adminClient = getAdminClient();
       const { data: pack, error: packErr } = await adminClient
         .from('modpacks')
-        .select('*, items:modpack_items(*)')
+        .select('*, items:modpack_items(*, exercise:exercises(*))')
         .eq('id', id)
         .maybeSingle();
 
@@ -623,7 +624,7 @@ export class DirectoryRepository implements IDirectoryRepository {
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)
-        .select('*, items:modpack_items(*)')
+        .select('*, items:modpack_items(*, exercise:exercises(*))')
         .maybeSingle();
 
       if (error || !data) {
@@ -677,7 +678,7 @@ export class DirectoryRepository implements IDirectoryRepository {
       const adminClient = getAdminClient();
       let query = adminClient
         .from('modpacks')
-        .select('*, items:modpack_items(*)')
+        .select('*, items:modpack_items(*, exercise:exercises(*))')
         .neq('is_active', false)
         .order('created_at', { ascending: false });
 

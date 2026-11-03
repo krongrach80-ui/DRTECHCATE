@@ -109,20 +109,23 @@ export class SmartOnboardingService {
         const { data: hnMatch } = (await Promise.race([queryPromise, timeoutPromise])) as any;
 
         if (hnMatch) {
+          const isDraft = hnMatch.registration_status === 'draft' || hnMatch.registration_status === 'awaiting_face';
           if (!excludeId || (hnMatch.id !== excludeId && hnMatch.hn !== excludeId)) {
-            const fullName = `${hnMatch.first_name || ''} ${hnMatch.last_name || ''}`.trim();
-            return {
-              duplicate_hn: true,
-              duplicate_name_dob: false,
-              existing_patient: {
-                id: hnMatch.id,
-                hn: hnMatch.hn,
-                full_name: fullName,
-                birth_date: hnMatch.birth_date,
-                registration_status: hnMatch.registration_status,
-              },
-              message: `หมายเลขประจำตัวคนไข้ (HN) "${cleanHn}" มีอยู่ในระบบแล้ว (${fullName})`,
-            };
+            if (!isDraft) {
+              const fullName = `${hnMatch.first_name || ''} ${hnMatch.last_name || ''}`.trim();
+              return {
+                duplicate_hn: true,
+                duplicate_name_dob: false,
+                existing_patient: {
+                  id: hnMatch.id,
+                  hn: hnMatch.hn,
+                  full_name: fullName,
+                  birth_date: hnMatch.birth_date,
+                  registration_status: hnMatch.registration_status,
+                },
+                message: `หมายเลขประจำตัวคนไข้ (HN) "${cleanHn}" มีอยู่ในระบบแล้ว (${fullName})`,
+              };
+            }
           }
         }
 
@@ -472,10 +475,12 @@ export class SmartOnboardingService {
         const existingFullName = (existingPatient?.full_name || '').toLowerCase();
         const incomingFullName = `${firstName} ${lastName}`.trim().toLowerCase();
 
-        // Idempotency: If this is the same patient registration session (same full name, or draft/awaiting_face)
+        // Idempotency: If this is the same patient registration session (identical full name or draft/awaiting_face)
+        const cleanExisting = existingFullName.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+        const cleanIncoming = incomingFullName.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
         const isSamePerson =
-          Boolean(existingFullName && incomingFullName) &&
-          existingFullName === incomingFullName;
+          Boolean(cleanExisting && cleanIncoming) &&
+          cleanExisting === cleanIncoming;
 
         if (existingStatus === 'draft' || existingStatus === 'awaiting_face' || isSamePerson) {
           // Adopt the existing patient_id so we update with new biometric frames instead of rejecting with 409!

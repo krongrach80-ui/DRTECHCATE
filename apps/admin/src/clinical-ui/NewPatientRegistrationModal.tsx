@@ -1511,15 +1511,17 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                           handleProceedToScan();
                         }
                       }}
-                      autoComplete="off"
+                      autoComplete="one-time-code"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
                       data-lpignore="true"
                       data-1p-ignore="true"
                       data-form-type="other"
-                      name="clinical_kiosk_pin"
-                      id="clinical-kiosk-pin-field"
-                      placeholder="••••"
+                      name="kiosk_numeric_code"
+                      id="clinical-kiosk-code-field"
+                      placeholder="1234"
                       className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 text-center tracking-widest font-mono font-bold focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm"
-                      style={{ WebkitTextSecurity: 'disc' } as React.CSSProperties}
                     />
                   </div>
                 </div>

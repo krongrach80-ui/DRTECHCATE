@@ -159,7 +159,8 @@ export const LibraryView: React.FC = () => {
       const filteredEx = Array.isArray(exData) ? exData.filter((e: any) => e.is_active !== false) : [];
       const safeEx = filteredEx.length > 0 ? filteredEx : DEMO_EXERCISES;
       const safeMg = Array.isArray(mgData) && mgData.length > 0 ? mgData : DEMO_MINIGAMES;
-      const safeMp = Array.isArray(mpData) && mpData.length > 0 ? mpData : DEMO_MODPACKS;
+      const filteredMp = Array.isArray(mpData) ? mpData.filter((m: any) => m.is_active !== false) : [];
+      const safeMp = Array.isArray(mpData) ? filteredMp : DEMO_MODPACKS;
       setExercises(safeEx);
       setMinigames(safeMg);
       setModpacks(safeMp);
@@ -291,7 +292,10 @@ export const LibraryView: React.FC = () => {
     }
     try {
       setActionLoading(true);
-      await defaultApiClient.modpacks.create(modpackFormData);
+      const created = await defaultApiClient.modpacks.create(modpackFormData);
+      if (created && (created as any).id) {
+        setModpacks((prev) => [(created as any), ...prev.filter((p) => p.id !== (created as any).id)]);
+      }
       setSuccessMsg(`สร้างชุดท่ากายภาพ "${modpackFormData.name}" สำเร็จ`);
       setIsModpackModalOpen(false);
       setModpackFormData({ name: '', description: '', items: [] });

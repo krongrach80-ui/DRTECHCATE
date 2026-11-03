@@ -4176,7 +4176,8 @@ var init_repository7 = __esm({
               throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
             }
           }
-          return {
+          const fullPack = await this.getModpackById(id);
+          return fullPack || {
             ...pack,
             items
           };
@@ -4189,7 +4190,7 @@ var init_repository7 = __esm({
       async getModpackById(id) {
         try {
           const adminClient = getAdminClient();
-          const { data: pack, error: packErr } = await adminClient.from("modpacks").select("*, items:modpack_items(*)").eq("id", id).maybeSingle();
+          const { data: pack, error: packErr } = await adminClient.from("modpacks").select("*, items:modpack_items(*, exercise:exercises(*))").eq("id", id).maybeSingle();
           if (packErr) {
             logger.error({ packErr, id }, "Database error querying modpack by id");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
@@ -4207,7 +4208,7 @@ var init_repository7 = __esm({
           const { data, error } = await adminClient.from("modpacks").update({
             ...input,
             updated_at: (/* @__PURE__ */ new Date()).toISOString()
-          }).eq("id", id).select("*, items:modpack_items(*)").maybeSingle();
+          }).eq("id", id).select("*, items:modpack_items(*, exercise:exercises(*))").maybeSingle();
           if (error || !data) {
             logger.error({ error, id, input }, "Database error updating modpack");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
@@ -4244,7 +4245,7 @@ var init_repository7 = __esm({
       async listModpacks(targetJoint) {
         try {
           const adminClient = getAdminClient();
-          let query = adminClient.from("modpacks").select("*, items:modpack_items(*)").neq("is_active", false).order("created_at", { ascending: false });
+          let query = adminClient.from("modpacks").select("*, items:modpack_items(*, exercise:exercises(*))").neq("is_active", false).order("created_at", { ascending: false });
           if (targetJoint) {
             query = query.eq("target_joint", targetJoint);
           }
@@ -10712,20 +10713,23 @@ var init_service10 = __esm({
             );
             const { data: hnMatch } = await Promise.race([queryPromise, timeoutPromise]);
             if (hnMatch) {
+              const isDraft = hnMatch.registration_status === "draft" || hnMatch.registration_status === "awaiting_face";
               if (!excludeId || hnMatch.id !== excludeId && hnMatch.hn !== excludeId) {
-                const fullName = `${hnMatch.first_name || ""} ${hnMatch.last_name || ""}`.trim();
-                return {
-                  duplicate_hn: true,
-                  duplicate_name_dob: false,
-                  existing_patient: {
-                    id: hnMatch.id,
-                    hn: hnMatch.hn,
-                    full_name: fullName,
-                    birth_date: hnMatch.birth_date,
-                    registration_status: hnMatch.registration_status
-                  },
-                  message: `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${cleanHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27 (${fullName})`
-                };
+                if (!isDraft) {
+                  const fullName = `${hnMatch.first_name || ""} ${hnMatch.last_name || ""}`.trim();
+                  return {
+                    duplicate_hn: true,
+                    duplicate_name_dob: false,
+                    existing_patient: {
+                      id: hnMatch.id,
+                      hn: hnMatch.hn,
+                      full_name: fullName,
+                      birth_date: hnMatch.birth_date,
+                      registration_status: hnMatch.registration_status
+                    },
+                    message: `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${cleanHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27 (${fullName})`
+                  };
+                }
               }
             }
             const localRecord = this.vaultService.getPatientRecord(cleanHn) || this.vaultService.listAllPatientRecords().find((r) => r.hn === cleanHn);
@@ -10950,7 +10954,9 @@ var init_service10 = __esm({
             const existingStatus = existingPatient?.registration_status;
             const existingFullName = (existingPatient?.full_name || "").toLowerCase();
             const incomingFullName = `${firstName} ${lastName}`.trim().toLowerCase();
-            const isSamePerson = Boolean(existingFullName && incomingFullName) && existingFullName === incomingFullName;
+            const cleanExisting = existingFullName.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
+            const cleanIncoming = incomingFullName.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
+            const isSamePerson = Boolean(cleanExisting && cleanIncoming) && cleanExisting === cleanIncoming;
             if (existingStatus === "draft" || existingStatus === "awaiting_face" || isSamePerson) {
               payload.patient_id = existingPatient.id;
               logger.info({ hn: explicitHn, patient_id: existingPatient.id, isSamePerson }, "Adopted existing patient record for biometric update/completion");

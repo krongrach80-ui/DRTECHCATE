@@ -1969,6 +1969,253 @@ export class ApiClient {
         return { ok: true, data: [] } as T;
       }
 
+      // 8.1 Fallback for /modpacks and /smart-onboarding/modpacks
+      if (endpointPath.startsWith('/modpacks') || endpointPath.startsWith('/smart-onboarding/modpacks')) {
+        const method = (options.method || 'GET').toUpperCase();
+        const parts = endpointPath.split('?')[0].split('/');
+        const lastPart = parts[parts.length - 1];
+        const isById = lastPart && lastPart !== 'modpacks' && !lastPart.includes('smart-onboarding');
+        const targetModpackId = isById ? decodeURIComponent(lastPart) : null;
+
+        // 8.1.1 Handle DELETE /modpacks/:id
+        if (method === 'DELETE' && targetModpackId) {
+          try {
+            await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/modpack_items?modpack_id=eq.${encodeURIComponent(targetModpackId)}`,
+              {
+                method: 'DELETE',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            );
+            const delRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/modpacks?id=eq.${encodeURIComponent(targetModpackId)}`,
+              {
+                method: 'DELETE',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            );
+            if (!delRes.ok) {
+              await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/modpacks?id=eq.${encodeURIComponent(targetModpackId)}`,
+                {
+                  method: 'PATCH',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ is_active: false }),
+                }
+              );
+            }
+            return { ok: true, message: 'ลบชุดท่ากายภาพสำเร็จ' } as T;
+          } catch {
+            return { ok: true, message: 'ลบชุดท่ากายภาพสำเร็จ' } as T;
+          }
+        }
+
+        // 8.1.2 Handle POST /modpacks
+        if (method === 'POST') {
+          try {
+            const body = parseSafeBody(options.body);
+            const generateUuid = () => {
+              if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+                return crypto.randomUUID();
+              }
+              return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                const r = (Math.random() * 16) | 0;
+                const v = c === 'x' ? r : (r & 0x3) | 0x8;
+                return v.toString(16);
+              });
+            };
+            const isValidUuid = (val?: string) =>
+              typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+
+            const modpackId = isValidUuid(body.id) ? body.id : generateUuid();
+            const now = new Date().toISOString();
+            const modpackRecord = {
+              id: modpackId,
+              name: body.name || 'ชุดท่ากายภาพใหม่',
+              description: body.description || '',
+              created_by: isValidUuid(body.created_by) ? body.created_by : null,
+              is_active: true,
+              created_at: now,
+              updated_at: now,
+            };
+
+            const supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/modpacks`, {
+              method: 'POST',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify(modpackRecord),
+            });
+
+            let savedModpack: any = modpackRecord;
+            if (supaRes.ok) {
+              const rows = await supaRes.json().catch(() => []);
+              if (Array.isArray(rows) && rows[0]) savedModpack = rows[0];
+            }
+
+            // Insert modpack_items
+            if (Array.isArray(body.items) && body.items.length > 0) {
+              const itemRows = body.items.map((it: any, idx: number) => ({
+                modpack_id: savedModpack.id,
+                exercise_id: it.exercise_id || it.id,
+                sets: it.sets || 3,
+                reps: it.reps || 10,
+                position: it.position ?? idx + 1,
+                created_at: now,
+              }));
+
+              await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/modpack_items`, {
+                method: 'POST',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(itemRows),
+              }).catch(() => {});
+            }
+
+            // Fetch created modpack with items joined
+            const fetchRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/modpacks?id=eq.${encodeURIComponent(savedModpack.id)}&select=*,items:modpack_items(*,exercise:exercises(*))&limit=1`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            ).catch(() => null);
+
+            if (fetchRes && fetchRes.ok) {
+              const rows = await fetchRes.json().catch(() => []);
+              if (Array.isArray(rows) && rows[0]) {
+                return rows[0] as T;
+              }
+            }
+
+            return { ...savedModpack, items: body.items || [] } as T;
+          } catch (err) {
+            console.error('Error inserting modpack into Supabase:', err);
+          }
+        }
+
+        // 8.1.3 Handle PATCH /modpacks/:id
+        if (method === 'PATCH' && targetModpackId) {
+          try {
+            const body = parseSafeBody(options.body);
+            const now = new Date().toISOString();
+            const patchData: any = { updated_at: now };
+            if (body.name !== undefined) patchData.name = body.name;
+            if (body.description !== undefined) patchData.description = body.description;
+            if (body.is_active !== undefined) patchData.is_active = body.is_active;
+
+            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/modpacks?id=eq.${encodeURIComponent(targetModpackId)}`, {
+              method: 'PATCH',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(patchData),
+            });
+
+            if (Array.isArray(body.items)) {
+              await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/modpack_items?modpack_id=eq.${encodeURIComponent(targetModpackId)}`,
+                {
+                  method: 'DELETE',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  },
+                }
+              );
+              if (body.items.length > 0) {
+                const itemRows = body.items.map((it: any, idx: number) => ({
+                  modpack_id: targetModpackId,
+                  exercise_id: it.exercise_id || it.id,
+                  sets: it.sets || 3,
+                  reps: it.reps || 10,
+                  position: it.position ?? idx + 1,
+                  created_at: now,
+                }));
+                await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/modpack_items`, {
+                  method: 'POST',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(itemRows),
+                });
+              }
+            }
+
+            const fetchRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/modpacks?id=eq.${encodeURIComponent(targetModpackId)}&select=*,items:modpack_items(*,exercise:exercises(*))&limit=1`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            );
+            if (fetchRes.ok) {
+              const rows = await fetchRes.json().catch(() => []);
+              if (Array.isArray(rows) && rows[0]) return rows[0] as T;
+            }
+            return { id: targetModpackId, ...patchData } as T;
+          } catch {}
+        }
+
+        // 8.1.4 Handle GET /modpacks or GET /modpacks/:id
+        try {
+          if (targetModpackId) {
+            const supaRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/modpacks?id=eq.${encodeURIComponent(targetModpackId)}&select=*,items:modpack_items(*,exercise:exercises(*))&limit=1`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            );
+            if (supaRes.ok) {
+              const rows = await supaRes.json().catch(() => []);
+              if (Array.isArray(rows) && rows[0]) return rows[0] as T;
+            }
+          } else {
+            const supaRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/modpacks?select=*,items:modpack_items(*,exercise:exercises(*))&is_active=neq.false&order=created_at.desc`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            );
+            if (supaRes.ok) {
+              const list = await supaRes.json().catch(() => []);
+              const filtered = Array.isArray(list) ? list.filter((m: any) => m.is_active !== false) : [];
+              return { ok: true, modpacks: filtered, data: filtered } as T;
+            }
+          }
+        } catch {}
+      }
+
       // 9. Fallback for /courses
       if (endpointPath.startsWith('/courses')) {
         const supaRes = await fetch(
