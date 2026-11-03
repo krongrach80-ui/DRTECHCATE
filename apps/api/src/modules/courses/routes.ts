@@ -13,6 +13,7 @@ export function createCoursesRouter(controller: CourseController = defaultCourse
   router.get('/exercises/:id', (req, res, next) => defaultDirectoryController.getExerciseById(req, res, next));
   router.post('/session-logs', controller.submitSessionLog);
   router.get('/session-logs', controller.getSessionLogs);
+  router.post('/staff-override-start', controller.staffOverrideStart);
 
   // 2. Staff Authenticated Area (Admin & PT)
   router.use(authenticate);

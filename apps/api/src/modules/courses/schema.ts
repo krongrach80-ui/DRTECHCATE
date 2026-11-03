@@ -277,3 +277,27 @@ export const SessionLogQuerySchema = z.object({
 
 export type SessionLogQuery = z.infer<typeof SessionLogQuerySchema>;
 
+// =========================================================================
+// 8. STAFF OVERRIDE START (CLINICAL BACKUP WHEN GESTURE CANNOT BE USED)
+// =========================================================================
+export const StaffOverrideStartInputSchema = z.object({
+  patient_id: z.string().trim().min(1, 'patient_id is required'),
+  exercise_id: z.string().trim().min(1, 'exercise_id is required'),
+  override_reason: z
+    .enum(['arm_injured_cannot_raise', 'camera_hand_detection_failed', 'other'])
+    .default('arm_injured_cannot_raise'),
+  reason_detail: z.string().optional().nullable(),
+  kiosk_id: z.string().default('kiosk-01'),
+  staff_user: z
+    .object({
+      id: z.string().optional(),
+      username: z.string().optional(),
+      full_name: z.string().optional(),
+      role: z.string().optional(),
+    })
+    .optional(),
+});
+
+export type StaffOverrideStartInput = z.infer<typeof StaffOverrideStartInputSchema>;
+
+

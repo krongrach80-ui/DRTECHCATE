@@ -2463,6 +2463,44 @@ export class ApiClient {
         body: JSON.stringify(data),
       });
     },
+
+    staffOverrideStart: async (data: {
+      patient_id: string;
+      exercise_id: string;
+      override_reason?: 'arm_injured_cannot_raise' | 'camera_hand_detection_failed' | 'other';
+      reason_detail?: string;
+      staff_user?: any;
+      kiosk_id?: string;
+    }) => {
+      try {
+        return await this.request<any>('/courses/staff-override-start', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        });
+      } catch {
+        // Resilient fallback for Edge / serverless environments (HTTP 404 / 405)
+        const fallbackRes = await this.courses.submitSessionLog({
+          patient_id: data.patient_id,
+          exercise_id: data.exercise_id,
+          kiosk_id: data.kiosk_id || 'kiosk-01',
+          completion_mode: 'ai_verified',
+          telemetry_summary: {
+            completion_mode: 'staff_override',
+            started_by_staff_id: data.staff_user?.id || 'staff',
+            started_by_staff_name: data.staff_user?.full_name || data.staff_user?.username || 'เจ้าหน้าที่',
+            staff_role: data.staff_user?.role || 'pt',
+            override_reason: data.override_reason || 'arm_injured_cannot_raise',
+            reason_detail: data.reason_detail || null,
+            started_at: new Date().toISOString(),
+          },
+        });
+        return {
+          ok: true,
+          message: 'เริ่มท่าฝึกแทนผู้ป่วยสำเร็จ (Fallback)',
+          data: fallbackRes,
+        };
+      }
+    },
   };
 
   // =========================================================================

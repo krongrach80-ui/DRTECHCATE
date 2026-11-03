@@ -280,20 +280,41 @@ export class CourseService {
   async submitSessionLog(input: SessionLogInput, clientIp?: string): Promise<SessionLogRecord> {
     const log = await this.repo.createSessionLog(input);
     try {
-      await this.auditService.write({
-        actor_type: 'patient',
-        actor_id: input.patient_id,
-        action: 'exercise_session_logged',
-        entity: 'exercise_session_logs',
-        entity_id: log.id,
-        ip: clientIp || null,
-        metadata: {
-          completion_mode: input.completion_mode,
-          pain_reported: input.pain_reported,
-          correct_reps: input.correct_reps,
-          max_angle: input.max_angle_achieved,
-        },
-      });
+      const isStaffOverride = input.telemetry_summary?.completion_mode === 'staff_override';
+      if (isStaffOverride) {
+        await this.auditService.write({
+          actor_type: 'staff',
+          actor_id: String(input.telemetry_summary?.started_by_staff_id || input.patient_id),
+          action: 'exercise_session_staff_override_start',
+          entity: 'exercise_session_logs',
+          entity_id: log.id,
+          ip: clientIp || null,
+          metadata: {
+            patient_id: input.patient_id,
+            exercise_id: input.exercise_id,
+            staff_name: input.telemetry_summary?.started_by_staff_name,
+            staff_role: input.telemetry_summary?.staff_role,
+            override_reason: input.telemetry_summary?.override_reason,
+            reason_th: input.telemetry_summary?.reason_th,
+            reason_detail: input.telemetry_summary?.reason_detail,
+          },
+        });
+      } else {
+        await this.auditService.write({
+          actor_type: 'patient',
+          actor_id: input.patient_id,
+          action: 'exercise_session_logged',
+          entity: 'exercise_session_logs',
+          entity_id: log.id,
+          ip: clientIp || null,
+          metadata: {
+            completion_mode: input.completion_mode,
+            pain_reported: input.pain_reported,
+            correct_reps: input.correct_reps,
+            max_angle: input.max_angle_achieved,
+          },
+        });
+      }
     } catch {
       // audit logging should not block clinical session submission
     }

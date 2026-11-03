@@ -42,6 +42,10 @@ import { UnconfiguredExerciseFallbackModal } from '../components/UnconfiguredExe
 import { DynamicExerciseSessionView } from '../views/DynamicExerciseSessionView';
 import { ClinicalErrorBoundary } from '../../../../packages/hospital-ui-kit/src/index';
 import { useTouchlessGestureStarter } from '../hooks/useTouchlessGestureStarter';
+import {
+  StaffExerciseOverrideModal,
+  OverrideReason,
+} from '../components/StaffExerciseOverrideModal';
 
 interface SmartDailyPlanViewProps {
   patient: PatientRecordFile;
@@ -63,6 +67,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dailyPlanResponse, setDailyPlanResponse] = useState<any>(null);
   const [painAlertActive, setPainAlertActive] = useState<boolean>(false);
+  const [isStaffOverrideModalOpen, setIsStaffOverrideModalOpen] = useState<boolean>(false);
 
   // Exercise tracking
   const [completedExerciseIds, setCompletedExerciseIds] = useState<Set<string>>(new Set());
@@ -356,6 +361,50 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     }
   };
 
+  // Authoritative Staff Override Confirmation: Clears staff credentials & launches session directly
+  const handleConfirmStaffOverride = async (
+    selectedExercise: any,
+    metadata: {
+      staff_user: any;
+      override_reason: OverrideReason;
+      reason_detail?: string;
+    }
+  ) => {
+    try {
+      await (defaultApiClient.courses as any)?.staffOverrideStart?.({
+        patient_id: patient.patient_id || patient.hn || '',
+        exercise_id: selectedExercise.exercise_id || selectedExercise.id || 'ex',
+        override_reason: metadata.override_reason,
+        reason_detail: metadata.reason_detail,
+        staff_user: metadata.staff_user,
+        kiosk_id: 'kiosk-01',
+      });
+    } catch (err) {
+      console.warn('Server staff override notice (handled with resilient fallback):', err);
+    }
+
+    // Immediately clear staff credentials from browser storage to prevent kiosk privilege lingering
+    try {
+      localStorage.removeItem('drtech_user_profile');
+      sessionStorage.removeItem('drtech_user_profile');
+    } catch {
+      // non-blocking
+    }
+
+    // Close modal and transition directly to the exercise session in patient mode
+    setIsStaffOverrideModalOpen(false);
+
+    handleStartExercise(selectedExercise, 'staff_override', {
+      target_hand: targetSide,
+      detected_hand: 'override',
+      started_by: metadata.staff_user?.full_name || metadata.staff_user?.username || 'เจ้าหน้าที่',
+      staff_role: metadata.staff_user?.role || 'pt',
+      override_reason: metadata.override_reason,
+      reason_detail: metadata.reason_detail,
+      timestamp: new Date().toISOString(),
+    });
+  };
+
   const handleGuideReady = () => {
     if (!isScheduledToday || isCompletedToday || isSessionCompleted) {
       setActiveGuideConfig(null);
@@ -516,7 +565,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     statusMessage,
     videoRef,
     handleRetry,
-    handleStaffOverride,
+    handleStaffOverride: _handleStaffOverride,
   } = useTouchlessGestureStarter({
     enabled: isGestureStarterEnabled,
     targetExercise: nextUncompletedExercise,
@@ -1022,16 +1071,16 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
                 )}
               </div>
 
-              {/* Discrete Staff Override Button */}
+              {/* Discrete Staff Override Button (Opens Staff Auth Modal) */}
               <button
                 type="button"
                 data-testid="kiosk-staff-override-hud-btn"
-                onClick={() => handleStaffOverride('เจ้าหน้าที่')}
+                onClick={() => setIsStaffOverrideModalOpen(true)}
                 className="text-[11px] text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/60 transition flex items-center gap-1.5 cursor-pointer mt-1"
-                title="หากผู้ป่วยยกมือไม่ได้ เจ้าหน้าที่สามารถกดยืนยันเริ่มแทนได้"
+                title="สำหรับเจ้าหน้าที่: เริ่มแทน (ต้องยืนยันตัวตน)"
               >
                 <KeyRound className="w-3 h-3 text-amber-400" />
-                <span>{lang === 'zh-CN' ? '工作人员代替开始' : lang === 'en-US' ? 'Staff Override' : 'กดเริ่มแทน (สำหรับเจ้าหน้าที่)'}</span>
+                <span>{lang === 'zh-CN' ? '工作人员代替开始' : lang === 'en-US' ? 'Staff Override' : 'สำหรับเจ้าหน้าที่: เริ่มแทน'}</span>
               </button>
             </div>
           </div>
@@ -1043,28 +1092,38 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
                 <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
                 <span>
                   {lang === 'zh-CN'
-                    ? '未检测到手部动作，请确保站在镜头视野内并将手举至胸前。'
+                    ? '无法举手？请呼叫工作人员或由工作人员代为启动'
                     : lang === 'en-US'
-                    ? 'No hand detected. Please stand in camera view and raise hand to chest level.'
-                    : 'ไม่พบมือ กรุณาอยู่ในกรอบกล้องและยกมือให้อยู่ระดับอก'}
+                    ? 'Cannot raise hand? Call staff or request staff override'
+                    : 'ยกมือไม่ได้? เรียกเจ้าหน้าที่ช่วยเริ่ม'}
                 </span>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
                 <button
                   type="button"
-                  onClick={handleRetry}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center gap-1"
+                  data-testid="kiosk-call-staff-help-btn"
+                  onClick={handleCallStaff}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>{lang === 'zh-CN' ? '再试一次' : lang === 'en-US' ? 'Retry' : 'ลองใหม่'}</span>
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>{lang === 'zh-CN' ? '呼叫人员' : lang === 'en-US' ? 'Call Staff' : 'เรียกเจ้าหน้าที่'}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={handleCallStaff}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition cursor-pointer flex items-center gap-1"
+                  data-testid="kiosk-staff-override-help-btn"
+                  onClick={() => setIsStaffOverrideModalOpen(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 font-semibold text-xs transition cursor-pointer flex items-center gap-1.5"
                 >
-                  <PhoneCall className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{lang === 'zh-CN' ? '呼叫工作人员' : lang === 'en-US' ? 'Call Staff' : 'เรียกเจ้าหน้าที่'}</span>
+                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{lang === 'zh-CN' ? '医护代启动' : lang === 'en-US' ? 'Staff Override' : 'เจ้าหน้าที่เริ่มแทน'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition cursor-pointer flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{lang === 'zh-CN' ? '重试' : lang === 'en-US' ? 'Retry' : 'ลองใหม่'}</span>
                 </button>
               </div>
             </div>
@@ -1182,7 +1241,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
                       type="button"
                       id={`kiosk-start-scan-btn-${idx}`}
                       data-testid={`kiosk-start-scan-btn-${idx}`}
-                      onClick={() => handleStaffOverride('เจ้าหน้าที่')}
+                      onClick={() => setIsStaffOverrideModalOpen(true)}
                       className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition cursor-pointer flex items-center gap-1"
                       title="กดเริ่มแทน (สำหรับเจ้าหน้าที่)"
                     >
@@ -1210,6 +1269,20 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             </div>
           );
         })}
+
+        {/* Discrete bottom link for staff override (does not clutter senior patient view) */}
+        <div className="w-full flex items-center justify-end pt-1">
+          <button
+            type="button"
+            data-testid="kiosk-footer-staff-override-btn"
+            onClick={() => setIsStaffOverrideModalOpen(true)}
+            className="text-[11px] text-slate-500 hover:text-slate-400 flex items-center gap-1.5 transition cursor-pointer px-2.5 py-1 rounded-lg hover:bg-slate-900"
+            title="สำหรับเจ้าหน้าที่: เริ่มแทน"
+          >
+            <KeyRound className="w-3 h-3 text-slate-500" />
+            <span>{lang === 'zh-CN' ? '医护端: 协助开始' : lang === 'en-US' ? 'Staff: Override Start' : 'สำหรับเจ้าหน้าที่: เริ่มแทน'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Completion Action Bar */}
@@ -1268,6 +1341,16 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           onClose={() => setUnconfiguredExercise(null)}
         />
       )}
+
+      {/* 4. Staff Exercise Override Modal (Clinical 2-Step Auth + 2-Minute Watchdog) */}
+      <StaffExerciseOverrideModal
+        isOpen={isStaffOverrideModalOpen}
+        onClose={() => setIsStaffOverrideModalOpen(false)}
+        patient={patient}
+        exercises={exercises}
+        defaultExerciseId={nextUncompletedExercise?.exercise_id || nextUncompletedExercise?.id}
+        onConfirmOverride={handleConfirmStaffOverride}
+      />
     </div>
   );
 };

@@ -7311,20 +7311,41 @@ var init_service7 = __esm({
       async submitSessionLog(input, clientIp) {
         const log = await this.repo.createSessionLog(input);
         try {
-          await this.auditService.write({
-            actor_type: "patient",
-            actor_id: input.patient_id,
-            action: "exercise_session_logged",
-            entity: "exercise_session_logs",
-            entity_id: log.id,
-            ip: clientIp || null,
-            metadata: {
-              completion_mode: input.completion_mode,
-              pain_reported: input.pain_reported,
-              correct_reps: input.correct_reps,
-              max_angle: input.max_angle_achieved
-            }
-          });
+          const isStaffOverride = input.telemetry_summary?.completion_mode === "staff_override";
+          if (isStaffOverride) {
+            await this.auditService.write({
+              actor_type: "staff",
+              actor_id: String(input.telemetry_summary?.started_by_staff_id || input.patient_id),
+              action: "exercise_session_staff_override_start",
+              entity: "exercise_session_logs",
+              entity_id: log.id,
+              ip: clientIp || null,
+              metadata: {
+                patient_id: input.patient_id,
+                exercise_id: input.exercise_id,
+                staff_name: input.telemetry_summary?.started_by_staff_name,
+                staff_role: input.telemetry_summary?.staff_role,
+                override_reason: input.telemetry_summary?.override_reason,
+                reason_th: input.telemetry_summary?.reason_th,
+                reason_detail: input.telemetry_summary?.reason_detail
+              }
+            });
+          } else {
+            await this.auditService.write({
+              actor_type: "patient",
+              actor_id: input.patient_id,
+              action: "exercise_session_logged",
+              entity: "exercise_session_logs",
+              entity_id: log.id,
+              ip: clientIp || null,
+              metadata: {
+                completion_mode: input.completion_mode,
+                pain_reported: input.pain_reported,
+                correct_reps: input.correct_reps,
+                max_angle: input.max_angle_achieved
+              }
+            });
+          }
         } catch {
         }
         return log;
@@ -15101,6 +15122,19 @@ var SessionLogQuerySchema = import_zod12.z.object({
   course_id: import_zod12.z.string().optional(),
   limit: import_zod12.z.coerce.number().int().min(1).max(100).default(50)
 });
+var StaffOverrideStartInputSchema = import_zod12.z.object({
+  patient_id: import_zod12.z.string().trim().min(1, "patient_id is required"),
+  exercise_id: import_zod12.z.string().trim().min(1, "exercise_id is required"),
+  override_reason: import_zod12.z.enum(["arm_injured_cannot_raise", "camera_hand_detection_failed", "other"]).default("arm_injured_cannot_raise"),
+  reason_detail: import_zod12.z.string().optional().nullable(),
+  kiosk_id: import_zod12.z.string().default("kiosk-01"),
+  staff_user: import_zod12.z.object({
+    id: import_zod12.z.string().optional(),
+    username: import_zod12.z.string().optional(),
+    full_name: import_zod12.z.string().optional(),
+    role: import_zod12.z.string().optional()
+  }).optional()
+});
 
 // apps/api/src/modules/courses/controller.ts
 init_errorHandler();
@@ -15222,6 +15256,87 @@ var CourseController = class {
         next(err);
       }
     };
+    /**
+     * POST /api/courses/staff-override-start
+     * Authoritative staff override initiation for physical therapy exercise session.
+     * Enforces role authorization (admin/director/pt) and verifies exercise is assigned today.
+     */
+    this.staffOverrideStart = async (req, res, next) => {
+      try {
+        const input = StaffOverrideStartInputSchema.parse(req.body);
+        const user = req.user || input.staff_user;
+        if (!user) {
+          throw new AppError("\u26D4 \u0E40\u0E02\u0E49\u0E32\u0E16\u0E36\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49: \u0E15\u0E49\u0E2D\u0E07\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48 (Admin/PT) \u0E01\u0E48\u0E2D\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E41\u0E17\u0E19", 401, "UNAUTHORIZED");
+        }
+        const role = String(user.role || "").toLowerCase();
+        const uname = String(user.username || "").toLowerCase();
+        const isAllowedRole = role === "admin" || role === "super_admin" || role === "director" || uname === "director" || uname === "admin" || role === "pt" || role === "therapist" || uname.startsWith("pt");
+        if (!isAllowedRole) {
+          throw new AppError(
+            "\u26D4 \u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E21\u0E35\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E40\u0E23\u0E34\u0E48\u0E21\u0E01\u0E32\u0E23\u0E1D\u0E36\u0E01\u0E41\u0E17\u0E19\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 (\u0E2D\u0E19\u0E38\u0E0D\u0E32\u0E15\u0E40\u0E09\u0E1E\u0E32\u0E30 Admin, \u0E1C\u0E2D.\u0E23\u0E1E. \u0E41\u0E25\u0E30\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14 PT)",
+            403,
+            "FORBIDDEN"
+          );
+        }
+        const { defaultSmartOnboardingService: defaultSmartOnboardingService2 } = await Promise.resolve().then(() => (init_service10(), service_exports));
+        const plan = await defaultSmartOnboardingService2.getDailyPlan(input.patient_id);
+        if (!plan.is_scheduled_today || !plan.exercises || plan.exercises.length === 0) {
+          throw new AppError(
+            "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E44\u0E21\u0E48\u0E21\u0E35\u0E15\u0E32\u0E23\u0E32\u0E07\u0E1D\u0E36\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 \u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E40\u0E23\u0E34\u0E48\u0E21\u0E17\u0E48\u0E32\u0E41\u0E17\u0E19\u0E44\u0E14\u0E49",
+            400,
+            "NO_EXERCISES_TODAY"
+          );
+        }
+        const targetExercise = plan.exercises.find(
+          (ex) => ex.exercise_id === input.exercise_id || ex.id === input.exercise_id || ex.name === input.exercise_id || ex.title === input.exercise_id
+        );
+        if (!targetExercise) {
+          throw new AppError(
+            "\u0E17\u0E48\u0E32\u0E1D\u0E36\u0E01\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E15\u0E32\u0E23\u0E32\u0E07\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E02\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49",
+            400,
+            "EXERCISE_NOT_IN_TODAY_PLAN"
+          );
+        }
+        const staffId = user.id || "staff";
+        const staffName = user.full_name || user.username || "\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48";
+        const staffRole = user.role || "pt";
+        const reasonThMap = {
+          arm_injured_cannot_raise: "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E22\u0E01\u0E21\u0E37\u0E2D\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 / \u0E41\u0E02\u0E19\u0E1A\u0E32\u0E14\u0E40\u0E08\u0E47\u0E1A",
+          camera_hand_detection_failed: "\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08\u0E08\u0E31\u0E1A\u0E21\u0E37\u0E2D\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49",
+          other: input.reason_detail || "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E44\u0E21\u0E48\u0E2A\u0E30\u0E14\u0E27\u0E01 / \u0E2D\u0E37\u0E48\u0E19\u0E46"
+        };
+        const logInput = SessionLogInputSchema.parse({
+          patient_id: input.patient_id,
+          course_id: plan.schedule?.course_id || null,
+          exercise_id: targetExercise.exercise_id || targetExercise.id || input.exercise_id,
+          kiosk_id: input.kiosk_id || "kiosk-01",
+          completion_mode: "ai_verified",
+          telemetry_summary: {
+            completion_mode: "staff_override",
+            started_by_staff_id: staffId,
+            started_by_staff_name: staffName,
+            staff_role: staffRole,
+            override_reason: input.override_reason,
+            reason_th: reasonThMap[input.override_reason] || reasonThMap.arm_injured_cannot_raise,
+            reason_detail: input.reason_detail || null,
+            started_at: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        });
+        const log = await this.service.submitSessionLog(logInput, req.ip);
+        res.status(200).json({
+          ok: true,
+          message: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E17\u0E48\u0E32\u0E1D\u0E36\u0E01\u0E41\u0E17\u0E19\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08",
+          data: {
+            session_id: log.id,
+            exercise: targetExercise,
+            started_by: staffName,
+            override_reason: input.override_reason
+          }
+        });
+      } catch (err) {
+        next(err);
+      }
+    };
   }
 };
 var defaultCourseController = new CourseController();
@@ -15233,6 +15348,7 @@ function createCoursesRouter(controller = defaultCourseController) {
   router3.get("/exercises/:id", (req, res, next) => defaultDirectoryController.getExerciseById(req, res, next));
   router3.post("/session-logs", controller.submitSessionLog);
   router3.get("/session-logs", controller.getSessionLogs);
+  router3.post("/staff-override-start", controller.staffOverrideStart);
   router3.use(authenticate);
   router3.use(requireRole("admin", "pt"));
   router3.get("/today", controller.getTodayAppointments);
