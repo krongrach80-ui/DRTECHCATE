@@ -115,7 +115,8 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
       setLoading(true);
       setErrorMsg(null);
       const list = await defaultApiClient.exercises.list().catch(() => []);
-      const safe = Array.isArray(list) && list.length > 0 ? list : DEMO_EXERCISES;
+      const filtered = Array.isArray(list) ? list.filter((e: any) => e.is_active !== false) : [];
+      const safe = filtered.length > 0 ? filtered : DEMO_EXERCISES;
       setExercises(safe);
     } catch {
       setExercises(DEMO_EXERCISES);

@@ -13,6 +13,7 @@ import {
   computeAverageVector,
   evaluateBiometricMatch,
   calibrateCosineSimilarity,
+  BIOMETRIC_CONFIG,
   PrescribedExercise,
 } from '../../../../../packages/smart-biometric-core/src/index.js';
 import { PatientVaultService, defaultPatientVaultService } from './vault.service';
@@ -81,6 +82,7 @@ export class SmartOnboardingService {
       hn: string;
       full_name: string;
       birth_date?: string;
+      registration_status?: string;
     };
     message?: string;
   }> {
@@ -89,58 +91,81 @@ export class SmartOnboardingService {
     const cleanDob = (params.birth_date || '').trim();
     const excludeId = (params.exclude_patient_id || '').trim();
 
-    // 1. Check local vault first for fast instant duplicate detection
-    if (cleanHn) {
-      const localRecord = this.vaultService.getPatientRecord(cleanHn);
-      if (localRecord && (!excludeId || (localRecord.patient_id !== excludeId && localRecord.hn !== excludeId))) {
-        const fullName = `${localRecord.first_name || ''} ${localRecord.last_name || ''}`.trim();
-        return {
-          duplicate_hn: true,
-          duplicate_name_dob: false,
-          existing_patient: {
-            id: localRecord.patient_id,
-            hn: localRecord.hn,
-            full_name: fullName,
-            birth_date: (localRecord as any).birth_date,
-          },
-          message: `หมายเลขประจำตัวคนไข้ (HN) "${cleanHn}" มีอยู่ในระบบแล้ว (${fullName})`,
-        };
-      }
-    }
-
     const supabase = getAdminClient();
 
-    // 2. Check Supabase DB for duplicate HN
+    // 1. Authoritative: Check Supabase DB for duplicate HN
     if (cleanHn) {
       try {
         const queryPromise = supabase
           .from('patients')
-          .select('id, hn, first_name, last_name, birth_date')
+          .select('id, hn, first_name, last_name, birth_date, registration_status')
           .ilike('hn', cleanHn)
           .maybeSingle();
 
         const timeoutPromise = new Promise<{ data: null; error: Error }>((_, reject) =>
-          setTimeout(() => reject(new Error('Supabase query timed out')), 1200)
+          setTimeout(() => reject(new Error('Supabase query timed out')), 3000)
         );
 
         const { data: hnMatch } = (await Promise.race([queryPromise, timeoutPromise])) as any;
 
-        if (hnMatch && (!excludeId || (hnMatch.id !== excludeId && hnMatch.hn !== excludeId))) {
-          const fullName = `${hnMatch.first_name || ''} ${hnMatch.last_name || ''}`.trim();
+        if (hnMatch) {
+          if (!excludeId || (hnMatch.id !== excludeId && hnMatch.hn !== excludeId)) {
+            const fullName = `${hnMatch.first_name || ''} ${hnMatch.last_name || ''}`.trim();
+            return {
+              duplicate_hn: true,
+              duplicate_name_dob: false,
+              existing_patient: {
+                id: hnMatch.id,
+                hn: hnMatch.hn,
+                full_name: fullName,
+                birth_date: hnMatch.birth_date,
+                registration_status: hnMatch.registration_status,
+              },
+              message: `หมายเลขประจำตัวคนไข้ (HN) "${cleanHn}" มีอยู่ในระบบแล้ว (${fullName})`,
+            };
+          }
+        }
+
+        // Check local vault in test environment or resilience fallback
+        const localRecord =
+          this.vaultService.getPatientRecord(cleanHn) ||
+          this.vaultService.listAllPatientRecords().find((r) => r.hn === cleanHn);
+        if (localRecord && (!excludeId || (localRecord.patient_id !== excludeId && localRecord.hn !== excludeId))) {
+          const fullName = `${localRecord.first_name || ''} ${localRecord.last_name || ''}`.trim();
           return {
             duplicate_hn: true,
             duplicate_name_dob: false,
             existing_patient: {
-              id: hnMatch.id,
-              hn: hnMatch.hn,
+              id: localRecord.patient_id,
+              hn: localRecord.hn,
               full_name: fullName,
-              birth_date: hnMatch.birth_date,
+              birth_date: (localRecord as any).birth_date,
+              registration_status: (localRecord as any).registration_status,
             },
             message: `หมายเลขประจำตัวคนไข้ (HN) "${cleanHn}" มีอยู่ในระบบแล้ว (${fullName})`,
           };
         }
       } catch (err) {
         logger.warn({ err, hn: cleanHn }, 'Supabase error during checkDuplicate HN');
+        // Fallback to local vault only if Supabase query failed with exception
+        const localRecord =
+          this.vaultService.getPatientRecord(cleanHn) ||
+          this.vaultService.listAllPatientRecords().find((r) => r.hn === cleanHn);
+        if (localRecord && (!excludeId || (localRecord.patient_id !== excludeId && localRecord.hn !== excludeId))) {
+          const fullName = `${localRecord.first_name || ''} ${localRecord.last_name || ''}`.trim();
+          return {
+            duplicate_hn: true,
+            duplicate_name_dob: false,
+            existing_patient: {
+              id: localRecord.patient_id,
+              hn: localRecord.hn,
+              full_name: fullName,
+              birth_date: (localRecord as any).birth_date,
+              registration_status: (localRecord as any).registration_status,
+            },
+            message: `หมายเลขประจำตัวคนไข้ (HN) "${cleanHn}" มีอยู่ในระบบแล้ว (${fullName})`,
+          };
+        }
       }
     }
 
@@ -442,7 +467,23 @@ export class SmartOnboardingService {
         exclude_patient_id: payload.patient_id,
       });
       if (dupCheck.duplicate_hn && dupCheck.existing_patient?.id !== payload.patient_id) {
-        throw new AppError(dupCheck.message || `หมายเลขประจำตัวคนไข้ (HN) "${explicitHn}" มีอยู่ในระบบแล้ว`, 409, 'DUPLICATE_HN');
+        const existingPatient = dupCheck.existing_patient as any;
+        const existingStatus = existingPatient?.registration_status;
+        const existingFullName = (existingPatient?.full_name || '').toLowerCase();
+        const incomingFullName = `${firstName} ${lastName}`.trim().toLowerCase();
+
+        // Idempotency: If this is the same patient registration session (same full name, or draft/awaiting_face)
+        const isSamePerson =
+          Boolean(existingFullName && incomingFullName) &&
+          existingFullName === incomingFullName;
+
+        if (existingStatus === 'draft' || existingStatus === 'awaiting_face' || isSamePerson) {
+          // Adopt the existing patient_id so we update with new biometric frames instead of rejecting with 409!
+          payload.patient_id = existingPatient.id;
+          logger.info({ hn: explicitHn, patient_id: existingPatient.id, isSamePerson }, 'Adopted existing patient record for biometric update/completion');
+        } else {
+          throw new AppError(dupCheck.message || `หมายเลขประจำตัวคนไข้ (HN) "${explicitHn}" มีอยู่ในระบบแล้ว`, 409, 'DUPLICATE_HN');
+        }
       }
     }
 
@@ -619,7 +660,7 @@ export class SmartOnboardingService {
           .maybeSingle();
 
         const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
-          setTimeout(() => reject(new Error('Supabase insert timed out')), 1500)
+          setTimeout(() => reject(new Error('Supabase insert timed out')), 6000)
         );
 
         const raceRes = (await Promise.race([dbPromise, timeoutPromise]).catch((e) => ({
@@ -1068,7 +1109,9 @@ export class SmartOnboardingService {
             if (p.registration_status === 'archived') continue;
             const builtRecord = this.buildLivePatientRecord(p);
             const pVector = builtRecord.biometrics?.face_vector;
-            if (pVector && Array.isArray(pVector) && pVector.length === 512) {
+            const hasFrames = Array.isArray(p.history?.frames) && p.history.frames.length > 0;
+            if ((pVector && Array.isArray(pVector) && pVector.length === 512) || hasFrames) {
+              (builtRecord as any).enrolled_frames = p.history?.frames || [];
               const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
               if (existingIndex >= 0) {
                 records[existingIndex] = builtRecord;
@@ -1117,13 +1160,21 @@ export class SmartOnboardingService {
       }
     }
 
-    let bestMatch: {
+    let top1Match: {
+      record: PatientRecordFile;
+      similarity: number;
+      distance: number;
+      percent: number;
+    } | null = null;
+    let top2Match: {
       record: PatientRecordFile;
       similarity: number;
       distance: number;
       percent: number;
     } | null = null;
     let nearestCandidate: { name: string; hn: string; sim: number; dist: number } | null = null;
+
+    const isSingleUserInDb = records.length === 1;
 
     for (const record of records) {
       const candidateVectors: number[][] = [];
@@ -1150,17 +1201,20 @@ export class SmartOnboardingService {
           }
         }
       }
-      const adaptiveTpls = (record as any).adaptive_templates || (record as any).history?.adaptive_templates;
-      if (adaptiveTpls && Array.isArray(adaptiveTpls)) {
-        for (const at of adaptiveTpls) {
-          if (Array.isArray(at) && at.length === 512) {
-            candidateVectors.push(at);
-          }
-        }
-      }
+
+      let patientBestSim = -1;
+      let patientBestDist = 2.0;
 
       for (const vec of candidateVectors) {
-        const result = evaluateBiometricMatch(probeVector, vec, { useCalibration: true });
+        const result = evaluateBiometricMatch(probeVector, vec, {
+          isSingleUserInDb,
+        });
+
+        if (result.cosineSimilarity > patientBestSim) {
+          patientBestSim = result.cosineSimilarity;
+          patientBestDist = result.euclideanDistance;
+        }
+
         if (!nearestCandidate || result.cosineSimilarity > nearestCandidate.sim) {
           nearestCandidate = {
             name: `${record.first_name} ${record.last_name}`,
@@ -1169,34 +1223,61 @@ export class SmartOnboardingService {
             dist: result.euclideanDistance,
           };
         }
-        const satisfiesThreshold = result.isMatch && result.similarityPercentage >= 80;
+      }
 
-        if (satisfiesThreshold) {
-          if (!bestMatch || result.cosineSimilarity > bestMatch.similarity) {
-            bestMatch = {
-              record,
-              similarity: result.cosineSimilarity,
-              distance: result.euclideanDistance,
-              percent: Math.min(98, result.similarityPercentage),
-            };
-          }
+      // Check if patient meets match threshold
+      const maxAllowedDist = isSingleUserInDb
+        ? BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE
+        : BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE;
+      const minAllowedCos = BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY;
+
+      if (patientBestSim >= minAllowedCos && patientBestDist <= maxAllowedDist) {
+        const matchItem = {
+          record,
+          similarity: patientBestSim,
+          distance: patientBestDist,
+          percent: Math.round(patientBestSim * 100),
+        };
+        if (!top1Match || patientBestSim > top1Match.similarity) {
+          top2Match = top1Match;
+          top1Match = matchItem;
+        } else if (!top2Match || patientBestSim > top2Match.similarity) {
+          top2Match = matchItem;
         }
       }
     }
 
     if (nearestCandidate) {
       logger.info(
-        `[FACE-AUTH-EVAL] Nearest: ${nearestCandidate.name} (${nearestCandidate.hn}) | Similarity: ${nearestCandidate.sim} | Distance: ${nearestCandidate.dist} | IsMatch: ${Boolean(bestMatch)}`
+        `[FACE-AUTH-EVAL] Nearest: ${nearestCandidate.name} (${nearestCandidate.hn}) | Similarity: ${nearestCandidate.sim.toFixed(4)} | Distance: ${nearestCandidate.dist.toFixed(4)} | Top1Match: ${Boolean(top1Match)}`
       );
     }
 
-    if (bestMatch && bestMatch.percent >= 80 && (bestMatch.similarity >= 0.80 || bestMatch.distance <= 0.65)) {
-      const patient = bestMatch.record;
+    // 1:N Margin Verification
+    if (top1Match) {
+      // If multiple candidates exist, verify distinct margin
+      if (top2Match) {
+        const margin = top1Match.similarity - top2Match.similarity;
+        if (margin < BIOMETRIC_CONFIG.MARGIN_MIN) {
+          logger.warn(
+            `[FACE-AUTH] Margin ambiguous (${margin.toFixed(4)} < ${BIOMETRIC_CONFIG.MARGIN_MIN}) between ${top1Match.record.hn} and ${top2Match.record.hn}. Requesting PIN.`
+          );
+          return {
+            matched: false,
+            requirePin: true,
+            candidateName: `${top1Match.record.first_name} ${top1Match.record.last_name}`,
+            candidateHn: top1Match.record.hn,
+            message: 'ใบหน้ามีความคล้ายคลึงกับผู้ป่วยมากกว่า 1 ท่าน เพื่อความปลอดภัยกรุณากรอก PIN 4 หลัก',
+          };
+        }
+      }
+
+      const patient = top1Match.record;
       logger.info(
-        `[FACE-AUTH] Success: ${patient.first_name} (${patient.hn}) | Similarity: ${bestMatch.percent}% | Distance: ${bestMatch.distance}`
+        `[FACE-AUTH] Genuine Match: ${patient.first_name} (${patient.hn}) | Cosine: ${top1Match.similarity.toFixed(4)} | Dist: ${top1Match.distance.toFixed(4)}`
       );
 
-      // Record snapshot to login_history/
+      // Record snapshot to login_history/ (audit purpose only)
       if (snapshotBase64) {
         try {
           const rawBase64 = snapshotBase64.replace(/^data:image\/\w+;base64,/, '');
@@ -1207,72 +1288,42 @@ export class SmartOnboardingService {
         }
       }
 
-      // Adaptive enrollment / Dynamic template update (Spec item 2)
-      // Save high-confidence live probe vector (>= 82%) to adapt to new clothing, haircuts, and lighting
-      if (bestMatch.percent >= 82 && probeVector && probeVector.length === 512 && process.env.NODE_ENV !== 'test') {
-        try {
-          const supabase = getAdminClient();
-          const { data: curPatient } = await supabase
-            .from('patients')
-            .select('history')
-            .eq('id', patient.patient_id)
-            .maybeSingle();
-
-          const curHistory = curPatient?.history || {};
-          const existingTemplates: number[][] = Array.isArray(curHistory.adaptive_templates)
-            ? curHistory.adaptive_templates
-            : [];
-          const updatedTemplates = [...existingTemplates, probeVector].slice(-5);
-          await supabase
-            .from('patients')
-            .update({
-              history: {
-                ...curHistory,
-                adaptive_templates: updatedTemplates,
-                last_adaptive_update: new Date().toISOString(),
-              },
-            })
-            .eq('id', patient.patient_id);
-          logger.info(`[FACE-AUTH] Adaptive template updated for patient ${patient.patient_id} (${patient.hn})`);
-        } catch (adaptErr) {
-          logger.warn({ adaptErr }, 'Failed to persist adaptive face template');
-        }
-      }
+      // NOTE: Zero adaptive_templates pollution - never write live probe vectors to patient record on login
 
       return {
         matched: true,
         patient,
-        similarity: bestMatch.similarity,
-        distance: bestMatch.distance,
-        similarityPercentage: bestMatch.percent,
+        similarity: top1Match.similarity,
+        distance: top1Match.distance,
+        similarityPercentage: top1Match.percent,
       };
     }
 
-    // Ambiguous candidate check (50% - 79%): DO NOT guess false identity! Require PIN confirmation
-    const nearestSim = nearestCandidate?.sim ?? 0;
-    const nearestPercent = Math.max(0, Math.min(100, Math.round(nearestSim * 100)));
-    if (nearestCandidate && nearestPercent >= 50 && nearestPercent < 80) {
+    // Ambiguous candidate check (Distance 0.38 to 0.45, or Cosine 0.70 to 0.84)
+    if (
+      nearestCandidate &&
+      nearestCandidate.sim >= 0.70 &&
+      nearestCandidate.sim < BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY
+    ) {
       logger.info(
-        `[FACE-AUTH] Ambiguous candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) at ${nearestPercent}% - Prompting PIN confirmation`
+        `[FACE-AUTH] Borderline candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} - Requesting PIN confirmation`
       );
       return {
         matched: false,
         requirePin: true,
         candidateName: nearestCandidate.name,
         candidateHn: nearestCandidate.hn,
-        similarityPercentage: nearestPercent,
-        message: `⚠️ ไม่พบบัญชีในระบบที่ตรงตามเกณฑ์ 80% (ความแม่นยำ ${nearestPercent}% ก้ำกึ่ง เพื่อความปลอดภัยของผู้ป่วย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก)`,
+        message: 'กรุณากรอก PIN 4 หลักเพื่อยืนยันตัวตน',
       };
     }
 
-    // No match found or low similarity (< 50%) - strictly zero candidate exposure
-    logger.warn(
-      `[FACE-AUTH] Rejected: Candidate below threshold (Nearest: ${nearestCandidate?.name || 'none'}, Similarity: ${nearestCandidate?.sim || 0}, Distance: ${nearestCandidate?.dist || 2.0})`
+    // Unregistered Stranger / Impostor (< 0.70 Cosine or > 0.45 Distance) -> FAIL CLOSED
+    logger.info(
+      `[FACE-AUTH] Stranger rejected: Nearest sim=${nearestCandidate?.sim?.toFixed(4) ?? '0.0000'} dist=${nearestCandidate?.dist?.toFixed(4) ?? '2.0000'}`
     );
     return {
       matched: false,
-      similarityPercentage: nearestPercent,
-      message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในวงกลมแล้วลองสแกนใหม่อีกครั้ง หรือลงทะเบียนคนไข้ใหม่',
+      message: 'ไม่พบข้อมูลใบหน้าตรงกับคนไข้ในระบบ กรุณาลองใหม่อีกครั้ง หรือเข้าสู่ระบบด้วย PIN',
     };
   }
 

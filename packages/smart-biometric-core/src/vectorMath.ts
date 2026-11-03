@@ -1,16 +1,18 @@
 /**
  * packages/smart-biometric-core/src/vectorMath.ts
- * High-Precision Biometric Vector Mathematics
- * US NIST SP 800-63B + China Tier-3A Smart Hospital AI Standard
+ * High-Precision Medical-Grade Biometric Vector Mathematics
+ * US NIST SP 800-63B + Hospital-Grade Identity Verification
  */
 
 import { BiometricMatchResult } from './types.js';
+import { BIOMETRIC_CONFIG } from './biometricConfig.js';
 
 export const ACCEPTANCE_THRESHOLDS = {
-  MIN_COSINE_SIMILARITY: 0.80,
-  MAX_EUCLIDEAN_DISTANCE: 0.42,
-  MIN_MARGIN_DELTA: 0.05,
-  MIN_SIMILARITY_PERCENTAGE: 80,
+  MIN_COSINE_SIMILARITY: BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY,
+  MAX_EUCLIDEAN_DISTANCE: BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE,
+  SINGLE_USER_STRICT_DISTANCE: BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE,
+  MIN_MARGIN_DELTA: BIOMETRIC_CONFIG.MARGIN_MIN,
+  MIN_SIMILARITY_PERCENTAGE: 85,
 };
 
 /**
@@ -27,7 +29,7 @@ export function l2Normalize(vector: number[]): number[] {
 }
 
 /**
- * Computes Cosine Similarity between two unit-normalized vectors [0.0 - 1.0]
+ * Computes Cosine Similarity between two unit-normalized vectors [-1.0 to 1.0]
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
@@ -70,50 +72,39 @@ export function computeAverageVector(vectors: number[][]): number[] {
 }
 
 /**
- * Clinical Biometric Calibration Function
- * Maps raw cosine similarity from MediaPipe / spatial biometric embeddings into calibrated clinical similarity:
- * - cos >= 0.85 maps into [96%, 100%] (near-identical / high confidence)
- * - cos in [0.55, 0.85) maps into [80%, 96%) (genuine patient range >= 80%)
- * - cos in [0.42, 0.55) maps into [50%, 79%) (ambiguous candidate zone, prompts for PIN confirmation)
- * - cos < 0.42 maps into [0%, 49%] (stranger / unregistered impostor zone, strictly < 50%)
+ * Unbiased Biometric Similarity Calculation (No Fake Boosting / No Artificial 98% Cap)
+ * - Cosine >= 0.85 indicates true genuine match range (>= 85%)
+ * - Cosine 0.70 to 0.84 indicates ambiguous borderline (50% to 79%) -> requires PIN confirmation
+ * - Cosine < 0.70 is an unregistered stranger / impostor -> guaranteed strictly < 45%
  */
 export function calibrateCosineSimilarity(rawCos: number): number {
-  if (rawCos >= 0.85) {
-    // Clinical Biometric Invariant: Natural human facial capture from video sensors has inherent noise.
-    // An uncalibrated 100% is physically impossible and indicates overfitted/self-cached probe loop.
-    // Cap ceiling strictly at 0.984 (Math.round yields at most 98%, never 100%).
-    const t = Math.min(1.0, Math.max(0, (rawCos - 0.85) / 0.10));
-    return Math.min(0.984, 0.96 + t * 0.024);
+  if (rawCos <= 0) return 0;
+  if (rawCos >= BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY) {
+    // 0.85 -> 1.0 maps naturally without artificial ceiling or boost
+    return Math.min(1.0, rawCos);
   }
-  if (rawCos >= 0.55) {
-    // [0.55, 0.85) -> [0.80, 0.96) (80%–96% for genuine patient range)
-    const t = (rawCos - 0.55) / (0.85 - 0.55);
-    return 0.80 + t * (0.96 - 0.80);
+  if (rawCos >= 0.70) {
+    // 0.70 - 0.85 maps to 0.50 - 0.79 (Ambiguous borderline zone)
+    const t = (rawCos - 0.70) / (BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY - 0.70);
+    return 0.50 + t * 0.29;
   }
-  if (rawCos >= 0.42) {
-    // [0.42, 0.55) -> [0.50, 0.79) (Ambiguous candidate zone)
-    const t = (rawCos - 0.42) / (0.55 - 0.42);
-    return 0.50 + t * (0.79 - 0.50);
-  }
-  // < 0.42 (True impostor / stranger zone, guaranteed <= 49%)
-  return Math.max(0, (Math.max(0, rawCos) / 0.42) * 0.49);
+  // True stranger / impostor (< 0.70): guaranteed strictly < 45% (never reaches 50%)
+  return Math.max(0, (rawCos / 0.70) * 0.45);
 }
 
 /**
- * Master Prompt v4 UI Percentage Formula:
- * Calibrated Cosine Similarity % or Direct Linear Cosine Mapping (Strictly capped at 98%–99%)
+ * UI Percentage Formula: Unbiased conversion to whole percentage
  */
 export function computeSimilarityPercentage(
   arg: number,
   cosineSim?: number,
   options?: { calibrated?: boolean }
 ): number {
-  const useCal = options?.calibrated ?? false;
   if (cosineSim !== undefined) {
-    const effectiveSim = useCal ? calibrateCosineSimilarity(cosineSim) : cosineSim;
-    return Math.max(0, Math.min(98, Math.round(effectiveSim * 100)));
+    const effectiveSim = options?.calibrated ? calibrateCosineSimilarity(cosineSim) : cosineSim;
+    return Math.max(0, Math.min(100, Math.round(effectiveSim * 100)));
   }
-  return Math.max(0, Math.min(98, Math.round(arg * 100)));
+  return Math.max(0, Math.min(100, Math.round(arg * 100)));
 }
 
 export function computePercentageFromDistance(distance: number): number {
@@ -121,9 +112,10 @@ export function computePercentageFromDistance(distance: number): number {
 }
 
 /**
- * Evaluates whether live probe matches reference face vector.
- * Hard Rejection Rule: Strictly requires Cosine >= 0.80 (calibrated or raw), and Euclidean <= 0.65.
- * Impostors with raw Cosine < 0.42 are unconditionally rejected (< 50%).
+ * Evaluates whether live probe matches reference face vector with Fail-Closed security.
+ * Hard Rejection Rule:
+ * Strictly requires BOTH Cosine Similarity >= 0.85 AND Euclidean Distance <= 0.38 (or 0.32 for single user).
+ * Impostors with Cosine < 0.70 or Distance > 0.38 are unconditionally rejected.
  */
 export function evaluateBiometricMatch(
   probeVector: number[],
@@ -133,6 +125,7 @@ export function evaluateBiometricMatch(
     maxEuclidean?: number;
     minSimilarityPercentage?: number;
     useCalibration?: boolean;
+    isSingleUserInDb?: boolean;
   }
 ): BiometricMatchResult {
   const normProbe = l2Normalize(probeVector);
@@ -141,29 +134,21 @@ export function evaluateBiometricMatch(
   const rawCos = cosineSimilarity(normProbe, normRef);
   const eucDist = euclideanDistance(normProbe, normRef);
 
-  const useCalibration = options?.useCalibration === true;
   const calSim = calibrateCosineSimilarity(rawCos);
-  const effectiveSim = useCalibration ? calSim : rawCos;
-  const similarityPercentage = Math.max(0, Math.min(98, Math.round(effectiveSim * 100)));
+  const similarityPercentage = Math.max(0, Math.min(100, Math.round(calSim * 100)));
 
-  const minCos = options?.minCosine ?? ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY;
-  const maxDist = options?.maxEuclidean ?? ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE;
-  const minPercent = options?.minSimilarityPercentage ?? ACCEPTANCE_THRESHOLDS.MIN_SIMILARITY_PERCENTAGE;
+  const maxDist = options?.isSingleUserInDb
+    ? BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE
+    : (options?.maxEuclidean ?? BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE);
+  const minCos = options?.minCosine ?? BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY;
 
-  // Strict Hard Rejection Rule:
-  // - True impostors/strangers (rawCos < 0.42) never pass (< 50%).
-  // - Ambiguous candidate (0.42 <= rawCos < 0.55) yields [50%, 79%], isMatch = false.
-  // - Matches if (useCalibration && rawCos >= 0.55 && similarityPercentage >= minPercent)
-  //   OR (!useCalibration && rawCos >= minCos && similarityPercentage >= minPercent && (eucDist <= maxDist || eucDist <= 0.65))
-  const isMatch =
-    rawCos >= 0.42 &&
-    similarityPercentage >= minPercent &&
-    ((useCalibration && rawCos >= 0.55) ||
-     (!useCalibration && rawCos >= minCos && (eucDist <= maxDist || eucDist <= 0.65)));
+  // Strict Fail-Closed Verification:
+  // Must satisfy BOTH Cosine Similarity >= minCos AND Euclidean Distance <= maxDist
+  const isMatch = rawCos >= minCos && eucDist <= maxDist;
 
   return {
     isMatch,
-    cosineSimilarity: Number(effectiveSim.toFixed(4)),
+    cosineSimilarity: Number(rawCos.toFixed(4)),
     rawCosineSimilarity: Number(rawCos.toFixed(4)),
     calibratedSimilarity: Number(calSim.toFixed(4)),
     euclideanDistance: Number(eucDist.toFixed(4)),

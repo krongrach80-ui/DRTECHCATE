@@ -3,5 +3,6 @@
  * Master Export for Smart Biometric Core Engine
  */
 
+export * from './biometricConfig.js';
 export * from './types.js';
 export * from './vectorMath.js';

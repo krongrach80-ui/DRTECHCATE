@@ -10530,6 +10530,41 @@ var init_service9 = __esm({
   }
 });
 
+// packages/smart-biometric-core/src/biometricConfig.ts
+var BIOMETRIC_CONFIG;
+var init_biometricConfig = __esm({
+  "packages/smart-biometric-core/src/biometricConfig.ts"() {
+    "use strict";
+    BIOMETRIC_CONFIG = {
+      /** จำนวนเฟรมชีวมาตรที่ต้องเก็บและเฉลี่ยเวกเตอร์ที่ผ่าน Liveness ก่อนส่งเทียบ (อย่างน้อย 8 เฟรม) */
+      FRAMES_PER_SCAN: 8,
+      /** ค่าระยะห่าง Euclidean สูงสุดที่ยอมรับว่าเป็นคนเดียวกัน (ต่ำกว่า 0.38 เท่านั้น) */
+      MAX_EUCLIDEAN_DISTANCE: 0.38,
+      /** ค่าระยะห่างเข้มงวดพิเศษกรณีในฐานข้อมูลมีผู้ป่วยเพียงคนเดียว เพื่อป้องกันคนอื่นสวมสิทธิ์ (ต่ำกว่า 0.32) */
+      SINGLE_USER_STRICT_DISTANCE: 0.32,
+      /** ค่าความคล้ายคลึง Cosine Similarity ขั้นต่ำแท้จริง (ห้ามบวกคะแนนช่วย ต้อง >= 0.85) */
+      MIN_COSINE_SIMILARITY: 0.85,
+      /** ส่วนต่างความคล้ายคลึงขั้นต่ำระหว่าง Candidate อันดับ 1 กับ อันดับ 2 */
+      /** หากมีคนเดียวในระบบ หรือส่วนต่างน้อยกว่านี้ ให้ถือว่า 'ไม่แน่ใจ (Ambiguous)' และบังคับยืนยัน PIN */
+      MARGIN_MIN: 0.08,
+      /** จำนวนครั้งที่อนุญาตให้สแกนหรือยืนยันตัวตนผิดพลาดติดต่อกัน (5 ครั้ง) */
+      MAX_ATTEMPTS: 5,
+      /** ระยะเวลาล็อกการสแกนชั่วคราวเมื่อทำผิดเกินโควตา (60 วินาที) */
+      LOCKOUT_DURATION_MS: 6e4,
+      /** ความถี่ในการดึงเฟรมและตรวจสอบ Liveness (200 มิลลิวินาที) */
+      FRAME_INTERVAL_MS: 200,
+      /** ค่า Eye Aspect Ratio (EAR) ขั้นต่ำที่ถือว่ากำลังหลับตา/กะพริบตา */
+      BLINK_EAR_CLOSED: 0.2,
+      /** ค่า EAR ขั้นต่ำที่ถือว่าลืมตากลับมาตามปกติหลังกะพริบตา */
+      BLINK_EAR_OPEN: 0.26,
+      /** การเปลี่ยนแปลงของมุมศีรษะขั้นต่ำ (องศา) สำหรับ Motion Liveness */
+      MIN_HEAD_MOTION_DEGREES: 8,
+      /** ระยะเวลาตรวจสอบความมีชีวิตขั้นต่ำก่อนอนุญาตให้เริ่มการเทียบ (มิลลิวินาที) */
+      MIN_LIVENESS_DURATION_MS: 1200
+    };
+  }
+});
+
 // packages/smart-biometric-core/src/types.ts
 var init_types = __esm({
   "packages/smart-biometric-core/src/types.ts"() {
@@ -10577,36 +10612,29 @@ function computeAverageVector(vectors) {
   return l2Normalize(normalizedAvg);
 }
 function calibrateCosineSimilarity(rawCos) {
-  if (rawCos >= 0.85) {
-    const t = Math.min(1, Math.max(0, (rawCos - 0.85) / 0.1));
-    return Math.min(0.984, 0.96 + t * 0.024);
+  if (rawCos <= 0) return 0;
+  if (rawCos >= BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY) {
+    return Math.min(1, rawCos);
   }
-  if (rawCos >= 0.55) {
-    const t = (rawCos - 0.55) / (0.85 - 0.55);
-    return 0.8 + t * (0.96 - 0.8);
+  if (rawCos >= 0.7) {
+    const t = (rawCos - 0.7) / (BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY - 0.7);
+    return 0.5 + t * 0.29;
   }
-  if (rawCos >= 0.42) {
-    const t = (rawCos - 0.42) / (0.55 - 0.42);
-    return 0.5 + t * (0.79 - 0.5);
-  }
-  return Math.max(0, Math.max(0, rawCos) / 0.42 * 0.49);
+  return Math.max(0, rawCos / 0.7 * 0.45);
 }
 function evaluateBiometricMatch(probeVector, referenceVector, options) {
   const normProbe = l2Normalize(probeVector);
   const normRef = l2Normalize(referenceVector);
   const rawCos = cosineSimilarity(normProbe, normRef);
   const eucDist = euclideanDistance(normProbe, normRef);
-  const useCalibration = options?.useCalibration === true;
   const calSim = calibrateCosineSimilarity(rawCos);
-  const effectiveSim = useCalibration ? calSim : rawCos;
-  const similarityPercentage = Math.max(0, Math.min(98, Math.round(effectiveSim * 100)));
-  const minCos = options?.minCosine ?? ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY;
-  const maxDist = options?.maxEuclidean ?? ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE;
-  const minPercent = options?.minSimilarityPercentage ?? ACCEPTANCE_THRESHOLDS.MIN_SIMILARITY_PERCENTAGE;
-  const isMatch = rawCos >= 0.42 && similarityPercentage >= minPercent && (useCalibration && rawCos >= 0.55 || !useCalibration && rawCos >= minCos && (eucDist <= maxDist || eucDist <= 0.65));
+  const similarityPercentage = Math.max(0, Math.min(100, Math.round(calSim * 100)));
+  const maxDist = options?.isSingleUserInDb ? BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE : options?.maxEuclidean ?? BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE;
+  const minCos = options?.minCosine ?? BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY;
+  const isMatch = rawCos >= minCos && eucDist <= maxDist;
   return {
     isMatch,
-    cosineSimilarity: Number(effectiveSim.toFixed(4)),
+    cosineSimilarity: Number(rawCos.toFixed(4)),
     rawCosineSimilarity: Number(rawCos.toFixed(4)),
     calibratedSimilarity: Number(calSim.toFixed(4)),
     euclideanDistance: Number(eucDist.toFixed(4)),
@@ -10617,11 +10645,13 @@ var ACCEPTANCE_THRESHOLDS;
 var init_vectorMath = __esm({
   "packages/smart-biometric-core/src/vectorMath.ts"() {
     "use strict";
+    init_biometricConfig();
     ACCEPTANCE_THRESHOLDS = {
-      MIN_COSINE_SIMILARITY: 0.8,
-      MAX_EUCLIDEAN_DISTANCE: 0.42,
-      MIN_MARGIN_DELTA: 0.05,
-      MIN_SIMILARITY_PERCENTAGE: 80
+      MIN_COSINE_SIMILARITY: BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY,
+      MAX_EUCLIDEAN_DISTANCE: BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE,
+      SINGLE_USER_STRICT_DISTANCE: BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE,
+      MIN_MARGIN_DELTA: BIOMETRIC_CONFIG.MARGIN_MIN,
+      MIN_SIMILARITY_PERCENTAGE: 85
     };
   }
 });
@@ -10630,6 +10660,7 @@ var init_vectorMath = __esm({
 var init_src = __esm({
   "packages/smart-biometric-core/src/index.ts"() {
     "use strict";
+    init_biometricConfig();
     init_types();
     init_vectorMath();
   }
@@ -10672,47 +10703,65 @@ var init_service10 = __esm({
         const cleanName = (params.full_name || "").trim().toLowerCase();
         const cleanDob = (params.birth_date || "").trim();
         const excludeId = (params.exclude_patient_id || "").trim();
-        if (cleanHn) {
-          const localRecord = this.vaultService.getPatientRecord(cleanHn);
-          if (localRecord && (!excludeId || localRecord.patient_id !== excludeId && localRecord.hn !== excludeId)) {
-            const fullName = `${localRecord.first_name || ""} ${localRecord.last_name || ""}`.trim();
-            return {
-              duplicate_hn: true,
-              duplicate_name_dob: false,
-              existing_patient: {
-                id: localRecord.patient_id,
-                hn: localRecord.hn,
-                full_name: fullName,
-                birth_date: localRecord.birth_date
-              },
-              message: `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${cleanHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27 (${fullName})`
-            };
-          }
-        }
         const supabase = getAdminClient();
         if (cleanHn) {
           try {
-            const queryPromise = supabase.from("patients").select("id, hn, first_name, last_name, birth_date").ilike("hn", cleanHn).maybeSingle();
+            const queryPromise = supabase.from("patients").select("id, hn, first_name, last_name, birth_date, registration_status").ilike("hn", cleanHn).maybeSingle();
             const timeoutPromise = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error("Supabase query timed out")), 1200)
+              (_, reject) => setTimeout(() => reject(new Error("Supabase query timed out")), 3e3)
             );
             const { data: hnMatch } = await Promise.race([queryPromise, timeoutPromise]);
-            if (hnMatch && (!excludeId || hnMatch.id !== excludeId && hnMatch.hn !== excludeId)) {
-              const fullName = `${hnMatch.first_name || ""} ${hnMatch.last_name || ""}`.trim();
+            if (hnMatch) {
+              if (!excludeId || hnMatch.id !== excludeId && hnMatch.hn !== excludeId) {
+                const fullName = `${hnMatch.first_name || ""} ${hnMatch.last_name || ""}`.trim();
+                return {
+                  duplicate_hn: true,
+                  duplicate_name_dob: false,
+                  existing_patient: {
+                    id: hnMatch.id,
+                    hn: hnMatch.hn,
+                    full_name: fullName,
+                    birth_date: hnMatch.birth_date,
+                    registration_status: hnMatch.registration_status
+                  },
+                  message: `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${cleanHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27 (${fullName})`
+                };
+              }
+            }
+            const localRecord = this.vaultService.getPatientRecord(cleanHn) || this.vaultService.listAllPatientRecords().find((r) => r.hn === cleanHn);
+            if (localRecord && (!excludeId || localRecord.patient_id !== excludeId && localRecord.hn !== excludeId)) {
+              const fullName = `${localRecord.first_name || ""} ${localRecord.last_name || ""}`.trim();
               return {
                 duplicate_hn: true,
                 duplicate_name_dob: false,
                 existing_patient: {
-                  id: hnMatch.id,
-                  hn: hnMatch.hn,
+                  id: localRecord.patient_id,
+                  hn: localRecord.hn,
                   full_name: fullName,
-                  birth_date: hnMatch.birth_date
+                  birth_date: localRecord.birth_date,
+                  registration_status: localRecord.registration_status
                 },
                 message: `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${cleanHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27 (${fullName})`
               };
             }
           } catch (err) {
             logger.warn({ err, hn: cleanHn }, "Supabase error during checkDuplicate HN");
+            const localRecord = this.vaultService.getPatientRecord(cleanHn) || this.vaultService.listAllPatientRecords().find((r) => r.hn === cleanHn);
+            if (localRecord && (!excludeId || localRecord.patient_id !== excludeId && localRecord.hn !== excludeId)) {
+              const fullName = `${localRecord.first_name || ""} ${localRecord.last_name || ""}`.trim();
+              return {
+                duplicate_hn: true,
+                duplicate_name_dob: false,
+                existing_patient: {
+                  id: localRecord.patient_id,
+                  hn: localRecord.hn,
+                  full_name: fullName,
+                  birth_date: localRecord.birth_date,
+                  registration_status: localRecord.registration_status
+                },
+                message: `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${cleanHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27 (${fullName})`
+              };
+            }
           }
         }
         if (cleanName && cleanDob) {
@@ -10897,7 +10946,17 @@ var init_service10 = __esm({
             exclude_patient_id: payload.patient_id
           });
           if (dupCheck.duplicate_hn && dupCheck.existing_patient?.id !== payload.patient_id) {
-            throw new AppError(dupCheck.message || `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${explicitHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27`, 409, "DUPLICATE_HN");
+            const existingPatient = dupCheck.existing_patient;
+            const existingStatus = existingPatient?.registration_status;
+            const existingFullName = (existingPatient?.full_name || "").toLowerCase();
+            const incomingFullName = `${firstName} ${lastName}`.trim().toLowerCase();
+            const isSamePerson = Boolean(existingFullName && incomingFullName) && existingFullName === incomingFullName;
+            if (existingStatus === "draft" || existingStatus === "awaiting_face" || isSamePerson) {
+              payload.patient_id = existingPatient.id;
+              logger.info({ hn: explicitHn, patient_id: existingPatient.id, isSamePerson }, "Adopted existing patient record for biometric update/completion");
+            } else {
+              throw new AppError(dupCheck.message || `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${explicitHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27`, 409, "DUPLICATE_HN");
+            }
           }
         }
         const hn = explicitHn || `P-${Math.floor(1e3 + Math.random() * 9e3)}`;
@@ -11042,7 +11101,7 @@ var init_service10 = __esm({
           if (!data) {
             const dbPromise = supabase.from("patients").insert(insertPayload).select("*").maybeSingle();
             const timeoutPromise = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error("Supabase insert timed out")), 1500)
+              (_, reject) => setTimeout(() => reject(new Error("Supabase insert timed out")), 6e3)
             );
             const raceRes = await Promise.race([dbPromise, timeoutPromise]).catch((e) => ({
               data: null,
@@ -11396,7 +11455,9 @@ var init_service10 = __esm({
                 if (p.registration_status === "archived") continue;
                 const builtRecord = this.buildLivePatientRecord(p);
                 const pVector = builtRecord.biometrics?.face_vector;
-                if (pVector && Array.isArray(pVector) && pVector.length === 512) {
+                const hasFrames = Array.isArray(p.history?.frames) && p.history.frames.length > 0;
+                if (pVector && Array.isArray(pVector) && pVector.length === 512 || hasFrames) {
+                  builtRecord.enrolled_frames = p.history?.frames || [];
                   const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
                   if (existingIndex >= 0) {
                     records[existingIndex] = builtRecord;
@@ -11440,8 +11501,10 @@ var init_service10 = __esm({
             logger.warn({ dbErr }, "Supabase database query in scanLogin bypassed");
           }
         }
-        let bestMatch = null;
+        let top1Match = null;
+        let top2Match = null;
         let nearestCandidate = null;
+        const isSingleUserInDb = records.length === 1;
         for (const record of records) {
           const candidateVectors = [];
           if (record.biometrics?.face_vector && record.biometrics.face_vector.length === 512) {
@@ -11467,16 +11530,16 @@ var init_service10 = __esm({
               }
             }
           }
-          const adaptiveTpls = record.adaptive_templates || record.history?.adaptive_templates;
-          if (adaptiveTpls && Array.isArray(adaptiveTpls)) {
-            for (const at of adaptiveTpls) {
-              if (Array.isArray(at) && at.length === 512) {
-                candidateVectors.push(at);
-              }
-            }
-          }
+          let patientBestSim = -1;
+          let patientBestDist = 2;
           for (const vec of candidateVectors) {
-            const result = evaluateBiometricMatch(probeVector, vec, { useCalibration: true });
+            const result = evaluateBiometricMatch(probeVector, vec, {
+              isSingleUserInDb
+            });
+            if (result.cosineSimilarity > patientBestSim) {
+              patientBestSim = result.cosineSimilarity;
+              patientBestDist = result.euclideanDistance;
+            }
             if (!nearestCandidate || result.cosineSimilarity > nearestCandidate.sim) {
               nearestCandidate = {
                 name: `${record.first_name} ${record.last_name}`,
@@ -11485,28 +11548,48 @@ var init_service10 = __esm({
                 dist: result.euclideanDistance
               };
             }
-            const satisfiesThreshold = result.isMatch && result.similarityPercentage >= 80;
-            if (satisfiesThreshold) {
-              if (!bestMatch || result.cosineSimilarity > bestMatch.similarity) {
-                bestMatch = {
-                  record,
-                  similarity: result.cosineSimilarity,
-                  distance: result.euclideanDistance,
-                  percent: Math.min(98, result.similarityPercentage)
-                };
-              }
+          }
+          const maxAllowedDist = isSingleUserInDb ? BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE : BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE;
+          const minAllowedCos = BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY;
+          if (patientBestSim >= minAllowedCos && patientBestDist <= maxAllowedDist) {
+            const matchItem = {
+              record,
+              similarity: patientBestSim,
+              distance: patientBestDist,
+              percent: Math.round(patientBestSim * 100)
+            };
+            if (!top1Match || patientBestSim > top1Match.similarity) {
+              top2Match = top1Match;
+              top1Match = matchItem;
+            } else if (!top2Match || patientBestSim > top2Match.similarity) {
+              top2Match = matchItem;
             }
           }
         }
         if (nearestCandidate) {
           logger.info(
-            `[FACE-AUTH-EVAL] Nearest: ${nearestCandidate.name} (${nearestCandidate.hn}) | Similarity: ${nearestCandidate.sim} | Distance: ${nearestCandidate.dist} | IsMatch: ${Boolean(bestMatch)}`
+            `[FACE-AUTH-EVAL] Nearest: ${nearestCandidate.name} (${nearestCandidate.hn}) | Similarity: ${nearestCandidate.sim.toFixed(4)} | Distance: ${nearestCandidate.dist.toFixed(4)} | Top1Match: ${Boolean(top1Match)}`
           );
         }
-        if (bestMatch && bestMatch.percent >= 80 && (bestMatch.similarity >= 0.8 || bestMatch.distance <= 0.65)) {
-          const patient = bestMatch.record;
+        if (top1Match) {
+          if (top2Match) {
+            const margin = top1Match.similarity - top2Match.similarity;
+            if (margin < BIOMETRIC_CONFIG.MARGIN_MIN) {
+              logger.warn(
+                `[FACE-AUTH] Margin ambiguous (${margin.toFixed(4)} < ${BIOMETRIC_CONFIG.MARGIN_MIN}) between ${top1Match.record.hn} and ${top2Match.record.hn}. Requesting PIN.`
+              );
+              return {
+                matched: false,
+                requirePin: true,
+                candidateName: `${top1Match.record.first_name} ${top1Match.record.last_name}`,
+                candidateHn: top1Match.record.hn,
+                message: "\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E21\u0E35\u0E04\u0E27\u0E32\u0E21\u0E04\u0E25\u0E49\u0E32\u0E22\u0E04\u0E25\u0E36\u0E07\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32 1 \u0E17\u0E48\u0E32\u0E19 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01 PIN 4 \u0E2B\u0E25\u0E31\u0E01"
+              };
+            }
+          }
+          const patient = top1Match.record;
           logger.info(
-            `[FACE-AUTH] Success: ${patient.first_name} (${patient.hn}) | Similarity: ${bestMatch.percent}% | Distance: ${bestMatch.distance}`
+            `[FACE-AUTH] Genuine Match: ${patient.first_name} (${patient.hn}) | Cosine: ${top1Match.similarity.toFixed(4)} | Dist: ${top1Match.distance.toFixed(4)}`
           );
           if (snapshotBase64) {
             try {
@@ -11517,55 +11600,32 @@ var init_service10 = __esm({
               logger.warn({ err }, "Failed to save login snapshot");
             }
           }
-          if (bestMatch.percent >= 82 && probeVector && probeVector.length === 512 && process.env.NODE_ENV !== "test") {
-            try {
-              const supabase = getAdminClient();
-              const { data: curPatient } = await supabase.from("patients").select("history").eq("id", patient.patient_id).maybeSingle();
-              const curHistory = curPatient?.history || {};
-              const existingTemplates = Array.isArray(curHistory.adaptive_templates) ? curHistory.adaptive_templates : [];
-              const updatedTemplates = [...existingTemplates, probeVector].slice(-5);
-              await supabase.from("patients").update({
-                history: {
-                  ...curHistory,
-                  adaptive_templates: updatedTemplates,
-                  last_adaptive_update: (/* @__PURE__ */ new Date()).toISOString()
-                }
-              }).eq("id", patient.patient_id);
-              logger.info(`[FACE-AUTH] Adaptive template updated for patient ${patient.patient_id} (${patient.hn})`);
-            } catch (adaptErr) {
-              logger.warn({ adaptErr }, "Failed to persist adaptive face template");
-            }
-          }
           return {
             matched: true,
             patient,
-            similarity: bestMatch.similarity,
-            distance: bestMatch.distance,
-            similarityPercentage: bestMatch.percent
+            similarity: top1Match.similarity,
+            distance: top1Match.distance,
+            similarityPercentage: top1Match.percent
           };
         }
-        const nearestSim = nearestCandidate?.sim ?? 0;
-        const nearestPercent = Math.max(0, Math.min(100, Math.round(nearestSim * 100)));
-        if (nearestCandidate && nearestPercent >= 50 && nearestPercent < 80) {
+        if (nearestCandidate && nearestCandidate.sim >= 0.7 && nearestCandidate.sim < BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY) {
           logger.info(
-            `[FACE-AUTH] Ambiguous candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) at ${nearestPercent}% - Prompting PIN confirmation`
+            `[FACE-AUTH] Borderline candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} - Requesting PIN confirmation`
           );
           return {
             matched: false,
             requirePin: true,
             candidateName: nearestCandidate.name,
             candidateHn: nearestCandidate.hn,
-            similarityPercentage: nearestPercent,
-            message: `\u26A0\uFE0F \u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E17\u0E35\u0E48\u0E15\u0E23\u0E07\u0E15\u0E32\u0E21\u0E40\u0E01\u0E13\u0E11\u0E4C 80% (\u0E04\u0E27\u0E32\u0E21\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33 ${nearestPercent}% \u0E01\u0E49\u0E33\u0E01\u0E36\u0E48\u0E07 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19\u0E14\u0E49\u0E27\u0E22\u0E23\u0E2B\u0E31\u0E2A PIN 4 \u0E2B\u0E25\u0E31\u0E01)`
+            message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01 PIN 4 \u0E2B\u0E25\u0E31\u0E01\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19"
           };
         }
-        logger.warn(
-          `[FACE-AUTH] Rejected: Candidate below threshold (Nearest: ${nearestCandidate?.name || "none"}, Similarity: ${nearestCandidate?.sim || 0}, Distance: ${nearestCandidate?.dist || 2})`
+        logger.info(
+          `[FACE-AUTH] Stranger rejected: Nearest sim=${nearestCandidate?.sim?.toFixed(4) ?? "0.0000"} dist=${nearestCandidate?.dist?.toFixed(4) ?? "2.0000"}`
         );
         return {
           matched: false,
-          similarityPercentage: nearestPercent,
-          message: "\u26A0\uFE0F \u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A (\u0E04\u0E27\u0E32\u0E21\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33\u0E44\u0E21\u0E48\u0E16\u0E36\u0E07\u0E40\u0E01\u0E13\u0E11\u0E4C 80%) \u0E01\u0E23\u0E38\u0E13\u0E32\u0E27\u0E32\u0E07\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E43\u0E2B\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E27\u0E07\u0E01\u0E25\u0E21\u0E41\u0E25\u0E49\u0E27\u0E25\u0E2D\u0E07\u0E2A\u0E41\u0E01\u0E19\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E04\u0E19\u0E44\u0E02\u0E49\u0E43\u0E2B\u0E21\u0E48"
+          message: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E04\u0E19\u0E44\u0E02\u0E49\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E14\u0E49\u0E27\u0E22 PIN"
         };
       }
       /**

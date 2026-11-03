@@ -156,7 +156,8 @@ export const LibraryView: React.FC = () => {
         defaultApiClient.minigames.list().catch(() => []),
         defaultApiClient.modpacks.list().catch(() => []),
       ]);
-      const safeEx = Array.isArray(exData) && exData.length > 0 ? exData : DEMO_EXERCISES;
+      const filteredEx = Array.isArray(exData) ? exData.filter((e: any) => e.is_active !== false) : [];
+      const safeEx = filteredEx.length > 0 ? filteredEx : DEMO_EXERCISES;
       const safeMg = Array.isArray(mgData) && mgData.length > 0 ? mgData : DEMO_MINIGAMES;
       const safeMp = Array.isArray(mpData) && mpData.length > 0 ? mpData : DEMO_MODPACKS;
       setExercises(safeEx);
@@ -177,21 +178,6 @@ export const LibraryView: React.FC = () => {
 
   const handleLibraryError = (err: unknown, defaultMessage: string) => {
     const msg = err instanceof Error ? err.message : String(err || defaultMessage);
-    const status = (err as any)?.status;
-    const code = (err as any)?.code;
-    if (
-      status === 405 ||
-      code === 'HTTP_405' ||
-      msg.includes('405') ||
-      msg.includes('Method Not Allowed') ||
-      msg.includes('Resilient Edge') ||
-      msg.includes('DELEGATE_TO_SUPABASE_CLOUD') ||
-      msg.includes('Failed to fetch') ||
-      msg.includes('Network request failed')
-    ) {
-      setSuccessMsg('ดำเนินการบันทึกข้อมูลเรียบร้อยแล้ว (Direct Cloud Mode)');
-      return;
-    }
     setErrorMsg(msg || defaultMessage);
   };
 
@@ -231,10 +217,11 @@ export const LibraryView: React.FC = () => {
       // Optimistic state removal: remove card from screen immediately
       setExercises((prev) => prev.filter((e) => e.id !== id));
       await defaultApiClient.exercises.delete(id);
-      setSuccessMsg(`ลบท่ากายภาพเรียบร้อย`);
+      setSuccessMsg(`ลบท่ากายภาพ "${title}" เรียบร้อยแล้ว`);
       await fetchData();
     } catch (err: unknown) {
-      handleLibraryError(err, 'ไม่สามารถลบท่ากายภาพได้');
+      const msg = err instanceof Error ? err.message : 'ไม่สามารถลบท่ากายภาพได้';
+      setErrorMsg(msg);
       await fetchData();
     } finally {
       setActionLoading(false);

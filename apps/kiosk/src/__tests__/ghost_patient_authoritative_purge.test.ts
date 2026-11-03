@@ -63,20 +63,23 @@ describe('Ghost Patient Authoritative Purge & Live Biometric Verification', () =
     vi.restoreAllMocks();
   });
 
-  it('1. Biometric score ceiling invariant: 1.0 raw cosine similarity never returns 100% (strictly capped <= 98%)', () => {
+  it('1. Biometric score invariant: Raw genuine matches return unbiased similarity without artificial fake boosting', () => {
     // Exact identical face vector (raw cosine = 1.0)
     const at100 = calibrateCosineSimilarity(1.0);
-    expect(at100).toBeLessThanOrEqual(0.985);
+    expect(at100).toBe(1.0);
 
     const percent100 = computeSimilarityPercentage(at100, 1.0, { calibrated: true });
-    expect(percent100).toBeLessThanOrEqual(98);
-    expect(percent100).toBeGreaterThanOrEqual(95);
+    expect(percent100).toBe(100);
 
     // Near-identical vector (raw cosine = 0.95)
     const at95 = calibrateCosineSimilarity(0.95);
-    expect(at95).toBeGreaterThanOrEqual(0.98);
+    expect(at95).toBe(0.95);
     const percent95 = computeSimilarityPercentage(at95, 0.95, { calibrated: true });
-    expect(percent95).toBe(98);
+    expect(percent95).toBe(95);
+
+    // Impostor vector (< 0.70) is strictly < 0.45
+    const impostor = calibrateCosineSimilarity(0.55);
+    expect(impostor).toBeLessThan(0.45);
   });
 
   it('2. Biometric vault upgrades to v4_authoritative_live_supabase_strictly_sovereign and forces stale cleanup', () => {
@@ -220,7 +223,7 @@ describe('Ghost Patient Authoritative Purge & Live Biometric Verification', () =
     }
   });
 
-  it('6. scanLogin matches live patient and ensures score is capped at <= 98%', async () => {
+  it('6. scanLogin matches live patient and ensures score is genuine and above threshold', async () => {
     const testProbe = new Array(512).fill(0.044194); // unit-normalized vector
 
     const originalFetch = global.fetch;
@@ -257,7 +260,7 @@ describe('Ghost Patient Authoritative Purge & Live Biometric Verification', () =
       expect(scanRes.matched).toBe(true);
       expect((scanRes as any).patient.hn).toBe('P-6202');
       expect((scanRes as any).patient.first_name).toBe('ภานุวัฒน์');
-      expect((scanRes as any).similarityPercentage).toBeLessThanOrEqual(98);
+      expect((scanRes as any).similarityPercentage).toBeLessThanOrEqual(100);
       expect((scanRes as any).similarityPercentage).toBeGreaterThanOrEqual(80);
     } finally {
       global.fetch = originalFetch;

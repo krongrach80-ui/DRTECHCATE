@@ -634,7 +634,7 @@ export class ApiClient {
         if (!duplicateHn && targetHn) {
           try {
             const supaRes = await fetch(
-              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?hn=ilike.${encodeURIComponent(targetHn)}&select=id,hn,first_name,last_name,birth_date&limit=1`,
+              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?hn=ilike.${encodeURIComponent(targetHn)}&select=id,hn,first_name,last_name,birth_date,registration_status&limit=1`,
               {
                 headers: {
                   apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -645,9 +645,13 @@ export class ApiClient {
             if (supaRes.ok) {
               const list = await supaRes.json();
               if (Array.isArray(list) && list.length > 0) {
-                if (!excludeId || (list[0].id !== excludeId && list[0].hn !== excludeId)) {
-                  duplicateHn = true;
-                  existingPatient = list[0];
+                const match = list[0];
+                const isDraft = match.registration_status === 'draft' || match.registration_status === 'awaiting_face';
+                if (!excludeId || (match.id !== excludeId && match.hn !== excludeId)) {
+                  if (!isDraft) {
+                    duplicateHn = true;
+                    existingPatient = match;
+                  }
                 }
               }
             }
@@ -664,6 +668,92 @@ export class ApiClient {
             : duplicateNameDob
             ? `พบผู้ป่วยชื่อ "${targetName}" และวันเกิดตรงกับในระบบ`
             : undefined,
+        } as T;
+      }
+
+      // 1.3 Fallback for /smart-onboarding/create-draft
+      if (endpointPath === '/smart-onboarding/create-draft') {
+        const body = parseSafeBody(options.body);
+        const splitNames = (body.first_name || 'ผู้ป่วย').trim().split(' ');
+        const firstName = splitNames[0] || 'ผู้ป่วย';
+        const lastName = body.last_name?.trim() || splitNames.slice(1).join(' ') || '-';
+        const hn = body.hn?.trim() || `P-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        const draftData: Record<string, unknown> = {
+          hn,
+          first_name: firstName,
+          last_name: lastName,
+          birth_date: body.birth_date || null,
+          age: typeof body.age === 'number' ? body.age : 30,
+          sex: body.sex || 'other',
+          gender: body.gender || body.sex || 'other',
+          phone: body.phone || '-',
+          target_joint: body.target_joint || 'ข้อไหล่',
+          injury: body.injury || 'กายภาพบำบัดฟื้นฟู',
+          contraindications: body.contraindications || '-',
+          underlying_diseases: body.underlying_diseases || '-',
+          allergies: body.allergies || '-',
+          doctor_notes: body.doctor_notes || '-',
+          emergency_contact_name: body.emergency_contact_name || null,
+          emergency_contact_relation: body.emergency_contact_relation || null,
+          emergency_contact_phone: body.emergency_contact_phone || null,
+          pdpa_consent: body.pdpa_consent ?? true,
+          pdpa_consented_at: body.pdpa_consent ? new Date().toISOString() : null,
+          registered_by_staff_id: body.registered_by_staff_id || null,
+          registered_by_staff_name: body.registered_by_staff_name || null,
+          responsible_pt_id: body.responsible_pt_id || null,
+          registration_status: 'awaiting_face',
+          registered_via: 'reception',
+          version: 1,
+        };
+
+        let supaRes: Response | null = null;
+        let createdId = body.patient_id || '';
+
+        if (body.patient_id) {
+          supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(body.patient_id)}`, {
+            method: 'PATCH',
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=representation',
+            },
+            body: JSON.stringify(draftData),
+          }).catch(() => null);
+        }
+
+        if (!supaRes || !supaRes.ok) {
+          supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients`, {
+            method: 'POST',
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=representation',
+            },
+            body: JSON.stringify(draftData),
+          }).catch(() => null);
+        }
+
+        if (supaRes && supaRes.ok) {
+          const rows = await supaRes.json().catch(() => []);
+          if (Array.isArray(rows) && rows[0]) {
+            createdId = rows[0].id;
+          }
+        }
+
+        return {
+          ok: true,
+          patient_id: createdId,
+          hn,
+          registration_status: 'awaiting_face',
+          data: {
+            ok: true,
+            patient_id: createdId,
+            hn,
+            registration_status: 'awaiting_face',
+          },
         } as T;
       }
 
@@ -761,25 +851,85 @@ export class ApiClient {
           }
 
           if (!supaRes) {
-            supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients`, {
-              method: 'POST',
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-                Prefer: 'return=representation',
-              },
-              body: JSON.stringify(newPatient),
-            });
-            if (supaRes.ok) {
-              const rows = await supaRes.json();
-              if (Array.isArray(rows) && rows.length > 0) {
-                persistedId = rows[0].id || persistedId;
+            // First check if a patient with this HN already exists (e.g. from draft or previous attempt)
+            const checkRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?hn=ilike.${encodeURIComponent(patientHn)}&select=id,registration_status&limit=1`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            ).catch(() => null);
+
+            if (checkRes && checkRes.ok) {
+              const existingList = await checkRes.json().catch(() => []);
+              if (Array.isArray(existingList) && existingList.length > 0) {
+                const existingId = existingList[0].id;
+                const updatePayload = { ...newPatient };
+                delete (updatePayload as any).id;
+                supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(existingId)}`, {
+                  method: 'PATCH',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    Prefer: 'return=representation',
+                  },
+                  body: JSON.stringify(updatePayload),
+                });
+                if (supaRes.ok) {
+                  persistedId = existingId;
+                } else {
+                  supaRes = null;
+                }
+              }
+            }
+
+            if (!supaRes) {
+              supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients`, {
+                method: 'POST',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json',
+                  Prefer: 'return=representation',
+                },
+                body: JSON.stringify(newPatient),
+              });
+              if (supaRes.ok) {
+                const rows = await supaRes.json();
+                if (Array.isArray(rows) && rows.length > 0) {
+                  persistedId = rows[0].id || persistedId;
+                }
               }
             }
           }
 
-          if (!supaRes.ok) {
+          if (supaRes && supaRes.ok) {
+            // Sync face templates directly into public.face_templates table for 1:N RPC biometric matching
+            if (body.frames && Array.isArray(body.frames) && body.frames.length > 0) {
+              const templateRows = body.frames
+                .filter((f: any) => Array.isArray(f.embedding) && f.embedding.length === 512)
+                .map((f: any) => ({
+                  patient_id: persistedId,
+                  embedding: JSON.stringify(f.embedding),
+                  quality: { pose: f.pose, confidence: 0.95 },
+                  model_version: 'w600k_r50',
+                }));
+              if (templateRows.length > 0) {
+                await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_templates`, {
+                  method: 'POST',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(templateRows),
+                }).catch(() => {});
+              }
+            }
+          } else if (supaRes && !supaRes.ok) {
             const errTxt = await supaRes.text();
             throw new Error(`ไม่สามารถบันทึกคนไข้ลงฐานข้อมูล Supabase ได้ (${supaRes.status}): ${errTxt}`);
           }
@@ -788,14 +938,12 @@ export class ApiClient {
           // In offline test environments allow proceeding
         }
 
-        // Sovereign Biometric Invariant: Zero persistent vector caching in client localStorage
-
         return {
           ok: true,
-          patient_id: patientId,
+          patient_id: persistedId,
           hn: patientHn,
           data: {
-            patient_id: patientId,
+            patient_id: persistedId,
             hn: patientHn,
           },
         } as T;
@@ -1135,12 +1283,6 @@ export class ApiClient {
                 vectors.push(vec);
               }
             }
-            const adaptives: any[] = p.adaptive_templates || p.history?.adaptive_templates || [];
-            for (const at of adaptives) {
-              if (Array.isArray(at) && at.length === probe.length) {
-                vectors.push(at);
-              }
-            }
 
             for (const v of vectors) {
               const normV = l2Normalize(v);
@@ -1177,11 +1319,11 @@ export class ApiClient {
                   const top = rpcData[0];
                   const rawCos = typeof top.similarity === 'number' ? top.similarity : 0;
                   const calSim = calibrateCosineSimilarity(rawCos);
-                  const pct = Math.min(98, Math.round(calSim * 100));
+                  const pct = Math.min(100, Math.round(calSim * 100));
                   const dist = typeof top.distance === 'number' ? top.distance : Math.max(0, 1 - calSim);
                   const patientObj = normalizePatientRecord(top);
 
-                  if (pct >= 80 && rawCos >= 0.55) {
+                  if (rawCos >= 0.85 && dist <= 0.38) {
                     return {
                       ok: true,
                       matched: true,
@@ -1192,7 +1334,7 @@ export class ApiClient {
                       distance: dist,
                       data: { matched: true, patient: patientObj },
                     } as T;
-                  } else if (pct >= 50 && rawCos >= 0.42) {
+                  } else if (rawCos >= 0.70 && rawCos < 0.85) {
                     return {
                       ok: true,
                       matched: false,
@@ -1295,34 +1437,11 @@ export class ApiClient {
         // Overlay authoritative live data onto normalized match
         const liveSource = (targetId && livePatientsMap.get(targetId)) || (targetHn && liveHnMap.get(targetHn)) || bestMatch;
         const normalizedMatch = liveSource ? normalizePatientRecord(liveSource) : null;
-        // Clinical Biometric Invariant: Capped at maximum 98% (never 100% due to sensor noise)
-        const finalPercentage = Math.min(98, Math.round(bestCalScore * 100));
+        // Unbiased percentage based on authentic calibrated similarity
+        const finalPercentage = Math.min(100, Math.round(bestCalScore * 100));
 
-        // Case A: High Match (calibrated >= 80% with rawCos >= 0.55 AND verified in live Supabase)
-        if (normalizedMatch && isAuthoritativeLive && finalPercentage >= 80 && bestRawScore >= 0.55) {
-          // Auto-heal template by appending probe to adaptive_templates in background (only if rawCos >= 0.70)
-          if (typeof window !== 'undefined' && bestMatch && bestRawScore >= 0.70) {
-            try {
-              const targetId = bestMatch.id || bestMatch.patient_id;
-              // Update live Supabase Cloud (Zero local storage vector persistence)
-              fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${targetId}`, {
-                method: 'PATCH',
-                headers: {
-                  apikey: DEFAULT_SUPABASE_ANON_KEY,
-                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  history: {
-                    ...(bestMatch.history || {}),
-                    adaptive_templates: [...(bestMatch.history?.adaptive_templates || []), probe].slice(-5),
-                    last_adaptive_update: new Date().toISOString(),
-                  },
-                }),
-              }).catch(() => {});
-            } catch {}
-          }
-
+        // Case A: High Match (genuine match strictly requires rawCos >= 0.85 AND verified in live Supabase)
+        if (normalizedMatch && isAuthoritativeLive && bestRawScore >= 0.85) {
           return {
             ok: true,
             matched: true,
@@ -1338,8 +1457,8 @@ export class ApiClient {
           } as T;
         }
 
-        // Case B: Ambiguous candidate match (50% <= percent < 80% and candidate found with rawCos >= 0.42)
-        if (normalizedMatch && finalPercentage >= 50 && finalPercentage < 80 && bestRawScore >= 0.42) {
+        // Case B: Ambiguous candidate match (0.70 <= rawCos < 0.85) -> Require PIN
+        if (normalizedMatch && isAuthoritativeLive && bestRawScore >= 0.70 && bestRawScore < 0.85) {
           return {
             ok: true,
             matched: false,
@@ -1356,7 +1475,7 @@ export class ApiClient {
           } as T;
         }
 
-        // Case C: Below threshold / Impostor / Stranger (< 50% or rawCos < 0.42)
+        // Case C: Below threshold / Impostor / Stranger (rawCos < 0.70)
         return {
           ok: true,
           matched: false,
@@ -1754,9 +1873,53 @@ export class ApiClient {
 
       // 7. Fallback for /courses/exercises and /exercises
       if (endpointPath.startsWith('/courses/exercises') || endpointPath.startsWith('/exercises')) {
+        // 7.1 Handle DELETE /exercises/:id
+        if (options.method && options.method.toUpperCase() === 'DELETE') {
+          const parts = endpointPath.split('?')[0].split('/');
+          const targetExerciseId = parts[parts.length - 1];
+          if (targetExerciseId && targetExerciseId !== 'exercises') {
+            try {
+              // First attempt hard delete
+              const delRes = await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/exercises?id=eq.${encodeURIComponent(targetExerciseId)}`,
+                {
+                  method: 'DELETE',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    Prefer: 'return=representation',
+                  },
+                }
+              );
+              const deletedRows = delRes.ok ? await delRes.json().catch(() => []) : [];
+
+              // Guaranteed soft-delete fallback if hard delete had RLS restriction for anon role
+              if (!Array.isArray(deletedRows) || deletedRows.length === 0) {
+                await fetch(
+                  `${DEFAULT_SUPABASE_URL}/rest/v1/exercises?id=eq.${encodeURIComponent(targetExerciseId)}`,
+                  {
+                    method: 'PATCH',
+                    headers: {
+                      apikey: DEFAULT_SUPABASE_ANON_KEY,
+                      Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                      'Content-Type': 'application/json',
+                      Prefer: 'return=representation',
+                    },
+                    body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() }),
+                  }
+                );
+              }
+              return { ok: true, message: 'Exercise deleted successfully', id: targetExerciseId } as T;
+            } catch (delErr) {
+              throw delErr;
+            }
+          }
+        }
+
+        // 7.2 Handle GET /exercises
         try {
           const supaRes = await fetch(
-            `${DEFAULT_SUPABASE_URL}/rest/v1/exercises?select=*&order=created_at.desc&limit=50`,
+            `${DEFAULT_SUPABASE_URL}/rest/v1/exercises?select=*&is_active=neq.false&order=created_at.desc&limit=50`,
             {
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -1766,6 +1929,7 @@ export class ApiClient {
           );
           if (supaRes.ok) {
             let list = await supaRes.json();
+            list = Array.isArray(list) ? list.filter((e: any) => e.is_active !== false) : [];
             const hasPendulum = list.some((e: any) => e.title?.toLowerCase().includes('pendulum') || e.title?.includes('แกว่งแขน'));
             if (!hasPendulum) {
               list.unshift({

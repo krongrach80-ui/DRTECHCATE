@@ -32,6 +32,7 @@ import {
   HelpCircle,
   X,
   Camera,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const QUESTIONS_PER_ROUND = 10;
@@ -76,8 +77,26 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     setFilteredList(shuffled.slice(0, Math.min(limit, shuffled.length)));
   }, [initialCategory, maxQuestions, sessionSeed]);
 
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
-  const [score, setScore] = useState<number>(0);
+  const [currentIndex, setCurrentIndex] = useState<number>(() => {
+    try {
+      const saved = sessionStorage.getItem('kiosk_card_game_state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.currentIndex === 'number') return parsed.currentIndex;
+      }
+    } catch {}
+    return 0;
+  });
+  const [score, setScore] = useState<number>(() => {
+    try {
+      const saved = sessionStorage.getItem('kiosk_card_game_state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.score === 'number') return parsed.score;
+      }
+    } catch {}
+    return 0;
+  });
   const [answerState, setAnswerState] = useState<'idle' | 'correct' | 'wrong'>('idle');
   const [selectedSide, setSelectedSide] = useState<'yes' | 'no' | null>(null);
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
@@ -98,8 +117,13 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const handLandmarkerRef = useRef<any>(null);
   const neutralGateRef = useRef<boolean>(false);
+  const lastTimestampRef = useRef<number>(0);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [isModelLoading, setIsModelLoading] = useState<boolean>(true);
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [isMirrored, setIsMirrored] = useState<boolean>(true);
+  const [activeHandZone, setActiveHandZone] = useState<'LEFT' | 'RIGHT' | 'CENTER' | 'BOTH' | 'NONE'>('NONE');
+  const [isBothHandsWarning, setIsBothHandsWarning] = useState<boolean>(false);
 
   const activeQuestion: PhysicalCardQuestion =
     filteredList[currentIndex] || ALL_99_PHYSICAL_CARD_QUESTIONS[0];
@@ -303,9 +327,20 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
 
         if (currentIndex + 1 < filteredList.length) {
-          setCurrentIndex((i) => i + 1);
+          const nextIdx = currentIndex + 1;
+          const nextScore = score + (isCorrect ? 1 : 0);
+          setCurrentIndex(nextIdx);
+          try {
+            sessionStorage.setItem(
+              'kiosk_card_game_state',
+              JSON.stringify({ currentIndex: nextIdx, score: nextScore })
+            );
+          } catch {}
         } else {
           const finalScore = score + (isCorrect ? 1 : 0);
+          try {
+            sessionStorage.removeItem('kiosk_card_game_state');
+          } catch {}
           setIsGameOver(true);
           if (onComplete) {
             onComplete(finalScore, filteredList.length);
@@ -331,48 +366,93 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     handleAnswerRef.current = handleAnswer;
   }, [handleAnswer]);
 
-  // 1. Initialize MediaPipe HandLandmarker (Local Task and Wasm)
+  // 1. Initialize MediaPipe HandLandmarker (Multi-tier WASM & Model Resolver + GPU-to-CPU Fallback)
   useEffect(() => {
     let isCancelled = false;
 
     async function initLandmarker() {
       try {
         setIsModelLoading(true);
+        setModelError(null);
         const vision = await import('@mediapipe/tasks-vision');
         const { HandLandmarker, FilesetResolver } = vision;
 
-        const wasmPath = '/models/wasm';
-        const fileset = await FilesetResolver.forVisionTasks(wasmPath);
+        const baseUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL)
+          ? (import.meta as any).env.BASE_URL
+          : '/';
+        const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
+        const wasmSources = [
+          `${cleanBase}models/wasm`,
+          '/models/wasm',
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm',
+        ];
+
+        const modelSources = [
+          `${cleanBase}models/hand_landmarker.task`,
+          '/models/hand_landmarker.task',
+          'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        ];
+
+        let fileset: any = null;
+        for (const wSource of wasmSources) {
+          if (isCancelled) return;
+          try {
+            fileset = await FilesetResolver.forVisionTasks(wSource);
+            if (fileset) break;
+          } catch {
+            // Try next wasm source
+          }
+        }
+
+        if (!fileset) {
+          throw new Error('ไม่สามารถโหลดโมดูล WASM ของ MediaPipe ได้จากทุกแหล่ง');
+        }
 
         if (isCancelled) return;
 
         let landmarker: any = null;
-        try {
-          landmarker = await HandLandmarker.createFromOptions(fileset, {
-            baseOptions: {
-              modelAssetPath: '/models/hand_landmarker.task',
-              delegate: 'GPU',
-            },
-            runningMode: 'VIDEO',
-            numHands: 2,
-            minHandDetectionConfidence: 0.7,
-            minHandPresenceConfidence: 0.7,
-            minTrackingConfidence: 0.7,
-          });
-        } catch (gpuErr) {
-          console.warn('MediaPipe HandLandmarker GPU delegate failed, falling back to CPU:', gpuErr);
+        let lastError: Error | null = null;
+
+        for (const mSource of modelSources) {
           if (isCancelled) return;
-          landmarker = await HandLandmarker.createFromOptions(fileset, {
-            baseOptions: {
-              modelAssetPath: '/models/hand_landmarker.task',
-              delegate: 'CPU',
-            },
-            runningMode: 'VIDEO',
-            numHands: 2,
-            minHandDetectionConfidence: 0.7,
-            minHandPresenceConfidence: 0.7,
-            minTrackingConfidence: 0.7,
-          });
+          // 1. Try GPU delegate
+          try {
+            landmarker = await HandLandmarker.createFromOptions(fileset, {
+              baseOptions: {
+                modelAssetPath: mSource,
+                delegate: 'GPU',
+              },
+              runningMode: 'VIDEO',
+              numHands: 2,
+              minHandDetectionConfidence: 0.45,
+              minHandPresenceConfidence: 0.45,
+              minTrackingConfidence: 0.45,
+            });
+            if (landmarker) break;
+          } catch (gpuErr) {
+            // 2. Fallback to CPU delegate
+            try {
+              landmarker = await HandLandmarker.createFromOptions(fileset, {
+                baseOptions: {
+                  modelAssetPath: mSource,
+                  delegate: 'CPU',
+                },
+                runningMode: 'VIDEO',
+                numHands: 2,
+                minHandDetectionConfidence: 0.45,
+                minHandPresenceConfidence: 0.45,
+                minTrackingConfidence: 0.45,
+              });
+              if (landmarker) break;
+            } catch (cpuErr: any) {
+              lastError = cpuErr;
+            }
+          }
+        }
+
+        if (!landmarker) {
+          throw lastError || new Error('ไม่สามารถโหลดโมเดล hand_landmarker.task ได้');
         }
 
         if (!isCancelled) {
@@ -383,17 +463,20 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             const warmUpCanvas = document.createElement('canvas');
             warmUpCanvas.width = 160;
             warmUpCanvas.height = 120;
-            landmarker.detectForVideo(warmUpCanvas, performance.now());
+            const now = performance.now();
+            lastTimestampRef.current = now;
+            landmarker.detectForVideo(warmUpCanvas, now);
           } catch {
             // Warm-up non-blocking
           }
         } else {
           landmarker?.close();
         }
-      } catch (err) {
-        console.warn('Failed to load MediaPipe HandLandmarker:', err);
+      } catch (err: any) {
+        console.warn('MediaPipe HandLandmarker init error:', err);
         if (!isCancelled) {
           setIsModelLoading(false);
+          setModelError(err?.message || 'โมเดลตรวจจับมือขัดข้อง แตะการ์ดเพื่อตอบได้ทันที');
         }
       }
     }
@@ -433,13 +516,24 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     let lastDetectTime = 0;
     const TARGET_INTERVAL_MS = 50; // ~20 FPS: optimal for ML tracking without GPU overload
     const HOLD_DWELL_MS = 600; // 0.6 seconds continuous hold requirement
+    const GRACE_PERIOD_MS = 200; // 200ms grace period tolerance for brief occlusion
 
     let activeZone: 'LEFT' | 'RIGHT' | null = null;
     let zoneHoldStart = 0;
+    let lastValidSeenTime = 0;
     let handNeutralFrames = 0;
     let candidateZone: 'LEFT' | 'RIGHT' | null = null;
     let candidateCount = 0;
-    let graceFrames = 0;
+    const smoothXHistory: number[] = [];
+
+    const resetProgressDom = () => {
+      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+      if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+      if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+      if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+      if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+    };
 
     const detectHands = (timestamp: number) => {
       const video = videoRef.current;
@@ -487,192 +581,192 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             dctx.drawImage(video, 0, 0, targetW, targetH);
           }
 
-          const result = landmarker.detectForVideo(dCanvas, timestamp);
+          // Strict monotonic timestamp guard
+          const monotonicTimestamp = Math.max(timestamp, (lastTimestampRef.current || 0) + 1);
+          lastTimestampRef.current = monotonicTimestamp;
+
+          const result = landmarker.detectForVideo(dCanvas, monotonicTimestamp);
           const hands = result?.landmarks || [];
-          const handedness = result?.handedness || [];
 
-          let bestVerification: ReturnType<typeof verifyRealHandGesture> | null = null;
-          let bestLandmarks: HandLandmarkPoint[] | null = null;
+          // Verify all detected hands without early break
+          const verifiedList = hands.map((handPts: HandLandmarkPoint[]) => ({
+            handPts,
+            verification: verifyRealHandGesture(handPts, 0.85, {
+              isMirrored,
+              minConfidence: 0.45,
+              leftZoneThreshold: 0.46,
+              rightZoneThreshold: 0.54,
+              maxYThreshold: 0.88,
+              raisedTipMargin: 0.02,
+            }),
+          }));
 
-          // Check each detected hand
-          for (let i = 0; i < hands.length; i++) {
-            const handPts = hands[i] as HandLandmarkPoint[];
-            const conf = handedness[i]?.[0]?.score ?? 0.85;
-            const verification = verifyRealHandGesture(handPts, conf, {
-              isMirrored: true,
-              minConfidence: 0.75,
-            });
+          const leftHand = verifiedList.find((h: any) => h.verification.isValidHand && h.verification.zone === 'LEFT');
+          const rightHand = verifiedList.find((h: any) => h.verification.isValidHand && h.verification.zone === 'RIGHT');
 
-            // Prioritize hand in active answer zone (LEFT or RIGHT)
-            if (verification.isValidHand && verification.side) {
-              bestVerification = verification;
-              bestLandmarks = handPts;
-              break;
+          // Bilateral Ambiguity Check: Both hands raised in active answer zones simultaneously
+          if (leftHand && rightHand) {
+            activeZone = null;
+            candidateZone = null;
+            candidateCount = 0;
+            zoneHoldStart = 0;
+            resetProgressDom();
+            setIsBothHandsWarning(true);
+            setActiveHandZone('BOTH');
+
+            if (ctx) {
+              drawHandSkeleton(ctx, leftHand.handPts, canvas.width, canvas.height, 'CENTER', 0);
+              drawHandSkeleton(ctx, rightHand.handPts, canvas.width, canvas.height, 'CENTER', 0);
             }
+          } else {
+            setIsBothHandsWarning(false);
+            const activeCandidate = leftHand || rightHand;
+            const neutralCandidate = verifiedList.find((h: any) => h.verification.isHandDetected);
+            const chosen = activeCandidate || neutralCandidate;
 
-            // Otherwise, keep neutral hand for skeleton rendering feedback
-            if (!bestVerification && verification.isHandDetected) {
-              bestVerification = verification;
-              bestLandmarks = handPts;
-            }
-          }
+            if (chosen && chosen.handPts && ctx) {
+              const { verification, handPts } = chosen;
 
-          if (bestVerification && bestLandmarks && ctx) {
-            // Neutral Hand Reset Gate Check:
-            // After answering 1 question, player must lower their hand before answering again
-            if (neutralGateRef.current) {
-              const isLowered =
-                !bestVerification.isOpenPalm ||
-                bestVerification.mirroredY > 0.70 ||
-                bestVerification.zone === 'CENTER' ||
-                bestVerification.zone === 'NONE';
+              // Neutral Hand Reset Gate Check: Must lower hand before next question
+              if (neutralGateRef.current) {
+                const isLowered =
+                  !verification.isOpenPalm ||
+                  verification.mirroredY > 0.70 ||
+                  verification.zone === 'CENTER' ||
+                  verification.zone === 'NONE';
 
-              if (isLowered) {
-                handNeutralFrames++;
-                if (handNeutralFrames >= 4) {
-                  neutralGateRef.current = false;
+                if (isLowered) {
+                  handNeutralFrames++;
+                  if (handNeutralFrames >= 4) {
+                    neutralGateRef.current = false;
+                    handNeutralFrames = 0;
+                  }
+                } else {
                   handNeutralFrames = 0;
                 }
-              } else {
-                handNeutralFrames = 0;
-              }
 
-              // Clear progress bars while awaiting hand reset
-              activeZone = null;
-              candidateZone = null;
-              candidateCount = 0;
-              zoneHoldStart = 0;
-              graceFrames = 0;
-              if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-              if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-              if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-              if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-              if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-              if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+                activeZone = null;
+                candidateZone = null;
+                candidateCount = 0;
+                zoneHoldStart = 0;
+                resetProgressDom();
+                setActiveHandZone('CENTER');
+                drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, 'CENTER', 0);
+              } else if (verification.isValidHand && verification.side) {
+                // Apply 3-frame smoothing to X coordinate
+                smoothXHistory.push(verification.mirroredX);
+                if (smoothXHistory.length > 3) smoothXHistory.shift();
+                const avgX = smoothXHistory.reduce((a: number, b: number) => a + b, 0) / smoothXHistory.length;
+                const detectedZone = (avgX < 0.46 ? 'LEFT' : avgX > 0.54 ? 'RIGHT' : 'CENTER') as 'LEFT' | 'RIGHT' | 'CENTER';
 
-              // Draw neutral cyan skeleton to show camera still tracks their hand
-              drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, 'CENTER', 0);
-            } else {
-              // Active Answer Verification Mode with Hysteresis
-              if (bestVerification.isValidHand && bestVerification.side) {
-                const detectedZone = bestVerification.zone as 'LEFT' | 'RIGHT';
+                if (detectedZone === 'LEFT' || detectedZone === 'RIGHT') {
+                  lastValidSeenTime = monotonicTimestamp;
+                  setActiveHandZone(detectedZone);
 
-                if (activeZone === detectedZone) {
-                  graceFrames = 0;
-                  const elapsed = timestamp - zoneHoldStart;
-                  const progress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
+                  if (activeZone === detectedZone) {
+                    const elapsed = monotonicTimestamp - zoneHoldStart;
+                    const progress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
 
-                  // Update GPU-accelerated progress bars and horizontal inner indicators
-                  const progressScale = progress.toFixed(3);
-                  const percentStr = `${Math.round(progress * 100)}%`;
-                  if (detectedZone === 'LEFT' && leftProgressRef.current) {
-                    leftProgressRef.current.style.transform = `scaleY(${progressScale})`;
-                    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = percentStr;
-                    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = percentStr;
-                    if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-                    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-                  } else if (detectedZone === 'RIGHT' && rightProgressRef.current) {
-                    rightProgressRef.current.style.transform = `scaleY(${progressScale})`;
-                    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = percentStr;
-                    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = percentStr;
-                    if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-                    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-                    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+                    const progressScale = progress.toFixed(3);
+                    const percentStr = `${Math.round(progress * 100)}%`;
+                    if (detectedZone === 'LEFT' && leftProgressRef.current) {
+                      leftProgressRef.current.style.transform = `scaleY(${progressScale})`;
+                      if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = percentStr;
+                      if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = percentStr;
+                      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                      if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+                      if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+                    } else if (detectedZone === 'RIGHT' && rightProgressRef.current) {
+                      rightProgressRef.current.style.transform = `scaleY(${progressScale})`;
+                      if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = percentStr;
+                      if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = percentStr;
+                      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                      if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+                      if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+                    }
+
+                    drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, detectedZone, progress);
+
+                    if (progress >= 1.0) {
+                      activeZone = null;
+                      candidateZone = null;
+                      candidateCount = 0;
+                      zoneHoldStart = 0;
+                      neutralGateRef.current = true;
+                      handNeutralFrames = 0;
+                      resetProgressDom();
+                      handleAnswerRef.current(verification.side);
+                    }
+                  } else {
+                    // Hysteresis: Require 2 consecutive frames before switching activeZone
+                    if (candidateZone === detectedZone) {
+                      candidateCount++;
+                      if (candidateCount >= 2) {
+                        activeZone = detectedZone;
+                        zoneHoldStart = monotonicTimestamp;
+                        candidateCount = 0;
+                        if (detectedZone === 'LEFT') {
+                          if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
+                          if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
+                          if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+                        }
+                        if (detectedZone === 'RIGHT') {
+                          if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
+                          if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
+                          if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
+                        }
+                      }
+                    } else {
+                      candidateZone = detectedZone;
+                      candidateCount = 1;
+                    }
+
+                    drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, detectedZone, 0);
                   }
-
-                  // Draw 21-point hand skeleton with dynamic hold dwell progress ring
-                  drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, detectedZone, progress);
-
-                  // Trigger answer after holding for 600ms continuously
-                  if (progress >= 1.0) {
+                } else {
+                  // Center neutral zone
+                  setActiveHandZone('CENTER');
+                  if (activeZone && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
+                    // Hold progress during brief grace period
+                  } else {
                     activeZone = null;
                     candidateZone = null;
                     candidateCount = 0;
                     zoneHoldStart = 0;
-                    neutralGateRef.current = true; // Lock until player lowers hand
-                    handNeutralFrames = 0;
-
-                    if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-                    if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-                    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-                    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-                    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-
-                    handleAnswerRef.current(bestVerification.side);
+                    resetProgressDom();
                   }
-                } else {
-                  // Hysteresis: Require 2 consecutive frames before switching activeZone
-                  if (candidateZone === detectedZone) {
-                    candidateCount++;
-                    if (candidateCount >= 2) {
-                      activeZone = detectedZone;
-                      zoneHoldStart = timestamp;
-                      candidateCount = 0;
-                      graceFrames = 0;
-
-                      if (detectedZone === 'LEFT') {
-                        if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                        if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-                        if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-                      }
-                      if (detectedZone === 'RIGHT') {
-                        if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-                        if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-                        if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-                      }
-                    }
-                  } else {
-                    candidateZone = detectedZone;
-                    candidateCount = 1;
-                  }
-
-                  drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, detectedZone, 0);
+                  drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, 'CENTER', 0);
                 }
               } else {
-                // Hand in center neutral zone or not fully meeting open-palm criteria
-                if (activeZone && graceFrames < 1) {
-                  // 1-frame grace tolerance
-                  graceFrames++;
+                // Hand detected but not raised or in neutral posture
+                setActiveHandZone('CENTER');
+                if (activeZone && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
+                  // Grace period tolerance
                 } else {
                   activeZone = null;
                   candidateZone = null;
                   candidateCount = 0;
                   zoneHoldStart = 0;
-                  graceFrames = 0;
-                  if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-                  if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                  if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-                  if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-                  if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-                  if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+                  resetProgressDom();
                 }
-
-                drawHandSkeleton(ctx, bestLandmarks, canvas.width, canvas.height, bestVerification.zone, 0);
+                drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, verification.zone || 'CENTER', 0);
               }
-            }
-          } else {
-            // No real hand detected
-            if (activeZone && graceFrames < 1) {
-              graceFrames++;
             } else {
-              activeZone = null;
-              candidateZone = null;
-              candidateCount = 0;
-              zoneHoldStart = 0;
-              graceFrames = 0;
-              handNeutralFrames++;
-              if (handNeutralFrames >= 4) {
-                neutralGateRef.current = false;
+              // No hand detected
+              setActiveHandZone('NONE');
+              if (activeZone && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
+                // Grace period tolerance
+              } else {
+                activeZone = null;
+                candidateZone = null;
+                candidateCount = 0;
+                zoneHoldStart = 0;
+                handNeutralFrames++;
+                if (handNeutralFrames >= 4) {
+                  neutralGateRef.current = false;
+                }
+                resetProgressDom();
               }
-
-              if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-              if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-              if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-              if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-              if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-              if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
             }
           }
         } catch {
@@ -709,6 +803,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   }, [cameraActive, isGameOver, answerState]);
 
   const handleRestart = () => {
+    try {
+      sessionStorage.removeItem('kiosk_card_game_state');
+    } catch {}
     setSessionSeed((s) => s + 1);
     setCurrentIndex(0);
     setScore(0);
@@ -873,10 +970,22 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 ref={videoRef}
                 playsInline
                 muted
-                className={`absolute inset-0 w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-500 ${
+                className={`absolute inset-0 w-full h-full object-cover transform ${
+                  isMirrored ? 'scale-x-[-1]' : ''
+                } transition-opacity duration-500 ${
                   cameraActive ? 'opacity-100' : 'opacity-0'
                 }`}
               />
+
+              {/* Mirror Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setIsMirrored((prev) => !prev)}
+                title="สลับมุมมองกล้องกระจก"
+                className="absolute top-3 right-3 z-25 px-2.5 py-1 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/30 text-[11px] font-bold flex items-center gap-1 shadow-md transition active:scale-95 cursor-pointer"
+              >
+                <span>🪞 {isMirrored ? 'กระจก (เปิด)' : 'กระจก (ปิด)'}</span>
+              </button>
 
               {/* Real Hand Skeleton & Dwell Progress Ring Overlay */}
               <canvas
@@ -912,6 +1021,14 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 </div>
               )}
 
+              {/* Model Error Fallback Alert Banner */}
+              {modelError && (
+                <div className="absolute top-16 z-25 px-3.5 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs font-bold flex items-center gap-1.5 shadow-lg max-w-[90%]">
+                  <AlertTriangle className="w-4 h-4 text-amber-900 shrink-0" />
+                  <span className="truncate">{modelError} (แตะการ์ดบนจอเพื่อตอบแทนได้)</span>
+                </div>
+              )}
+
               {/* When camera is connecting / permission not active */}
               {!cameraActive && (
                 <div className="relative z-10 flex flex-col items-center justify-center gap-1.5 text-emerald-300/70 pointer-events-none">
@@ -922,15 +1039,74 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               {/* Corner Viewfinder HUD Brackets (กรอบ 4 มุมสีเขียวมิ้นต์ตามภาพ) */}
               <div className="absolute top-3 left-3 w-6 h-6 border-t-3 border-l-3 border-[#6EE7B7] rounded-tl-lg pointer-events-none z-15" />
-              <div className="absolute top-3 right-3 w-6 h-6 border-t-3 border-r-3 border-[#6EE7B7] rounded-tr-lg pointer-events-none z-15" />
               <div className="absolute bottom-3 left-3 w-6 h-6 border-b-3 border-l-3 border-[#6EE7B7] rounded-bl-lg pointer-events-none z-15" />
               <div className="absolute bottom-3 right-3 w-6 h-6 border-b-3 border-r-3 border-[#6EE7B7] rounded-br-lg pointer-events-none z-15" />
 
-              {/* Bottom White Pill Banner */}
+              {/* Bottom Dynamic Pill Banner */}
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 whitespace-nowrap">
-                <div className="px-4 sm:px-5 py-1.5 rounded-full bg-white text-[#0F2D24] text-xs sm:text-sm font-extrabold shadow-lg flex items-center gap-2 border border-emerald-100">
-                  <Camera className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                  <span>{t('card_stand_visible_hint')}</span>
+                <div
+                  className={`px-4 sm:px-5 py-1.5 rounded-full text-xs sm:text-sm font-extrabold shadow-lg flex items-center gap-2 border transition-all ${
+                    isBothHandsWarning
+                      ? 'bg-rose-600 text-white border-rose-400 animate-bounce'
+                      : activeHandZone === 'LEFT'
+                      ? 'bg-emerald-600 text-white border-emerald-400'
+                      : activeHandZone === 'RIGHT'
+                      ? 'bg-orange-600 text-white border-orange-400'
+                      : activeHandZone === 'CENTER'
+                      ? 'bg-teal-50 text-teal-900 border-teal-300'
+                      : 'bg-white text-[#0F2D24] border-emerald-100'
+                  }`}
+                >
+                  {isBothHandsWarning ? (
+                    <>
+                      <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />
+                      <span>
+                        {lang.startsWith('zh')
+                          ? '⚠️ 请仅举起一只手作答（左右手不可同时举起）'
+                          : lang.startsWith('en')
+                          ? '⚠️ Please raise only ONE hand to answer'
+                          : '⚠️ กรุณายกมือเพียงข้างเดียวเพื่อตอบ (ห้ามยกพร้อมกันสองข้าง)'}
+                      </span>
+                    </>
+                  ) : activeHandZone === 'LEFT' ? (
+                    <>
+                      <Hand className="w-4 h-4 text-emerald-200 shrink-0" />
+                      <span>
+                        {lang.startsWith('zh')
+                          ? '🟢 正在选择“是”：保持举手 0.6 秒以确认'
+                          : lang.startsWith('en')
+                          ? '🟢 Holding Left: Confirming "Yes"...'
+                          : '🟢 ค้างมือซ้าย 0.6 วินาที เพื่อตอบ "ใช่"'}
+                      </span>
+                    </>
+                  ) : activeHandZone === 'RIGHT' ? (
+                    <>
+                      <Hand className="w-4 h-4 text-orange-200 shrink-0" />
+                      <span>
+                        {lang.startsWith('zh')
+                          ? '🟠 正在选择“否”：保持举手 0.6 秒以确认'
+                          : lang.startsWith('en')
+                          ? '🟠 Holding Right: Confirming "No"...'
+                          : '🟠 ค้างมือขวา 0.6 วินาที เพื่อตอบ "ไม่"'}
+                      </span>
+                    </>
+                  ) : activeHandZone === 'CENTER' ? (
+                    <>
+                      <Hand className="w-4 h-4 text-teal-600 shrink-0" />
+                      <span>
+                        {lang.startsWith('zh')
+                          ? '👋 举起左手以选“是” | 举起右手以选“否”'
+                          : lang.startsWith('en')
+                          ? '👋 Raise Left for "Yes" | Raise Right for "No"'
+                          : '👋 ยกมือไปทางซ้าย (ใช่) หรือขวา (ไม่)'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                      <span>{t('card_stand_visible_hint')}</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

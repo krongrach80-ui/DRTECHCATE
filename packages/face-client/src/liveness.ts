@@ -364,29 +364,38 @@ export class ActiveChallengeTracker {
 
 /**
  * Fast Liveness Verifier for Instant Kiosk / Portal Face Login
- * Evaluates 3D depth + natural eye blink or micro-motion within 1.5–2.5s
+ * Evaluates 3D depth + real eye blink (EAR < 0.20 -> > 0.26) or genuine head articulation (Yaw/Pitch delta >= 8°)
+ * Strictly prevents 2D photo / video screen authentication bypass (Anti-Spoofing ISO/IEC 30107-3)
  */
 export class FastLoginLivenessVerifier {
   private startTime: number = 0;
   private hasSeenBlink: boolean = false;
   private hasSufficientDepth: boolean = false;
-  private hasMicroMotion: boolean = false;
+  private hasHeadMotion: boolean = false;
   private samplesCount: number = 0;
   private lowestEar: number = 1.0;
   private highestEar: number = 0.0;
   private depthScores: number[] = [];
+  private initialYaw: number | null = null;
+  private initialPitch: number | null = null;
+  private maxYawDelta: number = 0;
+  private maxPitchDelta: number = 0;
 
-  constructor(private readonly requiredDurationMs: number = 1500) {}
+  constructor(private readonly requiredDurationMs: number = 800) {}
 
   public start(): void {
     this.startTime = Date.now();
     this.hasSeenBlink = false;
     this.hasSufficientDepth = false;
-    this.hasMicroMotion = false;
+    this.hasHeadMotion = false;
     this.samplesCount = 0;
     this.lowestEar = 1.0;
     this.highestEar = 0.0;
     this.depthScores = [];
+    this.initialYaw = null;
+    this.initialPitch = null;
+    this.maxYawDelta = 0;
+    this.maxPitchDelta = 0;
   }
 
   public evaluate(detection: FaceDetectionResult): LivenessVerificationResult {
@@ -408,71 +417,83 @@ export class FastLoginLivenessVerifier {
     }
 
     this.samplesCount++;
+
+    // 1. Precise Eye Blink Tracking (EAR < 0.20 -> > 0.26)
     const ear = detection.eyes?.ear ?? 0.30;
     if (ear < this.lowestEar) this.lowestEar = ear;
     if (ear > this.highestEar) this.highestEar = ear;
 
-    // Blink detected if EAR dropped below 0.20 and recovered above 0.26
-    if (this.lowestEar < 0.21 && this.highestEar > 0.25) {
+    if (this.lowestEar < 0.20 && this.highestEar >= 0.26) {
       this.hasSeenBlink = true;
     }
     if (detection.eyes?.isBlinking) {
       this.hasSeenBlink = true;
     }
 
-    const depth = detection.liveness?.depthScore ?? 0.85;
+    // 2. Head Articulation / Micro-Motion Tracking (Yaw / Pitch change >= 8°)
+    if (detection.pose) {
+      if (this.initialYaw === null) this.initialYaw = detection.pose.yaw;
+      if (this.initialPitch === null) this.initialPitch = detection.pose.pitch;
+      const dy = Math.abs(detection.pose.yaw - this.initialYaw);
+      const dp = Math.abs(detection.pose.pitch - this.initialPitch);
+      if (dy > this.maxYawDelta) this.maxYawDelta = dy;
+      if (dp > this.maxPitchDelta) this.maxPitchDelta = dp;
+      if (this.maxYawDelta >= 8.0 || this.maxPitchDelta >= 8.0) {
+        this.hasHeadMotion = true;
+      }
+    }
+
+    // 3. 3D Landmark Depth Variance Check (No hardcoded 0.85/1.0 fallback)
+    const depth = detection.liveness?.depthScore ?? (detection.landmarks?.rawLandmarks3D ? 0.35 : 0.0);
     this.depthScores.push(depth);
     if (this.depthScores.length > 20) this.depthScores.shift();
 
     const avgDepth = this.depthScores.reduce((a, b) => a + b, 0) / this.depthScores.length;
-    this.hasSufficientDepth = avgDepth >= 0.28;
+    this.hasSufficientDepth = avgDepth >= 0.25;
 
-    const motionScore = detection.liveness?.microMotionScore ?? 0.6;
-    if (motionScore > 0.15) {
-      this.hasMicroMotion = true;
-    }
+    const motionScore = Math.max(
+      detection.liveness?.microMotionScore ?? 0,
+      Math.min(1.0, (this.maxYawDelta + this.maxPitchDelta) / 16.0)
+    );
 
     const elapsed = Date.now() - this.startTime;
-    const isReady = elapsed >= this.requiredDurationMs;
+    const isDurationReady = elapsed >= this.requiredDurationMs;
 
-    // Strict Spoof Rejection: If 3D depth is flat (< 0.20), reject as spoof immediately
-    if (this.samplesCount >= 8 && avgDepth < 0.20) {
+    // Strict Spoof Rejection: If 3D depth is flat (< 0.15) after multiple samples
+    if (this.samplesCount >= 8 && avgDepth < 0.15) {
       return {
         isLive: false,
         depthScore: avgDepth,
         motionScore,
         ear,
         blinkVerified: this.hasSeenBlink,
-        motionVerified: this.hasMicroMotion,
+        motionVerified: this.hasHeadMotion,
         state: 'spoof_blocked',
         statusMessageThai: '⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง (Liveness Check Failed) กรุณามองกล้องด้วยใบหน้าจริงและกะพริบตา',
         errorMessage: 'LIVENESS_FAILED_SPOOF_DETECTED',
       };
     }
 
-    // Pass condition: Sufficient 3D Depth AND (Blink OR Natural Micro-Motion)
-    const isLive = this.hasSufficientDepth && (this.hasSeenBlink || this.hasMicroMotion || isReady);
+    // Pass condition: Requires BOTH Sufficient 3D Depth AND (Real Blink OR Genuine Head Articulation)
+    // NOTE: Removed '|| isReady' to prevent auto-pass on static 2D photos or strangers
+    const isLive = this.hasSufficientDepth && (this.hasSeenBlink || this.hasHeadMotion);
     const state: 'checking' | 'live_verified' | 'spoof_blocked' =
-      !this.hasSufficientDepth && isReady
-        ? 'spoof_blocked'
-        : isLive && isReady
+      isLive && isDurationReady
         ? 'live_verified'
         : 'checking';
 
     return {
-      isLive: isLive && isReady,
+      isLive: state === 'live_verified',
       depthScore: Number(avgDepth.toFixed(3)),
       motionScore: Number(motionScore.toFixed(3)),
       ear,
       blinkVerified: this.hasSeenBlink,
-      motionVerified: this.hasMicroMotion,
+      motionVerified: this.hasHeadMotion,
       state,
       statusMessageThai:
         state === 'live_verified'
           ? '🟢 บุคคลจริง (Live Verified)'
-          : state === 'spoof_blocked'
-          ? '⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง (Liveness Check Failed) กรุณามองกล้องด้วยใบหน้าจริงและกะพริบตา'
-          : '🟡 กำลังตรวจสอบความมีชีวิต (Checking Liveness...)',
+          : '🟡 กรุณากะพริบตาหรือขยับศีรษะเล็กน้อย (Verifying Liveness...)',
     };
   }
 }

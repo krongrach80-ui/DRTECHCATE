@@ -27,7 +27,11 @@ import {
   defaultApiClient,
   normalizePatientRecord,
 } from '../../../../packages/api-client/src/index.js';
-import { calibrateCosineSimilarity } from '../../../../packages/smart-biometric-core/src/index.js';
+import {
+  BIOMETRIC_CONFIG,
+  calibrateCosineSimilarity,
+  evaluateBiometricMatch,
+} from '../../../../packages/smart-biometric-core/src/index.js';
 import { getFaceClientServices, preloadFaceModels } from '../services/faceClientService';
 import {
   RefreshCw,
@@ -259,11 +263,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               if (f.embedding && f.embedding.length === 512) vecs.push(f.embedding);
             }
           }
-          if (Array.isArray(h.adaptive_templates)) {
-            for (const at of h.adaptive_templates) {
-              if (at && at.length === 512) vecs.push(at);
-            }
-          }
+          // NOTE: Zero adaptive_templates contamination - strictly use enrollment vectors only
           if (vecs.length > 0) {
             items.push({
               id: p.id,
@@ -381,7 +381,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
     try {
       const samples = sampleFramesRef.current.slice();
-      if (samples.length < 4) {
+      if (samples.length < 6) {
         setStatusText(
           lang === 'zh-CN'
             ? '人脸稳定性不足，请保持稳定'
@@ -419,13 +419,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       const agreementRatio = topGroup ? topGroup.samples.length / totalSamples : 0;
       const MIN_FRAME_AGREEMENT = 0.70; // Approved requirement >= 70%
 
-      // 2. Compute Top-3 Highest-Scoring Frames Score (Approved Top-Quartile Aggregator)
+      // 2. Compute Top-3 Highest-Scoring Frames Score
       let aggregatedScore = 0;
       let aggregatedPercent = 0;
       let aggregatedDistance = 2.0;
       const topCand = topGroup?.cand || null;
 
-      // Filter for frames that passed 3D liveness
+      // Filter for frames that passed genuine liveness
       const livenessPool = (topGroup ? topGroup.samples : samples).filter(
         (s) => s.liveness?.isLive !== false
       );
@@ -446,7 +446,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         secondCandScore = top3Second.reduce((sum, s) => sum + s, 0) / (top3Second.length || 1);
       }
       const margin = aggregatedScore - secondCandScore;
-      const isMarginAmbiguous = topGroup && secondGroup && margin < 0.05; // Differ by < 5%
+      const isMarginAmbiguous = topGroup && secondGroup && margin < BIOMETRIC_CONFIG.MARGIN_MIN;
 
       // Non-blocking log to Supabase face_scan_logs
       defaultApiClient.request('/face_scan_logs', {
@@ -528,10 +528,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         res &&
         res.matched === true &&
         (res as any).patient &&
-        ((res.similarityPercentage ?? 0) >= 80)
+        ((res.similarityPercentage ?? 0) >= BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY * 100)
       );
 
-      // Case A: Confirmed Authoritative High Match (>= 80% confirmed by backend)
+      // Case A: Confirmed Authoritative Genuine Match (>= 85% confirmed by backend)
       // Client-side auto-matching is strictly banned: browser client MUST NEVER unilaterally decide a match.
       if (isServerMatch) {
         scanFailureCountRef.current = 0;
@@ -607,7 +607,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         }
 
         const rawCalculated = typeof res?.similarityPercentage === 'number' ? res.similarityPercentage : 0;
-        const finalPercent = Math.min(98, Math.max(0, rawCalculated));
+        const finalPercent = Math.min(100, Math.max(0, rawCalculated));
         const finalDistance = typeof res?.distance === 'number' ? res.distance : aggregatedDistance;
 
         setUnrecognizedAlert(null);
@@ -632,7 +632,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       const isServerAmbiguous = Boolean(
         res &&
         !res.matched &&
-        ((res as any).requirePin || ((res.similarityPercentage ?? 0) >= 50 && (res.similarityPercentage ?? 0) < 80)) &&
+        ((res as any).requirePin || ((res.similarityPercentage ?? 0) >= 50 && (res.similarityPercentage ?? 0) < 85)) &&
         ((res as any).candidate || (res as any).candidateName)
       );
 
@@ -682,14 +682,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       failedScanTimestampsRef.current.push(now);
       failedScanTimestampsRef.current = failedScanTimestampsRef.current.filter((t) => now - t <= 60000);
 
-      // Rate limit check: >= 5 failed attempts in 1 minute
-      if (failedScanTimestampsRef.current.length >= 5) {
-        setRateLimitCooldownSec(30);
+      // Rate limit check: >= MAX_ATTEMPTS (5) failed attempts in 1 minute
+      if (failedScanTimestampsRef.current.length >= BIOMETRIC_CONFIG.MAX_ATTEMPTS) {
+        setRateLimitCooldownSec(Math.round(BIOMETRIC_CONFIG.LOCKOUT_DURATION_MS / 1000));
         const cooldownMsg = lang === 'zh-CN'
-          ? '⚠️ 1分钟内连续扫描失败超过5次，请等待30秒冷却或联系前台工作人员'
+          ? '⚠️ 1分钟内连续扫描失败超过5次，系统已锁定60秒或联系前台工作人员'
           : lang === 'en-US'
-          ? '⚠️ More than 5 failed scans in 1 minute. Please wait 30s cooldown or call staff'
-          : '⚠️ สแกนไม่สำเร็จติดต่อกัน 5 ครั้งใน 1 นาที กรุณารอ 30 วินาที หรือติดต่อเจ้าหน้าที่เวชระเบียน';
+          ? '⚠️ More than 5 failed scans detected. System locked for 60s cooldown.'
+          : '⚠️ สแกนไม่สำเร็จติดต่อกัน 5 ครั้ง ระบบล็อกการสแกนชั่วคราว 60 วินาที หรือติดต่อเจ้าหน้าที่';
         setStatusText(cooldownMsg);
         setUnrecognizedAlert(cooldownMsg);
         isProcessingScanRef.current = false;
@@ -699,10 +699,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       const displayScore = typeof res?.similarityPercentage === 'number' ? res.similarityPercentage : 0;
       const failMsg = lang === 'zh-CN'
-        ? `⚠️ 未找到匹配账户（相似度 ${displayScore}% 未达80%）。请将面部对准圆框重试，或使用PIN码登录`
+        ? `⚠️ 未找到匹配账户（相似度 ${displayScore}% 未达85%）。请将面部对准圆框重试，或使用PIN码登录`
         : lang === 'en-US'
-        ? `⚠️ Account not found (${displayScore}% match <80% threshold). Please center face in circle or use PIN`
-        : `⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำ ${displayScore}% ไม่ถึงเกณฑ์ 80%) กรุณาวางใบหน้าให้อยู่ในกรอบวงกลมแล้วลองใหม่อีกครั้ง หรือเข้าด้วยรหัส PIN`;
+        ? `⚠️ Account not found (${displayScore}% match <85% threshold). Please center face in circle or use PIN`
+        : `⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำ ${displayScore}% ไม่ถึงเกณฑ์ 85%) กรุณาวางใบหน้าให้อยู่ในกรอบวงกลมแล้วลองใหม่อีกครั้ง หรือเข้าด้วยรหัส PIN`;
       setStatusText(failMsg);
       setUnrecognizedAlert(failMsg);
 
@@ -1157,12 +1157,24 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setAmbiguousCandidate(null);
     setMatchedPatient(null);
     setLivenessResult(null);
+    setSimilarityInfo(null);
+    lastProbeVectorRef.current = null;
+    sampleFramesRef.current = [];
+    try {
+      sessionStorage.removeItem('active_patient_id');
+      sessionStorage.removeItem('patient_id');
+      sessionStorage.removeItem('drtech_user_profile');
+      sessionStorage.removeItem('drtech_auth_token');
+      localStorage.removeItem('active_patient_id');
+      localStorage.removeItem('patient_id');
+      localStorage.removeItem('drtech_user_profile');
+    } catch {}
     fastLivenessVerifierRef.current.start();
     consecutiveSteadyFramesRef.current = 0;
     isProcessingScanRef.current = false;
     scanFailureCountRef.current = 0;
     cancelCountdown();
-    setStatusText('เตรียมสแกนใหม่อีกครั้ง...');
+    setStatusText('พร้อมสแกนใบหน้าใหม่...');
   };
 
   const handleRetryCamera = () => {

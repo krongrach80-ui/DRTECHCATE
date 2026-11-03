@@ -96,12 +96,12 @@ export function verifyRealHandGesture(
   options: HandVerificationOptions = {}
 ): HandVerificationResult {
   const {
-    minConfidence = 0.75,
+    minConfidence = 0.45,
     isMirrored = true,
-    leftZoneThreshold = 0.42,
-    rightZoneThreshold = 0.58,
-    maxYThreshold = 0.70,
-    raisedTipMargin = 0.07,
+    leftZoneThreshold = 0.46,
+    rightZoneThreshold = 0.54,
+    maxYThreshold = 0.88,
+    raisedTipMargin = 0.02,
   } = options;
 
   // Base fallback result
@@ -172,22 +172,22 @@ export function verifyRealHandGesture(
     mirroredY,
   };
 
-  // --- LAYER 2: Raised Open-Palm Gesture Check ---
+  // --- LAYER 2: Raised Open-Palm Gesture Check (Optimized for elderly patients at 1-2m) ---
 
-  // Check 2.1: Hand orientation upward (fingertips must be significantly higher than wrist)
-  // In screen coordinates, y=0 is top and y=1 is bottom, so tip.y < wrist.y - 0.07 means tip is higher
-  const isIndexRaised = indexTip.y < wrist.y - raisedTipMargin;
-  const isMiddleRaised = middleTip.y < wrist.y - raisedTipMargin;
+  // Check 2.1: Hand orientation upward
+  // Accept if index/middle tip is higher than wrist, or fingertips are higher than MCP knuckles
+  const isIndexRaised = indexTip.y < wrist.y - raisedTipMargin || indexTip.y < indexMcp.y;
+  const isMiddleRaised = middleTip.y < wrist.y - raisedTipMargin || middleTip.y < middleMcp.y;
+  const isAnyFingerRaised = isIndexRaised || isMiddleRaised || ringTip.y < ringMcp.y || pinkyTip.y < pinkyMcp.y;
 
-  if (!isIndexRaised || !isMiddleRaised) {
+  if (!isAnyFingerRaised) {
     return {
       ...resultWithPalm,
       rejectionReason: 'HAND_NOT_RAISED_OR_POINTING_DOWN',
     };
   }
 
-  // Check 2.2: Open Palm Check (at least 3 fingers extended)
-  // Extension test: distance(tip, wrist) > 1.3 * distance(mcp, wrist)
+  // Check 2.2: Open Palm Check
   const dist = (p1: HandLandmarkPoint, p2: HandLandmarkPoint) =>
     Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
@@ -202,18 +202,18 @@ export function verifyRealHandGesture(
   for (const finger of fingers) {
     const tipToWrist = dist(finger.tip, wrist);
     const mcpToWrist = dist(finger.mcp, wrist);
-    // Avoid division by zero or very collapsed joints
-    if (mcpToWrist > 0.02 && tipToWrist > 1.3 * mcpToWrist) {
+    // Relaxed threshold for distance foreshortening / elderly curvature
+    if (mcpToWrist > 0.02 && (tipToWrist > 1.15 * mcpToWrist || finger.tip.y < finger.mcp.y)) {
       extendedCount++;
     }
   }
 
   resultWithPalm.extendedFingersCount = extendedCount;
 
-  if (extendedCount < 3) {
+  if (extendedCount < 1) {
     return {
       ...resultWithPalm,
-      rejectionReason: `FINGERS_NOT_EXTENDED_COUNT_${extendedCount}_MIN_3`,
+      rejectionReason: `FINGERS_NOT_EXTENDED_COUNT_${extendedCount}_MIN_1`,
     };
   }
 

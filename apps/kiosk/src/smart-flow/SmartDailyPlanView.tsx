@@ -84,6 +84,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   // Minigame states
   const [isPlayingQuiz, setIsPlayingQuiz] = useState(false);
+  const isPlayingQuizRef = useRef(isPlayingQuiz);
+  useEffect(() => {
+    isPlayingQuizRef.current = isPlayingQuiz;
+  }, [isPlayingQuiz]);
+  const isInitialLoadRef = useRef(true);
   const [_quizQuestionIndex, _setQuizQuestionIndex] = useState(0);
   const [quizScore, _setQuizScore] = useState(0);
 
@@ -131,9 +136,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   // Fetch daily plan (with realtime event integration)
   const loadPlan = useCallback(async () => {
-    if (activeSessionRef.current) return;
+    if (activeSessionRef.current || isPlayingQuizRef.current) return;
     try {
-      setLoading(true);
+      if (isInitialLoadRef.current) {
+        setLoading(true);
+      }
       setLoadError(null);
       const targetId = patient.patient_id || patient.hn || '';
       const res = await defaultApiClient.smartOnboarding.getDailyPlan(targetId);
@@ -175,6 +182,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       setLoadError(msg);
     } finally {
       if (isMountedRef.current) {
+        isInitialLoadRef.current = false;
         setLoading(false);
       }
     }

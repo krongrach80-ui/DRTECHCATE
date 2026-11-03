@@ -365,6 +365,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
   // Step 2: Biometric scan state (Apple Face ID 10-Frame System)
   const [createdPatientId, setCreatedPatientId] = useState<string | null>(null);
+  const createdPatientIdRef = useRef<string | null>(null);
+  const isSubmittingRef = useRef<boolean>(false);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [capturedFrames, setCapturedFrames] = useState<CapturedBiometricFrame[]>([]);
@@ -604,6 +606,9 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       const randomHnNum = Math.floor(1000 + Math.random() * 9000);
       setHn(`P-${randomHnNum}`);
       setStep(1);
+      setCreatedPatientId(null);
+      createdPatientIdRef.current = null;
+      isSubmittingRef.current = false;
       setErrorMsg(null);
       setCameraError(null);
       setNameError(false);
@@ -734,7 +739,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
   if (!isOpen) return null;
 
-  // Handler for Step 1 -> Step 2: Atomic Creation of Draft in Supabase
+  // Handler for Step 1 -> Step 2: Validate Patient Info before Face ID Scan (No premature DB inserts)
   const handleProceedToScan = async (e?: React.FormEvent | React.MouseEvent) => {
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
@@ -768,40 +773,17 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     setIsLoading(true);
 
     try {
-      const splitNames = trimmedName.split(' ');
-      const firstName = splitNames[0] || 'ผู้ป่วย';
-      const lastName = splitNames.slice(1).join(' ') || '-';
-
-      // Atomic Step 1: Create or Update Patient Draft in Supabase
-      const draftRes = await defaultApiClient.smartOnboarding.createDraft({
-        patient_id: createdPatientId || undefined,
-        hn: hn.trim() || undefined,
-        first_name: firstName,
-        last_name: lastName,
-        birth_date: birthDate || undefined,
-        age: Number(age) || 45,
-        sex,
-        gender: sex,
-        phone: phone.trim() || undefined,
-        target_joint: targetJoint,
-        injury: diagnosis.trim() || undefined,
-        contraindications: contraindications.trim() || undefined,
-        underlying_diseases: underlyingDiseases.trim() || undefined,
-        allergies: allergies.trim() || undefined,
-        doctor_notes: doctorNotes.trim() || undefined,
-        emergency_contact_name: emergencyContactName.trim() || undefined,
-        emergency_contact_relation: emergencyContactRelation.trim() || undefined,
-        emergency_contact_phone: emergencyContactPhone.trim() || undefined,
-        pdpa_consent: consentPdpa,
-        registered_by_staff_id: staffUser?.id || undefined,
-        registered_by_staff_name: staffUser?.full_name || undefined,
-        responsible_pt_id: responsiblePtId || undefined,
-      });
-
-      if (draftRes && draftRes.patient_id) {
-        setCreatedPatientId(draftRes.patient_id);
-        if (draftRes.hn) {
-          setHn(draftRes.hn);
+      // Check HN duplicate with authoritative check before proceeding
+      const explicitHn = hn.trim();
+      if (explicitHn) {
+        const dupRes = await defaultApiClient.smartOnboarding.checkDuplicate({
+          hn: explicitHn,
+          exclude_patient_id: createdPatientId || undefined,
+        });
+        if (dupRes.duplicate_hn) {
+          setErrorMsg(t.validationHnDup);
+          setIsLoading(false);
+          return;
         }
       }
 
@@ -815,7 +797,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       setCurrentFrameIdx(initialBiometrics?.embedding ? 1 : 0);
       setStep(2);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'ไม่สามารถสร้างระเบียนคนไข้ชั่วคราว (Draft) ใน Supabase ได้';
+      const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการตรวจสอบข้อมูล';
       setErrorMsg(msg);
     } finally {
       setIsLoading(false);
@@ -889,6 +871,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
   // Submit all 10 captured frames (STRICT ZERO RAW IMAGE PERSISTENCE)
   const submit10Frames = async (framesToSubmit: CapturedBiometricFrame[]) => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     try {
       setIsLoading(true);
       setErrorMsg(null);
@@ -920,8 +904,9 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
         embedding: f.embedding,
       }));
 
+      const activePatientId = createdPatientIdRef.current || createdPatientId || undefined;
       const regRes = await defaultApiClient.smartOnboarding.register({
-        patient_id: createdPatientId || undefined,
+        patient_id: activePatientId,
         hn: hn.trim() || undefined,
         first_name: firstName,
         last_name: lastName,
@@ -961,6 +946,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       } catch {}
 
       const targetPatientId = regRes.patient_id;
+      createdPatientIdRef.current = targetPatientId;
       setCreatedPatientId(targetPatientId);
       if (regRes.hn) {
         setHn(regRes.hn);
@@ -986,6 +972,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       setErrorMsg(msg);
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -1232,11 +1219,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
         {/* STEP 1: 4-Section Clinical Form */}
         {step === 1 && (
-          <form
-            noValidate
-            onSubmit={handleProceedToScan}
-            className="flex-1 flex flex-col min-h-0 overflow-hidden"
-          >
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <div ref={formScrollRef} className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1">
               {/* SECTION 1: General Info */}
               <div className="space-y-4">
@@ -1248,13 +1231,35 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* HN */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      {t.hnLabel} <span className="text-slate-400 font-normal">({t.hnPlaceholder})</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        {t.hnLabel} <span className="text-slate-400 font-normal">({t.hnPlaceholder})</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newHn = `P-${Math.floor(1000 + Math.random() * 9000)}`;
+                          setHn(newHn);
+                          setErrorMsg(null);
+                          setDupCheckStatus((prev) => ({ ...prev, duplicateHn: false }));
+                        }}
+                        className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+                        title="สุ่มเลข HN ใหม่"
+                      >
+                        <RotateCw className="w-3 h-3" />
+                        <span>สุ่มเลขใหม่</span>
+                      </button>
+                    </div>
                     <input
                       type="text"
                       value={hn}
-                      onChange={(e) => setHn(e.target.value)}
+                      onChange={(e) => {
+                        setHn(e.target.value);
+                        if (errorMsg) setErrorMsg(null);
+                        if (dupCheckStatus.duplicateHn) {
+                          setDupCheckStatus((prev) => ({ ...prev, duplicateHn: false }));
+                        }
+                      }}
                       onBlur={() => runDuplicateCheck(hn, undefined, undefined)}
                       placeholder="เช่น P-1234"
                       className={`w-full h-10 px-3 bg-slate-50 border rounded-xl text-sm font-mono font-bold text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm ${
@@ -1488,18 +1493,33 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                     />
                   </div>
 
-                  {/* Backup PIN */}
+                  {/* Backup PIN (Clinical security PIN for kiosk backup login) */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                       {t.pinLabel}
                     </label>
                     <input
-                      type="password"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       maxLength={4}
                       value={pin}
-                      onChange={(e) => setPin(e.target.value)}
+                      onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleProceedToScan();
+                        }
+                      }}
+                      autoComplete="off"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
+                      name="clinical_kiosk_pin"
+                      id="clinical-kiosk-pin-field"
                       placeholder="••••"
                       className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 text-center tracking-widest font-mono font-bold focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 transition-all outline-none shadow-sm"
+                      style={{ WebkitTextSecurity: 'disc' } as React.CSSProperties}
                     />
                   </div>
                 </div>
@@ -1614,7 +1634,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                 <span>{t.btnNextStep2}</span>
               </SmoothButton>
             </div>
-          </form>
+          </div>
         )}
 
         {/* STEP 2: Apple Face ID 10-Frame Circular Scanner */}
@@ -1807,13 +1827,22 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                 type="button"
                 variant="primary"
                 size="md"
-                onClick={handleStartAutoScan}
+                onClick={() => {
+                  if (capturedFrames.length === 10) {
+                    submit10Frames(capturedFrames);
+                  } else {
+                    handleStartAutoScan();
+                  }
+                }}
                 isLoading={isLoading || isAutoScanning}
+                disabled={isLoading || isAutoScanning}
                 icon={<Sparkles className="w-4 h-4" />}
                 className="w-full shadow-lg shadow-emerald-600/25 text-sm sm:text-base font-bold py-2.5"
               >
                 <span>
-                  {isAutoScanning
+                  {isLoading
+                    ? '⏳ กำลังบันทึกแม่แบบชีวมิติลงฐานข้อมูล...'
+                    : isAutoScanning
                     ? `⚡ กำลังสแกนอัตโนมัติ... (${capturedFrames.length}/10)`
                     : capturedFrames.length === 10
                     ? '✅ บันทึกแม่แบบชีวมิติ 10 เฟรมครบแล้ว'

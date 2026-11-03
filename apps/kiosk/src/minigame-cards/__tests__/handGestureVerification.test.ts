@@ -92,11 +92,16 @@ describe('verifyRealHandGesture — 4-Layer Hand Verification Gate', () => {
       expect(res.rejectionReason).toBe('NO_HAND_LANDMARKS_DETECTED');
     });
 
-    it('should reject when landmark detection confidence is below 0.75 threshold', () => {
+    it('should reject when landmark detection confidence is below threshold', () => {
       const landmarks = createMockHandLandmarks({});
-      const res = verifyRealHandGesture(landmarks, 0.65); // 0.65 < 0.75
+      const res = verifyRealHandGesture(landmarks, 0.35); // 0.35 < 0.45 default
       expect(res.isValidHand).toBe(false);
       expect(res.rejectionReason).toContain('CONFIDENCE_TOO_LOW');
+
+      // Also verify custom threshold option
+      const resCustom = verifyRealHandGesture(landmarks, 0.65, { minConfidence: 0.75 });
+      expect(resCustom.isValidHand).toBe(false);
+      expect(resCustom.rejectionReason).toContain('CONFIDENCE_TOO_LOW');
     });
 
     it('should reject when any landmark contains NaN or non-finite values', () => {
@@ -137,11 +142,11 @@ describe('verifyRealHandGesture — 4-Layer Hand Verification Gate', () => {
       expect(res.rejectionReason).toBe('HAND_NOT_RAISED_OR_POINTING_DOWN');
     });
 
-    it('should reject when tips are not at least 0.08 higher than wrist (horizontal hand / wrist resting)', () => {
+    it('should reject when tips are not higher than wrist (horizontal hand / wrist resting)', () => {
       const restingHand = createMockHandLandmarks({
         wristY: 0.50,
-        tipY: 0.46, // only 0.04 difference (< 0.08)
-        mcpY: 0.48,
+        tipY: 0.52, // tips below wrist
+        mcpY: 0.51,
       });
 
       const res = verifyRealHandGesture(restingHand);
@@ -149,30 +154,33 @@ describe('verifyRealHandGesture — 4-Layer Hand Verification Gate', () => {
       expect(res.rejectionReason).toBe('HAND_NOT_RAISED_OR_POINTING_DOWN');
     });
 
-    it('should reject closed fist or folded fingers (< 3 extended fingers)', () => {
+    it('should reject closed fist or zero extended fingers', () => {
       // closed fist: 0 extended fingers
       const fist = createMockHandLandmarks({ extendedFingersCount: 0 });
       const resFist = verifyRealHandGesture(fist);
       expect(resFist.isValidHand).toBe(false);
-      expect(resFist.rejectionReason).toContain('FINGERS_NOT_EXTENDED');
-
-      // 2 extended fingers (e.g., peace sign / victory) - requires >= 3
-      const twoFingers = createMockHandLandmarks({ extendedFingersCount: 2 });
-      const resTwo = verifyRealHandGesture(twoFingers);
-      expect(resTwo.isValidHand).toBe(false);
-      expect(resTwo.rejectionReason).toContain('FINGERS_NOT_EXTENDED_COUNT_2');
+      expect(resFist.rejectionReason).toContain('FINGERS_NOT_EXTENDED_COUNT_0');
     });
 
-    it('should reject hand resting at bottom edge of camera frame (y > 0.70)', () => {
+    it('should reject hand resting at bottom edge of camera frame (y > 0.88)', () => {
       const bottomEdgeHand = createMockHandLandmarks({
-        wristY: 0.85,
-        mcpY: 0.75, // > 0.70
-        tipY: 0.60,
+        wristY: 0.95,
+        mcpY: 0.91, // > 0.88 default
+        tipY: 0.85,
       });
 
       const res = verifyRealHandGesture(bottomEdgeHand);
       expect(res.isValidHand).toBe(false);
       expect(res.rejectionReason).toContain('HAND_TOO_LOW');
+
+      // Custom threshold option
+      const resCustom = verifyRealHandGesture(
+        createMockHandLandmarks({ wristY: 0.85, mcpY: 0.75, tipY: 0.60 }),
+        0.85,
+        { maxYThreshold: 0.70 }
+      );
+      expect(resCustom.isValidHand).toBe(false);
+      expect(resCustom.rejectionReason).toContain('HAND_TOO_LOW');
     });
 
     it('should accept raised hand with at least 3 extended fingers and mcpY <= 0.70', () => {
