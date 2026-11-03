@@ -5,7 +5,7 @@
  */
 
 export const BIOMETRIC_VAULT_VERSION_KEY = 'drtech_biometric_vault_version';
-export const CURRENT_BIOMETRIC_VAULT_VERSION = 'v2_strict_biometric';
+export const CURRENT_BIOMETRIC_VAULT_VERSION = 'v3_live_supabase_authoritative';
 export const RESILIENT_PATIENTS_CACHE_KEY = 'drtech_resilient_patients';
 
 export interface CachePurgeResult {
@@ -68,11 +68,11 @@ export function purgeStaleBiometricCache(options?: {
         return false;
       }
 
-      // Check age if timestamp is present
+      // Check age if timestamp is present: Purge if expired or if cache vault is outdated
       const cachedAt = p._cached_at || p.created_at;
       if (cachedAt && !isNaN(new Date(cachedAt).getTime())) {
         const age = now - new Date(cachedAt).getTime();
-        if (age > maxAgeMs && isOutdated) {
+        if (age > maxAgeMs || isOutdated) {
           purgedCount++;
           return false;
         }
@@ -109,4 +109,119 @@ export function purgeStaleBiometricCache(options?: {
   }
 
   return { purgedCount, remainingCount, vaultUpgraded };
+}
+
+/**
+ * Reconciles local resilient patients cache against the authoritative list of active patients from Supabase.
+ * Any patient entry whose ID or HN is absent from the live Supabase dataset is purged immediately.
+ */
+export function reconcileBiometricCacheWithLivePatients(
+  livePatients: Array<{ id?: string; hn?: string }>
+): { purgedCount: number; remainingCount: number } {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return { purgedCount: 0, remainingCount: 0 };
+  }
+
+  const storage = window.localStorage;
+  const raw = storage.getItem(RESILIENT_PATIENTS_CACHE_KEY);
+  if (!raw) {
+    return { purgedCount: 0, remainingCount: 0 };
+  }
+
+  try {
+    const cachedList = JSON.parse(raw);
+    if (!Array.isArray(cachedList)) {
+      storage.removeItem(RESILIENT_PATIENTS_CACHE_KEY);
+      return { purgedCount: 1, remainingCount: 0 };
+    }
+
+    const liveIdSet = new Set<string>();
+    const liveHnSet = new Set<string>();
+
+    for (const lp of livePatients) {
+      if (lp.id) liveIdSet.add(lp.id);
+      if (lp.hn) liveHnSet.add(lp.hn);
+    }
+
+    let purgedCount = 0;
+    const reconciled = cachedList.filter((p: any) => {
+      const pId = p.id || p.patient_id;
+      const pHn = p.hn;
+      const isLive = (pId && liveIdSet.has(pId)) || (pHn && liveHnSet.has(pHn));
+      if (!isLive) {
+        purgedCount++;
+        // Also remove individual record cache key if present
+        if (pId) storage.removeItem(`drtech_patient_record_${pId}`);
+        if (pHn) storage.removeItem(`drtech_patient_record_${pHn}`);
+        return false;
+      }
+      return true;
+    });
+
+    if (purgedCount > 0) {
+      storage.setItem(RESILIENT_PATIENTS_CACHE_KEY, JSON.stringify(reconciled));
+    }
+
+    return { purgedCount, remainingCount: reconciled.length };
+  } catch {
+    storage.removeItem(RESILIENT_PATIENTS_CACHE_KEY);
+    return { purgedCount: 1, remainingCount: 0 };
+  }
+}
+
+/**
+ * Explicitly removes a patient by ID or HN from all client storage layers (localStorage & sessionStorage)
+ * and dispatches a broadcast event for live UI components to refresh their in-memory state.
+ */
+export function removePatientFromLocalCache(patientIdOrHn: string): boolean {
+  if (typeof window === 'undefined' || !window.localStorage || !patientIdOrHn) {
+    return false;
+  }
+
+  const storage = window.localStorage;
+  let didRemove = false;
+
+  try {
+    const raw = storage.getItem(RESILIENT_PATIENTS_CACHE_KEY);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        const filtered = list.filter((p: any) => {
+          const match =
+            p.id === patientIdOrHn ||
+            p.patient_id === patientIdOrHn ||
+            p.hn === patientIdOrHn;
+          if (match) didRemove = true;
+          return !match;
+        });
+        if (didRemove) {
+          storage.setItem(RESILIENT_PATIENTS_CACHE_KEY, JSON.stringify(filtered));
+        }
+      }
+    }
+
+    storage.removeItem(`drtech_patient_record_${patientIdOrHn}`);
+
+    if (typeof window.sessionStorage !== 'undefined') {
+      const activeRaw = window.sessionStorage.getItem('drtech_active_patient');
+      if (activeRaw) {
+        try {
+          const active = JSON.parse(activeRaw);
+          if (
+            active.id === patientIdOrHn ||
+            active.patient_id === patientIdOrHn ||
+            active.hn === patientIdOrHn
+          ) {
+            window.sessionStorage.removeItem('drtech_active_patient');
+          }
+        } catch {}
+      }
+    }
+
+    window.dispatchEvent(
+      new CustomEvent('patient-deleted', { detail: { patientId: patientIdOrHn } })
+    );
+  } catch {}
+
+  return didRemove;
 }

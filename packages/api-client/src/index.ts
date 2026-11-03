@@ -344,7 +344,10 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 function calibrateCosineSimilarity(rawCos: number): number {
   if (rawCos >= 0.85) {
-    return Math.min(1.0, 0.96 + Math.max(0, (rawCos - 0.85) / 0.15) * 0.04);
+    // Clinical Biometric Invariant: Natural human facial capture from video sensors has inherent noise.
+    // Cap ceiling strictly at 0.984 (Math.round yields at most 98%, never 100%).
+    const t = Math.min(1.0, Math.max(0, (rawCos - 0.85) / 0.10));
+    return Math.min(0.984, 0.96 + t * 0.024);
   }
   if (rawCos >= 0.55) {
     // [0.55, 0.85) -> [0.80, 0.96) (80%–96% for genuine patient range)
@@ -358,6 +361,20 @@ function calibrateCosineSimilarity(rawCos: number): number {
   }
   // < 0.42 (True impostor / stranger zone, guaranteed <= 49%)
   return Math.max(0, (Math.max(0, rawCos) / 0.42) * 0.49);
+}
+
+function getSafeLocalStorage(): Storage | null {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+  return null;
+}
+
+function getSafeSessionStorage(): Storage | null {
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    return window.sessionStorage;
+  }
+  return null;
 }
 
 export class ApiClient {
@@ -374,41 +391,39 @@ export class ApiClient {
       }
     }
     this.baseUrl = (resolvedBase || '/api').replace(/\/$/, '');
-    if (typeof window !== 'undefined') {
-      try {
-        this.authToken =
-          localStorage.getItem('drtech_auth_token') ||
-          sessionStorage.getItem('drtech_auth_token') ||
-          null;
-      } catch {
-        // Storage disabled or sandboxed
-      }
-    }
+    const local = getSafeLocalStorage();
+    const session = getSafeSessionStorage();
+    this.authToken =
+      local?.getItem('drtech_auth_token') ||
+      session?.getItem('drtech_auth_token') ||
+      null;
   }
 
   public setAuthToken(token: string | null): void {
     this.authToken = token;
-    if (typeof window !== 'undefined') {
-      try {
-        if (token) {
-          localStorage.setItem('drtech_auth_token', token);
-          sessionStorage.setItem('drtech_auth_token', token);
-        } else {
-          localStorage.removeItem('drtech_auth_token');
-          sessionStorage.removeItem('drtech_auth_token');
-        }
-      } catch {
-        // Storage disabled or sandboxed
+    const local = getSafeLocalStorage();
+    const session = getSafeSessionStorage();
+    try {
+      if (token) {
+        local?.setItem('drtech_auth_token', token);
+        session?.setItem('drtech_auth_token', token);
+      } else {
+        local?.removeItem('drtech_auth_token');
+        session?.removeItem('drtech_auth_token');
       }
+    } catch {
+      // Storage disabled or sandboxed
     }
   }
 
   public getAuthToken(): string | null {
-    if (!this.authToken && typeof window !== 'undefined') {
+    if (!this.authToken) {
+      const local = getSafeLocalStorage();
+      const session = getSafeSessionStorage();
       try {
         this.authToken =
-          localStorage.getItem('drtech_auth_token') ||
-          sessionStorage.getItem('drtech_auth_token') ||
+          local?.getItem('drtech_auth_token') ||
+          session?.getItem('drtech_auth_token') ||
           null;
       } catch {
         // Storage disabled or sandboxed
@@ -418,41 +433,43 @@ export class ApiClient {
   }
 
   public setUserProfile(profile: UserProfile | null): void {
-    if (typeof window !== 'undefined') {
-      try {
-        if (profile) {
-          localStorage.setItem('drtech_user_profile', JSON.stringify(profile));
-          sessionStorage.setItem('drtech_user_profile', JSON.stringify(profile));
-        } else {
-          localStorage.removeItem('drtech_user_profile');
-          sessionStorage.removeItem('drtech_user_profile');
-        }
-      } catch {
-        // Storage disabled or sandboxed
+    const local = getSafeLocalStorage();
+    const session = getSafeSessionStorage();
+    try {
+      if (profile) {
+        local?.setItem('drtech_user_profile', JSON.stringify(profile));
+        session?.setItem('drtech_user_profile', JSON.stringify(profile));
+      } else {
+        local?.removeItem('drtech_user_profile');
+        session?.removeItem('drtech_user_profile');
       }
+    } catch {
+      // Storage disabled or sandboxed
     }
   }
 
   public getUserProfile(): UserProfile | null {
-    if (typeof window !== 'undefined') {
-      try {
-        const raw =
-          localStorage.getItem('drtech_user_profile') ||
-          sessionStorage.getItem('drtech_user_profile');
-        if (raw) return JSON.parse(raw);
-      } catch {
-        // Storage disabled or sandboxed
-      }
+    const local = getSafeLocalStorage();
+    const session = getSafeSessionStorage();
+    try {
+      const raw =
+        local?.getItem('drtech_user_profile') ||
+        session?.getItem('drtech_user_profile');
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // Storage disabled or sandboxed
     }
     return null;
   }
 
   private unwrapData<T>(data: any): T {
-    if (data && typeof data === 'object' && 'ok' in data) {
-      if (data.token || data.accessToken || data.access_token) {
+    if (data && typeof data === 'object') {
+      if ('matched' in data || data.token || data.accessToken || data.access_token) {
         return data as T;
       }
-      return (data.data !== undefined ? data.data : data) as T;
+      if ('ok' in data && data.data !== undefined) {
+        return data.data as T;
+      }
     }
     return data as T;
   }
@@ -1031,6 +1048,39 @@ export class ApiClient {
         return { ok: true, data: dossiersList, dossiers: dossiersList } as T;
       }
 
+      // 3.4 Fallback for DELETE /smart-onboarding/patient/:patientId
+      if (endpointPath.startsWith('/smart-onboarding/patient/') && options.method === 'DELETE') {
+        const parts = endpointPath.split('?')[0].split('/');
+        const pId = parts[3];
+        if (pId) {
+          try {
+            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${pId}`, {
+              method: 'DELETE',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              },
+            });
+            if (typeof window !== 'undefined') {
+              const raw = localStorage.getItem('drtech_resilient_patients');
+              if (raw) {
+                const arr = JSON.parse(raw);
+                localStorage.setItem(
+                  'drtech_resilient_patients',
+                  JSON.stringify(arr.filter((p: any) => p.id !== pId && p.patient_id !== pId && p.hn !== pId))
+                );
+              }
+              localStorage.removeItem(`drtech_patient_record_${pId}`);
+              if (typeof window.sessionStorage !== 'undefined') {
+                window.sessionStorage.removeItem('drtech_active_patient');
+              }
+              window.dispatchEvent(new CustomEvent('patient-deleted', { detail: { patientId: pId } }));
+            }
+          } catch {}
+        }
+        return { ok: true, message: 'ลบคนไข้สำเร็จ' } as T;
+      }
+
       // 4. Fallback for /smart-onboarding/scan-login
       if (endpointPath === '/smart-onboarding/scan-login') {
         const body = parseSafeBody(options.body);
@@ -1039,6 +1089,8 @@ export class ApiClient {
         let bestMatch: any = null;
         let bestRawScore = 0;
         let bestCalScore = 0;
+        const livePatientsMap = new Map<string, any>();
+        const liveHnMap = new Map<string, any>();
 
         if (probe.length > 0) {
           const normProbe = l2Normalize(probe);
@@ -1083,34 +1135,63 @@ export class ApiClient {
             }
           };
 
-          // Check local resilient storage first
-          if (typeof window !== 'undefined') {
-            try {
-              const rawStored = localStorage.getItem('drtech_resilient_patients');
-              const stored = rawStored ? JSON.parse(rawStored) : [];
-              for (const p of stored) {
-                evaluateCandidate(p);
+          // 1. Authoritative Live Supabase Cloud Query: Fetch active patients FIRST (Rule 1 & 2)
+          try {
+            const supaRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=id,hn,first_name,last_name,age,sex,phone,injury,registration_status,history&registration_status=neq.archived&limit=100`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  'Cache-Control': 'no-cache',
+                  'Pragma': 'no-cache',
+                },
               }
-            } catch {}
+            );
+            if (supaRes.ok) {
+              const supaPatients = await supaRes.json();
+              if (Array.isArray(supaPatients)) {
+                for (const sp of supaPatients) {
+                  livePatientsMap.set(sp.id, sp);
+                  if (sp.hn) liveHnMap.set(sp.hn, sp);
+                  evaluateCandidate(sp);
+                }
+              }
+            }
+          } catch {
+            // fail-soft on network issues
           }
 
-          // If no high score match, query live Supabase Cloud patients table
-          if (bestCalScore < 0.80) {
+          // 2. Reconcile & Purge Local Resilient Cache: Delete ghost profiles immediately
+          const storage = getSafeLocalStorage();
+          if (storage) {
             try {
-              const supaRes = await fetch(
-                `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=id,hn,first_name,last_name,age,sex,phone,injury,registration_status,history&registration_status=neq.archived&limit=50`,
-                {
-                  headers: {
-                    apikey: DEFAULT_SUPABASE_ANON_KEY,
-                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-                  },
-                }
-              );
-              if (supaRes.ok) {
-                const supaPatients = await supaRes.json();
-                if (Array.isArray(supaPatients)) {
-                  for (const sp of supaPatients) {
-                    evaluateCandidate(sp);
+              const rawStored = storage.getItem('drtech_resilient_patients');
+              if (rawStored) {
+                const stored = JSON.parse(rawStored);
+                if (Array.isArray(stored)) {
+                  // Purge any stored patient that does NOT exist in live Supabase dataset
+                  let didPurge = false;
+                  const validStored = stored.filter((p: any) => {
+                    const pId = p.id || p.patient_id;
+                    const pHn = p.hn;
+                    const isValid = (pId && livePatientsMap.has(pId)) || (pHn && liveHnMap.has(pHn));
+                    if (!isValid) {
+                      didPurge = true;
+                      if (pId) storage.removeItem(`drtech_patient_record_${pId}`);
+                      if (pHn) storage.removeItem(`drtech_patient_record_${pHn}`);
+                    }
+                    return isValid;
+                  });
+
+                  if (didPurge) {
+                    storage.setItem('drtech_resilient_patients', JSON.stringify(validStored));
+                  }
+
+                  // Evaluate remaining valid candidates
+                  for (const p of validStored) {
+                    const live = (p.id && livePatientsMap.get(p.id)) || (p.hn && liveHnMap.get(p.hn)) || p;
+                    evaluateCandidate({ ...p, ...live });
                   }
                 }
               }
@@ -1118,24 +1199,57 @@ export class ApiClient {
           }
         }
 
-        const normalizedMatch = bestMatch ? normalizePatientRecord(bestMatch) : null;
-        const finalPercentage = Math.round(bestCalScore * 100);
+        // 3. Strict Pre-Decision Verification: Candidate MUST exist in live Supabase patients
+        const targetId = bestMatch?.id || bestMatch?.patient_id;
+        const targetHn = bestMatch?.hn;
+        const isAuthoritativeLive = Boolean(
+          targetId && (livePatientsMap.has(targetId) || (targetHn && liveHnMap.has(targetHn)))
+        );
 
-        // Case A: High Match (calibrated >= 80% with rawCos >= 0.55)
-        if (normalizedMatch && finalPercentage >= 80 && bestRawScore >= 0.55) {
-          // Auto-heal template by appending probe to adaptive_templates in background
-          if (typeof window !== 'undefined' && bestMatch) {
+        if (bestMatch && !isAuthoritativeLive) {
+          // Candidate is a ghost from stale cache - purge immediately and refuse match
+          const storage = getSafeLocalStorage();
+          if (storage) {
             try {
-              const targetId = bestMatch.id || bestMatch.patient_id;
-              // Update local resilient cache
-              const rawStored = localStorage.getItem('drtech_resilient_patients');
+              const rawStored = storage.getItem('drtech_resilient_patients');
               if (rawStored) {
                 const stored = JSON.parse(rawStored);
-                const localP = stored.find((item: any) => item.id === targetId || item.hn === bestMatch.hn);
-                if (localP) {
-                  localP.history = localP.history || {};
-                  localP.history.adaptive_templates = [...(localP.history.adaptive_templates || []), probe].slice(-5);
-                  localStorage.setItem('drtech_resilient_patients', JSON.stringify(stored));
+                const cleaned = stored.filter((it: any) => it.id !== targetId && it.patient_id !== targetId && it.hn !== targetHn);
+                storage.setItem('drtech_resilient_patients', JSON.stringify(cleaned));
+              }
+              if (targetId) storage.removeItem(`drtech_patient_record_${targetId}`);
+              if (targetHn) storage.removeItem(`drtech_patient_record_${targetHn}`);
+            } catch {}
+          }
+          bestMatch = null;
+          bestCalScore = 0;
+          bestRawScore = 0;
+        }
+
+        // Overlay authoritative live data onto normalized match
+        const liveSource = (targetId && livePatientsMap.get(targetId)) || (targetHn && liveHnMap.get(targetHn)) || bestMatch;
+        const normalizedMatch = liveSource ? normalizePatientRecord(liveSource) : null;
+        // Clinical Biometric Invariant: Capped at maximum 98% (never 100% due to sensor noise)
+        const finalPercentage = Math.min(98, Math.round(bestCalScore * 100));
+
+        // Case A: High Match (calibrated >= 80% with rawCos >= 0.55 AND verified in live Supabase)
+        if (normalizedMatch && isAuthoritativeLive && finalPercentage >= 80 && bestRawScore >= 0.55) {
+          // Auto-heal template by appending probe to adaptive_templates in background (only if rawCos >= 0.70)
+          if (typeof window !== 'undefined' && bestMatch && bestRawScore >= 0.70) {
+            try {
+              const targetId = bestMatch.id || bestMatch.patient_id;
+              // Update local resilient cache safely
+              const storage = getSafeLocalStorage();
+              if (storage) {
+                const rawStored = storage.getItem('drtech_resilient_patients');
+                if (rawStored) {
+                  const stored = JSON.parse(rawStored);
+                  const localP = stored.find((item: any) => item.id === targetId || item.hn === bestMatch.hn);
+                  if (localP) {
+                    localP.history = localP.history || {};
+                    localP.history.adaptive_templates = [...(localP.history.adaptive_templates || []), probe].slice(-5);
+                    storage.setItem('drtech_resilient_patients', JSON.stringify(stored));
+                  }
                 }
               }
               // Update live Supabase Cloud
@@ -1477,8 +1591,16 @@ export class ApiClient {
               const raw = localStorage.getItem('drtech_resilient_patients');
               if (raw) {
                 const arr = JSON.parse(raw);
-                localStorage.setItem('drtech_resilient_patients', JSON.stringify(arr.filter((p: any) => p.id !== patientId && p.patient_id !== patientId)));
+                localStorage.setItem(
+                  'drtech_resilient_patients',
+                  JSON.stringify(arr.filter((p: any) => p.id !== patientId && p.patient_id !== patientId && p.hn !== patientId))
+                );
               }
+              localStorage.removeItem(`drtech_patient_record_${patientId}`);
+              if (typeof window.sessionStorage !== 'undefined') {
+                window.sessionStorage.removeItem('drtech_active_patient');
+              }
+              window.dispatchEvent(new CustomEvent('patient-deleted', { detail: { patientId } }));
             }
           } catch {}
           return { ok: true, message: 'ลบคนไข้สำเร็จ' } as T;
@@ -1729,7 +1851,7 @@ export class ApiClient {
 
     if (typeof window !== 'undefined') {
       const profile = this.getUserProfile();
-      const pathname = window.location.pathname.toLowerCase();
+      const pathname = window.location?.pathname ? window.location.pathname.toLowerCase() : '';
       if (profile) {
         staffRole = profile.role || (profile.username === 'director' ? 'admin' : null);
         actorId = profile.id || null;
@@ -1769,7 +1891,7 @@ export class ApiClient {
     }
 
     // Detect if primary backend was 404, 405, 402, 502, 503, network failure, or non-JSON HTML (SPA redirect)
-    const isPrimaryHtml = res && res.headers.get('content-type')?.includes('text/html');
+    const isPrimaryHtml = Boolean(res && res.headers?.get?.('content-type')?.includes('text/html'));
     const isPrimary404OrFailed =
       !res ||
       res.status === 404 ||

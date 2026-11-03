@@ -79,7 +79,11 @@ export function computeAverageVector(vectors: number[][]): number[] {
  */
 export function calibrateCosineSimilarity(rawCos: number): number {
   if (rawCos >= 0.85) {
-    return Math.min(1.0, 0.96 + Math.max(0, (rawCos - 0.85) / 0.15) * 0.04);
+    // Clinical Biometric Invariant: Natural human facial capture from video sensors has inherent noise.
+    // An uncalibrated 100% is physically impossible and indicates overfitted/self-cached probe loop.
+    // Cap ceiling strictly at 0.984 (Math.round yields at most 98%, never 100%).
+    const t = Math.min(1.0, Math.max(0, (rawCos - 0.85) / 0.10));
+    return Math.min(0.984, 0.96 + t * 0.024);
   }
   if (rawCos >= 0.55) {
     // [0.55, 0.85) -> [0.80, 0.96) (80%–96% for genuine patient range)
@@ -97,7 +101,7 @@ export function calibrateCosineSimilarity(rawCos: number): number {
 
 /**
  * Master Prompt v4 UI Percentage Formula:
- * Calibrated Cosine Similarity % or Direct Linear Cosine Mapping
+ * Calibrated Cosine Similarity % or Direct Linear Cosine Mapping (Strictly capped at 98%–99%)
  */
 export function computeSimilarityPercentage(
   arg: number,
@@ -107,9 +111,9 @@ export function computeSimilarityPercentage(
   const useCal = options?.calibrated ?? false;
   if (cosineSim !== undefined) {
     const effectiveSim = useCal ? calibrateCosineSimilarity(cosineSim) : cosineSim;
-    return Math.max(0, Math.min(100, Math.round(effectiveSim * 100)));
+    return Math.max(0, Math.min(98, Math.round(effectiveSim * 100)));
   }
-  return Math.max(0, Math.min(100, Math.round(arg * 100)));
+  return Math.max(0, Math.min(98, Math.round(arg * 100)));
 }
 
 export function computePercentageFromDistance(distance: number): number {
@@ -140,7 +144,7 @@ export function evaluateBiometricMatch(
   const useCalibration = options?.useCalibration === true;
   const calSim = calibrateCosineSimilarity(rawCos);
   const effectiveSim = useCalibration ? calSim : rawCos;
-  const similarityPercentage = Math.max(0, Math.min(100, Math.round(effectiveSim * 100)));
+  const similarityPercentage = Math.max(0, Math.min(98, Math.round(effectiveSim * 100)));
 
   const minCos = options?.minCosine ?? ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY;
   const maxDist = options?.maxEuclidean ?? ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE;

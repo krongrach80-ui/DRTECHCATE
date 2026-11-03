@@ -23,6 +23,7 @@ import {
   TreatmentResultRecord,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import { removePatientFromLocalCache } from '../../../../packages/face-client/src/index.js';
 import { SmartPendingPatientsBanner } from '../smart-portal/index.js';
 import { PatientCoursePrescriptionModal } from '../clinical-ui/PatientCoursePrescriptionModal';
 
@@ -282,6 +283,8 @@ export const PatientsView: React.FC = () => {
     try {
       setActionLoading(true);
       await defaultApiClient.patients.delete(selectedPatient.id);
+      removePatientFromLocalCache(selectedPatient.id);
+      if (selectedPatient.hn) removePatientFromLocalCache(selectedPatient.hn);
       setSuccessMsg(`ลบคนไข้ ${selectedPatient.first_name} (HN: ${selectedPatient.hn}) ออกจากระบบเรียบร้อยแล้ว`);
       const deletedId = selectedPatient.id;
       setSelectedPatient(null);
@@ -304,6 +307,8 @@ export const PatientsView: React.FC = () => {
     try {
       setActionLoading(true);
       await defaultApiClient.patients.delete(p.id);
+      removePatientFromLocalCache(p.id);
+      if (p.hn) removePatientFromLocalCache(p.hn);
       setSuccessMsg(`ลบคนไข้ ${p.first_name} (HN: ${p.hn}) ออกจากระบบเรียบร้อยแล้ว`);
       if (selectedPatient?.id === p.id) {
         setSelectedPatient(null);
@@ -327,6 +332,8 @@ export const PatientsView: React.FC = () => {
     try {
       setActionLoading(true);
       await defaultApiClient.patients.deleteBiometrics(selectedPatient.id);
+      removePatientFromLocalCache(selectedPatient.id);
+      if (selectedPatient.hn) removePatientFromLocalCache(selectedPatient.hn);
       setSuccessMsg('ลบข้อมูลชีวมาตรใบหน้าและเวกเตอร์ตามกฎหมาย PDPA สำเร็จ (สถานะเปลี่ยนเป็นรอสแกนหน้า)');
       if (selectedPatient) {
         setSelectedPatient({

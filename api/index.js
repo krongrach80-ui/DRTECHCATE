@@ -10552,7 +10552,8 @@ function computeAverageVector(vectors) {
 }
 function calibrateCosineSimilarity(rawCos) {
   if (rawCos >= 0.85) {
-    return Math.min(1, 0.96 + Math.max(0, (rawCos - 0.85) / 0.15) * 0.04);
+    const t = Math.min(1, Math.max(0, (rawCos - 0.85) / 0.1));
+    return Math.min(0.984, 0.96 + t * 0.024);
   }
   if (rawCos >= 0.55) {
     const t = (rawCos - 0.55) / (0.85 - 0.55);
@@ -10572,7 +10573,7 @@ function evaluateBiometricMatch(probeVector, referenceVector, options) {
   const useCalibration = options?.useCalibration === true;
   const calSim = calibrateCosineSimilarity(rawCos);
   const effectiveSim = useCalibration ? calSim : rawCos;
-  const similarityPercentage = Math.max(0, Math.min(100, Math.round(effectiveSim * 100)));
+  const similarityPercentage = Math.max(0, Math.min(98, Math.round(effectiveSim * 100)));
   const minCos = options?.minCosine ?? ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY;
   const maxDist = options?.maxEuclidean ?? ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE;
   const minPercent = options?.minSimilarityPercentage ?? ACCEPTANCE_THRESHOLDS.MIN_SIMILARITY_PERCENTAGE;
@@ -11090,7 +11091,21 @@ var init_service10 = __esm({
             const res = await Promise.race([queryPromise, timeoutPromise]);
             const dbPatients = res && "data" in res ? res.data : null;
             if (dbPatients && Array.isArray(dbPatients)) {
+              const liveDbIds = new Set(dbPatients.map((p) => p.id));
+              const liveDbHns = new Set(dbPatients.map((p) => p.hn));
+              for (let i = records.length - 1; i >= 0; i--) {
+                const r = records[i];
+                const isLive = liveDbIds.has(r.patient_id) || liveDbHns.has(r.hn);
+                if (!isLive) {
+                  try {
+                    this.vaultService.deletePatientVault(r.patient_id);
+                  } catch {
+                  }
+                  records.splice(i, 1);
+                }
+              }
               for (const p of dbPatients) {
+                if (p.registration_status === "archived") continue;
                 const pRecord = p.history?.patient_record;
                 const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
                 if (pVector && Array.isArray(pVector) && pVector.length === 512) {
@@ -11236,7 +11251,7 @@ var init_service10 = __esm({
                   record,
                   similarity: result.cosineSimilarity,
                   distance: result.euclideanDistance,
-                  percent: result.similarityPercentage
+                  percent: Math.min(98, result.similarityPercentage)
                 };
               }
             }

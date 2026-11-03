@@ -689,7 +689,23 @@ export class SmartOnboardingService {
         const dbPatients = res && 'data' in res ? res.data : null;
 
         if (dbPatients && Array.isArray(dbPatients)) {
+          const liveDbIds = new Set(dbPatients.map((p) => p.id));
+          const liveDbHns = new Set(dbPatients.map((p) => p.hn));
+
+          // Purge any disk/in-memory records that are NOT in live Supabase patients
+          for (let i = records.length - 1; i >= 0; i--) {
+            const r = records[i];
+            const isLive = liveDbIds.has(r.patient_id) || liveDbHns.has(r.hn);
+            if (!isLive) {
+              try {
+                this.vaultService.deletePatientVault(r.patient_id);
+              } catch {}
+              records.splice(i, 1);
+            }
+          }
+
           for (const p of dbPatients) {
+            if (p.registration_status === 'archived') continue;
             const pRecord: PatientRecordFile | undefined = p.history?.patient_record;
             const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
             if (pVector && Array.isArray(pVector) && pVector.length === 512) {
@@ -854,7 +870,7 @@ export class SmartOnboardingService {
               record,
               similarity: result.cosineSimilarity,
               distance: result.euclideanDistance,
-              percent: result.similarityPercentage,
+              percent: Math.min(98, result.similarityPercentage),
             };
           }
         }
