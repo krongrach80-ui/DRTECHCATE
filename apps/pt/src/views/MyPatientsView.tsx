@@ -15,6 +15,7 @@ import {
   Sparkles,
   Trash2,
   Activity,
+  Sliders,
 } from 'lucide-react';
 import {
   PatientRecord,
@@ -36,6 +37,7 @@ import {
 interface MyPatientsViewProps {
   currentUserId: string;
   onOpenRecords: (patient: PatientRecord) => void;
+  onPrescribeCourse?: (patient: PatientRecord) => void;
 }
 
 const DEMO_PATIENTS: PatientRecord[] = [];
@@ -82,6 +84,7 @@ const DEFAULT_DEMO_SESSIONS: HistoricalSessionMetric[] = [
 export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
   currentUserId,
   onOpenRecords,
+  onPrescribeCourse,
 }) => {
   const [search, setSearch] = useState('');
   const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
@@ -582,6 +585,16 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Prescribe Exercise Course */}
+                          <button
+                            type="button"
+                            onClick={() => onPrescribeCourse?.(p)}
+                            className="p-2 rounded-lg bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 transition cursor-pointer border border-emerald-500/30"
+                            title="🏋️ จัดคอร์สและสั่งจ่ายท่าฝึกกายภาพเฉพาะคน"
+                          >
+                            <Sliders className="w-4 h-4" />
+                          </button>
+
                           {/* Open Clinical Records */}
                           <button
                             onClick={() => onOpenRecords(p)}

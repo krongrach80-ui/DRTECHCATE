@@ -28,6 +28,7 @@ import {
 
 interface ExerciseCatalogViewProps {
   currentUserId: string;
+  onOpenPrescription?: () => void;
 }
 
 const DEMO_EXERCISES: ExerciseRecord[] = [
@@ -77,6 +78,7 @@ const DEMO_EXERCISES: ExerciseRecord[] = [
 
 export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
   currentUserId,
+  onOpenPrescription,
 }) => {
   const [exercises, setExercises] = useState<ExerciseRecord[]>(DEMO_EXERCISES);
   const [search, setSearch] = useState('');
@@ -277,6 +279,16 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          {onOpenPrescription && (
+            <button
+              type="button"
+              onClick={onOpenPrescription}
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition shadow-lg shadow-emerald-950/40 cursor-pointer active:scale-95"
+            >
+              <Sliders className="w-4 h-4" />
+              <span>📅 จัดคอร์ส/สั่งจ่ายท่าฝึกเฉพาะคน</span>
+            </button>
+          )}
           <button
             onClick={fetchExercises}
             className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"

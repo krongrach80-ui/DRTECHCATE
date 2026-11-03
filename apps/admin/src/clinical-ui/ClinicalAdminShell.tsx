@@ -56,7 +56,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | undefined>(undefined);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPhysicalCardGameOpen, setIsPhysicalCardGameOpen] = useState(false);
-  const [schedulePreselectedPatientId, setSchedulePreselectedPatientId] = useState<string | undefined>(undefined);
+  const [schedulePreselectedPatientId, _setSchedulePreselectedPatientId] = useState<string | undefined>(undefined);
   const [autoOpenScheduleWizard, setAutoOpenScheduleWizard] = useState<boolean>(false);
 
   const fetchCalls = useCallback(async () => {

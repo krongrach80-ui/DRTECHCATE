@@ -4,7 +4,7 @@
  * Coordinates: SmartLoginView -> SmartEnrollmentView -> SmartInfoForm -> SmartDailyPlanView
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SmartLoginView } from './SmartLoginView';
 import { SmartEnrollmentView } from './SmartEnrollmentView';
 import { SmartInfoForm } from './SmartInfoForm';
@@ -22,6 +22,8 @@ interface SmartFlowControllerProps {
   onStaffAssistedRegister?: (biometrics: any) => void;
   onStepChange?: (step: SmartFlowStep) => void;
   isPaused?: boolean;
+  directPatient?: PatientRecordFile | null;
+  onClearDirectPatient?: () => void;
 }
 
 export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
@@ -31,6 +33,8 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
   onStaffAssistedRegister,
   onStepChange,
   isPaused,
+  directPatient,
+  onClearDirectPatient,
 }) => {
   const [currentStep, setCurrentStep] = useState<SmartFlowStep>('login');
   const [activePatient, setActivePatient] = useState<PatientRecordFile | null>(null);
@@ -40,6 +44,15 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
     setCurrentStep(nextStep);
     onStepChange?.(nextStep);
   };
+
+  // Direct login trigger (e.g. from Course Prescription "เริ่มฝึกทันที")
+  useEffect(() => {
+    if (directPatient) {
+      setActivePatient(directPatient);
+      setCurrentStep('daily_plan');
+      onStepChange?.('daily_plan');
+    }
+  }, [directPatient, onStepChange]);
 
   // 1. Login success -> Route to Daily Plan
   const handleLoginSuccess = (patient: PatientRecordFile) => {
@@ -67,6 +80,7 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
   // 5. Daily plan completed / logout -> Reset to Welcome / Login screen
   const handleLogout = () => {
     setActivePatient(null);
+    onClearDirectPatient?.();
     changeStep('login');
   };
 

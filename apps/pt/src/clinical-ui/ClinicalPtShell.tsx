@@ -10,6 +10,7 @@ import {
   ClinicalMenuId,
   ClinicalTopHeader,
   NewPatientRegistrationModal,
+  PatientCoursePrescriptionModal,
   ErrorBoundary,
 } from '../../../admin/src/clinical-ui/index.js';
 
@@ -53,6 +54,8 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
   const [activeRecordsPatientId, setActiveRecordsPatientId] = useState<string | undefined>(undefined);
   const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>(initialStaffCalls || []);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPhysicalCardGameOpen, setIsPhysicalCardGameOpen] = useState(false);
 
@@ -221,6 +224,10 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
                   setActiveRecordsPatientId(p.id);
                   setActiveTab('records');
                 }}
+                onPrescribeCourse={(p: PatientRecord) => {
+                  setPrescriptionPatientId(p.id || p.hn);
+                  setIsPrescriptionModalOpen(true);
+                }}
               />
             )}
             {activeTab === 'records' && (
@@ -230,7 +237,13 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
               <PtScheduleView currentUserId={currentUserId} />
             )}
             {activeTab === 'exercises' && (
-              <ExerciseCatalogView currentUserId={currentUserId} />
+              <ExerciseCatalogView
+                currentUserId={currentUserId}
+                onOpenPrescription={() => {
+                  setPrescriptionPatientId(null);
+                  setIsPrescriptionModalOpen(true);
+                }}
+              />
             )}
             {activeTab === 'profile' && (
               <ProfileView
@@ -261,8 +274,29 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
       <NewPatientRegistrationModal
         isOpen={isNewPatientModalOpen}
         onClose={() => setIsNewPatientModalOpen(false)}
-        onSuccess={(_id) => {
-          setActiveTab('patients');
+        onSuccess={(newPatientId, action) => {
+          setIsNewPatientModalOpen(false);
+          if (action === 'course') {
+            setPrescriptionPatientId(newPatientId);
+            setIsPrescriptionModalOpen(true);
+          } else {
+            setActiveTab('patients');
+          }
+        }}
+      />
+
+      {/* Patient Course Prescription Modal (PT Portal) */}
+      <PatientCoursePrescriptionModal
+        isOpen={isPrescriptionModalOpen}
+        onClose={() => setIsPrescriptionModalOpen(false)}
+        preselectedPatientId={prescriptionPatientId || undefined}
+        onSuccess={(_targetId, action) => {
+          setIsPrescriptionModalOpen(false);
+          if (action === 'schedule') {
+            setActiveTab('schedule');
+          } else {
+            setActiveTab('patients');
+          }
         }}
       />
 

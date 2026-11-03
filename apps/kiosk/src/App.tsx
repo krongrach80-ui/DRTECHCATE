@@ -33,8 +33,11 @@ import { SmartFlowController, SmartFlowStep } from './smart-flow/index.js';
 import { KioskClinicalHeader } from './clinical-ui/index.js';
 import { StaffLoginModal } from '../../admin/src/clinical-ui/StaffLoginModal';
 import { NewPatientRegistrationModal } from '../../admin/src/clinical-ui/NewPatientRegistrationModal';
+import { PatientCoursePrescriptionModal } from '../../admin/src/clinical-ui/PatientCoursePrescriptionModal';
 import { ClinicalAdminShell } from '../../admin/src/clinical-ui/ClinicalAdminShell';
 import { ClinicalPtShell } from '../../pt/src/clinical-ui/ClinicalPtShell';
+import { normalizePatientRecord } from '../../../packages/api-client/src/index.js';
+import { PatientRecordFile } from '../../../packages/smart-biometric-core/src/index.js';
 
 export type RoleMode = 'kiosk' | 'admin' | 'pt';
 
@@ -75,6 +78,9 @@ export const App: React.FC = () => {
   const [_smartStep, setSmartStep] = useState<SmartFlowStep>('login');
   const [isStaffLoginModalOpen, setIsStaffLoginModalOpen] = useState(false);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | null>(null);
+  const [directPatient, setDirectPatient] = useState<PatientRecordFile | null>(null);
   const machine = useMemo(() => new KioskStateMachine(), []);
   const [state, setState] = useState<KioskState>('IDLE');
   const [context, setContext] = useState<MissionContext>(machine.getContext());
@@ -95,6 +101,8 @@ export const App: React.FC = () => {
     setPendingRegistrationBiometrics(null);
     setAuthIntent('general');
     setIsNewPatientModalOpen(false);
+    setIsPrescriptionModalOpen(false);
+    setPrescriptionPatientId(null);
     setIsStaffLoginModalOpen(false);
     defaultApiClient.setAuthToken(null);
     defaultApiClient.setUserProfile(null);
@@ -561,7 +569,9 @@ export const App: React.FC = () => {
               setIsStaffLoginModalOpen(true);
             }}
             onStaffAssistedRegister={handleStaffAssistedRegister}
-            isPaused={isStaffLoginModalOpen || isNewPatientModalOpen || isPairingOpen || roleMode !== 'kiosk'}
+            isPaused={isStaffLoginModalOpen || isNewPatientModalOpen || isPrescriptionModalOpen || isPairingOpen || roleMode !== 'kiosk'}
+            directPatient={directPatient}
+            onClearDirectPatient={() => setDirectPatient(null)}
           />
         </div>
 
@@ -594,9 +604,53 @@ export const App: React.FC = () => {
               handleExitStaffAssistMode();
             }
           }}
-          onSuccess={(_newPatientId) => {
+          onSuccess={(newPatientId, action) => {
             setIsNewPatientModalOpen(false);
+            if (action === 'course') {
+              // Reset 10-minute timeout so staff has full time to customize course
+              staffAssistWatchdogRef.current = Date.now() + STAFF_ASSIST_TIMEOUT_MS;
+              setStaffAssistRemainingSec(600);
+              setPrescriptionPatientId(newPatientId);
+              setIsPrescriptionModalOpen(true);
+            } else {
+              handleExitStaffAssistMode();
+            }
+          }}
+        />
+
+        {/* Patient Course Prescription Modal (Kiosk Mode) */}
+        <PatientCoursePrescriptionModal
+          isOpen={isPrescriptionModalOpen}
+          kioskMode={true}
+          preselectedPatientId={prescriptionPatientId || undefined}
+          onClose={() => {
+            setIsPrescriptionModalOpen(false);
             handleExitStaffAssistMode();
+          }}
+          onSuccess={async (targetPatientId, action) => {
+            setIsPrescriptionModalOpen(false);
+            if (action === 'start_exercise') {
+              // Exit staff privileges immediately
+              handleExitStaffAssistMode();
+
+              // Fetch target patient and transition directly to SmartDailyPlanView
+              try {
+                let targetRecord: any = null;
+                try {
+                  targetRecord = await defaultApiClient.patients.get(targetPatientId);
+                } catch {
+                  const dossier = await defaultApiClient.smartOnboarding.getDossier(targetPatientId);
+                  targetRecord = dossier?.record;
+                }
+                const norm = normalizePatientRecord(targetRecord || { id: targetPatientId, hn: targetPatientId });
+                setDirectPatient(norm);
+              } catch {
+                setDirectPatient(normalizePatientRecord({ id: targetPatientId, hn: targetPatientId }));
+              }
+            } else {
+              // Return to Kiosk home
+              handleExitStaffAssistMode();
+            }
           }}
         />
       </div>
@@ -771,8 +825,23 @@ export const App: React.FC = () => {
       <NewPatientRegistrationModal
         isOpen={isNewPatientModalOpen}
         onClose={() => setIsNewPatientModalOpen(false)}
-        onSuccess={(_newPatientId) => {
+        onSuccess={(newPatientId, action) => {
           setIsNewPatientModalOpen(false);
+          if (action === 'course') {
+            setPrescriptionPatientId(newPatientId);
+            setIsPrescriptionModalOpen(true);
+          }
+        }}
+      />
+
+      {/* Patient Course Prescription Modal (Classic Fallback) */}
+      <PatientCoursePrescriptionModal
+        isOpen={isPrescriptionModalOpen}
+        kioskMode={true}
+        preselectedPatientId={prescriptionPatientId || undefined}
+        onClose={() => setIsPrescriptionModalOpen(false)}
+        onSuccess={(_targetId) => {
+          setIsPrescriptionModalOpen(false);
         }}
       />
     </div>

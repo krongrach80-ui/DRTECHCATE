@@ -19,7 +19,6 @@ import {
   X,
   Calendar as CalendarIcon,
   Clock,
-  Sparkles,
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
@@ -27,16 +26,12 @@ import {
   ArrowUp,
   ArrowDown,
   Trash2,
-  Plus,
   Sliders,
-  ShieldCheck,
   Activity,
   Layers,
   Search,
   Check,
   User,
-  HeartPulse,
-  Info,
   CalendarCheck,
 } from 'lucide-react';
 import {
@@ -72,7 +67,8 @@ export interface PatientCoursePrescriptionModalProps {
   onClose: () => void;
   preselectedPatientId?: string;
   preselectedDate?: string;
-  onSuccess?: (patientId: string, action?: 'schedule' | 'patients') => void;
+  onSuccess?: (patientId: string, action?: 'schedule' | 'patients' | 'start_exercise' | 'kiosk_home') => void;
+  kioskMode?: boolean;
 }
 
 // Trilingual Dictionary
@@ -117,6 +113,8 @@ const I18N = {
     summarySubtitle: 'ข้อมูลตารางฝึกถูกบันทึกและเชื่อมโยงกับระบบ Kiosk และตารางนัดเรียบร้อยแล้ว',
     goToScheduleBtn: '📅 ไปหน้าตารางนัด (5. ตารางนัด)',
     goToPatientsBtn: '👥 กลับหน้ารายการคนไข้ (2. ข้อมูลคนไข้)',
+    startExerciseBtn: '🏋️ เริ่มฝึกกายภาพของผู้ป่วยคนนี้ทันที',
+    kioskHomeBtn: '🏠 เสร็จสิ้น / กลับหน้าหลัก Kiosk',
     totalDays: 'รวมวันฝึกทั้งหมด',
     daysUnit: 'วัน',
   },
@@ -160,6 +158,8 @@ const I18N = {
     summarySubtitle: 'Schedule is now atomic and synchronized with Kiosk Daily Plan and Schedule Calendar.',
     goToScheduleBtn: '📅 View Schedule (Menu 5)',
     goToPatientsBtn: '👥 Return to Patients (Menu 2)',
+    startExerciseBtn: '🏋️ Start Patient Session Now',
+    kioskHomeBtn: '🏠 Done / Return to Kiosk Home',
     totalDays: 'Total Training Days',
     daysUnit: 'days',
   },
@@ -203,6 +203,8 @@ const I18N = {
     summarySubtitle: '排期数据已与 Kiosk 训练终端及日程大表完全同步。',
     goToScheduleBtn: '📅 前往日程表 (第5项)',
     goToPatientsBtn: '👥 返回患者列表 (第2项)',
+    startExerciseBtn: '🏋️ 立即开始该患者训练',
+    kioskHomeBtn: '🏠 完成 / 返回Kiosk主页',
     totalDays: '训练总天数',
     daysUnit: '天',
   },
@@ -329,6 +331,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
   preselectedPatientId,
   preselectedDate,
   onSuccess,
+  kioskMode = false,
 }) => {
   const [lang, setLang] = useState<'th' | 'en' | 'cn'>('th');
   const t = I18N[lang];
@@ -397,6 +400,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
     }
 
     loadPatients();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, preselectedPatientId]);
 
   // Load existing course when selectedPatient changes
@@ -741,7 +745,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
     }
   };
 
-  const handleFinishSummary = (action: 'schedule' | 'patients') => {
+  const handleFinishSummary = (action: 'schedule' | 'patients' | 'start_exercise' | 'kiosk_home') => {
     setIsSummaryModalOpen(false);
     onClose();
     if (onSuccess && selectedPatient) {
@@ -1533,25 +1537,49 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => handleFinishSummary('schedule')}
-                className="w-full sm:flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition cursor-pointer"
-              >
-                <CalendarCheck className="w-4 h-4" />
-                <span>{t.goToScheduleBtn}</span>
-              </button>
+            {kioskMode ? (
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  id="kiosk-start-exercise-btn"
+                  onClick={() => handleFinishSummary('start_exercise')}
+                  className="w-full sm:flex-1 py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-950/60 transition cursor-pointer active:scale-95 border border-emerald-400/50"
+                >
+                  <Activity className="w-4 h-4 shrink-0" />
+                  <span>{t.startExerciseBtn}</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => handleFinishSummary('patients')}
-                className="w-full sm:flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 border border-slate-700 transition cursor-pointer"
-              >
-                <User className="w-4 h-4" />
-                <span>{t.goToPatientsBtn}</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  id="kiosk-home-btn"
+                  onClick={() => handleFinishSummary('kiosk_home')}
+                  className="w-full sm:flex-1 py-3.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-slate-700 transition cursor-pointer active:scale-95"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>{t.kioskHomeBtn}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleFinishSummary('schedule')}
+                  className="w-full sm:flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition cursor-pointer"
+                >
+                  <CalendarCheck className="w-4 h-4" />
+                  <span>{t.goToScheduleBtn}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleFinishSummary('patients')}
+                  className="w-full sm:flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 border border-slate-700 transition cursor-pointer"
+                >
+                  <User className="w-4 h-4" />
+                  <span>{t.goToPatientsBtn}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
