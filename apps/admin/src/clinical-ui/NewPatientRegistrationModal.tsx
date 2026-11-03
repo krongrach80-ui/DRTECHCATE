@@ -561,6 +561,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
         hn: checkHn || undefined,
         full_name: checkName || undefined,
         birth_date: checkDob || undefined,
+        exclude_patient_id: createdPatientId || undefined,
       });
 
       setDupCheckStatus({

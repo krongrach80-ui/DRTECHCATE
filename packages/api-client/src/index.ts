@@ -629,6 +629,8 @@ export class ApiClient {
 
         // Query authoritative Supabase Cloud directly (No local mock/stale cache)
 
+        const excludeId = (urlParams.get('exclude_patient_id') || urlParams.get('patient_id') || '').trim();
+
         if (!duplicateHn && targetHn) {
           try {
             const supaRes = await fetch(
@@ -643,8 +645,10 @@ export class ApiClient {
             if (supaRes.ok) {
               const list = await supaRes.json();
               if (Array.isArray(list) && list.length > 0) {
-                duplicateHn = true;
-                existingPatient = list[0];
+                if (!excludeId || (list[0].id !== excludeId && list[0].hn !== excludeId)) {
+                  duplicateHn = true;
+                  existingPatient = list[0];
+                }
               }
             }
           } catch {}
@@ -3234,11 +3238,12 @@ export class ApiClient {
       }
     },
 
-    checkDuplicate: async (params: { hn?: string; full_name?: string; birth_date?: string }) => {
+    checkDuplicate: async (params: { hn?: string; full_name?: string; birth_date?: string; exclude_patient_id?: string }) => {
       const q = new URLSearchParams();
       if (params.hn) q.set('hn', params.hn);
       if (params.full_name) q.set('full_name', params.full_name);
       if (params.birth_date) q.set('birth_date', params.birth_date);
+      if (params.exclude_patient_id) q.set('exclude_patient_id', params.exclude_patient_id);
       return this.request<{
         ok: boolean;
         duplicate_hn: boolean;

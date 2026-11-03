@@ -62,3 +62,7 @@ public/uploads/
 
 
 .vercel
+
+cloudflared.exe
+_temp_pages
+

@@ -10671,9 +10671,10 @@ var init_service10 = __esm({
         const cleanHn = (params.hn || "").trim();
         const cleanName = (params.full_name || "").trim().toLowerCase();
         const cleanDob = (params.birth_date || "").trim();
+        const excludeId = (params.exclude_patient_id || "").trim();
         if (cleanHn) {
           const localRecord = this.vaultService.getPatientRecord(cleanHn);
-          if (localRecord) {
+          if (localRecord && (!excludeId || localRecord.patient_id !== excludeId && localRecord.hn !== excludeId)) {
             const fullName = `${localRecord.first_name || ""} ${localRecord.last_name || ""}`.trim();
             return {
               duplicate_hn: true,
@@ -10696,7 +10697,7 @@ var init_service10 = __esm({
               (_, reject) => setTimeout(() => reject(new Error("Supabase query timed out")), 1200)
             );
             const { data: hnMatch } = await Promise.race([queryPromise, timeoutPromise]);
-            if (hnMatch) {
+            if (hnMatch && (!excludeId || hnMatch.id !== excludeId && hnMatch.hn !== excludeId)) {
               const fullName = `${hnMatch.first_name || ""} ${hnMatch.last_name || ""}`.trim();
               return {
                 duplicate_hn: true,
@@ -10723,6 +10724,7 @@ var init_service10 = __esm({
             const { data: matches } = await Promise.race([queryPromise, timeoutPromise]);
             if (Array.isArray(matches) && matches.length > 0) {
               const matched = matches.find((m) => {
+                if (excludeId && (m.id === excludeId || m.hn === excludeId)) return false;
                 const mFull = `${m.first_name || ""} ${m.last_name || ""}`.trim().toLowerCase();
                 return mFull === cleanName || mFull.includes(cleanName) || cleanName.includes(mFull);
               });
@@ -10890,8 +10892,11 @@ var init_service10 = __esm({
         }
         const explicitHn = payload.hn?.trim();
         if (explicitHn) {
-          const dupCheck = await this.checkDuplicate({ hn: explicitHn });
-          if (dupCheck.duplicate_hn) {
+          const dupCheck = await this.checkDuplicate({
+            hn: explicitHn,
+            exclude_patient_id: payload.patient_id
+          });
+          if (dupCheck.duplicate_hn && dupCheck.existing_patient?.id !== payload.patient_id) {
             throw new AppError(dupCheck.message || `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${explicitHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27`, 409, "DUPLICATE_HN");
           }
         }
@@ -15894,7 +15899,8 @@ var SmartOnboardingController = class {
         const hn = req.query.hn;
         const full_name = req.query.full_name || req.query.name;
         const birth_date = req.query.birth_date;
-        const result = await this.service.checkDuplicate({ hn, full_name, birth_date });
+        const exclude_patient_id = req.query.exclude_patient_id || req.query.patient_id;
+        const result = await this.service.checkDuplicate({ hn, full_name, birth_date, exclude_patient_id });
         res.status(200).json({
           ok: true,
           data: result,

@@ -72,6 +72,7 @@ export class SmartOnboardingService {
     hn?: string;
     full_name?: string;
     birth_date?: string;
+    exclude_patient_id?: string;
   }): Promise<{
     duplicate_hn: boolean;
     duplicate_name_dob: boolean;
@@ -86,11 +87,12 @@ export class SmartOnboardingService {
     const cleanHn = (params.hn || '').trim();
     const cleanName = (params.full_name || '').trim().toLowerCase();
     const cleanDob = (params.birth_date || '').trim();
+    const excludeId = (params.exclude_patient_id || '').trim();
 
     // 1. Check local vault first for fast instant duplicate detection
     if (cleanHn) {
       const localRecord = this.vaultService.getPatientRecord(cleanHn);
-      if (localRecord) {
+      if (localRecord && (!excludeId || (localRecord.patient_id !== excludeId && localRecord.hn !== excludeId))) {
         const fullName = `${localRecord.first_name || ''} ${localRecord.last_name || ''}`.trim();
         return {
           duplicate_hn: true,
@@ -123,7 +125,7 @@ export class SmartOnboardingService {
 
         const { data: hnMatch } = (await Promise.race([queryPromise, timeoutPromise])) as any;
 
-        if (hnMatch) {
+        if (hnMatch && (!excludeId || (hnMatch.id !== excludeId && hnMatch.hn !== excludeId))) {
           const fullName = `${hnMatch.first_name || ''} ${hnMatch.last_name || ''}`.trim();
           return {
             duplicate_hn: true,
@@ -158,6 +160,7 @@ export class SmartOnboardingService {
 
         if (Array.isArray(matches) && matches.length > 0) {
           const matched = matches.find((m: any) => {
+            if (excludeId && (m.id === excludeId || m.hn === excludeId)) return false;
             const mFull = `${m.first_name || ''} ${m.last_name || ''}`.trim().toLowerCase();
             return mFull === cleanName || mFull.includes(cleanName) || cleanName.includes(mFull);
           });
@@ -434,8 +437,11 @@ export class SmartOnboardingService {
 
     const explicitHn = payload.hn?.trim();
     if (explicitHn) {
-      const dupCheck = await this.checkDuplicate({ hn: explicitHn });
-      if (dupCheck.duplicate_hn) {
+      const dupCheck = await this.checkDuplicate({
+        hn: explicitHn,
+        exclude_patient_id: payload.patient_id,
+      });
+      if (dupCheck.duplicate_hn && dupCheck.existing_patient?.id !== payload.patient_id) {
         throw new AppError(dupCheck.message || `หมายเลขประจำตัวคนไข้ (HN) "${explicitHn}" มีอยู่ในระบบแล้ว`, 409, 'DUPLICATE_HN');
       }
     }

@@ -88,8 +88,9 @@ export class SmartOnboardingController {
       const hn = req.query.hn as string | undefined;
       const full_name = (req.query.full_name || req.query.name) as string | undefined;
       const birth_date = req.query.birth_date as string | undefined;
+      const exclude_patient_id = (req.query.exclude_patient_id || req.query.patient_id) as string | undefined;
 
-      const result = await this.service.checkDuplicate({ hn, full_name, birth_date });
+      const result = await this.service.checkDuplicate({ hn, full_name, birth_date, exclude_patient_id });
       res.status(200).json({
         ok: true,
         data: result,
