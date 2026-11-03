@@ -91,20 +91,20 @@ ALTER TABLE public.exercise_prescriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prescription_items ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
-  CREATE POLICY "patient_consents_authenticated" ON public.patient_consents
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  CREATE POLICY "patient_consents_policy" ON public.patient_consents
+    FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
-  CREATE POLICY "exercise_prescriptions_authenticated" ON public.exercise_prescriptions
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  CREATE POLICY "exercise_prescriptions_policy" ON public.exercise_prescriptions
+    FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
-  CREATE POLICY "prescription_items_authenticated" ON public.prescription_items
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  CREATE POLICY "prescription_items_policy" ON public.prescription_items
+    FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
