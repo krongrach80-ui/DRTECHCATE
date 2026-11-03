@@ -13,6 +13,40 @@ import {
 export class SmartOnboardingController {
   constructor(private service: SmartOnboardingService = defaultSmartOnboardingService) {}
 
+  createDraft = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = await this.service.createDraftPatient(req.body);
+      res.status(201).json({
+        ok: true,
+        data,
+        patient_id: data.patient_id,
+        hn: data.hn,
+        registration_status: data.registration_status,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  cancelDraft = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const patientId = req.params.patientId || req.body.patient_id;
+      const data = await this.service.cancelDraftPatient(patientId);
+      res.status(200).json(data);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  savePrescription = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = await this.service.savePrescription(req.body);
+      res.status(201).json(data);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const staffRole = ((req.headers['x-staff-role'] || (req.user as any)?.role || '') as string).toLowerCase();

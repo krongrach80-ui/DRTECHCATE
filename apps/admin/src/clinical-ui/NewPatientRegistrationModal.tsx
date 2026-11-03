@@ -695,8 +695,19 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     try {
       localStorage.removeItem('pendingRegistrationBiometrics');
     } catch {}
-    onSuccess(createdPatientId || hn, action);
+    const finalId = createdPatientId || hn;
+    onSuccess(finalId, action);
   }, [createdPatientId, hn, onSuccess]);
+
+  const handleModalClose = useCallback(async () => {
+    stopCamera();
+    if (createdPatientId && step < 3) {
+      try {
+        await defaultApiClient.smartOnboarding.cancelDraft(createdPatientId);
+      } catch {}
+    }
+    onClose();
+  }, [createdPatientId, step, onClose]);
 
   // Step 3 5-second countdown timer effect
   useEffect(() => {
@@ -722,7 +733,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
   if (!isOpen) return null;
 
-  // Handler for Step 1 -> Step 2
+  // Handler for Step 1 -> Step 2: Atomic Creation of Draft in Supabase
   const handleProceedToScan = async (e?: React.FormEvent | React.MouseEvent) => {
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
@@ -753,15 +764,61 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     }
 
     setErrorMsg(null);
-    setCapturedFrames((prev) => {
-      // Keep seeded Frame 1 if available
-      if (prev.length > 0 && prev[0].embedding?.length === 512) {
-        return [prev[0]];
+    setIsLoading(true);
+
+    try {
+      const splitNames = trimmedName.split(' ');
+      const firstName = splitNames[0] || 'ผู้ป่วย';
+      const lastName = splitNames.slice(1).join(' ') || '-';
+
+      // Atomic Step 1: Create or Update Patient Draft in Supabase
+      const draftRes = await defaultApiClient.smartOnboarding.createDraft({
+        patient_id: createdPatientId || undefined,
+        hn: hn.trim() || undefined,
+        first_name: firstName,
+        last_name: lastName,
+        birth_date: birthDate || undefined,
+        age: Number(age) || 45,
+        sex,
+        gender: sex,
+        phone: phone.trim() || undefined,
+        target_joint: targetJoint,
+        injury: diagnosis.trim() || undefined,
+        contraindications: contraindications.trim() || undefined,
+        underlying_diseases: underlyingDiseases.trim() || undefined,
+        allergies: allergies.trim() || undefined,
+        doctor_notes: doctorNotes.trim() || undefined,
+        emergency_contact_name: emergencyContactName.trim() || undefined,
+        emergency_contact_relation: emergencyContactRelation.trim() || undefined,
+        emergency_contact_phone: emergencyContactPhone.trim() || undefined,
+        pdpa_consent: consentPdpa,
+        registered_by_staff_id: staffUser?.id || undefined,
+        registered_by_staff_name: staffUser?.full_name || undefined,
+        responsible_pt_id: responsiblePtId || undefined,
+      });
+
+      if (draftRes && draftRes.patient_id) {
+        setCreatedPatientId(draftRes.patient_id);
+        if (draftRes.hn) {
+          setHn(draftRes.hn);
+        }
       }
-      return [];
-    });
-    setCurrentFrameIdx(initialBiometrics?.embedding ? 1 : 0);
-    setStep(2);
+
+      setCapturedFrames((prev) => {
+        // Keep seeded Frame 1 if available
+        if (prev.length > 0 && prev[0].embedding?.length === 512) {
+          return [prev[0]];
+        }
+        return [];
+      });
+      setCurrentFrameIdx(initialBiometrics?.embedding ? 1 : 0);
+      setStep(2);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ไม่สามารถสร้างระเบียนคนไข้ชั่วคราว (Draft) ใน Supabase ได้';
+      setErrorMsg(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Helper to extract a single frame with geometric alignment & 512-D L2-normalized embedding
@@ -863,6 +920,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       }));
 
       const regRes = await defaultApiClient.smartOnboarding.register({
+        patient_id: createdPatientId || undefined,
         hn: hn.trim() || undefined,
         first_name: firstName,
         last_name: lastName,
@@ -1116,7 +1174,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleModalClose}
               className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition active:scale-95 cursor-pointer shrink-0"
               title="Close"
             >
@@ -1538,7 +1596,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
             <div className="p-4 sm:px-8 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50 shrink-0">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleModalClose}
                 className="px-5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 text-sm font-semibold transition active:scale-95 cursor-pointer"
               >
                 {t.btnCancel}

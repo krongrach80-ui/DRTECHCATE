@@ -16,6 +16,10 @@ export function createSmartOnboardingRouter(
   const router = Router();
 
   // 0. Public Self-Registration for Kiosk (Zero Mock - Writes to Supabase public.patients)
+  router.post('/create-draft', controller.createDraft);
+  router.delete('/cancel-draft/:patientId', controller.cancelDraft);
+  router.delete('/cancel-draft', controller.cancelDraft);
+  router.post('/prescription', controller.savePrescription);
   router.post('/register', controller.register);
   router.get('/check-duplicate', controller.checkDuplicate);
   router.post('/pin-login', controller.pinLogin);

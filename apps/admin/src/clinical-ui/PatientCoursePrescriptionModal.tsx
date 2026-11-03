@@ -378,11 +378,26 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
     async function loadPatients() {
       try {
+        let directMatch: PatientRecord | null = null;
+        if (preselectedPatientId) {
+          try {
+            directMatch = await defaultApiClient.patients.get(preselectedPatientId);
+          } catch {
+            // direct fetch fallback handled internally
+          }
+        }
+
         const list = await defaultApiClient.patients.list().catch(() => []);
         const validList = Array.isArray(list) ? list : [];
+        if (directMatch && !validList.some((p) => p.id === directMatch!.id || p.hn === directMatch!.hn)) {
+          validList.unshift(directMatch);
+        }
         setPatients(validList);
 
-        if (preselectedPatientId) {
+        if (directMatch) {
+          setSelectedPatient(directMatch);
+          setIsSearchingPatient(false);
+        } else if (preselectedPatientId) {
           const match = validList.find(
             (p) => p.id === preselectedPatientId || p.hn === preselectedPatientId
           );
@@ -657,7 +672,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
   // Handle Save Course Prescription with Atomic Transaction
   const handleSaveCourse = async () => {
-    if (!selectedPatient) {
+    if (!selectedPatient || !selectedPatient.id) {
       setErrorMsg(t.noPatientSelected);
       return;
     }
@@ -679,6 +694,31 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
       const finalStartDate = scheduledDates[0] || startDate;
       const finalEndDate = scheduledDates[scheduledDates.length - 1] || endDate;
+
+      // 0. Save Authoritative Clinical Prescription Record
+      try {
+        await defaultApiClient.smartOnboarding.savePrescription({
+          patient_id: selectedPatient.id,
+          target_joint: selectedPatient.target_joint || 'ข้อไหล่',
+          diagnosis: selectedPatient.injury || (selectedPatient as any).diagnosis || undefined,
+          contraindications: selectedPatient.contraindications || undefined,
+          start_date: finalStartDate,
+          end_date: finalEndDate,
+          scheduled_dates: scheduledDates,
+          exercises: prescribedExercises.map((e, idx) => ({
+            exercise_id: e.exercise_id,
+            exercise_name: e.name || e.name_th || 'ท่าฝึกกายภาพ',
+            target_side: e.side === 'both' ? 'bilateral' : e.side,
+            sets: e.sets,
+            reps: e.reps,
+            hold_seconds: Math.round(e.hold_duration_sec || 3),
+            sequence_order: idx + 1,
+            clinical_notes: e.pt_note || undefined,
+          })),
+        });
+      } catch {
+        // non-blocking
+      }
 
       const schedulePayload = {
         patient_id: targetPid,
@@ -1522,8 +1562,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
           <button
             type="button"
             onClick={handleSaveCourse}
-            disabled={isSaving}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold shadow-lg shadow-emerald-950/50 transition cursor-pointer disabled:opacity-50"
+            disabled={isSaving || !selectedPatient?.id}
+            title={!selectedPatient?.id ? 'กรุณาเลือกคนไข้ก่อนบันทึกคอร์ส' : undefined}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold shadow-lg shadow-emerald-950/50 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? (
               <>

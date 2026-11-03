@@ -2179,7 +2179,30 @@ export class ApiClient {
     },
 
     get: async (id: string) => {
-      return this.request<PatientRecord>(`/patients/${id}`, { method: 'GET' });
+      try {
+        return await this.request<PatientRecord>(`/patients/${id}`, { method: 'GET' });
+      } catch {
+        // Direct fallback to Supabase REST Cloud
+        const cleanTarget = (id || '').trim();
+        try {
+          const supaRes = await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(cleanTarget)},hn.eq.${encodeURIComponent(cleanTarget)})&select=*&limit=1`,
+            {
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              },
+            }
+          );
+          if (supaRes.ok) {
+            const rows = await supaRes.json();
+            if (Array.isArray(rows) && rows[0]) {
+              return normalizePatientRecord(rows[0]) as PatientRecord;
+            }
+          }
+        } catch {}
+        throw new Error(`Patient ${id} not found`);
+      }
     },
 
     create: async (data: {
@@ -2909,6 +2932,204 @@ export class ApiClient {
   // 12. SMART ONBOARDING & BIOMETRIC DUAL-SYNC (Master Prompt v4)
   // =========================================================================
   public smartOnboarding = {
+    createDraft: async (payload: {
+      patient_id?: string;
+      hn?: string;
+      first_name: string;
+      last_name?: string;
+      birth_date?: string;
+      age?: number;
+      sex?: string;
+      gender?: string;
+      phone?: string;
+      target_joint?: string;
+      injury?: string;
+      contraindications?: string;
+      underlying_diseases?: string;
+      allergies?: string;
+      doctor_notes?: string;
+      emergency_contact_name?: string;
+      emergency_contact_relation?: string;
+      emergency_contact_phone?: string;
+      pdpa_consent?: boolean;
+      registered_by_staff_id?: string;
+      registered_by_staff_name?: string;
+      responsible_pt_id?: string;
+    }) => {
+      try {
+        return await this.request<{
+          ok: boolean;
+          patient_id: string;
+          hn: string;
+          registration_status: string;
+        }>('/smart-onboarding/create-draft', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      } catch (apiErr) {
+        // Direct Supabase REST fallback
+        try {
+          const splitNames = payload.first_name.trim().split(' ');
+          const firstName = splitNames[0] || 'ผู้ป่วย';
+          const lastName = payload.last_name?.trim() || splitNames.slice(1).join(' ') || '-';
+          const hn = payload.hn?.trim() || `P-${Math.floor(1000 + Math.random() * 9000)}`;
+
+          const draftData: Record<string, unknown> = {
+            hn,
+            first_name: firstName,
+            last_name: lastName,
+            birth_date: payload.birth_date || null,
+            age: typeof payload.age === 'number' ? payload.age : 30,
+            sex: payload.sex || 'other',
+            gender: payload.gender || payload.sex || 'other',
+            phone: payload.phone || '-',
+            target_joint: payload.target_joint || 'ข้อไหล่',
+            injury: payload.injury || 'กายภาพบำบัดฟื้นฟู',
+            contraindications: payload.contraindications || '-',
+            underlying_diseases: payload.underlying_diseases || '-',
+            allergies: payload.allergies || '-',
+            doctor_notes: payload.doctor_notes || '-',
+            emergency_contact_name: payload.emergency_contact_name || null,
+            emergency_contact_relation: payload.emergency_contact_relation || null,
+            emergency_contact_phone: payload.emergency_contact_phone || null,
+            pdpa_consent: payload.pdpa_consent ?? true,
+            pdpa_consented_at: payload.pdpa_consent ? new Date().toISOString() : null,
+            registered_by_staff_id: payload.registered_by_staff_id || null,
+            registered_by_staff_name: payload.registered_by_staff_name || null,
+            responsible_pt_id: payload.responsible_pt_id || null,
+            registration_status: 'draft',
+            registered_via: 'reception',
+            version: 1,
+          };
+
+          const supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients`, {
+            method: 'POST',
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=representation',
+            },
+            body: JSON.stringify(draftData),
+          });
+          if (supaRes.ok) {
+            const rows = await supaRes.json();
+            if (Array.isArray(rows) && rows[0]) {
+              return {
+                ok: true,
+                patient_id: rows[0].id,
+                hn: rows[0].hn,
+                registration_status: 'draft',
+              };
+            }
+          }
+        } catch {}
+        throw apiErr;
+      }
+    },
+
+    cancelDraft: async (patientId: string) => {
+      try {
+        return await this.request<{ ok: boolean; message: string }>(`/smart-onboarding/cancel-draft/${patientId}`, {
+          method: 'DELETE',
+        });
+      } catch {
+        try {
+          await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${patientId}&registration_status=in.(draft,awaiting_face)`, {
+            method: 'DELETE',
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+            },
+          });
+        } catch {}
+        return { ok: true, message: 'Draft canceled' };
+      }
+    },
+
+    savePrescription: async (payload: {
+      patient_id: string;
+      prescribed_by?: string;
+      target_joint: string;
+      diagnosis?: string;
+      contraindications?: string;
+      start_date?: string;
+      end_date?: string;
+      scheduled_dates?: string[];
+      notes?: string;
+      exercises: Array<{
+        exercise_id: string;
+        exercise_name: string;
+        target_side?: 'right' | 'left' | 'bilateral';
+        sets: number;
+        reps: number;
+        hold_seconds?: number;
+        sequence_order?: number;
+        clinical_notes?: string;
+      }>;
+    }) => {
+      try {
+        return await this.request<{ ok: boolean; prescription_id: string }>('/smart-onboarding/prescription', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      } catch (apiErr) {
+        // Direct Supabase REST fallback
+        try {
+          const rxRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/exercise_prescriptions`, {
+            method: 'POST',
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=representation',
+            },
+            body: JSON.stringify({
+              patient_id: payload.patient_id,
+              prescribed_by: payload.prescribed_by || null,
+              target_joint: payload.target_joint || 'ข้อไหล่',
+              diagnosis: payload.diagnosis || null,
+              contraindications: payload.contraindications || null,
+              start_date: payload.start_date || new Date().toISOString().slice(0, 10),
+              end_date: payload.end_date || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+              scheduled_dates: payload.scheduled_dates || [],
+              status: 'active',
+              notes: payload.notes || null,
+            }),
+          });
+          if (rxRes.ok) {
+            const rxRows = await rxRes.json();
+            const rxId = rxRows[0]?.id;
+            if (rxId && payload.exercises && payload.exercises.length > 0) {
+              const defaultExId = 'e1000000-0000-0000-0000-000000000001';
+              const items = payload.exercises.map((ex, idx) => ({
+                prescription_id: rxId,
+                exercise_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ex.exercise_id) ? ex.exercise_id : defaultExId,
+                exercise_name: ex.exercise_name,
+                target_side: ex.target_side || 'right',
+                sets: ex.sets || 3,
+                reps: ex.reps || 10,
+                hold_seconds: ex.hold_seconds || 3,
+                sequence_order: ex.sequence_order || idx + 1,
+                clinical_notes: ex.clinical_notes || null,
+              }));
+              await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/prescription_items`, {
+                method: 'POST',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(items),
+              });
+            }
+            return { ok: true, prescription_id: rxId };
+          }
+        } catch {}
+        throw apiErr;
+      }
+    },
+
     checkDuplicate: async (params: { hn?: string; full_name?: string; birth_date?: string }) => {
       const q = new URLSearchParams();
       if (params.hn) q.set('hn', params.hn);
@@ -2926,6 +3147,7 @@ export class ApiClient {
     },
 
     register: async (payload: {
+      patient_id?: string;
       hn?: string;
       first_name: string;
       last_name?: string;

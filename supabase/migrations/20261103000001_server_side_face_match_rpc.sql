@@ -46,3 +46,4 @@ $$;
 
 -- Grant EXECUTE to anon and authenticated so Kiosk and API can call this RPC securely
 GRANT EXECUTE ON FUNCTION public.match_patient_face(extensions.vector(512), float, int) TO anon, authenticated, service_role;
+

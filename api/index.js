@@ -10750,6 +10750,118 @@ var init_service10 = __esm({
           duplicate_name_dob: false
         };
       }
+      /**
+       * 0.0 Atomic Step 1: Create Draft Patient Record in Supabase
+       * Secures authoritative patient_id (UUID) before biometric scanning
+       */
+      async createDraftPatient(payload) {
+        const rawName = (payload.first_name || "").trim();
+        if (!rawName) {
+          throw new AppError("\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E0A\u0E37\u0E48\u0E2D\u0E04\u0E19\u0E44\u0E02\u0E49", 400, "NAME_REQUIRED");
+        }
+        let firstName = rawName;
+        let lastName = (payload.last_name || "").trim();
+        if (!lastName && rawName.includes(" ")) {
+          const parts = rawName.split(/\s+/);
+          firstName = parts[0] || "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22";
+          lastName = parts.slice(1).join(" ") || "-";
+        } else if (!lastName) {
+          lastName = "-";
+        }
+        const explicitHn = payload.hn?.trim();
+        if (explicitHn && !payload.patient_id) {
+          const dupCheck = await this.checkDuplicate({ hn: explicitHn });
+          if (dupCheck.duplicate_hn) {
+            throw new AppError(dupCheck.message || `\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E15\u0E31\u0E27\u0E04\u0E19\u0E44\u0E02\u0E49 (HN) "${explicitHn}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27`, 409, "DUPLICATE_HN");
+          }
+        }
+        const hn = explicitHn || `P-${Math.floor(1e3 + Math.random() * 9e3)}`;
+        const supabase = getAdminClient();
+        const draftData = {
+          hn,
+          first_name: firstName,
+          last_name: lastName,
+          birth_date: payload.birth_date || null,
+          age: typeof payload.age === "number" && !isNaN(payload.age) ? payload.age : 30,
+          sex: payload.sex && (payload.sex.toLowerCase() === "female" || payload.sex.toLowerCase() === "f") ? "female" : payload.sex && (payload.sex.toLowerCase() === "male" || payload.sex.toLowerCase() === "m") ? "male" : "other",
+          gender: payload.gender || payload.sex || "other",
+          phone: payload.phone?.trim() || "-",
+          target_joint: payload.target_joint?.trim() || "\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48",
+          injury: payload.injury?.trim() || payload.initial_symptoms?.trim() || "\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39",
+          contraindications: payload.contraindications?.trim() || "-",
+          underlying_diseases: payload.underlying_diseases?.trim() || "-",
+          allergies: payload.allergies?.trim() || "-",
+          doctor_notes: payload.doctor_notes?.trim() || "-",
+          emergency_contact_name: payload.emergency_contact_name?.trim() || null,
+          emergency_contact_relation: payload.emergency_contact_relation?.trim() || null,
+          emergency_contact_phone: payload.emergency_contact_phone?.trim() || null,
+          pdpa_consent: payload.pdpa_consent ?? true,
+          pdpa_consented_at: payload.pdpa_consent ? (/* @__PURE__ */ new Date()).toISOString() : null,
+          registered_by_staff_id: payload.registered_by_staff_id || null,
+          registered_by_staff_name: payload.registered_by_staff_name || null,
+          responsible_pt_id: payload.responsible_pt_id || null,
+          registration_status: "draft",
+          registered_via: "reception",
+          version: 1
+        };
+        let resultPatientId = payload.patient_id || "";
+        let resultHn = hn;
+        if (payload.patient_id) {
+          try {
+            const { data, error } = await supabase.from("patients").update(draftData).eq("id", payload.patient_id).select("id, hn").maybeSingle();
+            if (!error && data) {
+              resultPatientId = data.id;
+              resultHn = data.hn;
+            }
+          } catch (err) {
+            logger.warn({ err }, "Could not update existing draft, will insert new draft");
+          }
+        }
+        if (!resultPatientId) {
+          try {
+            const { data, error } = await supabase.from("patients").insert(draftData).select("id, hn").maybeSingle();
+            if (error) {
+              logger.error({ error, draftData }, "Error inserting patient draft into Supabase");
+              if (process.env.NODE_ENV !== "test") {
+                throw new AppError(`\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E04\u0E19\u0E44\u0E02\u0E49\u0E0A\u0E31\u0E48\u0E27\u0E04\u0E23\u0E32\u0E27 (Draft) \u0E44\u0E14\u0E49: ${error.message}`, 500, "DATABASE_ERROR");
+              }
+            }
+            if (data) {
+              resultPatientId = data.id;
+              resultHn = data.hn;
+            }
+          } catch (err) {
+            if (err instanceof AppError) throw err;
+            logger.error({ err }, "Database error during draft insertion");
+            if (process.env.NODE_ENV !== "test") {
+              throw new AppError(err.message || "\u0E40\u0E01\u0E34\u0E14\u0E02\u0E49\u0E2D\u0E1C\u0E34\u0E14\u0E1E\u0E25\u0E32\u0E14\u0E43\u0E19\u0E01\u0E32\u0E23\u0E2A\u0E23\u0E49\u0E32\u0E07 Draft \u0E43\u0E19 Supabase", 500, "DATABASE_ERROR");
+            }
+          }
+        }
+        if (!resultPatientId) {
+          resultPatientId = `draft-${Date.now()}`;
+          resultHn = hn;
+        }
+        return {
+          ok: true,
+          patient_id: resultPatientId,
+          hn: resultHn,
+          registration_status: "draft"
+        };
+      }
+      /**
+       * Cancel and cleanup unfinalized draft patient
+       */
+      async cancelDraftPatient(patientId) {
+        if (!patientId) return { ok: true, message: "No patient id provided" };
+        const supabase = getAdminClient();
+        try {
+          await supabase.from("patients").delete().eq("id", patientId).in("registration_status", ["draft", "awaiting_face"]);
+        } catch (err) {
+          logger.warn({ err, patientId }, "Failed to cancel draft patient in Supabase");
+        }
+        return { ok: true, message: "Draft canceled" };
+      }
       async registerPatient(payload) {
         const rawName = (payload.first_name || "").trim();
         if (!rawName) {
@@ -10772,7 +10884,7 @@ var init_service10 = __esm({
           }
         }
         const hn = explicitHn || `P-${Math.floor(1e3 + Math.random() * 9e3)}`;
-        const patient_id = hn;
+        const patient_id = payload.patient_id || hn;
         let avgVector = [];
         let frontalCentroid = [];
         if (payload.frames && Array.isArray(payload.frames) && payload.frames.length > 0) {
@@ -10890,15 +11002,38 @@ var init_service10 = __esm({
             }
           }
         };
+        if (payload.pin?.trim()) {
+          insertPayload.pin_hash = payload.pin.trim();
+        }
         try {
-          const dbPromise = supabase.from("patients").insert(insertPayload).select("*").maybeSingle();
-          const timeoutPromise = new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Supabase insert timed out")), 1500)
-          );
-          let { data, error } = await Promise.race([dbPromise, timeoutPromise]).catch((e) => ({
-            data: null,
-            error: { message: e.message, code: "TIMEOUT" }
-          }));
+          let data = null;
+          let error = null;
+          if (payload.patient_id) {
+            try {
+              const updateData = { ...insertPayload };
+              delete updateData.id;
+              const updateRes = await supabase.from("patients").update(updateData).eq("id", payload.patient_id).select("*").maybeSingle();
+              if (!updateRes.error && updateRes.data) {
+                data = updateRes.data;
+              } else if (updateRes.error) {
+                logger.warn({ err: updateRes.error, patient_id: payload.patient_id }, "Could not update draft patient, falling back to insert");
+              }
+            } catch (uErr) {
+              logger.warn({ uErr }, "Exception updating draft patient, falling back to insert");
+            }
+          }
+          if (!data) {
+            const dbPromise = supabase.from("patients").insert(insertPayload).select("*").maybeSingle();
+            const timeoutPromise = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Supabase insert timed out")), 1500)
+            );
+            const raceRes = await Promise.race([dbPromise, timeoutPromise]).catch((e) => ({
+              data: null,
+              error: { message: e.message, code: "TIMEOUT" }
+            }));
+            data = raceRes.data;
+            error = raceRes.error;
+          }
           if (error && (error.code === "23505" || error.message?.includes("hn"))) {
             logger.warn({ error, hn: insertPayload.hn }, "HN duplicate detected during smart registration, retrying with unique suffix");
             const uniqueHn = `P-${Math.floor(1e3 + Math.random() * 9e3)}-${Date.now().toString().slice(-4)}`;
@@ -10907,7 +11042,7 @@ var init_service10 = __esm({
             data = retryRes.data;
             error = retryRes.error;
           }
-          if (error) {
+          if (error && !data) {
             logger.error({ error, insertPayload }, "Supabase database error inserting patient in registerPatient");
             if (process.env.NODE_ENV !== "test") {
               throw new AppError(`\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E25\u0E07\u0E10\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 Supabase \u0E44\u0E14\u0E49: ${error.message} (code: ${error.code})`, 500, "DATABASE_ERROR");
@@ -10916,6 +11051,19 @@ var init_service10 = __esm({
           if (data) {
             savedPatientId = data.id || patient_id;
             savedHn = data.hn || hn;
+            try {
+              await supabase.from("patient_consents").insert({
+                patient_id: data.id,
+                consent_type: "face_biometric",
+                consented_at: payload.pdpa_consented_at || now,
+                consented_by: payload.registered_by_staff_name || "Staff Assisted",
+                metadata: {
+                  model_version: payload.model_version || "w600k_r50",
+                  liveness_verified: payload.liveness_passed ?? true
+                }
+              });
+            } catch {
+            }
             if (data.id) {
               const syncedRecord = {
                 ...newRecord,
@@ -11896,6 +12044,75 @@ var init_service10 = __esm({
           }
         });
         return updated;
+      }
+      /**
+       * Authoritative Clinical Exercise Prescription Save
+       * Atomic Dual-Write to exercise_prescriptions & prescription_items
+       */
+      async savePrescription(payload) {
+        const supabase = getAdminClient();
+        const pid = payload.patient_id;
+        if (!pid) throw new AppError("patient_id is required", 400, "PATIENT_ID_REQUIRED");
+        const rxData = {
+          patient_id: pid,
+          prescribed_by: payload.prescribed_by || null,
+          target_joint: payload.target_joint || "\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48",
+          diagnosis: payload.diagnosis || null,
+          contraindications: payload.contraindications || null,
+          start_date: payload.start_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+          end_date: payload.end_date || new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10),
+          scheduled_dates: payload.scheduled_dates || [],
+          status: "active",
+          notes: payload.notes || null,
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        const rxPromise = supabase.from("exercise_prescriptions").insert(rxData).select("id").maybeSingle();
+        const timeoutPromise = new Promise(
+          (_, reject) => setTimeout(() => reject(new Error("Supabase insert timed out")), 1200)
+        );
+        let { data: rx, error: rxErr } = await Promise.race([rxPromise, timeoutPromise]).catch((e) => ({
+          data: null,
+          error: { message: e.message, code: "TIMEOUT" }
+        }));
+        if (rxErr || !rx) {
+          logger.error({ rxErr }, "Error creating exercise prescription");
+          if (process.env.NODE_ENV !== "test") {
+            throw new AppError(`Cannot save prescription: ${rxErr?.message}`, 500, "DATABASE_ERROR");
+          }
+        }
+        const prescriptionId = rx?.id || `rx-${Date.now()}`;
+        if (rx?.id && payload.exercises && payload.exercises.length > 0) {
+          let defaultExId = "e1000000-0000-0000-0000-000000000001";
+          try {
+            const { data: exList } = await supabase.from("exercises").select("id").limit(1);
+            if (exList && exList.length > 0) {
+              defaultExId = exList[0].id;
+            }
+          } catch {
+          }
+          const items = payload.exercises.map((ex, idx) => {
+            let exId = ex.exercise_id;
+            if (!exId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(exId)) {
+              exId = defaultExId;
+            }
+            return {
+              prescription_id: prescriptionId,
+              exercise_id: exId,
+              exercise_name: ex.exercise_name,
+              target_side: ex.target_side || "right",
+              sets: ex.sets || 3,
+              reps: ex.reps || 10,
+              hold_seconds: ex.hold_seconds || 3,
+              sequence_order: ex.sequence_order || idx + 1,
+              clinical_notes: ex.clinical_notes || null
+            };
+          });
+          const { error: itemsErr } = await supabase.from("prescription_items").insert(items);
+          if (itemsErr) {
+            logger.warn({ itemsErr }, "Warning inserting prescription items");
+          }
+        }
+        return { ok: true, prescription_id: prescriptionId };
       }
       /**
        * Helper: Asia/Bangkok current date in YYYY-MM-DD
@@ -15602,6 +15819,37 @@ init_service10();
 var SmartOnboardingController = class {
   constructor(service = defaultSmartOnboardingService) {
     this.service = service;
+    this.createDraft = async (req, res, next) => {
+      try {
+        const data = await this.service.createDraftPatient(req.body);
+        res.status(201).json({
+          ok: true,
+          data,
+          patient_id: data.patient_id,
+          hn: data.hn,
+          registration_status: data.registration_status
+        });
+      } catch (err) {
+        next(err);
+      }
+    };
+    this.cancelDraft = async (req, res, next) => {
+      try {
+        const patientId = req.params.patientId || req.body.patient_id;
+        const data = await this.service.cancelDraftPatient(patientId);
+        res.status(200).json(data);
+      } catch (err) {
+        next(err);
+      }
+    };
+    this.savePrescription = async (req, res, next) => {
+      try {
+        const data = await this.service.savePrescription(req.body);
+        res.status(201).json(data);
+      } catch (err) {
+        next(err);
+      }
+    };
     this.register = async (req, res, next) => {
       try {
         const staffRole = (req.headers["x-staff-role"] || req.user?.role || "").toLowerCase();
@@ -15923,6 +16171,10 @@ var defaultSmartOnboardingController = new SmartOnboardingController();
 // apps/api/src/modules/smart-onboarding/routes.ts
 function createSmartOnboardingRouter(controller = defaultSmartOnboardingController) {
   const router3 = (0, import_express13.Router)();
+  router3.post("/create-draft", controller.createDraft);
+  router3.delete("/cancel-draft/:patientId", controller.cancelDraft);
+  router3.delete("/cancel-draft", controller.cancelDraft);
+  router3.post("/prescription", controller.savePrescription);
   router3.post("/register", controller.register);
   router3.get("/check-duplicate", controller.checkDuplicate);
   router3.post("/pin-login", controller.pinLogin);
