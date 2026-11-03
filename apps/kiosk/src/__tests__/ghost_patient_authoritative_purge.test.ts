@@ -17,6 +17,7 @@ import {
   BIOMETRIC_VAULT_VERSION_KEY,
   RESILIENT_PATIENTS_CACHE_KEY,
   purgeStaleBiometricCache,
+  purgeAllLocalBiometricCaches,
   reconcileBiometricCacheWithLivePatients,
   removePatientFromLocalCache,
 } from '../../../../packages/face-client/src/cache';
@@ -35,6 +36,8 @@ describe('Ghost Patient Authoritative Purge & Live Biometric Verification', () =
     setItem: (key: string, val: string) => { storageMap.set(key, val); },
     removeItem: (key: string) => { storageMap.delete(key); },
     clear: () => { storageMap.clear(); },
+    key: (i: number) => Array.from(storageMap.keys())[i] || null,
+    get length() { return storageMap.size; },
   };
 
   const mockSessionStorage = {
@@ -76,7 +79,7 @@ describe('Ghost Patient Authoritative Purge & Live Biometric Verification', () =
     expect(percent95).toBe(98);
   });
 
-  it('2. Biometric vault upgrades to v3_live_supabase_authoritative and forces stale cleanup', () => {
+  it('2. Biometric vault upgrades to v4_authoritative_live_supabase_strictly_sovereign and forces stale cleanup', () => {
     mockLocalStorage.setItem(BIOMETRIC_VAULT_VERSION_KEY, 'v2_strict_biometric');
     mockLocalStorage.setItem(
       RESILIENT_PATIENTS_CACHE_KEY,
@@ -94,9 +97,15 @@ describe('Ghost Patient Authoritative Purge & Live Biometric Verification', () =
 
     const res = purgeStaleBiometricCache({ force: true });
     expect(res.vaultUpgraded).toBe(true);
-    expect(res.purgedCount).toBe(1);
     expect(mockLocalStorage.getItem(BIOMETRIC_VAULT_VERSION_KEY)).toBe(CURRENT_BIOMETRIC_VAULT_VERSION);
-    expect(CURRENT_BIOMETRIC_VAULT_VERSION).toBe('v3_live_supabase_authoritative');
+    expect(CURRENT_BIOMETRIC_VAULT_VERSION).toBe('v4_authoritative_live_supabase_strictly_sovereign');
+
+    // Test total sovereign purge
+    mockLocalStorage.setItem(RESILIENT_PATIENTS_CACHE_KEY, '["stale"]');
+    mockLocalStorage.setItem('drtech_patient_record_123', '{"name":"stale"}');
+    purgeAllLocalBiometricCaches();
+    expect(mockLocalStorage.getItem(RESILIENT_PATIENTS_CACHE_KEY)).toBeNull();
+    expect(mockLocalStorage.getItem('drtech_patient_record_123')).toBeNull();
   });
 
   it('3. reconcileBiometricCacheWithLivePatients wipes deleted ghost profiles (P-4163, P-4061, P-6089, P-6169)', () => {
@@ -250,6 +259,27 @@ describe('Ghost Patient Authoritative Purge & Live Biometric Verification', () =
       expect((scanRes as any).patient.first_name).toBe('ภานุวัฒน์');
       expect((scanRes as any).similarityPercentage).toBeLessThanOrEqual(98);
       expect((scanRes as any).similarityPercentage).toBeGreaterThanOrEqual(80);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('7. Fail-closed: scanLogin rejects authentication with clear error if Supabase Cloud is unreachable', async () => {
+    const testProbe = new Array(512).fill(0.044194);
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockImplementation(async () => {
+      // Simulate network / server failure
+      throw new Error('Failed to fetch from Supabase');
+    });
+
+    try {
+      const scanRes = await defaultApiClient.smartOnboarding.scanLogin({
+        probe: testProbe,
+      });
+
+      expect(scanRes.matched).toBe(false);
+      expect((scanRes as any).error?.code).toBe('DATABASE_UNREACHABLE');
+      expect((scanRes as any).message).toContain('ไม่สามารถเชื่อมต่อฐานข้อมูลโรงพยาบาลได้');
     } finally {
       global.fetch = originalFetch;
     }

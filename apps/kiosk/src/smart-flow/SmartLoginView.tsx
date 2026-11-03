@@ -16,6 +16,7 @@ import {
   checkFaceROIInCircle,
   SpatialIdentityAnchor,
   purgeStaleBiometricCache,
+  purgeAllLocalBiometricCaches,
   reconcileBiometricCacheWithLivePatients,
   removePatientFromLocalCache,
 } from '../../../../packages/face-client/src/index.js';
@@ -219,7 +220,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   // Authoritative Live Supabase Reconcile & Purge (Rule 1 & 2)
   const loadEnrolledPatients = useCallback(async () => {
     try {
-      // 0. Force purge stale/ghost biometric cache and upgrade vault
+      // 0. Sovereign Invariant: Unconditionally wipe all local biometric caches & upgrade vault
+      purgeAllLocalBiometricCaches();
       purgeStaleBiometricCache({ force: true });
 
       const items: CachedPatientBiometric[] = [];
@@ -245,101 +247,35 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         // fail-soft on network issues
       }
 
-      // 2. Reconcile & Purge localStorage against live Supabase data
-      if (Array.isArray(cloudPatients) && cloudPatients.length > 0) {
-        reconcileBiometricCacheWithLivePatients(cloudPatients);
-      }
-
-      // 3. Build live ID & HN Sets
-      const liveIdSet = new Set<string>(cloudPatients.map((p) => p.id));
-      const liveHnSet = new Set<string>(cloudPatients.map((p) => p.hn));
-
-      // 4. Populate verified vectors from Supabase Cloud
-      for (const p of cloudPatients) {
-        const vecs: number[][] = [];
-        const h = p.history || {};
-        if (h.face_vector && h.face_vector.length === 512) vecs.push(h.face_vector);
-        if (h.frontal_centroid && h.frontal_centroid.length === 512) vecs.push(h.frontal_centroid);
-        if (Array.isArray(h.frames)) {
-          for (const f of h.frames) {
-            if (f.embedding && f.embedding.length === 512) vecs.push(f.embedding);
-          }
-        }
-        if (Array.isArray(h.adaptive_templates)) {
-          for (const at of h.adaptive_templates) {
-            if (at && at.length === 512) vecs.push(at);
-          }
-        }
-        if (vecs.length > 0) {
-          items.push({
-            id: p.id,
-            hn: p.hn || '',
-            name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'ผู้ป่วย',
-            vectors: vecs,
-          });
-        }
-      }
-
-      // 5. Augment from localStorage ONLY for patients verified in live Supabase set
-      if (typeof window !== 'undefined') {
-        const raw = localStorage.getItem('drtech_resilient_patients');
-        if (raw) {
-          try {
-            const list = JSON.parse(raw);
-            if (Array.isArray(list)) {
-              for (const p of list) {
-                const pId = p.id || p.patient_id;
-                const pHn = p.hn || '';
-                // STRICT CHECK: Skip any patient not present in live Supabase dataset!
-                if (cloudPatients.length > 0 && !liveIdSet.has(pId) && !liveHnSet.has(pHn)) {
-                  continue;
-                }
-
-                const vecs: number[][] = [];
-                if (p.biometrics?.face_vector && p.biometrics.face_vector.length === 512) {
-                  vecs.push(p.biometrics.face_vector);
-                }
-                if (p.history?.face_vector && p.history.face_vector.length === 512) {
-                  vecs.push(p.history.face_vector);
-                }
-                if (p.history?.frontal_centroid && p.history.frontal_centroid.length === 512) {
-                  vecs.push(p.history.frontal_centroid);
-                }
-                if (Array.isArray(p.frames)) {
-                  for (const f of p.frames) {
-                    if (f.embedding && f.embedding.length === 512) vecs.push(f.embedding);
-                  }
-                }
-                if (Array.isArray(p.history?.frames)) {
-                  for (const f of p.history.frames) {
-                    if (f.embedding && f.embedding.length === 512) vecs.push(f.embedding);
-                  }
-                }
-                if (vecs.length > 0) {
-                  const existingIdx = items.findIndex((it) => it.id === pId || it.hn === pHn);
-                  if (existingIdx >= 0) {
-                    // Append extra offline frames to existing verified record
-                    for (const v of vecs) {
-                      if (!items[existingIdx].vectors.some((ev) => ev === v)) {
-                        items[existingIdx].vectors.push(v);
-                      }
-                    }
-                  } else if (cloudPatients.length === 0) {
-                    // Only in total offline disconnect mode
-                    items.push({
-                      id: pId,
-                      hn: pHn,
-                      name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'ผู้ป่วย',
-                      vectors: vecs,
-                    });
-                  }
-                }
-              }
+      // 2. Populate verified vectors strictly from Supabase Cloud
+      if (Array.isArray(cloudPatients)) {
+        for (const p of cloudPatients) {
+          const vecs: number[][] = [];
+          const h = p.history || {};
+          if (h.face_vector && h.face_vector.length === 512) vecs.push(h.face_vector);
+          if (h.frontal_centroid && h.frontal_centroid.length === 512) vecs.push(h.frontal_centroid);
+          if (Array.isArray(h.frames)) {
+            for (const f of h.frames) {
+              if (f.embedding && f.embedding.length === 512) vecs.push(f.embedding);
             }
-          } catch {}
+          }
+          if (Array.isArray(h.adaptive_templates)) {
+            for (const at of h.adaptive_templates) {
+              if (at && at.length === 512) vecs.push(at);
+            }
+          }
+          if (vecs.length > 0) {
+            items.push({
+              id: p.id,
+              hn: p.hn || '',
+              name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'ผู้ป่วย',
+              vectors: vecs,
+            });
+          }
         }
       }
 
+      // 3. In-memory cache is populated strictly from live Supabase dataset (Zero localStorage fallback)
       cachedPatientsRef.current = items;
     } catch {
       // safe
@@ -558,6 +494,36 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       if (!isMountedRef.current || isScanningPaused) return;
 
+      // Fail-closed invariant: Reject authentication if Supabase/API could not be reached
+      if (!res) {
+        const unreachableMsg =
+          lang === 'zh-CN'
+            ? '⚠️ 无法连接到医院系统，请重试或呼叫医护人员'
+            : lang === 'en-US'
+            ? '⚠️ System unreachable. Please retry or call staff'
+            : '⚠️ เชื่อมต่อระบบไม่ได้ ลองใหม่หรือเรียกเจ้าหน้าที่';
+        setStatusText(unreachableMsg);
+        setUnrecognizedAlert(
+          lang === 'zh-CN'
+            ? '无法连接到医院数据库 (Supabase)，为确保信息安全，系统已锁定。请重试或联系工作人员。'
+            : lang === 'en-US'
+            ? 'Unable to connect to hospital database (Supabase). Fail-closed security active. Please retry or call staff.'
+            : 'เชื่อมต่อระบบไม่ได้ ลองใหม่หรือเรียกเจ้าหน้าที่ (Fail-Closed: ข้อมูลดึงจากฐานข้อมูลโรงพยาบาล Supabase เท่านั้น)'
+        );
+        isProcessingScanRef.current = false;
+        setIsScanning(false);
+        return;
+      }
+
+      if ((res as any).error || (res as any).ok === false) {
+        const errorMsg = (res as any).message || (res as any).error?.message || 'เชื่อมต่อระบบไม่ได้ ลองใหม่หรือเรียกเจ้าหน้าที่';
+        setStatusText(`⚠️ ${errorMsg}`);
+        setUnrecognizedAlert(`⚠️ ${errorMsg}`);
+        isProcessingScanRef.current = false;
+        setIsScanning(false);
+        return;
+      }
+
       const isServerMatch = Boolean(
         res &&
         res.matched === true &&
@@ -640,7 +606,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           return;
         }
 
-        const rawCalculated = res?.similarityPercentage ?? aggregatedPercent;
+        const rawCalculated = typeof res?.similarityPercentage === 'number' ? res.similarityPercentage : 0;
         const finalPercent = Math.min(98, Math.max(0, rawCalculated));
         const finalDistance = typeof res?.distance === 'number' ? res.distance : aggregatedDistance;
 
@@ -680,7 +646,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           : (res as any)?.candidateName || 'ผู้ป่วย';
         const cHn = candObj?.hn || (res as any)?.candidateHn || '';
         const cId = candObj?.id || candObj?.patient_id || '';
-        const effectiveScore = res?.similarityPercentage ?? aggregatedPercent;
+        const effectiveScore = typeof res?.similarityPercentage === 'number' ? res.similarityPercentage : 0;
 
         const isCandidateLive =
           cachedPatientsRef.current.length === 0 ||
@@ -731,7 +697,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      const displayScore = res?.similarityPercentage !== undefined ? res.similarityPercentage : aggregatedPercent;
+      const displayScore = typeof res?.similarityPercentage === 'number' ? res.similarityPercentage : 0;
       const failMsg = lang === 'zh-CN'
         ? `⚠️ 未找到匹配账户（相似度 ${displayScore}% 未达80%）。请将面部对准圆框重试，或使用PIN码登录`
         : lang === 'en-US'
@@ -1440,7 +1406,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 >
                   <div className="flex items-center justify-between border-b border-cyan-500/30 pb-1">
                     <span className="font-bold text-white flex items-center gap-1">
-                      🎯 Calibration HUD (250ms Median)
+                      🎯 Staff Biometric HUD (Supabase Live)
                     </span>
                     <button
                       type="button"
@@ -1449,6 +1415,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                     >
                       ✕
                     </button>
+                  </div>
+                  <div className="text-[9px] text-cyan-300 pb-0.5 border-b border-slate-800">
+                    Host: <b className="text-white">mctegvnrvmglbibuuczi.supabase.co</b> | Cache: <b className="text-emerald-400">0 records (Sovereign)</b>
                   </div>
                   <div className="grid grid-cols-3 gap-1 pt-0.5">
                     <div>cos(θ): <b className="text-white">{calibrationStats?.currentCos.toFixed(3) ?? '0.000'}</b></div>

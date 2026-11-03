@@ -12,6 +12,7 @@ import {
   RehabScoreEntry,
   computeAverageVector,
   evaluateBiometricMatch,
+  calibrateCosineSimilarity,
   PrescribedExercise,
 } from '../../../../../packages/smart-biometric-core/src/index.js';
 import { PatientVaultService, defaultPatientVaultService } from './vault.service';
@@ -647,6 +648,73 @@ export class SmartOnboardingService {
   }
 
   /**
+   * Helper: Builds authoritative live PatientRecordFile from Supabase database row or RPC result
+   */
+  private buildLivePatientRecord(p: any): PatientRecordFile {
+    const pRecord: PatientRecordFile | undefined = p.history?.patient_record;
+    const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
+    const pId = p.id || p.patient_id;
+    const pHn = p.hn || '';
+
+    const built: PatientRecordFile = pRecord || {
+      patient_id: pId,
+      hn: pHn,
+      first_name: p.first_name || '',
+      last_name: p.last_name || '',
+      age: p.age || 0,
+      gender: (p.sex === 'female' || p.sex === 'F') ? 'female' : 'male',
+      phone: p.phone || '',
+      initial_symptoms: p.injury || '',
+      registration_status: p.registration_status || 'active',
+      registered_via: p.registered_via || 'kiosk',
+      created_at: p.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      biometrics: {
+        face_vector: Array.isArray(pVector) && pVector.length === 512 ? pVector : [],
+        registered_face_url: `/uploads/patients/${pId}/profile_face.jpg`,
+        confidence_score: 0.95,
+        model_version: 'w600k_r50',
+        enrolled_at: p.created_at || new Date().toISOString(),
+      },
+      schedule: p.history?.schedule || null,
+      daily_checklists: p.history?.daily_checklists || {},
+      rehab_scores: p.history?.rehab_scores || [],
+      clinical: { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] },
+    };
+
+    if (pId) built.patient_id = pId;
+    if (pHn) built.hn = pHn;
+    if (p.first_name) built.first_name = p.first_name;
+    if (p.last_name) built.last_name = p.last_name;
+    if (typeof p.age === 'number') built.age = p.age;
+    if (p.registration_status) built.registration_status = p.registration_status;
+
+    if (!built.biometrics) {
+      built.biometrics = {
+        face_vector: Array.isArray(pVector) && pVector.length === 512 ? pVector : [],
+        registered_face_url: `/uploads/patients/${pId}/profile_face.jpg`,
+        confidence_score: 0.95,
+        model_version: 'w600k_r50',
+        enrolled_at: p.created_at || new Date().toISOString(),
+      };
+    } else if (Array.isArray(pVector) && pVector.length === 512) {
+      built.biometrics.face_vector = pVector;
+    }
+
+    if (p.history?.frontal_centroid && Array.isArray(p.history.frontal_centroid)) {
+      (built as any).frontal_centroid = p.history.frontal_centroid;
+    }
+    if (p.history?.frames && Array.isArray(p.history.frames)) {
+      (built as any).enrolled_frames = p.history.frames;
+    }
+    if (p.history?.adaptive_templates && Array.isArray(p.history.adaptive_templates)) {
+      (built as any).adaptive_templates = p.history.adaptive_templates;
+    }
+
+    return built;
+  }
+
+  /**
    * 1. Auto-Presence & 5s Cooldown Face Scan Login (Master Prompt v4 Section 2 Step 1)
    */
   public async scanLogin(
@@ -675,18 +743,63 @@ export class SmartOnboardingService {
       };
     }
 
-    const records = this.vaultService.listAllPatientRecords();
+    // In production, records are strictly authoritative live patients from Supabase Cloud (Zero disk mock/stale vault)
+    const records: PatientRecordFile[] =
+      process.env.NODE_ENV === 'test' ? this.vaultService.listAllPatientRecords() : [];
 
     // Augment with Supabase patients database (essential for Cloud & Serverless persistence)
     if (process.env.NODE_ENV !== 'test') {
+      let dbPatients: any[] | null = null;
       try {
         const supabase = getAdminClient();
+
+        // 0. Primary Fast Path: Call PostgreSQL server-side face match RPC if available
+        try {
+          const { data: rpcMatches, error: rpcErr } = await supabase.rpc('match_patient_face', {
+            probe_embedding: probeVector,
+            match_threshold: 0.55,
+            match_limit: 3,
+          });
+          if (!rpcErr && Array.isArray(rpcMatches) && rpcMatches.length > 0) {
+            const topMatch = rpcMatches[0];
+            const rawSim = typeof topMatch.similarity === 'number' ? topMatch.similarity : 0;
+            const calSim = calibrateCosineSimilarity(rawSim);
+            const calPercent = Math.min(98, Math.round(calSim * 100));
+
+            if (calPercent >= 80 && rawSim >= 0.55) {
+              const builtRecord = this.buildLivePatientRecord(topMatch);
+              logger.info(
+                `[FACE-AUTH-RPC] Server RPC Match: ${builtRecord.first_name} (${builtRecord.hn}) | Similarity: ${calPercent}%`
+              );
+              return {
+                matched: true,
+                patient: builtRecord,
+                similarity: calSim,
+                distance: topMatch.distance ?? Math.max(0, 1 - calSim),
+                similarityPercentage: calPercent,
+                message: 'ยืนยันตัวตนสำเร็จ',
+              };
+            }
+          }
+        } catch {
+          // Non-blocking fallback to live patients query
+        }
+
         const timeoutPromise = new Promise<{ data: null }>((resolve) =>
           setTimeout(() => resolve({ data: null }), 8000)
         );
         const queryPromise = supabase.from('patients').select('*');
         const res = await Promise.race([queryPromise, timeoutPromise]);
-        const dbPatients = res && 'data' in res ? res.data : null;
+        dbPatients = res && 'data' in res ? res.data : null;
+
+        if (!dbPatients || !Array.isArray(dbPatients)) {
+          // Fail-closed invariant: If Supabase query failed or timed out in production, refuse authentication
+          logger.error('Supabase patients table unreachable during scanLogin - failing closed');
+          return {
+            matched: false,
+            message: 'ไม่สามารถเชื่อมต่อฐานข้อมูลโรงพยาบาลได้ (Fail-Closed) กรุณาลองใหม่อีกครั้งหรือติดต่อเจ้าหน้าที่',
+          };
+        }
 
         if (dbPatients && Array.isArray(dbPatients)) {
           const liveDbIds = new Set(dbPatients.map((p) => p.id));
@@ -706,63 +819,10 @@ export class SmartOnboardingService {
 
           for (const p of dbPatients) {
             if (p.registration_status === 'archived') continue;
-            const pRecord: PatientRecordFile | undefined = p.history?.patient_record;
-            const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
+            const builtRecord = this.buildLivePatientRecord(p);
+            const pVector = builtRecord.biometrics?.face_vector;
             if (pVector && Array.isArray(pVector) && pVector.length === 512) {
               const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
-              const builtRecord: PatientRecordFile = pRecord || {
-                patient_id: p.id,
-                hn: p.hn,
-                first_name: p.first_name,
-                last_name: p.last_name,
-                age: p.age || 0,
-                gender: (p.sex === 'female' || p.sex === 'F') ? 'female' : 'male',
-                phone: p.phone || '',
-                initial_symptoms: p.injury || '',
-                registration_status: p.registration_status,
-                registered_via: p.registered_via || 'kiosk',
-                created_at: p.created_at || new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                biometrics: {
-                  face_vector: pVector,
-                  registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
-                  confidence_score: 0.95,
-                  model_version: 'w600k_r50',
-                  enrolled_at: p.created_at || new Date().toISOString(),
-                },
-                schedule: p.history?.schedule || this.vaultService.getPatientRecord(p.id)?.schedule || this.vaultService.getPatientRecord(p.hn)?.schedule || null,
-                daily_checklists: p.history?.daily_checklists || {},
-                rehab_scores: p.history?.rehab_scores || [],
-                clinical: { diagnosis: p.injury || '', treatment_plan: '', progress_notes: [] },
-              };
-
-              if (p.id) builtRecord.patient_id = p.id;
-              if (p.hn) builtRecord.hn = p.hn;
-
-              if (!builtRecord.biometrics) {
-                builtRecord.biometrics = {
-                  face_vector: pVector,
-                  registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
-                  confidence_score: 0.95,
-                  model_version: 'w600k_r50',
-                  enrolled_at: p.created_at || new Date().toISOString(),
-                };
-              } else {
-                builtRecord.biometrics.face_vector = pVector;
-              }
-
-              if (p.history?.frontal_centroid && Array.isArray(p.history.frontal_centroid)) {
-                (builtRecord as any).frontal_centroid = p.history.frontal_centroid;
-              }
-
-              if (p.history?.frames && Array.isArray(p.history.frames)) {
-                (builtRecord as any).enrolled_frames = p.history.frames;
-              }
-
-              if (p.history?.adaptive_templates && Array.isArray(p.history.adaptive_templates)) {
-                (builtRecord as any).adaptive_templates = p.history.adaptive_templates;
-              }
-
               if (existingIndex >= 0) {
                 records[existingIndex] = builtRecord;
               } else {

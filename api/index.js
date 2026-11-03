@@ -11097,6 +11097,67 @@ var init_service10 = __esm({
         };
       }
       /**
+       * Helper: Builds authoritative live PatientRecordFile from Supabase database row or RPC result
+       */
+      buildLivePatientRecord(p) {
+        const pRecord = p.history?.patient_record;
+        const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
+        const pId = p.id || p.patient_id;
+        const pHn = p.hn || "";
+        const built = pRecord || {
+          patient_id: pId,
+          hn: pHn,
+          first_name: p.first_name || "",
+          last_name: p.last_name || "",
+          age: p.age || 0,
+          gender: p.sex === "female" || p.sex === "F" ? "female" : "male",
+          phone: p.phone || "",
+          initial_symptoms: p.injury || "",
+          registration_status: p.registration_status || "active",
+          registered_via: p.registered_via || "kiosk",
+          created_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+          biometrics: {
+            face_vector: Array.isArray(pVector) && pVector.length === 512 ? pVector : [],
+            registered_face_url: `/uploads/patients/${pId}/profile_face.jpg`,
+            confidence_score: 0.95,
+            model_version: "w600k_r50",
+            enrolled_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
+          },
+          schedule: p.history?.schedule || null,
+          daily_checklists: p.history?.daily_checklists || {},
+          rehab_scores: p.history?.rehab_scores || [],
+          clinical: { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] }
+        };
+        if (pId) built.patient_id = pId;
+        if (pHn) built.hn = pHn;
+        if (p.first_name) built.first_name = p.first_name;
+        if (p.last_name) built.last_name = p.last_name;
+        if (typeof p.age === "number") built.age = p.age;
+        if (p.registration_status) built.registration_status = p.registration_status;
+        if (!built.biometrics) {
+          built.biometrics = {
+            face_vector: Array.isArray(pVector) && pVector.length === 512 ? pVector : [],
+            registered_face_url: `/uploads/patients/${pId}/profile_face.jpg`,
+            confidence_score: 0.95,
+            model_version: "w600k_r50",
+            enrolled_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
+          };
+        } else if (Array.isArray(pVector) && pVector.length === 512) {
+          built.biometrics.face_vector = pVector;
+        }
+        if (p.history?.frontal_centroid && Array.isArray(p.history.frontal_centroid)) {
+          built.frontal_centroid = p.history.frontal_centroid;
+        }
+        if (p.history?.frames && Array.isArray(p.history.frames)) {
+          built.enrolled_frames = p.history.frames;
+        }
+        if (p.history?.adaptive_templates && Array.isArray(p.history.adaptive_templates)) {
+          built.adaptive_templates = p.history.adaptive_templates;
+        }
+        return built;
+      }
+      /**
        * 1. Auto-Presence & 5s Cooldown Face Scan Login (Master Prompt v4 Section 2 Step 1)
        */
       async scanLogin(probeVector, snapshotBase64) {
@@ -11106,16 +11167,52 @@ var init_service10 = __esm({
             message: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E0A\u0E35\u0E27\u0E21\u0E32\u0E15\u0E23\u0E43\u0E19\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E08\u0E31\u0E14\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E43\u0E2B\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E01\u0E23\u0E2D\u0E1A\u0E27\u0E07\u0E01\u0E25\u0E21\u0E41\u0E25\u0E30\u0E25\u0E2D\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07"
           };
         }
-        const records = this.vaultService.listAllPatientRecords();
+        const records = process.env.NODE_ENV === "test" ? this.vaultService.listAllPatientRecords() : [];
         if (process.env.NODE_ENV !== "test") {
+          let dbPatients = null;
           try {
             const supabase = getAdminClient();
+            try {
+              const { data: rpcMatches, error: rpcErr } = await supabase.rpc("match_patient_face", {
+                probe_embedding: probeVector,
+                match_threshold: 0.55,
+                match_limit: 3
+              });
+              if (!rpcErr && Array.isArray(rpcMatches) && rpcMatches.length > 0) {
+                const topMatch = rpcMatches[0];
+                const rawSim = typeof topMatch.similarity === "number" ? topMatch.similarity : 0;
+                const calSim = calibrateCosineSimilarity(rawSim);
+                const calPercent = Math.min(98, Math.round(calSim * 100));
+                if (calPercent >= 80 && rawSim >= 0.55) {
+                  const builtRecord = this.buildLivePatientRecord(topMatch);
+                  logger.info(
+                    `[FACE-AUTH-RPC] Server RPC Match: ${builtRecord.first_name} (${builtRecord.hn}) | Similarity: ${calPercent}%`
+                  );
+                  return {
+                    matched: true,
+                    patient: builtRecord,
+                    similarity: calSim,
+                    distance: topMatch.distance ?? Math.max(0, 1 - calSim),
+                    similarityPercentage: calPercent,
+                    message: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08"
+                  };
+                }
+              }
+            } catch {
+            }
             const timeoutPromise = new Promise(
               (resolve) => setTimeout(() => resolve({ data: null }), 8e3)
             );
             const queryPromise = supabase.from("patients").select("*");
             const res = await Promise.race([queryPromise, timeoutPromise]);
-            const dbPatients = res && "data" in res ? res.data : null;
+            dbPatients = res && "data" in res ? res.data : null;
+            if (!dbPatients || !Array.isArray(dbPatients)) {
+              logger.error("Supabase patients table unreachable during scanLogin - failing closed");
+              return {
+                matched: false,
+                message: "\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D\u0E10\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E42\u0E23\u0E07\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25\u0E44\u0E14\u0E49 (Fail-Closed) \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48"
+              };
+            }
             if (dbPatients && Array.isArray(dbPatients)) {
               const liveDbIds = new Set(dbPatients.map((p) => p.id));
               const liveDbHns = new Set(dbPatients.map((p) => p.hn));
@@ -11132,57 +11229,10 @@ var init_service10 = __esm({
               }
               for (const p of dbPatients) {
                 if (p.registration_status === "archived") continue;
-                const pRecord = p.history?.patient_record;
-                const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
+                const builtRecord = this.buildLivePatientRecord(p);
+                const pVector = builtRecord.biometrics?.face_vector;
                 if (pVector && Array.isArray(pVector) && pVector.length === 512) {
                   const existingIndex = records.findIndex((r) => r.patient_id === p.id || r.hn === p.hn);
-                  const builtRecord = pRecord || {
-                    patient_id: p.id,
-                    hn: p.hn,
-                    first_name: p.first_name,
-                    last_name: p.last_name,
-                    age: p.age || 0,
-                    gender: p.sex === "female" || p.sex === "F" ? "female" : "male",
-                    phone: p.phone || "",
-                    initial_symptoms: p.injury || "",
-                    registration_status: p.registration_status,
-                    registered_via: p.registered_via || "kiosk",
-                    created_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-                    updated_at: (/* @__PURE__ */ new Date()).toISOString(),
-                    biometrics: {
-                      face_vector: pVector,
-                      registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
-                      confidence_score: 0.95,
-                      model_version: "w600k_r50",
-                      enrolled_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
-                    },
-                    schedule: p.history?.schedule || this.vaultService.getPatientRecord(p.id)?.schedule || this.vaultService.getPatientRecord(p.hn)?.schedule || null,
-                    daily_checklists: p.history?.daily_checklists || {},
-                    rehab_scores: p.history?.rehab_scores || [],
-                    clinical: { diagnosis: p.injury || "", treatment_plan: "", progress_notes: [] }
-                  };
-                  if (p.id) builtRecord.patient_id = p.id;
-                  if (p.hn) builtRecord.hn = p.hn;
-                  if (!builtRecord.biometrics) {
-                    builtRecord.biometrics = {
-                      face_vector: pVector,
-                      registered_face_url: `/uploads/patients/${p.id}/profile_face.jpg`,
-                      confidence_score: 0.95,
-                      model_version: "w600k_r50",
-                      enrolled_at: p.created_at || (/* @__PURE__ */ new Date()).toISOString()
-                    };
-                  } else {
-                    builtRecord.biometrics.face_vector = pVector;
-                  }
-                  if (p.history?.frontal_centroid && Array.isArray(p.history.frontal_centroid)) {
-                    builtRecord.frontal_centroid = p.history.frontal_centroid;
-                  }
-                  if (p.history?.frames && Array.isArray(p.history.frames)) {
-                    builtRecord.enrolled_frames = p.history.frames;
-                  }
-                  if (p.history?.adaptive_templates && Array.isArray(p.history.adaptive_templates)) {
-                    builtRecord.adaptive_templates = p.history.adaptive_templates;
-                  }
                   if (existingIndex >= 0) {
                     records[existingIndex] = builtRecord;
                   } else {

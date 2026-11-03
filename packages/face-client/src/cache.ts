@@ -2,16 +2,70 @@
  * packages/face-client/src/cache.ts
  * Biometric Vault & Local Cache Lifecycle Management
  * US NIST SP 800-63B Zero-Stale / Zero-Ghost Biometric Invariant
+ * Sovereignty Standard: Only authoritative live Supabase data is trusted.
  */
 
 export const BIOMETRIC_VAULT_VERSION_KEY = 'drtech_biometric_vault_version';
-export const CURRENT_BIOMETRIC_VAULT_VERSION = 'v3_live_supabase_authoritative';
+export const CURRENT_BIOMETRIC_VAULT_VERSION = 'v4_authoritative_live_supabase_strictly_sovereign';
 export const RESILIENT_PATIENTS_CACHE_KEY = 'drtech_resilient_patients';
 
 export interface CachePurgeResult {
   purgedCount: number;
   remainingCount: number;
   vaultUpgraded: boolean;
+}
+
+/**
+ * Total purge of all local biometric caches, templates, and ghost profiles.
+ * Strictly enforces that no biometric templates or vectors persist in client storage.
+ */
+export function purgeAllLocalBiometricCaches(): { purgedKeys: string[] } {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return { purgedKeys: [] };
+  }
+  const purged: string[] = [];
+  const storage = window.localStorage;
+
+  const explicitKeys = [
+    RESILIENT_PATIENTS_CACHE_KEY,
+    'drtech_cached_patients',
+    'drtech_local_face_vectors',
+    'drtech_offline_patients',
+  ];
+
+  for (const k of explicitKeys) {
+    if (storage.getItem(k) !== null) {
+      storage.removeItem(k);
+      purged.push(k);
+    }
+  }
+
+  const keysToScan: string[] = [];
+  if (typeof storage.key === 'function' && typeof storage.length === 'number') {
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k) keysToScan.push(k);
+    }
+  }
+  try {
+    for (const k of Object.keys(storage)) {
+      if (!keysToScan.includes(k)) keysToScan.push(k);
+    }
+  } catch {}
+
+  for (const key of keysToScan) {
+    if (
+      key.startsWith('drtech_patient_record_') ||
+      key.startsWith('drtech_face_vector_') ||
+      key.startsWith('drtech_resilient_')
+    ) {
+      storage.removeItem(key);
+      purged.push(key);
+    }
+  }
+
+  storage.setItem(BIOMETRIC_VAULT_VERSION_KEY, CURRENT_BIOMETRIC_VAULT_VERSION);
+  return { purgedKeys: purged };
 }
 
 /**
@@ -150,7 +204,6 @@ export function reconcileBiometricCacheWithLivePatients(
       const isLive = (pId && liveIdSet.has(pId)) || (pHn && liveHnSet.has(pHn));
       if (!isLive) {
         purgedCount++;
-        // Also remove individual record cache key if present
         if (pId) storage.removeItem(`drtech_patient_record_${pId}`);
         if (pHn) storage.removeItem(`drtech_patient_record_${pHn}`);
         return false;

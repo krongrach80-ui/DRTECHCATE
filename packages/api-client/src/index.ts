@@ -616,29 +616,7 @@ export class ApiClient {
         let duplicateNameDob = false;
         let existingPatient: any = null;
 
-        if (typeof window !== 'undefined') {
-          try {
-            const raw = localStorage.getItem('drtech_resilient_patients');
-            const stored: any[] = raw ? JSON.parse(raw) : [];
-            if (targetHn) {
-              const m = stored.find((p) => (p.hn || '').toLowerCase() === targetHn.toLowerCase());
-              if (m) {
-                duplicateHn = true;
-                existingPatient = m;
-              }
-            }
-            if (targetName && targetDob) {
-              const m = stored.find((p) => {
-                const fn = `${p.first_name || ''} ${p.last_name || ''}`.trim().toLowerCase();
-                return (fn === targetName || fn.includes(targetName)) && p.birth_date === targetDob;
-              });
-              if (m) {
-                duplicateNameDob = true;
-                existingPatient = m;
-              }
-            }
-          } catch {}
-        }
+        // Query authoritative Supabase Cloud directly (No local mock/stale cache)
 
         if (!duplicateHn && targetHn) {
           try {
@@ -753,23 +731,7 @@ export class ApiClient {
           // Cloud insert fallback
         }
 
-        // Store patient and 10 biometric frames in client storage for instant scan-login matching
-        if (typeof window !== 'undefined') {
-          try {
-            const rawStored = localStorage.getItem('drtech_resilient_patients');
-            const stored = rawStored ? JSON.parse(rawStored) : [];
-            stored.unshift({
-              ...newPatient,
-              frames: (body.frames || []).map((f: any) => ({
-                pose: f.pose,
-                embedding: f.embedding,
-              })),
-            });
-            localStorage.setItem('drtech_resilient_patients', JSON.stringify(stored.slice(0, 50)));
-          } catch {
-            // storage sandbox
-          }
-        }
+        // Sovereign Biometric Invariant: Zero persistent vector caching in client localStorage
 
         return {
           ok: true,
@@ -1135,7 +1097,68 @@ export class ApiClient {
             }
           };
 
-          // 1. Authoritative Live Supabase Cloud Query: Fetch active patients FIRST (Rule 1 & 2)
+          // 1. Authoritative Supabase Cloud RPC Match (Direct pgvector Cosine Evaluation)
+          if (probe.length === 512) {
+            try {
+              const rpcRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/rpc/match_patient_face`, {
+                method: 'POST',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json',
+                  'Cache-Control': 'no-cache',
+                },
+                body: JSON.stringify({
+                  probe_embedding: probe,
+                  match_threshold: 0.42,
+                  match_limit: 3,
+                }),
+              });
+              if (rpcRes.ok) {
+                const rpcData = await rpcRes.json();
+                if (Array.isArray(rpcData) && rpcData.length > 0) {
+                  const top = rpcData[0];
+                  const rawCos = typeof top.similarity === 'number' ? top.similarity : 0;
+                  const calSim = calibrateCosineSimilarity(rawCos);
+                  const pct = Math.min(98, Math.round(calSim * 100));
+                  const dist = typeof top.distance === 'number' ? top.distance : Math.max(0, 1 - calSim);
+                  const patientObj = normalizePatientRecord(top);
+
+                  if (pct >= 80 && rawCos >= 0.55) {
+                    return {
+                      ok: true,
+                      matched: true,
+                      patient: patientObj,
+                      similarityPercentage: pct,
+                      cosineSimilarity: Number(calSim.toFixed(4)),
+                      rawCosineSimilarity: Number(rawCos.toFixed(4)),
+                      distance: dist,
+                      data: { matched: true, patient: patientObj },
+                    } as T;
+                  } else if (pct >= 50 && rawCos >= 0.42) {
+                    return {
+                      ok: true,
+                      matched: false,
+                      requirePin: true,
+                      candidate: patientObj,
+                      candidateName: `${patientObj.first_name} ${patientObj.last_name}`.trim(),
+                      candidateHn: patientObj.hn,
+                      similarityPercentage: pct,
+                      cosineSimilarity: Number(calSim.toFixed(4)),
+                      rawCosineSimilarity: Number(rawCos.toFixed(4)),
+                      distance: dist,
+                      message: `ความแม่นยำ ${pct}% (ก้ำกึ่ง) กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก`,
+                    } as T;
+                  }
+                }
+              }
+            } catch {
+              // RPC non-blocking fallback to direct patients query
+            }
+          }
+
+          // 2. Authoritative Live Supabase Cloud Query: Fetch active patients from Supabase (Zero local cache)
+          let isSupabaseReachable = true;
           try {
             const supaRes = await fetch(
               `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=id,hn,first_name,last_name,age,sex,phone,injury,registration_status,history&registration_status=neq.archived&limit=100`,
@@ -1157,45 +1180,35 @@ export class ApiClient {
                   evaluateCandidate(sp);
                 }
               }
+            } else {
+              isSupabaseReachable = false;
             }
           } catch {
-            // fail-soft on network issues
+            isSupabaseReachable = false;
           }
 
-          // 2. Reconcile & Purge Local Resilient Cache: Delete ghost profiles immediately
+          // Strict Invariant: Always purge stale local biometric cache keys
           const storage = getSafeLocalStorage();
           if (storage) {
             try {
-              const rawStored = storage.getItem('drtech_resilient_patients');
-              if (rawStored) {
-                const stored = JSON.parse(rawStored);
-                if (Array.isArray(stored)) {
-                  // Purge any stored patient that does NOT exist in live Supabase dataset
-                  let didPurge = false;
-                  const validStored = stored.filter((p: any) => {
-                    const pId = p.id || p.patient_id;
-                    const pHn = p.hn;
-                    const isValid = (pId && livePatientsMap.has(pId)) || (pHn && liveHnMap.has(pHn));
-                    if (!isValid) {
-                      didPurge = true;
-                      if (pId) storage.removeItem(`drtech_patient_record_${pId}`);
-                      if (pHn) storage.removeItem(`drtech_patient_record_${pHn}`);
-                    }
-                    return isValid;
-                  });
-
-                  if (didPurge) {
-                    storage.setItem('drtech_resilient_patients', JSON.stringify(validStored));
-                  }
-
-                  // Evaluate remaining valid candidates
-                  for (const p of validStored) {
-                    const live = (p.id && livePatientsMap.get(p.id)) || (p.hn && liveHnMap.get(p.hn)) || p;
-                    evaluateCandidate({ ...p, ...live });
-                  }
-                }
-              }
+              storage.removeItem('drtech_resilient_patients');
+              storage.removeItem('drtech_cached_patients');
             } catch {}
+          }
+
+          // Fail-closed invariant: If Supabase Cloud could not be contacted, refuse matching
+          if (!isSupabaseReachable) {
+            return {
+              ok: false,
+              matched: false,
+              patient: null,
+              similarityPercentage: 0,
+              error: {
+                code: 'DATABASE_UNREACHABLE',
+                message: 'ไม่สามารถเชื่อมต่อฐานข้อมูลโรงพยาบาลได้ (Fail-Closed: ระบบเทียบใบหน้าจาก Supabase สดเท่านั้น)',
+              },
+              message: '⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลโรงพยาบาลได้ กรุณาลองใหม่อีกครั้งหรือติดต่อเจ้าหน้าที่',
+            } as T;
           }
         }
 
@@ -1211,12 +1224,8 @@ export class ApiClient {
           const storage = getSafeLocalStorage();
           if (storage) {
             try {
-              const rawStored = storage.getItem('drtech_resilient_patients');
-              if (rawStored) {
-                const stored = JSON.parse(rawStored);
-                const cleaned = stored.filter((it: any) => it.id !== targetId && it.patient_id !== targetId && it.hn !== targetHn);
-                storage.setItem('drtech_resilient_patients', JSON.stringify(cleaned));
-              }
+              storage.removeItem('drtech_resilient_patients');
+              storage.removeItem('drtech_cached_patients');
               if (targetId) storage.removeItem(`drtech_patient_record_${targetId}`);
               if (targetHn) storage.removeItem(`drtech_patient_record_${targetHn}`);
             } catch {}
@@ -1238,21 +1247,7 @@ export class ApiClient {
           if (typeof window !== 'undefined' && bestMatch && bestRawScore >= 0.70) {
             try {
               const targetId = bestMatch.id || bestMatch.patient_id;
-              // Update local resilient cache safely
-              const storage = getSafeLocalStorage();
-              if (storage) {
-                const rawStored = storage.getItem('drtech_resilient_patients');
-                if (rawStored) {
-                  const stored = JSON.parse(rawStored);
-                  const localP = stored.find((item: any) => item.id === targetId || item.hn === bestMatch.hn);
-                  if (localP) {
-                    localP.history = localP.history || {};
-                    localP.history.adaptive_templates = [...(localP.history.adaptive_templates || []), probe].slice(-5);
-                    storage.setItem('drtech_resilient_patients', JSON.stringify(stored));
-                  }
-                }
-              }
-              // Update live Supabase Cloud
+              // Update live Supabase Cloud (Zero local storage vector persistence)
               fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${targetId}`, {
                 method: 'PATCH',
                 headers: {
@@ -1329,48 +1324,27 @@ export class ApiClient {
 
         let matchedPatient: any = null;
 
-        // Check local resilient patients first
-        if (typeof window !== 'undefined') {
-          try {
-            const rawStored = localStorage.getItem('drtech_resilient_patients');
-            const stored = rawStored ? JSON.parse(rawStored) : [];
-            matchedPatient = stored.find((p: any) => {
-              const storedPin = String(p.pin || p.history?.pin || '1234').trim();
-              const pinMatches = storedPin === pin || pin === '1234';
-              if (!pinMatches) return false;
-              if (hn) {
-                const pHn = String(p.hn || '').toLowerCase();
-                const pId = String(p.id || '').toLowerCase();
-                return pHn === hn || pId === hn || pHn.includes(hn);
-              }
-              return true;
-            });
-          } catch {}
-        }
-
-        // Query Supabase if not matched in local cache
-        if (!matchedPatient) {
-          try {
-            const queryUrl = hn
-              ? `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(hn.ilike.*${encodeURIComponent(hn)}*,id.eq.${encodeURIComponent(hn)})&limit=5`
-              : `${DEFAULT_SUPABASE_URL}/rest/v1/patients?order=created_at.desc&limit=50`;
-            const supaRes = await fetch(queryUrl, {
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-              },
-            });
-            if (supaRes.ok) {
-              const list = await supaRes.json();
-              if (Array.isArray(list)) {
-                matchedPatient = list.find((p: any) => {
-                  const storedPin = String(p.history?.pin || '1234').trim();
-                  return storedPin === pin || pin === '1234';
-                });
-              }
+        // Query Supabase live dataset directly (registration_status != 'archived')
+        try {
+          const queryUrl = hn
+            ? `${DEFAULT_SUPABASE_URL}/rest/v1/patients?registration_status=neq.archived&or=(hn.ilike.*${encodeURIComponent(hn)}*,id.eq.${encodeURIComponent(hn)})&limit=5`
+            : `${DEFAULT_SUPABASE_URL}/rest/v1/patients?registration_status=neq.archived&order=created_at.desc&limit=50`;
+          const supaRes = await fetch(queryUrl, {
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+            },
+          });
+          if (supaRes.ok) {
+            const list = await supaRes.json();
+            if (Array.isArray(list)) {
+              matchedPatient = list.find((p: any) => {
+                const storedPin = String(p.history?.pin || '1234').trim();
+                return storedPin === pin || pin === '1234';
+              });
             }
-          } catch {}
-        }
+          }
+        } catch {}
 
         if (matchedPatient) {
           const normalized = normalizePatientRecord(matchedPatient);
@@ -1378,21 +1352,6 @@ export class ApiClient {
           // Auto-heal template when probe is supplied during PIN verification
           if (probe && probe.length === 512) {
             const targetId = matchedPatient.id || matchedPatient.patient_id;
-            // Update local resilient cache
-            if (typeof window !== 'undefined') {
-              try {
-                const rawStored = localStorage.getItem('drtech_resilient_patients');
-                if (rawStored) {
-                  const stored = JSON.parse(rawStored);
-                  const localP = stored.find((item: any) => item.id === targetId || item.hn === matchedPatient.hn);
-                  if (localP) {
-                    localP.history = localP.history || {};
-                    localP.history.adaptive_templates = [...(localP.history.adaptive_templates || []), probe].slice(-5);
-                    localStorage.setItem('drtech_resilient_patients', JSON.stringify(stored));
-                  }
-                }
-              } catch {}
-            }
             // Update live Supabase Cloud
             fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${targetId}`, {
               method: 'PATCH',

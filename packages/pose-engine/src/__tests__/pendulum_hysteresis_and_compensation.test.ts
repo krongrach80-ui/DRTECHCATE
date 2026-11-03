@@ -246,3 +246,4 @@ describe('Clinical-Grade Pose Detection & Rep Counting Overhaul', () => {
     expect(compensator).toBeDefined();
   });
 });
+
