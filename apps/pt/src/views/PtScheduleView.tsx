@@ -12,7 +12,8 @@ import {
   Layers,
   ChevronRight,
   Sparkles,
-  Gamepad2
+  Gamepad2,
+  Monitor
 } from 'lucide-react';
 import {
   TodayCourseItem,
@@ -263,49 +264,49 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
       )}
 
       {/* Sub Tabs */}
-      <div className="flex items-center border-b border-slate-800">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => setSubTab('today')}
-          className={`pb-3 px-4 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
             subTab === 'today'
-              ? 'border-teal-400 text-teal-300'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
+              ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <Clock className="w-4 h-4" />
+          <Clock className="w-4 h-4 text-blue-600" />
           <span>นัดหมายวันนี้ (Today Queue) ({todayCourses.length})</span>
         </button>
         <button
           onClick={() => setSubTab('calendar')}
-          className={`pb-3 px-4 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
             subTab === 'calendar'
-              ? 'border-teal-400 text-teal-300'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
+              ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <CalendarIcon className="w-4 h-4" />
+          <CalendarIcon className="w-4 h-4 text-blue-600" />
           <span>ปฏิทินคอร์สทั้งหมด (Calendar View) ({calendarCourses.length})</span>
         </button>
         <button
           onClick={() => setSubTab('monthly')}
-          className={`pb-3 px-4 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
             subTab === 'monthly'
-              ? 'border-emerald-400 text-emerald-300'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <CalendarIcon className="w-4 h-4" />
+          <CalendarIcon className="w-4 h-4 text-emerald-600" />
           <span>ตารางฝึกและปฏิทินฟื้นฟู (Monthly Planner)</span>
         </button>
         <button
           onClick={() => setSubTab('smart')}
-          className={`pb-3 px-4 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
             subTab === 'smart'
-              ? 'border-emerald-400 text-emerald-300'
-              : 'border-transparent text-emerald-400/70 hover:text-emerald-200'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs'
+              : 'text-emerald-700 hover:bg-emerald-50'
           }`}
         >
-          <Sparkles className="w-4 h-4" />
+          <Sparkles className="w-4 h-4 text-emerald-600" />
           <span>Smart Schedule (v4)</span>
         </button>
       </div>
@@ -318,76 +319,83 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
 
       {/* SubTab 1: Today Queue */}
       {subTab === 'today' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+        <div className="bg-white border border-blue-100 rounded-2xl overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-300">
-              <thead className="bg-slate-950 text-xs text-slate-400 uppercase tracking-wider border-b border-slate-800">
+            <table className="w-full text-left text-sm text-slate-700">
+              <thead className="bg-blue-50/80 text-blue-950 text-xs font-semibold uppercase tracking-wider border-b border-blue-100">
                 <tr>
-                  <th className="px-6 py-4">เวลา</th>
-                  <th className="px-6 py-4">คนไข้ & รหัส HN</th>
-                  <th className="px-6 py-4">ชุดท่ากายภาพ / Modpack</th>
-                  <th className="px-6 py-4">ตู้ Kiosk</th>
-                  <th className="px-6 py-4">มินิเกม</th>
-                  <th className="px-6 py-4">สถานะภารกิจ</th>
-                  <th className="px-6 py-4 text-right">การจัดการ</th>
+                  <th className="px-6 py-4 font-semibold">เวลา</th>
+                  <th className="px-6 py-4 font-semibold">คนไข้ & รหัส HN</th>
+                  <th className="px-6 py-4 font-semibold">ชุดท่ากายภาพ / Modpack</th>
+                  <th className="px-6 py-4 font-semibold">ตู้ Kiosk</th>
+                  <th className="px-6 py-4 font-semibold">มินิเกม</th>
+                  <th className="px-6 py-4 font-semibold">สถานะภารกิจ</th>
+                  <th className="px-6 py-4 font-semibold text-right">การจัดการ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-400">
                       กำลังโหลดคิวฝึกวันนี้...
                     </td>
                   </tr>
                 ) : todayCourses.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-400">
                       ไม่มีนัดหมายการฝึกกายภาพในวันนี้
                     </td>
                   </tr>
                 ) : (
                   todayCourses.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-slate-800/50 transition">
-                      <td className="px-6 py-4 font-mono font-semibold text-teal-400">
+                    <tr key={idx} className="hover:bg-emerald-50/40 transition">
+                      <td className="px-6 py-4 font-mono font-bold text-blue-700">
                         {item.start_time || 'ตามกำหนด'}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="font-semibold text-white">
+                        <div className="font-semibold text-slate-900">
                           {item.patient?.first_name} {item.patient?.last_name}
                         </div>
-                        <div className="text-xs font-mono text-slate-400 mt-0.5">{item.patient?.hn}</div>
+                        <div className="mt-0.5">
+                          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-mono text-xs font-bold">
+                            {item.patient?.hn}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-slate-200">
+                        <div className="text-slate-700 font-medium">
                           {item.modpack_title || 'ชุดท่าเฉพาะบุคคล (Snapshot)'}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-xs text-slate-400">
-                        {item.kiosk_name || 'ตู้ใดก็ได้'}
+                      <td className="px-6 py-4 text-xs text-slate-600">
+                        <span className="flex items-center gap-1.5">
+                          <Monitor className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{item.kiosk_name || 'ตู้ใดก็ได้'}</span>
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         {item.include_minigame ? (
-                          <span className="text-xs text-teal-400 flex items-center gap-1">
-                            <Gamepad2 className="w-3.5 h-3.5" />
+                          <span className="text-xs text-emerald-700 font-semibold flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg w-fit">
+                            <Gamepad2 className="w-3.5 h-3.5 text-emerald-600" />
                             <span>รวมมินิเกม</span>
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-500">ไม่รวม</span>
+                          <span className="text-xs text-slate-400">ไม่รวม</span>
                         )}
                       </td>
                       <td className="px-6 py-4">
                         {item.mission_status === 'completed' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                            <CheckCircle2 className="w-3 h-3" />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                             <span>ฝึกเสร็จแล้ว</span>
                           </span>
                         ) : item.mission_status === 'in_progress' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                            <Clock className="w-3 h-3 animate-spin" />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                            <Clock className="w-3 h-3 animate-spin text-blue-600" />
                             <span>กำลังฝึกที่ตู้</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/10 text-slate-400 border border-slate-500/30">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                             <span>ยังไม่มา</span>
                           </span>
                         )}
@@ -398,7 +406,7 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                             const cid = item.course_id || item.id;
                             if (cid) handleDeleteCourse(cid);
                           }}
-                          className="text-slate-500 hover:text-rose-400 p-1"
+                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1 rounded-lg transition"
                           title="ยกเลิกคอร์ส"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -415,48 +423,48 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
 
       {/* SubTab 2: Calendar View */}
       {subTab === 'calendar' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-            <h3 className="font-bold text-white text-base">รายการคอร์สกายภาพที่กำลังดำเนินการทั้งหมด</h3>
-            <span className="text-xs text-slate-400">ทั้งหมด {calendarCourses.length} คอร์ส</span>
+        <div className="bg-white border border-blue-100 rounded-2xl p-6 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+            <h3 className="font-bold text-slate-900 text-base">รายการคอร์สกายภาพที่กำลังดำเนินการทั้งหมด</h3>
+            <span className="text-xs text-slate-500 font-medium">ทั้งหมด {calendarCourses.length} คอร์ส</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {calendarCourses.map((c) => (
               <div
                 key={c.id}
-                className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3"
+                className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 hover:border-blue-300 transition"
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="font-semibold text-white">
+                    <div className="font-semibold text-slate-900">
                       {c.patient?.first_name} {c.patient?.last_name}
                     </div>
-                    <div className="text-xs font-mono text-teal-400">HN: {c.patient?.hn}</div>
+                    <div className="text-xs font-mono text-blue-700 font-bold">HN: {c.patient?.hn}</div>
                   </div>
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                       c.status === 'active'
-                        ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
-                        : 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-rose-50 text-rose-700 border border-rose-200'
                     }`}
                   >
                     {c.status === 'active' ? 'กำลังดำเนินการ' : 'ยกเลิกแล้ว'}
                   </span>
                 </div>
 
-                <div className="text-xs text-slate-400 space-y-1">
+                <div className="text-xs text-slate-600 space-y-1">
                   <div>
-                    📅 ช่วงวัน: <span className="text-slate-200">{c.start_date} ถึง {c.end_date}</span>
+                    📅 ช่วงวัน: <span className="text-slate-800 font-medium">{c.start_date} ถึง {c.end_date}</span>
                   </div>
                   <div>
-                    ⏰ เวลา: <span className="text-slate-200">{c.start_time}</span>
+                    ⏰ เวลา: <span className="text-slate-800 font-medium">{c.start_time}</span>
                   </div>
                   <div className="flex flex-wrap gap-1 pt-1">
                     {c.weekdays.map((d) => (
                       <span
                         key={d}
-                        className="px-1.5 py-0.5 rounded text-[10px] bg-slate-900 border border-slate-800 text-teal-300"
+                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 border border-blue-200 text-blue-700"
                       >
                         {weekdayNames[d]}
                       </span>
@@ -464,14 +472,14 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-500">
+                <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500 font-medium">
                     {c.modpack?.name || c.modpack?.title || 'Snapshot ท่าเฉพาะบุคคล'}
                   </span>
                   {c.status === 'active' && (
                     <button
                       onClick={() => handleDeleteCourse(c.id)}
-                      className="text-xs text-rose-400 hover:text-rose-300"
+                      className="text-xs text-rose-600 hover:text-rose-700 font-semibold"
                     >
                       ยกเลิกคอร์ส
                     </button>
@@ -485,18 +493,18 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
 
       {/* 3-Step Wizard Modal */}
       {isWizardOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 space-y-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-2xl bg-white border border-blue-100 rounded-2xl shadow-2xl p-6 space-y-6">
             {/* Wizard Header & Progress Bar */}
-            <div className="border-b border-slate-800 pb-4 space-y-3">
+            <div className="border-b border-slate-100 pb-4 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-teal-400" />
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-blue-600" />
                   <span>สร้างตารางนัดหมายและแผนการรักษา (3-Step Wizard)</span>
                 </h3>
                 <button
                   onClick={() => setIsWizardOpen(false)}
-                  className="text-slate-400 hover:text-white"
+                  className="text-slate-400 hover:text-slate-600"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -505,30 +513,30 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
               {/* Steps Progress */}
               <div className="flex items-center justify-between gap-2 text-xs">
                 <div
-                  className={`flex-1 py-1.5 px-3 rounded-lg border text-center font-medium ${
+                  className={`flex-1 py-1.5 px-3 rounded-lg border text-center font-semibold ${
                     wizardStep === 1
-                      ? 'bg-teal-500/20 border-teal-500 text-teal-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                      ? 'bg-blue-50 border-blue-400 text-blue-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-500'
                   }`}
                 >
                   ขั้นที่ 1: เลือกคนไข้
                 </div>
-                <ChevronRight className="w-4 h-4 text-slate-600" />
+                <ChevronRight className="w-4 h-4 text-slate-400" />
                 <div
-                  className={`flex-1 py-1.5 px-3 rounded-lg border text-center font-medium ${
+                  className={`flex-1 py-1.5 px-3 rounded-lg border text-center font-semibold ${
                     wizardStep === 2
-                      ? 'bg-teal-500/20 border-teal-500 text-teal-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                      ? 'bg-blue-50 border-blue-400 text-blue-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-500'
                   }`}
                 >
                   ขั้นที่ 2: เลือกท่า/Modpack
                 </div>
-                <ChevronRight className="w-4 h-4 text-slate-600" />
+                <ChevronRight className="w-4 h-4 text-slate-400" />
                 <div
-                  className={`flex-1 py-1.5 px-3 rounded-lg border text-center font-medium ${
+                  className={`flex-1 py-1.5 px-3 rounded-lg border text-center font-semibold ${
                     wizardStep === 3
-                      ? 'bg-teal-500/20 border-teal-500 text-teal-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                      ? 'bg-blue-50 border-blue-400 text-blue-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-500'
                   }`}
                 >
                   ขั้นที่ 3: กำหนดวันและเวลา
@@ -540,13 +548,13 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
             {wizardStep === 1 && (
               <div className="space-y-4">
                 <div className="relative">
-                  <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     placeholder="ค้นหาชื่อ, นามสกุล หรือ HN..."
                     value={patientSearch}
                     onChange={(e) => setPatientSearch(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                    className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
 
@@ -559,19 +567,19 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                         onClick={() => setSelectedPatientId(p.id)}
                         className={`p-3.5 rounded-xl border cursor-pointer transition flex items-center justify-between ${
                           isSelected
-                            ? 'bg-teal-500/15 border-teal-500 text-white'
-                            : 'bg-slate-950 border-slate-800/80 hover:border-slate-700 text-slate-300'
+                            ? 'bg-blue-50 border-blue-400 text-blue-900 font-semibold'
+                            : 'bg-slate-50 border-slate-200 hover:border-blue-300 text-slate-700'
                         }`}
                       >
                         <div>
-                          <div className="font-semibold text-sm">
+                          <div className="font-semibold text-sm text-slate-900">
                             {p.first_name} {p.last_name}
                           </div>
-                          <div className="text-xs text-slate-400 mt-0.5">
+                          <div className="text-xs text-slate-500 mt-0.5">
                             HN: {p.hn} • อายุ {p.age} ปี • {p.injury || 'กายภาพทั่วไป'}
                           </div>
                         </div>
-                        {isSelected && <CheckCircle2 className="w-5 h-5 text-teal-400" />}
+                        {isSelected && <CheckCircle2 className="w-5 h-5 text-blue-600" />}
                       </div>
                     );
                   })}
@@ -581,7 +589,7 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                   <button
                     disabled={!selectedPatientId}
                     onClick={() => setWizardStep(2)}
-                    className="px-6 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-white font-medium text-sm transition"
+                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-sm transition shadow-md shadow-blue-950/20 active:scale-95"
                   >
                     ถัดไป: เลือกท่ากายภาพ
                   </button>
@@ -593,7 +601,7 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
             {wizardStep === 2 && (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="block text-xs font-medium text-slate-300">
+                  <label className="block text-xs font-semibold text-slate-700">
                     เลือกชุดท่ากายภาพ (Modpack) สำเร็จรูป:
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto">
@@ -608,18 +616,18 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                           }}
                           className={`p-3 rounded-xl border cursor-pointer transition ${
                             isSelected
-                              ? 'bg-teal-500/15 border-teal-500 text-white'
-                              : 'bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-300'
+                              ? 'bg-blue-50 border-blue-400 text-blue-900 font-semibold'
+                              : 'bg-slate-50 border-slate-200 hover:border-blue-300 text-slate-700'
                           }`}
                         >
-                          <div className="font-semibold text-sm flex items-center justify-between">
+                          <div className="font-semibold text-sm flex items-center justify-between text-slate-900">
                             <span>{mp.name || mp.title}</span>
-                            <Layers className="w-4 h-4 text-teal-400" />
+                            <Layers className="w-4 h-4 text-blue-600" />
                           </div>
-                          <div className="text-xs text-slate-400 mt-1 line-clamp-1">
+                          <div className="text-xs text-slate-500 mt-1 line-clamp-1">
                             {mp.description || 'ไม่มีคำอธิบาย'}
                           </div>
-                          <div className="text-[11px] text-teal-400 mt-2 font-mono">
+                          <div className="text-[11px] text-emerald-700 font-bold mt-2 font-mono">
                             {mp.items?.length || 0} ท่าในชุด
                           </div>
                         </div>
@@ -630,8 +638,8 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
 
                 {/* Option to customize individual exercises if no modpack */}
                 {!selectedModpackId && (
-                  <div className="space-y-2 pt-2 border-t border-slate-800">
-                    <label className="block text-xs font-medium text-slate-300">
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <label className="block text-xs font-semibold text-slate-700">
                       หรือเลือกท่ากายภาพเฉพาะบุคคล (Custom Exercises):
                     </label>
                     <div className="max-h-36 overflow-y-auto space-y-1.5">
@@ -642,9 +650,9 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                         return (
                           <div
                             key={ex.id}
-                            className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 flex items-center justify-between text-xs"
+                            className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs"
                           >
-                            <label className="flex items-center gap-2 cursor-pointer text-slate-200">
+                            <label className="flex items-center gap-2 cursor-pointer text-slate-800">
                               <input
                                 type="checkbox"
                                 checked={isChecked}
@@ -664,11 +672,11 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                                     );
                                   }
                                 }}
-                                className="rounded border-slate-700 bg-slate-900 text-teal-500"
+                                className="rounded border-slate-300 bg-white text-blue-600"
                               />
-                              <span>{ex.title}</span>
+                              <span className="font-medium">{ex.title}</span>
                             </label>
-                            <span className="text-slate-500 font-mono">
+                            <span className="text-emerald-700 font-bold font-mono">
                               {ex.default_sets}×{ex.default_reps}
                             </span>
                           </div>
@@ -679,12 +687,12 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                 )}
 
                 {/* Include Minigame Option */}
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Gamepad2 className="w-5 h-5 text-cyan-400" />
+                    <Gamepad2 className="w-5 h-5 text-blue-600" />
                     <div>
-                      <div className="text-sm font-semibold text-white">บรรจุมินิเกมฝึกสมอง</div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-sm font-semibold text-slate-900">บรรจุมินิเกมฝึกสมอง</div>
+                      <div className="text-xs text-slate-500">
                         รวมเกมตอบคำถามกระตุ้นสมองหลังจากคนไข้ฝึกท่าเสร็จ
                       </div>
                     </div>
@@ -693,21 +701,21 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                     type="checkbox"
                     checked={includeMinigame}
                     onChange={(e) => setIncludeMinigame(e.target.checked)}
-                    className="w-5 h-5 rounded border-slate-700 bg-slate-900 text-teal-500"
+                    className="w-5 h-5 rounded border-slate-300 bg-white text-blue-600"
                   />
                 </div>
 
-                <div className="flex justify-between pt-3 border-t border-slate-800">
+                <div className="flex justify-between pt-3 border-t border-slate-100">
                   <button
                     onClick={() => setWizardStep(1)}
-                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition"
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition"
                   >
                     ย้อนกลับ
                   </button>
                   <button
                     disabled={!selectedModpackId && selectedCustomExercises.length === 0}
                     onClick={() => setWizardStep(3)}
-                    className="px-6 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-white font-medium text-sm transition"
+                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-sm transition shadow-md shadow-blue-950/20 active:scale-95"
                   >
                     ถัดไป: กำหนดวันและเวลา
                   </button>
@@ -720,7 +728,7 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
               <form onSubmit={handleCreateCourse} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">วันเริ่มต้น</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">วันเริ่มต้น</label>
                     <input
                       type="date"
                       required
@@ -728,11 +736,11 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                       onChange={(e) =>
                         setScheduleConfig({ ...scheduleConfig, start_date: e.target.value })
                       }
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">วันสิ้นสุด</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">วันสิ้นสุด</label>
                     <input
                       type="date"
                       required
@@ -740,13 +748,13 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                       onChange={(e) =>
                         setScheduleConfig({ ...scheduleConfig, end_date: e.target.value })
                       }
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     วันในสัปดาห์ที่นัดหมาย (Weekdays):
                   </label>
                   <div className="flex flex-wrap gap-2">
@@ -759,8 +767,8 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                           onClick={() => handleWeekdayToggle(idx)}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                             isSelected
-                              ? 'bg-teal-500 text-white shadow-sm'
-                              : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'bg-slate-50 border border-slate-200 text-slate-600 hover:border-blue-300'
                           }`}
                         >
                           {name}
@@ -772,7 +780,7 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">เวลานัดหมาย</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">เวลานัดหมาย</label>
                     <input
                       type="time"
                       required
@@ -780,11 +788,11 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                       onChange={(e) =>
                         setScheduleConfig({ ...scheduleConfig, start_time: e.target.value })
                       }
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
                       ระบุตู้ Kiosk ประจำ
                     </label>
                     <select
@@ -792,7 +800,7 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                       onChange={(e) =>
                         setScheduleConfig({ ...scheduleConfig, kiosk_id: e.target.value })
                       }
-                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                     >
                       <option value="">ตู้ใดก็ได้ในแผนก</option>
                       {kiosks.map((k) => (
@@ -804,26 +812,26 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-teal-500/10 border border-teal-500/20 text-xs text-teal-300 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 flex-shrink-0" />
+                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 flex-shrink-0 text-blue-600" />
                   <span>
                     เมื่อยืนยัน ระบบจะคัดลอก snapshot รายการท่าทั้งหมดลงใน course_items
                     ทำให้การเปลี่ยนแปลง modpack ในภายหลังไม่กระทบคอร์สที่จ่ายไปแล้ว
                   </span>
                 </div>
 
-                <div className="flex justify-between pt-3 border-t border-slate-800">
+                <div className="flex justify-between pt-3 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => setWizardStep(2)}
-                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition"
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition"
                   >
                     ย้อนกลับ
                   </button>
                   <button
                     type="submit"
                     disabled={actionLoading}
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-400 hover:to-cyan-500 text-white font-medium text-sm transition shadow-lg shadow-teal-500/20"
+                    className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
                   >
                     {actionLoading ? 'กำลังสร้างคอร์ส...' : 'ยืนยันสร้างตารางนัด'}
                   </button>

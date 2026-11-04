@@ -460,45 +460,45 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
       <SmartPendingPatientsBanner onPatientUpdated={fetchPatients} />
 
       {/* Search & Filter Bar */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row gap-4 justify-between items-center">
+      <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 flex flex-col md:flex-row gap-3 justify-between items-center shadow-xs">
         <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="ค้นหาชื่อ-นามสกุล, HN, เบอร์โทร..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
           <button
             onClick={() => setFilterType('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
               filterType === 'all'
-                ? 'bg-teal-500 text-white'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-gradient-to-r from-emerald-600 to-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
             ทั้งหมด ({patients.length})
           </button>
           <button
             onClick={() => setFilterType('direct')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
               filterType === 'direct'
-                ? 'bg-teal-500 text-white'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-gradient-to-r from-emerald-600 to-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
             เคสดูแลตรง
           </button>
           <button
             onClick={() => setFilterType('transferred')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
               filterType === 'transferred'
-                ? 'bg-cyan-500 text-white'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-gradient-to-r from-emerald-600 to-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
             เคสฝากชั่วคราว ({activeTransferredIds.size})
@@ -507,10 +507,10 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
       </div>
 
       {/* Patients Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+      <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-950 text-xs text-slate-400 uppercase tracking-wider border-b border-slate-800">
+          <table className="w-full text-left text-sm text-slate-700">
+            <thead className="bg-blue-50/80 text-blue-950 font-semibold text-xs uppercase tracking-wider border-b border-blue-100">
               <tr>
                 <th className="px-6 py-4">คนไข้ & รหัส HN</th>
                 <th className="px-6 py-4">อายุ / เพศ / ติดต่อ</th>
@@ -520,11 +520,12 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
                 <th className="px-6 py-4 text-right">การจัดการ</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="bg-white hover:bg-emerald-50/40 divide-y divide-slate-100 text-slate-800">
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                    กำลังโหลดข้อมูลคนไข้...
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-600" />
+                    <span>กำลังโหลดข้อมูลคนไข้...</span>
                   </td>
                 </tr>
               ) : filteredList.length === 0 ? (
@@ -537,48 +538,48 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
                 filteredList.map((p) => {
                   const isDelegated = activeTransferredIds.has(p.id);
                   return (
-                    <tr key={p.id} className="hover:bg-slate-800/50 transition">
+                    <tr key={p.id} className="hover:bg-emerald-50/40 transition">
                       <td className="px-6 py-4">
-                        <div className="font-semibold text-white">
+                        <div className="font-semibold text-slate-900">
                           {p.first_name} {p.last_name}
                         </div>
-                        <div className="text-xs font-mono text-teal-400 mt-0.5">{p.hn}</div>
+                        <div className="text-xs font-mono font-bold text-blue-700 mt-1 inline-block bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-lg">{p.hn}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-slate-300">
+                        <div className="text-slate-700 text-xs">
                           อายุ {p.age} ปี • {p.sex === 'male' ? 'ชาย' : p.sex === 'female' ? 'หญิง' : 'อื่นๆ'}
                         </div>
-                        <div className="text-xs text-slate-500 mt-0.5">{p.phone || 'ไม่ระบุเบอร์'}</div>
+                        <div className="text-xs text-slate-500 mt-0.5 font-mono">{p.phone || 'ไม่ระบุเบอร์'}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-slate-300 max-w-xs truncate">
+                        <div className="text-slate-700 max-w-xs truncate text-xs">
                           {p.injury || 'กายภาพบำบัดฟื้นฟูทั่วไป'}
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                            p.registration_status === 'active'
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                            p.registration_status === 'active' || p.registration_status === 'face_enrolled'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
                           }`}
                         >
                           <span
                             className={`w-1.5 h-1.5 rounded-full ${
-                              p.registration_status === 'active' ? 'bg-emerald-400' : 'bg-amber-400'
+                              p.registration_status === 'active' || p.registration_status === 'face_enrolled' ? 'bg-emerald-500' : 'bg-amber-500'
                             }`}
                           />
-                          <span>{p.registration_status === 'active' ? 'ลงทะเบียนแล้ว' : 'รอสแกนหน้า'}</span>
+                          <span>{p.registration_status === 'active' || p.registration_status === 'face_enrolled' ? 'ลงทะเบียนแล้ว' : 'รอสแกนหน้า'}</span>
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         {isDelegated ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                             <Clock className="w-3 h-3" />
                             <span>เคสฝากชั่วคราว</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                             <span>ดูแลโดยตรง</span>
                           </span>
                         )}
@@ -673,16 +674,16 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
 
       {/* Modal: Edit Patient */}
       {isEditModalOpen && selectedPatient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Edit className="w-5 h-5 text-teal-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-white border border-blue-100 rounded-2xl shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Edit className="w-5 h-5 text-blue-600" />
                 <span>แก้ไขข้อมูลคนไข้ (HN: {selectedPatient.hn})</span>
               </h3>
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -691,76 +692,76 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
             <form onSubmit={handleUpdatePatient} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ชื่อ</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่อ</label>
                   <input
                     type="text"
                     required
                     value={editFormData.first_name}
                     onChange={(e) => setEditFormData({ ...editFormData, first_name: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">นามสกุล</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">นามสกุล</label>
                   <input
                     type="text"
                     required
                     value={editFormData.last_name}
                     onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">อายุ (ปี)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">อายุ (ปี)</label>
                   <input
                     type="number"
                     required
                     value={editFormData.age}
                     onChange={(e) => setEditFormData({ ...editFormData, age: parseInt(e.target.value, 10) || 0 })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">เบอร์โทร</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">เบอร์โทร</label>
                   <input
                     type="tel"
                     value={editFormData.phone}
                     onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">การวินิจฉัย / อาการ</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">การวินิจฉัย / อาการ</label>
                 <input
                   type="text"
                   value={editFormData.injury}
                   onChange={(e) => setEditFormData({ ...editFormData, injury: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-center justify-between">
                 <span>ระบบล็อกแบบ Optimistic Lock: Version ปัจจุบัน = {selectedPatient.version}</span>
-                <Sparkles className="w-4 h-4 text-teal-400" />
+                <Sparkles className="w-4 h-4 text-blue-600" />
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-white font-medium text-sm transition shadow-lg shadow-teal-500/20"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
                 >
                   {actionLoading ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
                 </button>
@@ -772,40 +773,40 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
 
       {/* Modal: Case Transfer */}
       {isTransferModalOpen && selectedPatient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <ArrowRightLeft className="w-5 h-5 text-cyan-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white border border-blue-100 rounded-2xl shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <ArrowRightLeft className="w-5 h-5 text-blue-600" />
                 <span>ฝากเคสชั่วคราว (Temporary Transfer)</span>
               </h3>
               <button
                 onClick={() => setIsTransferModalOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreateTransfer} className="space-y-4">
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-sm">
-                <div className="font-semibold text-white">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm">
+                <div className="font-semibold text-slate-900">
                   {selectedPatient.first_name} {selectedPatient.last_name}
                 </div>
-                <div className="text-xs text-slate-400 mt-1">
+                <div className="text-xs text-slate-500 mt-1">
                   HN: {selectedPatient.hn} • อาการ: {selectedPatient.injury || 'กายภาพทั่วไป'}
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   นักกายภาพปลายทางผู้รับฝาก
                 </label>
                 <select
                   required
                   value={transferFormData.to_pt_id}
                   onChange={(e) => setTransferFormData({ ...transferFormData, to_pt_id: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                 >
                   <option value="">-- เลือกนักกายภาพบำบัด --</option>
                   {(Array.isArray(ptsList) ? ptsList : [])
@@ -820,55 +821,55 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ตั้งแต่วันที่</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ตั้งแต่วันที่</label>
                   <input
                     type="date"
                     required
                     value={transferFormData.start_date}
                     onChange={(e) => setTransferFormData({ ...transferFormData, start_date: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ถึงวันที่</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ถึงวันที่</label>
                   <input
                     type="date"
                     required
                     value={transferFormData.end_date}
                     onChange={(e) => setTransferFormData({ ...transferFormData, end_date: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">เหตุผลการฝากเคส</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">เหตุผลการฝากเคส</label>
                 <input
                   type="text"
                   required
                   value={transferFormData.reason}
                   onChange={(e) => setTransferFormData({ ...transferFormData, reason: e.target.value })}
                   placeholder="เช่น ลาประชุมวิชาการ, ลาพักร้อน"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
-              <div className="p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300">
+              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800">
                 นักกายภาพปลายทางจะมีสิทธิ์เข้าถึงข้อมูลและเวชระเบียนของคนไข้ท่านนี้เฉพาะในช่วงเวลาที่ระบุเท่านั้น
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsTransferModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 hover:from-cyan-500 hover:to-teal-400 text-white font-medium text-sm transition shadow-lg shadow-teal-500/20"
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition shadow-md shadow-blue-950/20 active:scale-95"
                 >
                   {actionLoading ? 'กำลังส่งต่อ...' : 'ยืนยันการฝากเคส'}
                 </button>

@@ -283,23 +283,23 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Patient Selection Column (4 cols) */}
         <div className="lg:col-span-4 space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+          <div className="bg-white border border-blue-100 rounded-2xl p-4 space-y-3 shadow-sm">
+            <div className="text-xs font-bold text-blue-950 uppercase tracking-wider">
               เลือกคนไข้เพื่อดูเวชระเบียน
             </div>
 
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 placeholder="ค้นหาชื่อ, HN..."
                 value={patientSearch}
                 onChange={(e) => setPatientSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
               />
             </div>
 
-            <div className="divide-y divide-slate-800/80 max-h-[550px] overflow-y-auto space-y-1">
+            <div className="divide-y divide-slate-100 max-h-[550px] overflow-y-auto space-y-1">
               {filteredPatients.map((p) => {
                 const isSelected = p.id === selectedPatientId;
                 return (
@@ -308,15 +308,15 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
                     onClick={() => setSelectedPatientId(p.id)}
                     className={`w-full text-left p-3 rounded-xl transition ${
                       isSelected
-                        ? 'bg-teal-500/20 border border-teal-500/40 text-white'
-                        : 'hover:bg-slate-800/50 text-slate-300'
+                        ? 'bg-blue-50 border border-blue-300 text-blue-950 shadow-xs'
+                        : 'hover:bg-slate-50 text-slate-700'
                     }`}
                   >
                     <div className="font-semibold text-sm">
                       {p.first_name} {p.last_name}
                     </div>
-                    <div className="text-xs text-slate-400 flex items-center justify-between mt-1">
-                      <span className="font-mono text-teal-400">{p.hn}</span>
+                    <div className="text-xs text-slate-500 flex items-center justify-between mt-1">
+                      <span className="font-mono font-bold text-blue-700">{p.hn}</span>
                       <span>อายุ {p.age} ปี</span>
                     </div>
                   </button>
@@ -329,15 +329,15 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
         {/* Clinical Records Details (8 cols) */}
         <div className="lg:col-span-8 space-y-4">
           {selectedPatient ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div className="bg-white border border-blue-100 rounded-2xl p-6 space-y-6 shadow-sm">
               {/* Patient Banner */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-800 gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-100 gap-4">
                 <div>
-                  <h3 className="text-xl font-bold text-white">
+                  <h3 className="text-xl font-bold text-slate-900">
                     {selectedPatient.first_name} {selectedPatient.last_name}
                   </h3>
-                  <div className="text-xs text-slate-400 mt-1 flex items-center gap-3">
-                    <span className="font-mono text-teal-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                  <div className="text-xs text-slate-600 mt-1 flex items-center gap-3">
+                    <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                       HN: {selectedPatient.hn}
                     </span>
                     <span>อายุ {selectedPatient.age} ปี</span>
@@ -351,17 +351,17 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
                     id="btn-open-patient-analytics"
                     data-testid="btn-open-patient-analytics"
                     onClick={() => setIsAnalyticsModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white text-xs font-bold shadow-lg shadow-teal-950/40 transition active:scale-95 cursor-pointer border border-emerald-400/30"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-blue-950/20 transition active:scale-95 cursor-pointer"
                     title="เปิดแดชบอร์ดวิเคราะห์ชีวกลศาสตร์และการฟื้นฟูระยะยาว"
                   >
-                    <Activity className="w-4 h-4 text-emerald-200" />
+                    <Activity className="w-4 h-4 text-blue-100" />
                     <span>🔬 วิเคราะห์ 3D Replay & รายงานแพทย์</span>
                   </button>
 
                   {activeTab === 'notes' ? (
                     <button
                       onClick={() => setIsNoteModalOpen(true)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-white text-xs font-semibold shadow-lg shadow-teal-500/20 transition cursor-pointer"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition cursor-pointer active:scale-95"
                     >
                       <Plus className="w-4 h-4" />
                       <span>เขียนโน้ตต่อท้าย</span>
@@ -369,7 +369,7 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
                   ) : (
                     <button
                       onClick={() => setIsResultModalOpen(true)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 transition cursor-pointer"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-950/20 transition cursor-pointer active:scale-95"
                     >
                       <Plus className="w-4 h-4" />
                       <span>บันทึกผลรักษาเวอร์ชันใหม่</span>
@@ -379,8 +379,8 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
               </div>
 
               {/* Invariant Warning Banner */}
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/90 text-xs text-slate-400 flex items-center gap-3">
-                <ShieldAlert className="w-4 h-4 text-teal-400 flex-shrink-0" />
+              <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-xs text-blue-900 flex items-center gap-3">
+                <ShieldAlert className="w-4 h-4 text-blue-600 flex-shrink-0" />
                 <span>
                   ตามระเบียบมาตรฐานเวชระเบียนทางการแพทย์ (Section 9): ข้อมูลทั้งหมดเป็นแบบต่อท้าย (Append-Only)
                   ห้ามแก้ไขหรือลบย้อนหลังทุกกรณี ฝั่งฐานข้อมูลมี Database Trigger คอยป้องกันการ UPDATE/DELETE
@@ -388,27 +388,27 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
               </div>
 
               {/* Tab Selector */}
-              <div className="flex items-center border-b border-slate-800">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
                 <button
                   onClick={() => setActiveTab('notes')}
-                  className={`pb-3 px-4 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${
                     activeTab === 'notes'
-                      ? 'border-teal-400 text-teal-300'
-                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  <FileText className="w-4 h-4" />
+                  <FileText className="w-4 h-4 text-blue-600" />
                   <span>บันทึกความคืบหน้า (Medical Notes) ({notes.length})</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('results')}
-                  className={`pb-3 px-4 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${
                     activeTab === 'results'
-                      ? 'border-cyan-400 text-cyan-300'
-                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  <History className="w-4 h-4" />
+                  <History className="w-4 h-4 text-emerald-600" />
                   <span>ประวัติผลการรักษา (Treatment Results) ({treatmentResults.length})</span>
                 </button>
               </div>
@@ -417,34 +417,34 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
               {activeTab === 'notes' && (
                 <div className="space-y-4">
                   {loading ? (
-                    <div className="py-12 text-center text-slate-500 text-sm">
+                    <div className="py-12 text-center text-slate-400 text-sm">
                       กำลังโหลดบันทึกเวชระเบียน...
                     </div>
                   ) : notes.length === 0 ? (
-                    <div className="py-12 text-center text-slate-500 text-sm">
+                    <div className="py-12 text-center text-slate-400 text-sm">
                       ยังไม่มีบันทึกเวชระเบียนสำหรับคนไข้ท่านนี้
                     </div>
                   ) : (
                     notes.map((n, idx) => (
                       <div
                         key={n.id || idx}
-                        className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-2 relative"
+                        className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2 relative"
                       >
-                        <div className="flex items-center justify-between text-xs text-slate-400 pb-2 border-b border-slate-800/60">
+                        <div className="flex items-center justify-between text-xs text-slate-500 pb-2 border-b border-slate-200/80">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-300">
+                            <span className="font-semibold text-slate-900">
                               {n.author?.full_name || 'นักกายภาพบำบัด'}
                             </span>
-                            <span className="text-slate-500">•</span>
-                            <span className="font-mono text-teal-400">
+                            <span className="text-slate-300">•</span>
+                            <span className="font-mono text-blue-700 font-semibold">
                               {new Date(n.created_at).toLocaleString('th-TH')}
                             </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 text-slate-400 border border-slate-800">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white text-slate-600 border border-slate-200 font-bold">
                             #NOTE-{idx + 1}
                           </span>
                         </div>
-                        <p className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed pt-1">
+                        <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed pt-1">
                           {n.body}
                         </p>
                       </div>
@@ -457,46 +457,46 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
               {activeTab === 'results' && (
                 <div className="space-y-4">
                   {loading ? (
-                    <div className="py-12 text-center text-slate-500 text-sm">
+                    <div className="py-12 text-center text-slate-400 text-sm">
                       กำลังโหลดประวัติผลการรักษา...
                     </div>
                   ) : treatmentResults.length === 0 ? (
-                    <div className="py-12 text-center text-slate-500 text-sm">
+                    <div className="py-12 text-center text-slate-400 text-sm">
                       ยังไม่มีบันทึกผลการรักษาสำหรับคนไข้ท่านนี้
                     </div>
                   ) : (
                     treatmentResults.map((tr, idx) => (
                       <div
                         key={tr.id || idx}
-                        className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-2"
+                        className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2"
                       >
-                        <div className="flex items-center justify-between text-xs text-slate-400 pb-2 border-b border-slate-800/60">
+                        <div className="flex items-center justify-between text-xs text-slate-500 pb-2 border-b border-slate-200/80">
                           <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
                               <GitCommit className="w-3.5 h-3.5" />
                               <span>เวอร์ชัน {tr.version}</span>
                             </span>
-                            <span className="text-slate-500">•</span>
-                            <span className="font-semibold text-slate-300">
+                            <span className="text-slate-300">•</span>
+                            <span className="font-semibold text-slate-900">
                               {tr.author?.full_name || 'นักกายภาพบำบัด'}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-mono text-slate-400">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <span className="font-mono text-slate-600">
                               {new Date(tr.created_at).toLocaleString('th-TH')}
                             </span>
                           </div>
                         </div>
 
                         {tr.supersedes_id && (
-                          <div className="text-[11px] text-cyan-400/80 flex items-center gap-1 font-mono">
+                          <div className="text-[11px] text-blue-700 flex items-center gap-1 font-mono font-medium">
                             <CornerDownRight className="w-3 h-3" />
                             <span>อัปเดตแทนที่เวอร์ชันก่อนหน้า (Supersedes ID: {tr.supersedes_id.slice(0, 8)}...)</span>
                           </div>
                         )}
 
-                        <p className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed pt-1">
+                        <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed pt-1">
                           {tr.body}
                         </p>
                       </div>
@@ -506,7 +506,7 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
               )}
             </div>
           ) : (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center text-slate-500">
+            <div className="bg-white border border-blue-100 rounded-2xl p-12 text-center text-slate-400 shadow-sm">
               กรุณาเลือกคนไข้จากรายการทางด้านซ้ายเพื่อเปิดดูเวชระเบียน
             </div>
           )}
@@ -515,28 +515,28 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
 
       {/* Modal: Add Note */}
       {isNoteModalOpen && selectedPatient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Plus className="w-5 h-5 text-teal-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-white border border-blue-100 rounded-2xl shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-blue-600" />
                 <span>เขียนโน้ตเวชระเบียนต่อท้าย (Append-Only Note)</span>
               </h3>
               <button
                 onClick={() => setIsNoteModalOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreateNote} className="space-y-4">
-              <div className="text-xs text-slate-400">
-                คนไข้: <span className="font-semibold text-white">{selectedPatient.first_name} {selectedPatient.last_name}</span> (HN: {selectedPatient.hn})
+              <div className="text-xs text-slate-600">
+                คนไข้: <span className="font-semibold text-slate-900">{selectedPatient.first_name} {selectedPatient.last_name}</span> (HN: {selectedPatient.hn})
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   ข้อความบันทึกความคืบหน้า / การรักษา
                 </label>
                 <textarea
@@ -545,26 +545,26 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
                   value={noteBody}
                   onChange={(e) => setNoteBody(e.target.value)}
                   placeholder="เช่น ผู้ป่วยมีอาการปวดกล้ามเนื้อต้นขาลดลง (VAS 4/10 -> 2/10) หลังฝึกท่า Bridge ต่อเนื่อง 3 เซ็ต แนะนำให้ฝึกต่อเนื่องสัปดาห์ละ 3 ครั้ง..."
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
-              <div className="p-3.5 rounded-xl bg-teal-500/10 border border-teal-500/20 text-xs text-teal-300">
+              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800">
                 เมื่อบันทึกแล้ว ข้อความนี้จะถูกจัดเก็บแบบถาวรและไม่สามารถแก้ไขได้ เพื่อความโปร่งใสตามมาตรฐานเวชระเบียนคลินิก
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsNoteModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-white font-medium text-sm transition shadow-lg shadow-teal-500/20"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
                 >
                   {actionLoading ? 'กำลังบันทึก...' : 'บันทึกโน้ต'}
                 </button>
@@ -576,28 +576,28 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
 
       {/* Modal: Add Treatment Result */}
       {isResultModalOpen && selectedPatient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <GitCommit className="w-5 h-5 text-cyan-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-white border border-blue-100 rounded-2xl shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <GitCommit className="w-5 h-5 text-blue-600" />
                 <span>บันทึกผลการรักษา (Versioned Result)</span>
               </h3>
               <button
                 onClick={() => setIsResultModalOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreateTreatmentResult} className="space-y-4">
-              <div className="text-xs text-slate-400">
-                คนไข้: <span className="font-semibold text-white">{selectedPatient.first_name} {selectedPatient.last_name}</span> (HN: {selectedPatient.hn})
+              <div className="text-xs text-slate-600">
+                คนไข้: <span className="font-semibold text-slate-900">{selectedPatient.first_name} {selectedPatient.last_name}</span> (HN: {selectedPatient.hn})
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   ผลการประเมินและการรักษา (เวอร์ชันถัดไป)
                 </label>
                 <textarea
@@ -606,26 +606,26 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
                   value={resultBody}
                   onChange={(e) => setResultBody(e.target.value)}
                   placeholder="สรุปผลการฟื้นฟูสมรรถภาพ, การเคลื่อนไหวของข้อต่อ (ROM), ความแข็งแรงของกล้ามเนื้อ (MMT) และแผนการรักษาขั้นต่อไป..."
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-cyan-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
-              <div className="p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300">
+              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800">
                 การบันทึกครั้งนี้จะสร้างเวอร์ชันใหม่ขึ้นมาโดยอัตโนมัติ และชี้โยงไปยังเวอร์ชันก่อนหน้าเพื่อเก็บประวัติการรักษาทั้งหมดไว้อย่างครบถ้วน
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsResultModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-sm transition shadow-lg shadow-cyan-600/20"
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition shadow-md shadow-blue-950/20 active:scale-95"
                 >
                   {actionLoading ? 'กำลังบันทึก...' : 'บันทึกเวอร์ชันใหม่'}
                 </button>

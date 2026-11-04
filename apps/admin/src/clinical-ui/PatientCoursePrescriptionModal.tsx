@@ -858,46 +858,46 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-emerald-500/30 rounded-3xl w-full max-w-6xl shadow-2xl flex flex-col max-h-[94vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white border border-blue-100 rounded-3xl w-full max-w-6xl shadow-2xl flex flex-col max-h-[94vh] overflow-hidden">
         {/* Top Header */}
-        <div className="p-4 sm:p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/70">
+        <div className="p-4 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-white">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold text-xl shadow-lg shadow-emerald-950/40">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center font-bold text-xl shadow-xs">
               <Activity className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">{t.modalTitle}</h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 uppercase">
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">{t.modalTitle}</h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase">
                   Single Source of Truth
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">{t.modalSubtitle}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{t.modalSubtitle}</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             {/* Language Switcher */}
-            <div className="flex items-center bg-slate-800 p-0.5 rounded-xl border border-slate-700 text-xs font-semibold">
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => setLang('th')}
-                className={`px-2.5 py-1 rounded-lg transition ${lang === 'th' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${lang === 'th' ? 'bg-white text-emerald-800 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-900'}`}
               >
                 TH
               </button>
               <button
                 type="button"
                 onClick={() => setLang('en')}
-                className={`px-2.5 py-1 rounded-lg transition ${lang === 'en' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${lang === 'en' ? 'bg-white text-emerald-800 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-900'}`}
               >
                 EN
               </button>
               <button
                 type="button"
                 onClick={() => setLang('cn')}
-                className={`px-2.5 py-1 rounded-lg transition ${lang === 'cn' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${lang === 'cn' ? 'bg-white text-emerald-800 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-900'}`}
               >
                 CN
               </button>
@@ -906,7 +906,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             <button
               type="button"
               onClick={onClose}
-              className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
+              className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -914,32 +914,32 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 text-slate-200">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 text-slate-800 bg-slate-50/50">
           {/* Section 1: Patient Clinical Header & Safety Banner */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-inner">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+          <div className="bg-white border border-blue-100 rounded-2xl p-4 sm:p-5 shadow-xs">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
               <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-teal-500/20 to-emerald-500/20 border border-teal-500/30 text-teal-300 font-black text-lg flex items-center justify-center">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-50 to-emerald-50 border border-blue-200 text-blue-700 font-black text-lg flex items-center justify-center">
                   {selectedPatient?.first_name ? selectedPatient.first_name[0] : <User className="w-6 h-6" />}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-base sm:text-lg font-bold text-white">
+                    <span className="text-base sm:text-lg font-bold text-slate-900">
                       คุณ {selectedPatient ? `${selectedPatient.first_name} ${selectedPatient.last_name || ''}`.trim() : 'ยังไม่ได้เลือกคนไข้'}
                     </span>
                     {selectedPatient && (
-                      <span className="px-2.5 py-0.5 rounded-md bg-teal-500/10 border border-teal-500/30 text-teal-300 font-mono text-xs font-bold">
+                      <span className="px-2.5 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-700 font-mono text-xs font-bold">
                         HN: {selectedPatient.hn || selectedPatient.id}
                       </span>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400 mt-1">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-1">
                     <span>
-                      {t.diagnosis}: <strong className="text-slate-200 font-semibold">{selectedPatient?.injury || (selectedPatient as any)?.diagnosis || 'กายภาพบำบัดฟื้นฟูทั่วไป'}</strong>
+                      {t.diagnosis}: <strong className="text-slate-800 font-semibold">{selectedPatient?.injury || (selectedPatient as any)?.diagnosis || 'กายภาพบำบัดฟื้นฟูทั่วไป'}</strong>
                     </span>
                     <span>•</span>
                     <span>
-                      {t.targetJoint}: <strong className="text-emerald-400 font-semibold">{selectedPatient?.target_joint || 'ข้อต่อทั่วไป'}</strong>
+                      {t.targetJoint}: <strong className="text-emerald-700 font-semibold">{selectedPatient?.target_joint || 'ข้อต่อทั่วไป'}</strong>
                     </span>
                   </div>
                 </div>
@@ -950,9 +950,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 <button
                   type="button"
                   onClick={() => setIsSearchingPatient((prev) => !prev)}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-2 border border-slate-700 transition"
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-2 border border-slate-200 transition cursor-pointer"
                 >
-                  <Search className="w-3.5 h-3.5 text-teal-400" />
+                  <Search className="w-3.5 h-3.5 text-blue-600" />
                   <span>{t.changePatient}</span>
                 </button>
               </div>
@@ -960,13 +960,13 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
             {/* Patient Search Dropdown if toggled */}
             {isSearchingPatient && (
-              <div className="mt-4 pt-4 border-t border-slate-800 space-y-2">
+              <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
                 <input
                   type="text"
                   placeholder={t.searchPatientPlaceholder}
                   value={patientSearchQuery}
                   onChange={(e) => setPatientSearchQuery(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
                 />
                 <div className="max-h-48 overflow-y-auto space-y-1">
                   {patients
@@ -988,14 +988,14 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                           setSelectedPatient(p);
                           setIsSearchingPatient(false);
                         }}
-                        className={`w-full p-2.5 rounded-xl text-left text-xs flex items-center justify-between transition ${
-                          selectedPatient?.id === p.id ? 'bg-emerald-600/20 border border-emerald-500/40 text-emerald-200' : 'bg-slate-900/60 hover:bg-slate-800 text-slate-300'
+                        className={`w-full p-2.5 rounded-xl text-left text-xs flex items-center justify-between transition cursor-pointer ${
+                          selectedPatient?.id === p.id ? 'bg-emerald-50 border border-emerald-300 text-emerald-800' : 'bg-white hover:bg-slate-50 border border-slate-100 text-slate-700'
                         }`}
                       >
-                        <span className="font-semibold text-white">
+                        <span className="font-semibold text-slate-900">
                           {p.first_name} {p.last_name || ''}
                         </span>
-                        <span className="font-mono text-slate-400">HN: {p.hn}</span>
+                        <span className="font-mono text-slate-500">HN: {p.hn}</span>
                       </button>
                     ))}
                 </div>
@@ -1003,9 +1003,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             )}
 
             {/* Prominent Contraindications & Precautions Banner */}
-            <div className="mt-3.5 p-3.5 rounded-xl bg-rose-950/30 border border-rose-500/40 text-xs text-rose-200">
-              <div className="flex items-center gap-2 font-bold text-rose-300 mb-1">
-                <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <div className="mt-3.5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
+              <div className="flex items-center gap-2 font-bold text-rose-700 mb-1">
+                <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
                 <span>{t.contraindicationsTitle}</span>
               </div>
               <p className="leading-relaxed">
@@ -1014,7 +1014,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                   t.noContraindications}
               </p>
               {selectedPatient?.underlying_diseases && selectedPatient.underlying_diseases !== '-' && (
-                <div className="mt-1 text-[11px] text-amber-300/90">
+                <div className="mt-1 text-[11px] text-amber-800">
                   <strong>โรคประจำตัว:</strong> {selectedPatient.underlying_diseases}
                 </div>
               )}
@@ -1022,23 +1022,23 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
           </div>
 
           {/* Section 2: Selected Exercises Prescription Sequence */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-inner space-y-4">
+          <div className="bg-white border border-blue-100 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Layers className="w-5 h-5 text-teal-400" />
-                <h3 className="text-sm sm:text-base font-bold text-white">{t.prescribedListTitle}</h3>
-                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                <Layers className="w-5 h-5 text-blue-600" />
+                <h3 className="text-sm sm:text-base font-bold text-slate-900">{t.prescribedListTitle}</h3>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
                   {prescribedExercises.length} ท่า
                 </span>
               </div>
-              <div className="text-emerald-400/90 font-medium text-xs flex items-center gap-1 bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+              <div className="text-emerald-800 font-medium text-xs flex items-center gap-1 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
                 <span>👩‍⚕️</span>
                 <span>นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย</span>
               </div>
             </div>
 
             {prescribedExercises.length === 0 ? (
-              <div className="p-8 border border-dashed border-slate-800 rounded-xl text-center text-slate-500 text-xs">
+              <div className="p-8 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 text-xs">
                 {t.noExercisesSelected}
               </div>
             ) : (
@@ -1046,24 +1046,24 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 {prescribedExercises.map((ex, idx) => (
                   <div
                     key={ex.exercise_id}
-                    className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition"
+                    className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200 hover:border-slate-300 transition"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <span className="w-7 h-7 rounded-lg bg-teal-600/20 text-teal-300 font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 border border-teal-500/30">
+                        <span className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 border border-blue-200">
                           {ex.order_index}
                         </span>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-white text-sm truncate">{ex.name_th}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">({ex.name_en})</span>
-                            <span className="px-2 py-0.5 rounded-md bg-slate-800 text-[10px] text-emerald-400 font-medium">
+                            <span className="font-bold text-slate-900 text-sm truncate">{ex.name_th}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">({ex.name_en})</span>
+                            <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-emerald-700 font-medium">
                               {ex.target_joint}
                             </span>
                           </div>
                           {ex.has_contraindication_warning && (
-                            <div className="text-[11px] text-amber-300 flex items-center gap-1.5 mt-0.5">
-                              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                            <div className="text-[11px] text-amber-700 flex items-center gap-1.5 mt-0.5">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
                               <span>{ex.contraindication_warning}</span>
                             </div>
                           )}
@@ -1075,9 +1075,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                         <button
                           type="button"
                           onClick={() => setExpandedExerciseId(expandedExerciseId === ex.exercise_id ? null : ex.exercise_id)}
-                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 border border-slate-700"
+                          className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-xs text-slate-700 flex items-center gap-1.5 border border-slate-200 shadow-xs cursor-pointer"
                         >
-                          <Sliders className="w-3.5 h-3.5 text-teal-400" />
+                          <Sliders className="w-3.5 h-3.5 text-blue-600" />
                           <span>{ex.sets} เซ็ต x {ex.reps} ครั้ง ({ex.side === 'both' ? 'ทั้งสองข้าง' : ex.side === 'right' ? 'ขวา' : 'ซ้าย'})</span>
                         </button>
 
@@ -1088,7 +1088,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                             onClick={() => handleMoveExercise(idx, 'up')}
                             disabled={idx === 0}
                             title="เลื่อนขึ้น"
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none"
+                            className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
                           >
                             <ArrowUp className="w-3.5 h-3.5" />
                           </button>
@@ -1097,7 +1097,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                             onClick={() => handleMoveExercise(idx, 'down')}
                             disabled={idx === prescribedExercises.length - 1}
                             title="เลื่อนลง"
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none"
+                            className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
                           >
                             <ArrowDown className="w-3.5 h-3.5" />
                           </button>
@@ -1107,7 +1107,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                           type="button"
                           onClick={() => handleRemoveExercise(idx)}
                           title="ลบออกจากคอร์ส"
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1116,8 +1116,8 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
                     {/* Expanded Per-Exercise Configuration Panel */}
                     {expandedExerciseId === ex.exercise_id && (
-                      <div className="mt-3.5 pt-3.5 border-t border-slate-800/80 space-y-3.5 bg-slate-950/60 p-3.5 rounded-xl">
-                        <div className="text-xs font-bold text-teal-300 flex items-center gap-1.5">
+                      <div className="mt-3.5 pt-3.5 border-t border-slate-200 space-y-3.5 bg-white p-3.5 rounded-xl border border-slate-200">
+                        <div className="text-xs font-bold text-teal-700 flex items-center gap-1.5">
                           <Sliders className="w-3.5 h-3.5" />
                           <span>{t.customAngles}</span>
                         </div>
@@ -1125,14 +1125,14 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                           {/* Sets */}
                           <div>
-                            <label className="text-slate-400 font-medium block mb-1">
+                            <label className="text-slate-600 font-medium block mb-1">
                               {t.sets} (1–10)
                             </label>
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => handleUpdateExerciseField(idx, 'sets', Math.max(1, ex.sets - 1))}
-                                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold"
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border border-slate-200 cursor-pointer"
                               >
                                 -
                               </button>
@@ -1142,12 +1142,12 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                                 max={10}
                                 value={ex.sets}
                                 onChange={(e) => handleUpdateExerciseField(idx, 'sets', Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
-                                className="w-14 text-center py-1 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono font-bold"
+                                className="w-14 text-center py-1 bg-slate-50 border border-slate-300 rounded-lg text-slate-800 font-mono font-bold"
                               />
                               <button
                                 type="button"
                                 onClick={() => handleUpdateExerciseField(idx, 'sets', Math.min(10, ex.sets + 1))}
-                                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold"
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border border-slate-200 cursor-pointer"
                               >
                                 +
                               </button>
@@ -1156,14 +1156,14 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
                           {/* Reps */}
                           <div>
-                            <label className="text-slate-400 font-medium block mb-1">
+                            <label className="text-slate-600 font-medium block mb-1">
                               {t.reps} (1–50)
                             </label>
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => handleUpdateExerciseField(idx, 'reps', Math.max(1, ex.reps - 1))}
-                                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold"
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border border-slate-200 cursor-pointer"
                               >
                                 -
                               </button>
@@ -1173,12 +1173,12 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                                 max={50}
                                 value={ex.reps}
                                 onChange={(e) => handleUpdateExerciseField(idx, 'reps', Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
-                                className="w-14 text-center py-1 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono font-bold"
+                                className="w-14 text-center py-1 bg-slate-50 border border-slate-300 rounded-lg text-slate-800 font-mono font-bold"
                               />
                               <button
                                 type="button"
                                 onClick={() => handleUpdateExerciseField(idx, 'reps', Math.min(50, ex.reps + 1))}
-                                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold"
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border border-slate-200 cursor-pointer"
                               >
                                 +
                               </button>
@@ -1187,13 +1187,13 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
                           {/* Side Target */}
                           <div>
-                            <label className="text-slate-400 font-medium block mb-1">
+                            <label className="text-slate-600 font-medium block mb-1">
                               {t.side}
                             </label>
                             <select
                               value={ex.side}
                               onChange={(e) => handleUpdateExerciseField(idx, 'side', e.target.value as any)}
-                              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-medium"
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-300 text-slate-800 font-medium"
                             >
                               <option value="both">{t.sideBoth}</option>
                               <option value="right">{t.sideRight}</option>
@@ -1203,7 +1203,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
                           {/* Target Max Angle Override */}
                           <div>
-                            <label className="text-slate-400 font-medium block mb-1">
+                            <label className="text-slate-600 font-medium block mb-1">
                               มุมเป้าหมายสูงสุด (targetMaxDeg)
                             </label>
                             <div className="flex items-center gap-2">
@@ -1213,16 +1213,16 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                                 max={180}
                                 value={ex.target_max_deg || 95}
                                 onChange={(e) => handleUpdateExerciseField(idx, 'target_max_deg', Number(e.target.value))}
-                                className="w-20 px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono font-bold"
+                                className="w-20 px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg text-slate-800 font-mono font-bold"
                               />
-                              <span className="text-slate-400">องศา (°)</span>
+                              <span className="text-slate-500">องศา (°)</span>
                             </div>
                           </div>
                         </div>
 
                         {/* PT Clinical Note */}
                         <div>
-                          <label className="text-slate-400 font-medium block mb-1 text-xs">
+                          <label className="text-slate-600 font-medium block mb-1 text-xs">
                             บันทึกคำแนะนำแพทย์/นักกายภาพบำบัด (PT Clinical Note)
                           </label>
                           <input
@@ -1230,7 +1230,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                             placeholder={t.ptNotePlaceholder}
                             value={ex.pt_note || ''}
                             onChange={(e) => handleUpdateExerciseField(idx, 'pt_note', e.target.value)}
-                            className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                            className="w-full px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-300 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
                           />
                         </div>
                       </div>
@@ -1242,42 +1242,42 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
           </div>
 
           {/* Section 3: 15-Exercise Clinical Catalog Selection */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-inner space-y-4">
+          <div className="bg-white border border-blue-100 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
                   <span>คลังท่ากายภาพมาตรฐานคลินิก (15 ท่ามาตรฐาน / 15 Standard Clinical Exercises)</span>
-                  <span className="text-xs text-slate-400 font-normal">กดเลือกเพื่อเพิ่มเข้าคอร์ส</span>
+                  <span className="text-xs text-slate-500 font-normal">กดเลือกเพื่อเพิ่มเข้าคอร์ส</span>
                 </h3>
               </div>
 
               {/* Quick Filter Tabs */}
-              <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-semibold gap-1">
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold gap-1">
                 <button
                   type="button"
                   onClick={() => setActiveCatalogFilter('all')}
-                  className={`px-3 py-1.5 rounded-lg transition ${activeCatalogFilter === 'all' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${activeCatalogFilter === 'all' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
                 >
                   {t.tabAll}
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveCatalogFilter('recommended')}
-                  className={`px-3 py-1.5 rounded-lg transition ${activeCatalogFilter === 'recommended' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${activeCatalogFilter === 'recommended' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
                 >
                   {t.tabRecommended}
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveCatalogFilter('upper')}
-                  className={`px-3 py-1.5 rounded-lg transition ${activeCatalogFilter === 'upper' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${activeCatalogFilter === 'upper' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
                 >
                   {t.tabUpper}
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveCatalogFilter('lower')}
-                  className={`px-3 py-1.5 rounded-lg transition ${activeCatalogFilter === 'lower' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${activeCatalogFilter === 'lower' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
                 >
                   {t.tabLower}
                 </button>
@@ -1296,27 +1296,27 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                     onClick={() => handleAddExercise(catalogEx)}
                     className={`p-3 rounded-xl border transition cursor-pointer flex flex-col justify-between relative group ${
                       isSelected
-                        ? 'bg-emerald-950/40 border-emerald-500 shadow-md shadow-emerald-950/50'
+                        ? 'bg-emerald-50/80 border-emerald-500 shadow-sm ring-1 ring-emerald-500'
                         : evalRes.hasWarning
-                        ? 'bg-rose-950/20 border-rose-500/40 hover:border-rose-400'
-                        : 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:bg-slate-800/50'
+                        ? 'bg-rose-50/50 border-rose-300 hover:border-rose-400'
+                        : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-xs'
                     }`}
                   >
                     <div>
                       {/* Badge Warning if Contraindicated */}
                       {evalRes.hasWarning && (
-                        <div className="mb-2 px-2 py-0.5 rounded-md bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-bold flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3 text-rose-400 flex-shrink-0" />
+                        <div className="mb-2 px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-rose-600 flex-shrink-0" />
                           <span className="truncate">มีข้อควรระวัง</span>
                         </div>
                       )}
 
                       {/* Medical Posture Illustration Thumbnail */}
-                      <div className="w-full h-20 bg-slate-950/70 rounded-lg mb-2 flex items-center justify-center overflow-hidden border border-slate-800/60 p-1.5">
+                      <div className="w-full h-20 bg-slate-900 rounded-lg mb-2 flex items-center justify-center overflow-hidden border border-slate-800 p-1.5 shadow-inner">
                         <img
                           src={`/assets/exercises/${catalogEx.id}.svg`}
                           alt={catalogEx.nameEn}
-                          className="max-h-16 w-auto object-contain opacity-85 group-hover:opacity-100 group-hover:scale-105 transition"
+                          className="max-h-16 w-auto object-contain opacity-90 group-hover:opacity-100 group-hover:scale-105 transition"
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = 'none';
                           }}
@@ -1325,35 +1325,35 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-mono text-slate-400">{catalogEx.targetJoint}</span>
-                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                          <span className="text-[10px] font-mono text-slate-500">{catalogEx.targetJoint}</span>
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
                             catalogEx.mode === 'timer' || catalogEx.id === 'chin-tuck' || catalogEx.id === 'shoulder-pendulum'
-                              ? 'bg-amber-500/20 text-amber-300'
-                              : 'bg-teal-500/20 text-teal-300'
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : 'bg-teal-50 text-teal-700 border-teal-200'
                           }`}>
                             {catalogEx.mode === 'timer' || catalogEx.id === 'chin-tuck' || catalogEx.id === 'shoulder-pendulum' ? '⏱️ Timer' : '📷 Camera'}
                           </span>
                         </div>
                         {isSelected && (
-                          <span className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-bold text-[10px]">
+                          <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-[10px]">
                             ✓
                           </span>
                         )}
                       </div>
-                      <h4 className="font-bold text-white text-xs leading-tight mb-1">
+                      <h4 className="font-bold text-slate-900 text-xs leading-tight mb-1">
                         {catalogEx.nameTh}
                       </h4>
-                      <div className="text-[10px] text-slate-400 font-mono truncate">{catalogEx.nameEn}</div>
+                      <div className="text-[10px] text-slate-500 font-mono truncate">{catalogEx.nameEn}</div>
                     </div>
 
-                    <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
-                      <span className="text-slate-400">
+                    <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">
                         {catalogEx.defaultPrescription?.totalSets || 3}x{catalogEx.defaultPrescription?.repsPerSet || 10}
                       </span>
                       <button
                         type="button"
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
-                          isSelected ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/40' : 'bg-emerald-600/30 text-emerald-300 hover:bg-emerald-600/50'
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer border ${
+                          isSelected ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                         }`}
                       >
                         {isSelected ? 'ลบออก' : '+ เลือก'}
@@ -1366,26 +1366,26 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
           </div>
 
           {/* Section 4: Schedule Settings (Mode A vs Mode B) */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-inner space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+          <div className="bg-white border border-blue-100 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <CalendarIcon className="w-5 h-5 text-teal-400" />
-                <h3 className="text-sm sm:text-base font-bold text-white">{t.scheduleSettingsTitle}</h3>
+                <CalendarIcon className="w-5 h-5 text-blue-600" />
+                <h3 className="text-sm sm:text-base font-bold text-slate-900">{t.scheduleSettingsTitle}</h3>
               </div>
 
               {/* Mode Switcher */}
-              <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
                 <button
                   type="button"
                   onClick={() => setScheduleMode('modeA')}
-                  className={`px-3 py-1.5 rounded-lg transition ${scheduleMode === 'modeA' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${scheduleMode === 'modeA' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
                 >
                   {t.modeA}
                 </button>
                 <button
                   type="button"
                   onClick={() => setScheduleMode('modeB')}
-                  className={`px-3 py-1.5 rounded-lg transition ${scheduleMode === 'modeB' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${scheduleMode === 'modeB' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
                 >
                   {t.modeB}
                 </button>
@@ -1397,31 +1397,31 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                   <div>
-                    <label className="text-slate-400 font-medium block mb-1">{t.startDate}</label>
+                    <label className="text-slate-600 font-medium block mb-1">{t.startDate}</label>
                     <input
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 font-mono"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 font-mono"
                     />
                   </div>
 
                   <div>
-                    <label className="text-slate-400 font-medium block mb-1">{t.endDate}</label>
+                    <label className="text-slate-600 font-medium block mb-1">{t.endDate}</label>
                     <input
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 font-mono"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 font-mono"
                     />
                   </div>
 
                   <div>
-                    <label className="text-slate-400 font-medium block mb-1">{t.timeSlot}</label>
+                    <label className="text-slate-600 font-medium block mb-1">{t.timeSlot}</label>
                     <select
                       value={timeSlot}
                       onChange={(e) => setTimeSlot(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500"
                     >
                       <option value="09:00 - 10:00">09:00 - 10:00 (เช้า)</option>
                       <option value="10:00 - 11:00">10:00 - 11:00 (สาย)</option>
@@ -1432,11 +1432,11 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                   </div>
 
                   <div>
-                    <label className="text-slate-400 font-medium block mb-1">{t.kiosk}</label>
+                    <label className="text-slate-600 font-medium block mb-1">{t.kiosk}</label>
                     <select
                       value={assignedKioskId}
                       onChange={(e) => setAssignedKioskId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500"
                     >
                       <option value="kiosk-01">Kiosk 01 (ศูนย์กายภาพบำบัดหลัก)</option>
                       <option value="kiosk-02">Kiosk 02 (ห้องฝึกข้อต่อและไหล่)</option>
@@ -1446,7 +1446,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
                 {/* Days of Week Capsules */}
                 <div>
-                  <label className="text-slate-400 font-medium block mb-2 text-xs">{t.daysOfWeek}</label>
+                  <label className="text-slate-600 font-medium block mb-2 text-xs">{t.daysOfWeek}</label>
                   <div className="flex flex-wrap items-center gap-2">
                     {DAYS_OF_WEEK.map((day) => {
                       const isChecked = selectedDays.includes(day.key);
@@ -1461,10 +1461,10 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                               setSelectedDays([...selectedDays, day.key]);
                             }
                           }}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
                             isChecked
-                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
-                              : 'bg-slate-900 border border-slate-700 text-slate-400 hover:text-white'
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                           }`}
                         >
                           {isChecked && <Check className="w-3.5 h-3.5" />}
@@ -1480,7 +1480,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             {/* Mode B: Interactive Monthly Calendar Picker */}
             {scheduleMode === 'modeB' && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -1489,11 +1489,11 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                         prevM.setMonth(prevM.getMonth() - 1);
                         setCalendarViewDate(prevM);
                       }}
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
-                    <span className="font-bold text-sm text-white font-mono">
+                    <span className="font-bold text-sm text-slate-800 font-mono">
                       {calendarViewDate.toLocaleString('th-TH', { month: 'long', year: 'numeric' })}
                     </span>
                     <button
@@ -1503,20 +1503,20 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                         nextM.setMonth(nextM.getMonth() + 1);
                         setCalendarViewDate(nextM);
                       }}
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
 
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-slate-500">
                     คลิกวันเพื่อเพิ่มหรือลดวันฝึกในปฏิทิน
                   </span>
                 </div>
 
                 {/* Calendar Grid */}
-                <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
-                  <div className="grid grid-cols-7 text-center py-2 text-xs font-bold bg-slate-900/80 text-slate-400 border-b border-slate-800">
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                  <div className="grid grid-cols-7 text-center py-2 text-xs font-bold bg-slate-100 text-slate-600 border-b border-slate-200">
                     <div>อา.</div>
                     <div>จ.</div>
                     <div>อ.</div>
@@ -1525,10 +1525,10 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                     <div>ศ.</div>
                     <div>ส.</div>
                   </div>
-                  <div className="grid grid-cols-7 divide-x divide-y divide-slate-800/40 text-xs">
+                  <div className="grid grid-cols-7 divide-x divide-y divide-slate-100 text-xs">
                     {calendarMatrix.flat().map((item, idx) => {
                       if (!item.isCurrentMonth) {
-                        return <div key={idx} className="h-12 bg-slate-950/40" />;
+                        return <div key={idx} className="h-12 bg-slate-50/60" />;
                       }
                       const isDateSelected = scheduledDates.includes(item.dateStr);
                       return (
@@ -1537,13 +1537,13 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                           onClick={() => toggleDateInCalendar(item.dateStr)}
                           className={`h-12 p-1.5 flex flex-col justify-between cursor-pointer transition ${
                             isDateSelected
-                              ? 'bg-emerald-950/60 font-bold text-emerald-300 border-2 border-emerald-500/80'
-                              : 'hover:bg-slate-900 text-slate-300'
+                              ? 'bg-emerald-50 font-bold text-emerald-800 border-2 border-emerald-500'
+                              : 'hover:bg-blue-50/50 text-slate-700'
                           }`}
                         >
                           <span className="font-mono text-xs">{item.day}</span>
                           {isDateSelected && (
-                            <span className="text-[10px] font-bold text-emerald-400 flex items-center justify-end">
+                            <span className="text-[10px] font-bold text-emerald-600 flex items-center justify-end">
                               ✓ ฝึก
                             </span>
                           )}
@@ -1556,10 +1556,10 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             )}
 
             {/* Allowed Hand to Start (Clinical Safety Guard) */}
-            <div className="pt-2 border-t border-slate-800 space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+            <div className="pt-2 border-t border-slate-100 space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
                 <span>ข้างที่อนุญาตให้ยกมือเริ่มท่า (Touchless Start Hand)</span>
-                <span className="text-[10px] text-emerald-400 font-normal">ความปลอดภัยทางคลินิก (ป้องกันการบังคับข้างที่บาดเจ็บ)</span>
+                <span className="text-[10px] text-emerald-700 font-normal">ความปลอดภัยทางคลินิก (ป้องกันการบังคับข้างที่บาดเจ็บ)</span>
               </label>
               <div className="grid grid-cols-3 gap-2">
                 <button
@@ -1567,8 +1567,8 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                   onClick={() => setAllowedStartHand('both')}
                   className={`py-2 px-2.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
                     allowedStartHand === 'both'
-                      ? 'bg-emerald-600/30 border-emerald-500 text-emerald-200 shadow-sm'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                      ? 'bg-emerald-50 border-emerald-500 text-emerald-800 shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
                   🙌 ทั้งสองข้าง (สุ่มซ้าย/ขวา)
@@ -1578,8 +1578,8 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                   onClick={() => setAllowedStartHand('left')}
                   className={`py-2 px-2.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
                     allowedStartHand === 'left'
-                      ? 'bg-cyan-600/30 border-cyan-500 text-cyan-200 shadow-sm'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                      ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                   title="เหมาะสำหรับผู้ป่วยที่มีอาการบาดเจ็บแขนขวา"
                 >
@@ -1590,8 +1590,8 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                   onClick={() => setAllowedStartHand('right')}
                   className={`py-2 px-2.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
                     allowedStartHand === 'right'
-                      ? 'bg-emerald-600/30 border-emerald-500 text-emerald-200 shadow-sm'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                      ? 'bg-emerald-50 border-emerald-500 text-emerald-800 shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                   title="เหมาะสำหรับผู้ป่วยที่มีอาการบาดเจ็บแขนซ้าย"
                 >
@@ -1603,21 +1603,21 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             {/* Total Days Calculated & Quiz Option */}
             <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2">
-                <span className="text-slate-400">{t.totalDays}:</span>
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-bold font-mono text-sm border border-emerald-500/30">
+                <span className="text-slate-500">{t.totalDays}:</span>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold font-mono text-sm border border-emerald-200">
                   {scheduledDates.length} {t.daysUnit}
                 </span>
-                <span className="text-slate-500 text-[11px]">
+                <span className="text-slate-400 text-[11px]">
                   ({scheduledDates[0] || startDate} ถึง {scheduledDates[scheduledDates.length - 1] || endDate})
                 </span>
               </div>
 
-              <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300">
+              <label className="flex items-center gap-2 cursor-pointer select-none text-slate-700 font-medium">
                 <input
                   type="checkbox"
                   checked={includeMinigame}
                   onChange={(e) => setIncludeMinigame(e.target.checked)}
-                  className="rounded text-emerald-600 focus:ring-emerald-500 bg-slate-900 border-slate-700 w-4 h-4"
+                  className="rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 w-4 h-4 cursor-pointer"
                 />
                 <span>{t.includeQuiz}</span>
               </label>
@@ -1626,7 +1626,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
           {/* Error Message */}
           {errorMsg && (
-            <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
               <span>{errorMsg}</span>
             </div>
@@ -1634,11 +1634,11 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 sm:p-6 border-t border-slate-800 flex items-center justify-between bg-slate-950/70">
+        <div className="p-4 sm:p-6 border-t border-slate-100 flex items-center justify-between bg-white">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+            className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition cursor-pointer"
           >
             ยกเลิก / ปิดหน้าต่าง
           </button>
@@ -1648,7 +1648,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             onClick={handleSaveCourse}
             disabled={isSaving || !selectedPatient?.id}
             title={!selectedPatient?.id ? 'กรุณาเลือกคนไข้ก่อนบันทึกคอร์ส' : undefined}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold shadow-lg shadow-emerald-950/50 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold shadow-sm transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? (
               <>
@@ -1667,37 +1667,37 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
       {/* Post-Save Course Summary Modal */}
       {isSummaryModalOpen && (
-        <div className="fixed inset-0 z-60 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border-2 border-emerald-500/50 rounded-3xl w-full max-w-2xl p-6 shadow-2xl text-slate-200 space-y-5 animate-in zoom-in-95">
+        <div className="fixed inset-0 z-60 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-blue-100 rounded-3xl w-full max-w-2xl p-6 shadow-2xl text-slate-800 space-y-5 animate-in zoom-in-95">
             <div className="text-center space-y-2">
-              <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-500 text-emerald-400 flex items-center justify-center mx-auto shadow-xl shadow-emerald-950/50">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 border-2 border-emerald-500 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
-              <h3 className="text-xl font-black text-white">{t.summaryTitle}</h3>
-              <p className="text-xs text-slate-400">{t.summarySubtitle}</p>
+              <h3 className="text-xl font-black text-slate-900">{t.summaryTitle}</h3>
+              <p className="text-xs text-slate-500">{t.summarySubtitle}</p>
             </div>
 
             {/* Summary Details */}
-            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 text-xs space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                 <div>
-                  <span className="text-slate-400">คนไข้:</span>{' '}
-                  <strong className="text-white text-sm">
+                  <span className="text-slate-500">คนไข้:</span>{' '}
+                  <strong className="text-slate-900 text-sm">
                     คุณ {selectedPatient?.first_name} {selectedPatient?.last_name || ''}
                   </strong>
                 </div>
-                <span className="font-mono text-emerald-400 font-bold">HN: {selectedPatient?.hn}</span>
+                <span className="font-mono text-blue-700 font-bold">HN: {selectedPatient?.hn}</span>
               </div>
 
               <div>
-                <span className="text-slate-400 block mb-1">รายการท่าฝึกที่สั่งจ่าย ({prescribedExercises.length} ท่า):</span>
+                <span className="text-slate-500 block mb-1">รายการท่าฝึกที่สั่งจ่าย ({prescribedExercises.length} ท่า):</span>
                 <div className="space-y-1.5 max-h-36 overflow-y-auto">
                   {prescribedExercises.map((e) => (
-                    <div key={e.exercise_id} className="flex items-center justify-between bg-slate-900 px-3 py-1.5 rounded-lg">
-                      <span className="font-semibold text-white">
+                    <div key={e.exercise_id} className="flex items-center justify-between bg-white border border-slate-200 px-3 py-1.5 rounded-lg">
+                      <span className="font-semibold text-slate-900">
                         {e.order_index}. {e.name_th}
                       </span>
-                      <span className="text-slate-400 font-mono">
+                      <span className="text-slate-500 font-mono">
                         {e.sets}x{e.reps} ({e.side}) | มุมเป้าหมาย: {e.target_max_deg || 95}°
                       </span>
                     </div>
@@ -1705,9 +1705,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-slate-300">
-                <span>{t.totalDays}: <strong className="text-emerald-400 font-mono text-sm">{scheduledDates.length} วัน</strong></span>
-                <span className="text-slate-400">({scheduledDates[0]} ถึง {scheduledDates[scheduledDates.length - 1]})</span>
+              <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-slate-700">
+                <span>{t.totalDays}: <strong className="text-emerald-700 font-mono text-sm">{scheduledDates.length} วัน</strong></span>
+                <span className="text-slate-500">({scheduledDates[0]} ถึง {scheduledDates[scheduledDates.length - 1]})</span>
               </div>
             </div>
 
@@ -1718,7 +1718,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                   type="button"
                   id="kiosk-start-exercise-btn"
                   onClick={() => handleFinishSummary('start_exercise')}
-                  className="w-full sm:flex-1 py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-950/60 transition cursor-pointer active:scale-95 border border-emerald-400/50"
+                  className="w-full sm:flex-1 py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition cursor-pointer active:scale-95 border border-emerald-400/50"
                 >
                   <Activity className="w-4 h-4 shrink-0" />
                   <span>{t.startExerciseBtn}</span>
@@ -1728,9 +1728,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                   type="button"
                   id="kiosk-home-btn"
                   onClick={() => handleFinishSummary('kiosk_home')}
-                  className="w-full sm:flex-1 py-3.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-slate-700 transition cursor-pointer active:scale-95"
+                  className="w-full sm:flex-1 py-3.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-slate-200 transition cursor-pointer active:scale-95"
                 >
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
                   <span>{t.kioskHomeBtn}</span>
                 </button>
               </div>
@@ -1739,7 +1739,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 <button
                   type="button"
                   onClick={() => handleFinishSummary('schedule')}
-                  className="w-full sm:flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition cursor-pointer"
+                  className="w-full sm:flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
                 >
                   <CalendarCheck className="w-4 h-4" />
                   <span>{t.goToScheduleBtn}</span>
@@ -1748,7 +1748,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 <button
                   type="button"
                   onClick={() => handleFinishSummary('patients')}
-                  className="w-full sm:flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 border border-slate-700 transition cursor-pointer"
+                  className="w-full sm:flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200 transition cursor-pointer"
                 >
                   <User className="w-4 h-4" />
                   <span>{t.goToPatientsBtn}</span>

@@ -453,19 +453,19 @@ export const PatientsView: React.FC = () => {
       <SmartPendingPatientsBanner onPatientUpdated={() => fetchPatients(search)} />
 
       {/* Search & Filter Bar */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row gap-4 justify-between items-center">
+      <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 flex flex-col md:flex-row gap-3 justify-between items-center shadow-xs">
         <form onSubmit={handleSearchSubmit} className="relative w-full md:w-96">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="ค้นหาชื่อไทย, นามสกุล, HN, เบอร์โทร..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-20 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+            className="w-full pl-10 pr-24 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
           />
           <button
             type="submit"
-            className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 bg-teal-600/30 text-teal-300 text-xs rounded-lg hover:bg-teal-600/50"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-xs transition cursor-pointer"
           >
             ค้นหา
           </button>
@@ -475,7 +475,7 @@ export const PatientsView: React.FC = () => {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-300 focus:outline-none focus:border-teal-500"
+            className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
           >
             <option value="all">ทุกสถานะใบหน้า</option>
             <option value="awaiting_face">รอสแกนหน้า (Awaiting Face)</option>
@@ -487,10 +487,10 @@ export const PatientsView: React.FC = () => {
       </div>
 
       {/* Patients Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-950/70 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
+          <table className="w-full text-left text-sm text-slate-700">
+            <thead className="bg-blue-50/80 text-blue-950 font-semibold text-xs uppercase tracking-wider border-b border-blue-100">
               <tr>
                 <th className="px-6 py-4 font-semibold">รหัส HN</th>
                 <th className="px-6 py-4 font-semibold">ชื่อ - นามสกุล</th>
@@ -500,11 +500,11 @@ export const PatientsView: React.FC = () => {
                 <th className="px-6 py-4 font-semibold text-right">รายละเอียด</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="bg-white hover:bg-emerald-50/40 divide-y divide-slate-100 text-slate-800">
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-400" />
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-600" />
                     <span>กำลังโหลดรายชื่อคนไข้...</span>
                   </td>
                 </tr>
@@ -519,32 +519,36 @@ export const PatientsView: React.FC = () => {
                   <tr
                     key={patient.id}
                     onClick={() => openPatientDetail(patient)}
-                    className="hover:bg-slate-800/40 cursor-pointer transition"
+                    className="hover:bg-emerald-50/40 cursor-pointer transition"
                   >
-                    <td className="px-6 py-4 font-mono font-bold text-teal-400">{patient.hn}</td>
-                    <td className="px-6 py-4 font-medium text-white">
+                    <td className="px-6 py-4">
+                      <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-lg font-mono font-bold text-xs inline-block">
+                        {patient.hn}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 font-medium text-slate-900">
                       {formatPatientName(patient.first_name, patient.last_name)}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-400">
+                    <td className="px-6 py-4 text-xs text-slate-600">
                       {patient.age} ปี / {patient.sex === 'male' ? 'ชาย' : patient.sex === 'female' ? 'หญิง' : 'อื่นๆ'}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-400 font-mono">
+                    <td className="px-6 py-4 text-xs text-slate-600 font-mono">
                       {patient.phone || '-'}
                     </td>
                     <td className="px-6 py-4">
                       {patient.registration_status === 'active' || patient.registration_status === 'face_enrolled' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                          <CheckCircle2 className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-xs font-semibold">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                           <span>ลงทะเบียนหน้าแล้ว</span>
                         </span>
                       ) : patient.registration_status === 'awaiting_face' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                          <Clock className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full text-xs font-semibold">
+                          <Clock className="w-3 h-3 text-amber-600" />
                           <span>รอสแกนหน้า 10 เฟรม</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/10 text-slate-400 border border-slate-500/30">
-                          <Archive className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full text-xs font-semibold">
+                          <Archive className="w-3 h-3 text-slate-500" />
                           <span>ปิดแฟ้ม (Archived)</span>
                         </span>
                       )}
@@ -557,10 +561,10 @@ export const PatientsView: React.FC = () => {
                             setPrescriptionPatientId(patient.id);
                             setIsPrescriptionModalOpen(true);
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-semibold text-xs flex items-center gap-1.5 transition shadow-sm"
+                          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer"
                           title="จัดคอร์สออกกำลังกาย / แก้ไขท่าฝึกเฉพาะบุคคล"
                         >
-                          <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                          <Calendar className="w-3.5 h-3.5" />
                           <span>จัดคอร์ส/สั่งจ่าย</span>
                         </button>
                         <button
@@ -568,14 +572,14 @@ export const PatientsView: React.FC = () => {
                           onClick={(e) => handleDeletePatientDirect(patient, e)}
                           disabled={actionLoading}
                           title="ลบคนไข้คนนี้ออกจากระบบอย่างถาวร"
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                         <button
                           type="button"
                           onClick={() => openPatientDetail(patient)}
-                          className="p-1 rounded text-slate-500 hover:text-teal-400 transition"
+                          className="p-1 rounded text-slate-400 hover:text-blue-600 transition cursor-pointer"
                         >
                           <ChevronRight className="w-5 h-5 inline" />
                         </button>
@@ -591,64 +595,64 @@ export const PatientsView: React.FC = () => {
 
       {/* Patient Detail Drawer */}
       {selectedPatient && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/70 backdrop-blur-sm">
-          <div className="bg-slate-900 border-l border-slate-800 w-full max-w-2xl h-screen flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-sm">
+          <div className="bg-white border-l border-blue-100 w-full max-w-2xl h-screen flex flex-col shadow-2xl overflow-hidden text-slate-800">
             {/* Drawer Header */}
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between bg-blue-50/60">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-teal-500/20 text-teal-300 font-bold text-lg flex items-center justify-center border border-teal-500/30">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-blue-600 text-white font-bold text-lg flex items-center justify-center shadow-sm">
                   {selectedPatient.first_name.charAt(0)}
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                     <span>
                       {formatPatientName(selectedPatient.first_name, selectedPatient.last_name)}
                     </span>
-                    <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-400 border border-teal-500/30">
-                      {selectedPatient.hn}
+                    <span className="font-mono text-xs px-2.5 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-bold">
+                      HN: {selectedPatient.hn}
                     </span>
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500">
                     อายุ {selectedPatient.age} ปี • {selectedPatient.phone || 'ไม่มีเบอร์โทร'}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedPatient(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Sub-tabs Navigation */}
-            <div className="flex border-b border-slate-800 px-6 bg-slate-950/30">
+            <div className="flex border-b border-slate-200 px-6 bg-slate-50/70">
               <button
                 onClick={() => setActiveTab('overview')}
-                className={`py-3 px-4 text-sm font-semibold border-b-2 transition ${
+                className={`py-3 px-4 text-sm font-semibold border-b-2 transition cursor-pointer ${
                   activeTab === 'overview'
-                    ? 'border-teal-400 text-teal-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                    ? 'border-emerald-600 text-emerald-700 font-bold'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
                 ข้อมูลและการจัดการ
               </button>
               <button
                 onClick={() => setActiveTab('notes')}
-                className={`py-3 px-4 text-sm font-semibold border-b-2 transition ${
+                className={`py-3 px-4 text-sm font-semibold border-b-2 transition cursor-pointer ${
                   activeTab === 'notes'
-                    ? 'border-teal-400 text-teal-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                    ? 'border-emerald-600 text-emerald-700 font-bold'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
                 เวชระเบียน (Medical Notes)
               </button>
               <button
                 onClick={() => setActiveTab('results')}
-                className={`py-3 px-4 text-sm font-semibold border-b-2 transition ${
+                className={`py-3 px-4 text-sm font-semibold border-b-2 transition cursor-pointer ${
                   activeTab === 'results'
-                    ? 'border-teal-400 text-teal-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                    ? 'border-emerald-600 text-emerald-700 font-bold'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
                 ผลการรักษา (Treatment Results)
@@ -656,7 +660,7 @@ export const PatientsView: React.FC = () => {
             </div>
 
             {/* Tab Contents */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-white">
               {activeTab === 'overview' && (
                 <div className="space-y-6">
                   {/* Actions Bar */}
@@ -667,7 +671,7 @@ export const PatientsView: React.FC = () => {
                         setPrescriptionPatientId(selectedPatient.id);
                         setIsPrescriptionModalOpen(true);
                       }}
-                      className="col-span-2 p-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition cursor-pointer"
+                      className="col-span-2 p-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
                     >
                       <Calendar className="w-4 h-4" />
                       <span>📋 จัดคอร์สออกกำลังกาย / แก้ไขท่าฝึกเฉพาะบุคคล</span>
@@ -675,7 +679,7 @@ export const PatientsView: React.FC = () => {
                     <button
                       onClick={() => handleSendToKiosk('kiosk-01')}
                       disabled={actionLoading}
-                      className="p-3 rounded-xl bg-teal-600/20 text-teal-300 border border-teal-500/30 hover:bg-teal-600/30 flex items-center justify-center gap-2 text-xs font-semibold"
+                      className="p-3 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 flex items-center justify-center gap-2 text-xs font-semibold cursor-pointer transition"
                     >
                       <Send className="w-4 h-4" />
                       <span>ส่งไปลงทะเบียนตู้ Kiosk</span>
@@ -683,7 +687,7 @@ export const PatientsView: React.FC = () => {
                     <button
                       onClick={handleCheckin}
                       disabled={actionLoading}
-                      className="p-3 rounded-xl bg-sky-600/20 text-sky-300 border border-sky-500/30 hover:bg-sky-600/30 flex items-center justify-center gap-2 text-xs font-semibold"
+                      className="p-3 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 flex items-center justify-center gap-2 text-xs font-semibold cursor-pointer transition"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>เช็คอินเข้าคิววันนี้</span>
@@ -691,49 +695,49 @@ export const PatientsView: React.FC = () => {
                   </div>
 
                   {/* Demographics Card */}
-                  <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                       ข้อมูลอาการและประวัติผู้ป่วย
                     </h4>
                     <div>
-                      <div className="text-xs text-slate-500">อาการบาดเจ็บ / การวินิจฉัย</div>
-                      <div className="text-sm text-slate-200 font-medium">
+                      <div className="text-xs text-slate-400">อาการบาดเจ็บ / การวินิจฉัย</div>
+                      <div className="text-sm text-slate-800 font-medium">
                         {selectedPatient.injury || 'ไม่ได้ระบุ'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-slate-500">นักกายภาพบำบัดผู้รับผิดชอบ</div>
-                      <div className="text-sm text-slate-200 font-medium">
+                      <div className="text-xs text-slate-400">นักกายภาพบำบัดผู้รับผิดชอบ</div>
+                      <div className="text-sm text-slate-800 font-medium">
                         {ptsList.find((pt) => pt.id === selectedPatient.responsible_pt_id)?.full_name ||
                           'ยังไม่ได้ระบุ PT'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-slate-500">เวอร์ชันบันทึกข้อมูล (OCC Version)</div>
-                      <div className="text-xs font-mono text-slate-400">
+                      <div className="text-xs text-slate-400">เวอร์ชันบันทึกข้อมูล (OCC Version)</div>
+                      <div className="text-xs font-mono text-slate-600">
                         Version {selectedPatient.version}
                       </div>
                     </div>
                   </div>
 
                   {/* Danger & Patient Management Controls */}
-                  <div className="bg-rose-500/5 p-5 rounded-2xl border border-rose-500/20 space-y-4">
+                  <div className="bg-rose-50/50 p-5 rounded-2xl border border-rose-200 space-y-4">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-rose-700 uppercase tracking-wider flex items-center gap-2">
                         <ShieldAlert className="w-4 h-4" />
                         <span>การจัดการข้อมูลความปลอดภัย, PDPA และการลบบัญชี</span>
                       </h4>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-2.5 text-xs text-slate-400">
+                    <div className="grid grid-cols-1 gap-2.5 text-xs text-slate-600">
                       {/* 1. Permanent Patient Deletion */}
-                      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="p-3 rounded-xl bg-white border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
                         <div>
-                          <div className="font-semibold text-rose-300 flex items-center gap-1.5">
-                            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                          <div className="font-semibold text-rose-700 flex items-center gap-1.5">
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                             <span>ลบคนไข้ถาวร (ลบออกจากระบบทั้งประวัติและใบหน้า)</span>
                           </div>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
+                          <p className="text-[11px] text-slate-500 mt-0.5">
                             ลบข้อมูลผู้ป่วย รูปหน้า เวกเตอร์ชีวมาตร และประวัติทั้งหมดออกจากฐานข้อมูล Supabase อย่างถาวร (คนไข้จะหายไปจากตารางทันที)
                           </p>
                         </div>
@@ -741,7 +745,7 @@ export const PatientsView: React.FC = () => {
                           type="button"
                           onClick={handleDeletePatient}
                           disabled={actionLoading}
-                          className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center shadow-md shadow-rose-950/50"
+                          className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center shadow-xs cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           <span>ลบคนไข้ถาวร</span>
@@ -749,13 +753,13 @@ export const PatientsView: React.FC = () => {
                       </div>
 
                       {/* 2. Biometric PDPA Reset */}
-                      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="p-3 rounded-xl bg-white border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
                         <div>
-                          <div className="font-semibold text-amber-300 flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          <div className="font-semibold text-amber-700 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
                             <span>รีเซ็ตเฉพาะข้อมูลใบหน้า (PDPA Biometric Reset)</span>
                           </div>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
+                          <p className="text-[11px] text-slate-500 mt-0.5">
                             ลบเฉพาะข้อมูลชีวมาตรใบหน้าเพื่อขอสแกนหน้าใหม่ แต่ยังคงเก็บข้อมูลและเวชระเบียนคนไข้ไว้ในตาราง (สถานะเปลี่ยนเป็นรอสแกนหน้า)
                           </p>
                         </div>
@@ -763,20 +767,20 @@ export const PatientsView: React.FC = () => {
                           type="button"
                           onClick={handleDeleteBiometrics}
                           disabled={actionLoading}
-                          className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center"
+                          className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center cursor-pointer"
                         >
                           <span>รีเซ็ตเฉพาะใบหน้า</span>
                         </button>
                       </div>
 
                       {/* 3. Soft Archive */}
-                      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="p-3 rounded-xl bg-white border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
                         <div>
-                          <div className="font-semibold text-slate-300 flex items-center gap-1.5">
-                            <Archive className="w-3.5 h-3.5 text-slate-400" />
+                          <div className="font-semibold text-slate-700 flex items-center gap-1.5">
+                            <Archive className="w-3.5 h-3.5 text-slate-500" />
                             <span>ปิดแฟ้มประวัติ (Archive)</span>
                           </div>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
+                          <p className="text-[11px] text-slate-500 mt-0.5">
                             ยุติคอร์สการรักษาและจัดเก็บแฟ้มประวัติเข้าสู่คลังเอกสาร
                           </p>
                         </div>
@@ -784,7 +788,7 @@ export const PatientsView: React.FC = () => {
                           type="button"
                           onClick={handleArchivePatient}
                           disabled={actionLoading}
-                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center"
+                          className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center cursor-pointer"
                         >
                           <Archive className="w-3.5 h-3.5" />
                           <span>ปิดแฟ้ม</span>
@@ -909,16 +913,16 @@ export const PatientsView: React.FC = () => {
 
       {/* Create Patient Modal */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-teal-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+          <div className="bg-white border border-blue-100 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl p-6 space-y-4 text-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-emerald-600" />
                 <span>ลงทะเบียนคนไข้ใหม่ (ออกเลข HN จาก Sequence)</span>
               </h3>
               <button
                 onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-500 hover:text-slate-300"
+                className="text-slate-400 hover:text-slate-600 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -926,41 +930,41 @@ export const PatientsView: React.FC = () => {
 
             <form onSubmit={handleCreatePatient} className="space-y-4">
               {errorMsg && (
-                <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs sm:text-sm flex items-center justify-between">
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs sm:text-sm flex items-center justify-between">
                   <span>{errorMsg}</span>
-                  <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-white ml-2">
+                  <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-500 hover:text-rose-700 ml-2">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ชื่อจริง *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่อจริง *</label>
                   <input
                     type="text"
                     required
                     placeholder="เช่น ธนกฤต"
                     value={createFormData.first_name}
                     onChange={(e) => setCreateFormData({ ...createFormData, first_name: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">นามสกุล *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">นามสกุล *</label>
                   <input
                     type="text"
                     required
                     placeholder="เช่น ใจดี"
                     value={createFormData.last_name}
                     onChange={(e) => setCreateFormData({ ...createFormData, last_name: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">อายุ (ปี) *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">อายุ (ปี) *</label>
                   <input
                     type="number"
                     min={1}
@@ -970,15 +974,15 @@ export const PatientsView: React.FC = () => {
                     onChange={(e) =>
                       setCreateFormData({ ...createFormData, age: parseInt(e.target.value, 10) })
                     }
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">เพศ *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">เพศ *</label>
                   <select
                     value={createFormData.sex}
                     onChange={(e) => setCreateFormData({ ...createFormData, sex: e.target.value as 'male' | 'female' | 'other' })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="male">ชาย</option>
                     <option value="female">หญิง</option>
@@ -988,18 +992,18 @@ export const PatientsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">เบอร์โทรศัพท์</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
                 <input
                   type="tel"
                   placeholder="เช่น 0812345678"
                   value={createFormData.phone}
                   onChange={(e) => setCreateFormData({ ...createFormData, phone: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   อาการบาดเจ็บ / วินิจฉัยเบื้องต้น
                 </label>
                 <input
@@ -1007,12 +1011,12 @@ export const PatientsView: React.FC = () => {
                   placeholder="เช่น ปวดหลังส่วนล่างเรื้อรัง (Low back pain)"
                   value={createFormData.injury}
                   onChange={(e) => setCreateFormData({ ...createFormData, injury: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   มอบหมายให้นักกายภาพบำบัด (PT)
                 </label>
                 <select
@@ -1020,7 +1024,7 @@ export const PatientsView: React.FC = () => {
                   onChange={(e) =>
                     setCreateFormData({ ...createFormData, responsible_pt_id: e.target.value })
                   }
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">เลือกนักกายภาพบำบัดผู้รับผิดชอบ...</option>
                   {ptsList.map((pt) => (
@@ -1031,18 +1035,18 @@ export const PatientsView: React.FC = () => {
                 </select>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 text-sm font-medium"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-medium transition cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold shadow-lg shadow-teal-950/40 disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold shadow-sm transition disabled:opacity-50 cursor-pointer"
                 >
                   บันทึกคนไข้
                 </button>

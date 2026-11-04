@@ -12217,7 +12217,8 @@ var init_service10 = __esm({
                 name: `${record.first_name} ${record.last_name}`,
                 hn: record.hn,
                 sim: result.cosineSimilarity,
-                dist: result.euclideanDistance
+                dist: result.euclideanDistance,
+                percent: result.similarityPercentage
               };
             }
           }
@@ -12289,7 +12290,8 @@ var init_service10 = __esm({
             requirePin: true,
             candidateName: nearestCandidate.name,
             candidateHn: nearestCandidate.hn,
-            message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01 PIN 4 \u0E2B\u0E25\u0E31\u0E01\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19"
+            similarityPercentage: nearestCandidate.percent,
+            message: "\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19\u0E14\u0E49\u0E27\u0E22\u0E23\u0E2B\u0E31\u0E2A PIN 4 \u0E2B\u0E25\u0E31\u0E01"
           };
         }
         logger.info(

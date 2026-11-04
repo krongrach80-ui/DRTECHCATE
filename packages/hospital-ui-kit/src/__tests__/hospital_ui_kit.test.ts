@@ -16,17 +16,17 @@ describe('Hospital Clinical UI Kit & Sync Coordinator', () => {
   });
 
   describe('1. Hospital Theme & Gradients Tokens', () => {
-    it('should define clinical Deep Forest Teal sidebar gradient', () => {
+    it('should define clinical Deep Navy-Teal sidebar gradient', () => {
       expect(hospitalTheme.colors.sidebarGradient).toBe(
-        'linear-gradient(180deg, #063932 0%, #042924 100%)'
+        'linear-gradient(180deg, #0A2540 0%, #0D3150 50%, #0A2E36 100%)'
       );
     });
 
-    it('should define Clinical Sky-Cyan active pill gradient and soft glow', () => {
+    it('should define Clinical Emerald-to-Blue active pill gradient and soft glow', () => {
       expect(hospitalTheme.colors.activePillGradient).toBe(
-        'linear-gradient(90deg, #0EA5E9 0%, #0284C7 100%)'
+        'linear-gradient(90deg, #10B981 0%, #2563EB 100%)'
       );
-      expect(hospitalTheme.colors.activePillGlow).toBe('0 4px 14px rgba(14, 165, 233, 0.35)');
+      expect(hospitalTheme.colors.activePillGlow).toBe('0 4px 14px rgba(16, 185, 129, 0.35)');
     });
 
     it('should define Medical Emerald-to-Blue primary action gradient', () => {

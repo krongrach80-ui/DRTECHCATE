@@ -219,21 +219,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       )}
 
       {/* SECTION 1: MY PROFILE (ข้อมูลส่วนตัวของฉัน) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 space-y-8 shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <UserCheck className="w-5 h-5 text-teal-400" />
+      <div className="bg-white border border-blue-100 rounded-2xl p-8 space-y-8 shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <UserCheck className="w-5 h-5 text-blue-600" />
             <span>ส่วนที่ 1: ข้อมูลส่วนตัวของฉัน (My Profile)</span>
           </h3>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-500 font-medium">
             อัปเดตข้อมูลและเลขใบประกอบวิชาชีพ
           </span>
         </div>
 
         {/* Top: Avatar & Identity Header */}
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-6 border-b border-slate-800/80">
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-6 border-b border-slate-100">
           <div className="relative group">
-            <div className="w-24 h-24 rounded-2xl bg-gradient-to-tr from-cyan-600 to-teal-500 flex items-center justify-center text-3xl font-bold text-white shadow-xl shadow-teal-500/20 overflow-hidden border border-teal-400/30">
+            <div className="w-24 h-24 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-md shadow-blue-500/20 overflow-hidden border border-blue-200">
               {currentUser.avatar_url ? (
                 <img
                   src={currentUser.avatar_url}
@@ -245,7 +245,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               )}
             </div>
             <label
-              className="absolute bottom-0 right-0 p-2 rounded-xl bg-slate-900/90 text-slate-300 hover:text-white border border-slate-700 cursor-pointer shadow transition"
+              className="absolute bottom-0 right-0 p-2 rounded-xl bg-white text-slate-600 hover:text-blue-700 border border-slate-200 cursor-pointer shadow-md transition"
               title="เปลี่ยนรูปภาพโปรไฟล์"
             >
               <Camera className="w-4 h-4" />
@@ -260,25 +260,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
           <div className="space-y-2 text-center sm:text-left flex-1">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-              <h3 className="text-xl font-bold text-white">{currentUser.full_name}</h3>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-500/20 text-teal-300 border border-teal-500/30">
+              <h3 className="text-xl font-bold text-slate-900">{currentUser.full_name}</h3>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
                 นักกายภาพบำบัด (Physical Therapist)
               </span>
             </div>
-            <div className="text-xs text-slate-400 font-mono">
+            <div className="text-xs text-slate-500 font-mono">
               ชื่อผู้ใช้ในระบบ: @{currentUser.username}
             </div>
 
             <div className="flex flex-wrap gap-3 pt-2 text-xs">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
-                <FileBadge className="w-4 h-4 text-teal-400" />
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
+                <FileBadge className="w-4 h-4 text-blue-600" />
                 <span>
-                  เลขที่ใบประกอบวิชาชีพ (Read-Only): <strong>{currentUser.pt_details?.license_no || 'ก.ภ. 10842'}</strong>
+                  เลขที่ใบประกอบวิชาชีพ (Read-Only): <strong className="text-blue-900">{currentUser.pt_details?.license_no || 'ก.ภ. 10842'}</strong>
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
-                <Award className="w-4 h-4 text-cyan-400" />
-                <span>แผนก (Read-Only): <strong>{currentUser.pt_details?.specialty || 'Musculoskeletal PT'}</strong></span>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
+                <Award className="w-4 h-4 text-emerald-600" />
+                <span>แผนก (Read-Only): <strong className="text-emerald-900">{currentUser.pt_details?.specialty || 'Musculoskeletal PT'}</strong></span>
               </div>
             </div>
           </div>
@@ -288,7 +288,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <form onSubmit={handleUpdateProfile} className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 ชื่อ-นามสกุลจริง
               </label>
               <input
@@ -296,24 +296,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 required
                 value={formData.full_name}
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 เบอร์โทรศัพท์ติดต่อ
               </label>
               <input
                 type="tel"
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               ความเชี่ยวชาญเพิ่มเติม
             </label>
             <input
@@ -321,12 +321,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               value={formData.specialty}
               onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
               placeholder="เช่น กายภาพบำบัดระบบกระดูกและกล้ามเนื้อ, ระบบประสาท, กีฬา"
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               คำแนะนำตัว & ประวัติย่อ (Bio)
             </label>
             <textarea
@@ -334,7 +334,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               value={formData.bio}
               onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
               placeholder="ข้อมูลแนะนำตัว ความเชี่ยวชาญเฉพาะทาง หรือเวลาปฏิบัติงาน..."
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
             />
           </div>
 
@@ -342,7 +342,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-400 hover:to-cyan-500 text-white font-medium text-sm transition shadow-lg shadow-teal-500/20 cursor-pointer"
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition shadow-md shadow-blue-950/20 cursor-pointer active:scale-95"
             >
               <Save className="w-4 h-4" />
               <span>{loading ? 'กำลังบันทึก...' : 'บันทึกข้อมูลส่วนตัว'}</span>
@@ -352,14 +352,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       </div>
 
       {/* SECTION 2: ASSIGNED CASES & TEMPORARY CASE DELEGATION (เคสในความดูแล & ฝากเคสชั่วคราว) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 space-y-6 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
+      <div className="bg-white border border-blue-100 rounded-2xl p-8 space-y-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Users className="w-5 h-5 text-emerald-400" />
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Users className="w-5 h-5 text-emerald-600" />
               <span>ส่วนที่ 2: เคสในความดูแล & การฝากเคสชั่วคราว (My Cases & Delegation)</span>
             </h3>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               ดูแลคนไข้หลักทั้งหมด <strong>{myPatients.length} ท่าน</strong> • มอบสิทธิ์ให้นักกายภาพท่านอื่นดูแลแทนชั่วคราว
             </p>
           </div>
@@ -367,7 +367,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <button
             type="button"
             onClick={() => setIsDelegationModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-lg shadow-emerald-900/30 cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95"
           >
             <Share2 className="w-4 h-4" />
             <span>+ ฝากเคสชั่วคราว (Assign Temporary Coverage)</span>
@@ -377,25 +377,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         {/* Active Delegations Table if any */}
         {transfers.length > 0 && (
           <div className="space-y-3">
-            <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Clock className="w-4 h-4" />
+            <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-emerald-600" />
               <span>รายการฝากเคสชั่วคราวที่กำลังมีผล (Active Delegations)</span>
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {transfers.map((t) => (
                 <div
                   key={t.id}
-                  className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 flex items-center justify-between gap-3 text-xs"
+                  className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200 flex items-center justify-between gap-3 text-xs"
                 >
                   <div>
-                    <div className="font-bold text-white flex items-center gap-2">
+                    <div className="font-bold text-slate-900 flex items-center gap-2">
                       <span>{t.patient?.first_name || 'คนไข้'} {t.patient?.last_name || ''}</span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
                         Covering / รับฝากเคส
                       </span>
                     </div>
-                    <div className="text-slate-400 mt-1">
-                      ผู้รับฝาก: <strong className="text-teal-300">{activePtList.find((p: PtRecord) => p.user_id === t.to_pt_id)?.profile?.full_name || 'นักกายภาพ'}</strong>
+                    <div className="text-slate-600 mt-1">
+                      ผู้รับฝาก: <strong className="text-blue-700">{activePtList.find((p: PtRecord) => p.user_id === t.to_pt_id)?.profile?.full_name || 'นักกายภาพ'}</strong>
                     </div>
                     <div className="text-slate-500 text-[11px] mt-0.5">
                       ช่วงวันที่: {t.start_date} ถึง {t.end_date} • หมายเหตุ: {t.notes || '-'}
@@ -404,7 +404,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <button
                     type="button"
                     onClick={() => handleCancelDelegation(t.id)}
-                    className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition text-xs font-semibold cursor-pointer shrink-0"
+                    className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition text-xs font-semibold cursor-pointer shrink-0"
                     title="ยกเลิกการฝากเคส"
                   >
                     ยกเลิก
@@ -417,12 +417,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
         {/* Patients In Care Table */}
         <div className="space-y-3 pt-2">
-          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
             รายชื่อคนไข้ในความรับผิดชอบหลัก ({myPatients.length} ท่าน)
           </h4>
 
           {myPatients.length === 0 ? (
-            <div className="text-center py-8 text-slate-500 text-xs bg-slate-950 rounded-2xl border border-slate-800">
+            <div className="text-center py-8 text-slate-400 text-xs bg-slate-50 rounded-2xl border border-slate-200">
               ยังไม่มีคนไข้ในความรับผิดชอบหลัก
             </div>
           ) : (
@@ -430,18 +430,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               {myPatients.map((p) => (
                 <div
                   key={p.id}
-                  className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:border-slate-700 transition"
+                  className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:border-blue-300 transition"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-slate-800 text-teal-400 font-bold flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 border border-blue-200">
                       {p.first_name[0] || 'P'}
                     </div>
                     <div>
-                      <div className="font-bold text-white text-sm">
+                      <div className="font-bold text-slate-900 text-sm">
                         {p.first_name} {p.last_name}
                       </div>
-                      <div className="text-slate-400 text-xs">
-                        HN: <span className="font-mono text-cyan-400">{p.hn}</span> • {p.injury || 'ไม่ได้ระบุอาการ'}
+                      <div className="text-slate-500 text-xs mt-0.5">
+                        HN: <span className="font-mono font-bold text-blue-700">{p.hn}</span> • {p.injury || 'ไม่ได้ระบุอาการ'}
                       </div>
                     </div>
                   </div>
@@ -450,17 +450,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     <button
                       type="button"
                       onClick={() => onNavigateToTab?.('schedule', p.id)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
                     >
-                      <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600" />
                       <span>จัดตารางนัด</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => onNavigateToTab?.('records', p.id)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
                     >
-                      <ClipboardList className="w-3.5 h-3.5 text-cyan-400" />
+                      <ClipboardList className="w-3.5 h-3.5 text-blue-600" />
                       <span>เวชระเบียน</span>
                     </button>
                   </div>
@@ -473,22 +473,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* MODAL: Temporary Case Delegation (ฝากเคสชั่วคราว) */}
       {isDelegationModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-slate-900 border-2 border-emerald-500/40 rounded-3xl p-6 space-y-5 shadow-2xl animate-scale-up">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white border border-blue-100 rounded-2xl p-6 space-y-5 shadow-2xl animate-scale-up">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Share2 className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Share2 className="w-5 h-5 text-emerald-600" />
                   <span>ฝากเคสชั่วคราว (Assign Temporary Coverage)</span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   มอบหมายสิทธิ์ให้นักกายภาพผู้รับฝากดูแลและปรับตารางฝึกในช่วงเวลาที่ระบุ
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsDelegationModalOpen(false)}
-                className="p-1 rounded-full text-slate-400 hover:text-white transition"
+                className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -497,7 +497,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <form onSubmit={handleCreateDelegation} className="space-y-4">
               {/* 1. เลือกคนไข้ */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   1. เลือกคนไข้ในความดูแล
                 </label>
                 <select
@@ -509,7 +509,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       patient_id: e.target.value,
                     })
                   }
-                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
                 >
                   {myPatients.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -521,7 +521,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
               {/* 2. เลือกนักกายภาพผู้รับฝาก */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   2. เลือกนักกายภาพผู้รับฝาก (Covering PT)
                 </label>
                 <select
@@ -533,7 +533,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       covering_pt_id: e.target.value,
                     })
                   }
-                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
                 >
                   {activePtList.map((pt) => (
                     <option key={pt.user_id} value={pt.user_id}>
@@ -546,7 +546,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               {/* 3. ช่วงวันที่ */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     วันที่เริ่มฝากเคส
                   </label>
                   <input
@@ -559,11 +559,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         start_date: e.target.value,
                       })
                     }
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     วันที่สิ้นสุดการฝากเคส
                   </label>
                   <input
@@ -576,14 +576,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         end_date: e.target.value,
                       })
                     }
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
                   />
                 </div>
               </div>
 
               {/* 4. เหตุผล / หมายเหตุ */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   เหตุผล / หมายเหตุ (Default: &quot;-&quot;)
                 </label>
                 <input
@@ -596,22 +596,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     })
                   }
                   placeholder="เช่น ติดภารกิจอบรมทางวิชาการ, ลาพักร้อน"
-                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsDelegationModalOpen(false)}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition cursor-pointer"
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-emerald-900/40 cursor-pointer"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition shadow-sm hover:shadow cursor-pointer"
                 >
                   {loading ? 'กำลังบันทึก...' : 'บันทึกการฝากเคส'}
                 </button>

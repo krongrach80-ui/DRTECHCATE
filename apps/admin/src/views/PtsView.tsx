@@ -180,15 +180,15 @@ export const PtsView: React.FC = () => {
       </div>
 
       {/* Search Bar */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center">
+      <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 flex items-center shadow-xs">
         <div className="relative w-full md:w-96">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="ค้นหาชื่อ PT, เลขที่ใบอนุญาต, ความเชี่ยวชาญ..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
           />
         </div>
       </div>
@@ -197,7 +197,7 @@ export const PtsView: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {loading ? (
           <div className="col-span-full text-center py-12 text-slate-500">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-400" />
+            <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-600" />
             <span>กำลังโหลดรายชื่อนักกายภาพ...</span>
           </div>
         ) : filteredPts.length === 0 ? (
@@ -211,63 +211,63 @@ export const PtsView: React.FC = () => {
               <div
                 key={pt.user_id}
                 onClick={() => setSelectedPt(pt)}
-                className="bg-slate-900 border border-slate-800 rounded-3xl p-6 hover:border-teal-500/50 hover:shadow-xl transition cursor-pointer flex flex-col justify-between"
+                className="bg-white border border-blue-100 rounded-2xl p-6 hover:border-emerald-300 hover:shadow-md transition cursor-pointer flex flex-col justify-between shadow-xs group"
               >
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-teal-500/20 text-teal-300 font-bold text-lg flex items-center justify-center border border-teal-500/30">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-blue-600 text-white font-bold text-lg flex items-center justify-center shadow-sm">
                         {pt.profile?.full_name?.charAt(0) || 'P'}
                       </div>
                       <div>
-                        <h3 className="font-bold text-white text-base">
+                        <h3 className="font-bold text-slate-900 text-base">
                           {pt.profile?.full_name || 'นักกายภาพ'}
                         </h3>
-                        <p className="text-xs text-slate-400">@{pt.profile?.username}</p>
+                        <p className="text-xs text-blue-700 font-mono font-medium">@{pt.profile?.username}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       {pt.profile?.status === 'suspended' ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
-                          <AlertTriangle className="w-2.5 h-2.5" />
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1">
+                          <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
                           <span>ระงับ</span>
                         </span>
                       ) : (
-                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/30">
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           PT
                         </span>
                       )}
                       <button
                         onClick={(e) => handleDeletePt(pt, e)}
                         title="ลบนักกายภาพบำบัดท่านนี้ถาวร"
-                        className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 transition"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
 
-                  <div className="space-y-2 pt-2 border-t border-slate-800/80 text-xs">
-                    <div className="flex items-center gap-2 text-slate-300">
-                      <Award className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <Award className="w-4 h-4 text-amber-500 flex-shrink-0" />
                       <span>ใบประกอบวิชาชีพ: </span>
-                      <strong className="font-mono text-white">{pt.license_no || '-'}</strong>
+                      <strong className="font-mono text-slate-800">{pt.license_no || '-'}</strong>
                     </div>
 
-                    <div className="flex items-center gap-2 text-slate-400">
-                      <FileCheck className="w-4 h-4 text-teal-400 flex-shrink-0" />
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <FileCheck className="w-4 h-4 text-teal-600 flex-shrink-0" />
                       <span>ความเชี่ยวชาญ: {pt.specialty || 'กายภาพบำบัดทั่วไป'}</span>
                     </div>
 
-                    <div className="flex items-center gap-2 text-slate-400">
-                      <Users className="w-4 h-4 text-sky-400 flex-shrink-0" />
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <Users className="w-4 h-4 text-blue-600 flex-shrink-0" />
                       <span>คนไข้ที่ดูแล: </span>
-                      <strong className="text-white">{assignedPatients.length} ท่าน</strong>
+                      <strong className="text-blue-700 font-bold">{assignedPatients.length} ท่าน</strong>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-4 mt-4 border-t border-slate-800/60 flex items-center justify-between text-xs text-teal-400 font-medium">
+                <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs text-emerald-700 font-semibold group-hover:text-blue-600 transition">
                   <span>ดูรายละเอียดและคนไข้</span>
                   <ChevronRight className="w-4 h-4" />
                 </div>
@@ -279,66 +279,66 @@ export const PtsView: React.FC = () => {
 
       {/* PT Assigned Patients Modal */}
       {selectedPt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+          <div className="bg-white border border-blue-100 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl p-6 space-y-4 text-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
               <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <UserCheck className="w-5 h-5 text-teal-400" />
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-emerald-600" />
                   <span>{selectedPt.profile?.full_name}</span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-slate-500 mt-1">
                   เลขที่ใบอนุญาต: {selectedPt.license_no} • {selectedPt.specialty || 'กายภาพบำบัดทั่วไป'}
                 </p>
               </div>
               <button
                 onClick={() => setSelectedPt(null)}
-                className="text-slate-500 hover:text-slate-300"
+                className="text-slate-400 hover:text-slate-600 transition cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
             <div>
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
                 คนไข้ในความรับผิดชอบ ({getPtPatients(selectedPt.user_id).length} ท่าน)
               </h4>
 
               <div className="max-h-80 overflow-y-auto space-y-2">
                 {getPtPatients(selectedPt.user_id).length === 0 ? (
-                  <div className="text-center py-8 text-slate-500 text-xs">
+                  <div className="text-center py-8 text-slate-400 text-xs">
                     ยังไม่มีคนไข้ที่มอบหมายให้นักกายภาพท่านนี้
                   </div>
                 ) : (
                   getPtPatients(selectedPt.user_id).map((pat) => (
                     <div
                       key={pat.id}
-                      className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs"
+                      className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs"
                     >
                       <div>
-                        <div className="font-semibold text-white">
+                        <div className="font-semibold text-slate-900">
                           {pat.first_name} {pat.last_name}
                         </div>
-                        <div className="text-slate-400">{pat.injury || 'ไม่ได้ระบุอาการ'}</div>
+                        <div className="text-slate-500">{pat.injury || 'ไม่ได้ระบุอาการ'}</div>
                       </div>
-                      <span className="font-mono font-bold text-teal-400">{pat.hn}</span>
+                      <span className="font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">{pat.hn}</span>
                     </div>
                   ))
                 )}
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+            <div className="flex items-center justify-between pt-4 border-t border-slate-200">
               <button
                 onClick={() => handleDeletePt(selectedPt)}
-                className="px-4 py-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                className="px-4 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>ลบนักกายภาพท่านนี้</span>
               </button>
               <button
                 onClick={() => setSelectedPt(null)}
-                className="px-4 py-2 bg-slate-800 text-slate-300 hover:bg-slate-700 rounded-xl text-xs font-semibold"
+                className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer"
               >
                 ปิดหน้าต่าง
               </button>

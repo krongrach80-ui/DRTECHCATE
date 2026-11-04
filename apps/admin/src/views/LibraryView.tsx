@@ -357,10 +357,12 @@ export const LibraryView: React.FC = () => {
   return (
     <div className="p-8 space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-            <Dumbbell className="w-6 h-6 text-teal-600" />
+          <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2.5">
+            <span className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 shadow-xs">
+              <Dumbbell className="w-6 h-6" />
+            </span>
             <span>คลังท่ากายภาพ มินิเกม และชุดท่า (Library)</span>
           </h2>
           <p className="text-sm text-slate-500 mt-1">
@@ -368,7 +370,7 @@ export const LibraryView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
           <button
             onClick={fetchData}
             className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
@@ -379,34 +381,34 @@ export const LibraryView: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsPrescriptionModalOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition shadow-lg shadow-emerald-950/40"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
           >
             <Calendar className="w-4 h-4" />
             <span>👨‍⚕️ สั่งจ่ายคอร์สให้ผู้ป่วยรายคน</span>
           </button>
           {activeTab === 'exercises' && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => {
                   setSelectedExerciseForAi(null);
                   setIsCloneMode(false);
                   setIsExerciseBuilderOpen(true);
                 }}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 via-cyan-600 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm transition shadow-md shadow-blue-950/20 active:scale-95"
               >
                 <Video className="w-4 h-4" />
-                <span>🎯 AI Pose Studio (No-Code & Webcam)</span>
+                <span>🎯 AI Pose Studio (Webcam)</span>
               </button>
               <button
                 onClick={() => setIsSmartExerciseModalOpen(true)}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-blue-200 hover:bg-blue-50/80 text-blue-700 font-bold text-sm transition shadow-sm active:scale-95"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>Smart Exercise Upload (v4)</span>
+                <Sparkles className="w-4 h-4 text-blue-600" />
+                <span>Smart Exercise Upload</span>
               </button>
               <button
                 onClick={() => setIsExerciseModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
               >
                 <Plus className="w-4 h-4" />
                 <span>เพิ่มท่ากายภาพใหม่</span>
@@ -414,17 +416,17 @@ export const LibraryView: React.FC = () => {
             </div>
           )}
           {activeTab === 'modpacks' && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setIsSmartModpackModalOpen(true)}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-blue-200 hover:bg-blue-50/80 text-blue-700 font-bold text-sm transition shadow-sm active:scale-95"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>Smart Modpack Builder (v4)</span>
+                <Sparkles className="w-4 h-4 text-blue-600" />
+                <span>Smart Modpack Builder</span>
               </button>
               <button
                 onClick={() => setIsModpackModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
               >
                 <Plus className="w-4 h-4" />
                 <span>สร้างชุดท่า Modpack ใหม่</span>
@@ -459,16 +461,16 @@ export const LibraryView: React.FC = () => {
       )}
 
       {/* Main Tabs Navigation */}
-      <div className="flex gap-2 border-b border-slate-800 pb-2">
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => setActiveTab('exercises')}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition ${
             activeTab === 'exercises'
-              ? 'bg-teal-600/20 text-teal-300 border border-teal-500/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+              ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <Dumbbell className="w-4 h-4" />
+          <Dumbbell className="w-4 h-4 text-blue-600" />
           <span>ท่ากายภาพ ({exercises.length})</span>
         </button>
 
@@ -476,11 +478,11 @@ export const LibraryView: React.FC = () => {
           onClick={() => setActiveTab('modpacks')}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition ${
             activeTab === 'modpacks'
-              ? 'bg-teal-600/20 text-teal-300 border border-teal-500/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+              ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <Package className="w-4 h-4" />
+          <Package className="w-4 h-4 text-blue-600" />
           <span>ชุดท่า Modpacks ({modpacks.length})</span>
         </button>
 
@@ -488,11 +490,11 @@ export const LibraryView: React.FC = () => {
           onClick={() => setActiveTab('minigames')}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition ${
             activeTab === 'minigames'
-              ? 'bg-teal-600/20 text-teal-300 border border-teal-500/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+              ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <Gamepad2 className="w-4 h-4" />
+          <Gamepad2 className="w-4 h-4 text-blue-600" />
           <span>มินิเกม & โจทย์ ({minigames.length})</span>
         </button>
       </div>
@@ -510,104 +512,106 @@ export const LibraryView: React.FC = () => {
                 ยังไม่มีรายการท่ากายภาพในระบบ กด "เพิ่มท่ากายภาพใหม่" ด้านบน
               </div>
             ) : (
-              exercises.map((ex) => (
-                <div
-                  key={ex.id}
-                  className="bg-slate-900 border border-slate-800 rounded-3xl p-5 flex flex-col justify-between hover:border-slate-700 transition group"
-                >
-                  <div className="space-y-3">
-                    {/* Medical Posture Illustration */}
-                    <div className="w-full h-36 bg-slate-950/80 rounded-2xl flex items-center justify-center overflow-hidden border border-slate-800/80 p-2">
-                      <img
-                        src={ex.image_path || `/assets/exercises/${ex.id}.svg`}
-                        alt={ex.title}
-                        className="max-h-32 w-auto object-contain opacity-90 group-hover:opacity-100 group-hover:scale-105 transition duration-200"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    </div>
-
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="p-2 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20">
-                          <Dumbbell className="w-4 h-4" />
-                        </span>
-                        <h3 className="font-bold text-white text-base">{ex.title}</h3>
+              exercises.map((ex) => {
+                const isTimer = ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum';
+                return (
+                  <div
+                    key={ex.id}
+                    className="bg-white rounded-2xl border border-blue-100/90 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all flex flex-col justify-between overflow-hidden p-5 group"
+                  >
+                    <div className="space-y-3">
+                      {/* Medical Posture Illustration */}
+                      <div className="w-full h-36 bg-gradient-to-br from-slate-900 via-blue-950 to-emerald-950 rounded-xl flex items-center justify-center overflow-hidden border border-blue-900/30 p-2 shadow-inner">
+                        <img
+                          src={ex.image_path || `/assets/exercises/${ex.id}.svg`}
+                          alt={ex.title}
+                          className="max-h-32 w-auto object-contain opacity-95 group-hover:scale-105 transition duration-200"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
                       </div>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                          ex.difficulty === 'easy' || ex.difficulty === 'beginner'
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200">
+                            <Dumbbell className="w-4 h-4" />
+                          </span>
+                          <h3 className="font-bold text-slate-900 text-base">{ex.title}</h3>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                            ex.difficulty === 'easy' || ex.difficulty === 'beginner'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-rose-50 text-rose-700 border-rose-200'
+                          }`}
+                        >
+                          {ex.difficulty === 'easy' || ex.difficulty === 'beginner'
+                            ? 'BEGINNER'
                             : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                            : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                        }`}
-                      >
-                        {ex.difficulty === 'easy' || ex.difficulty === 'beginner'
-                          ? 'BEGINNER'
-                          : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
-                          ? 'INTERMEDIATE'
-                          : 'ADVANCED'}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span
-                        className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold ${
-                          ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum'
-                            ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-                            : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
-                        }`}
-                      >
-                        {ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum'
-                          ? '⏱️ โหมดจับเวลา (Timer Mode)'
-                          : '📷 โหมดกล้อง AI (Camera Mode)'}
-                      </span>
-                      {ex.default_hold_sec ? (
-                        <span className="px-2 py-0.5 rounded-lg bg-teal-950/60 font-mono text-teal-300 border border-teal-800/60 text-[10px]">
-                          ค้าง {ex.default_hold_sec} วิ
+                            ? 'INTERMEDIATE'
+                            : 'ADVANCED'}
                         </span>
-                      ) : null}
-                      {ex.default_duration_sec ? (
-                        <span className="px-2 py-0.5 rounded-lg bg-amber-950/60 font-mono text-amber-300 border border-amber-800/60 text-[10px]">
-                          {ex.default_duration_sec} วิ/เซ็ต
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <p className="text-xs text-slate-400 line-clamp-2">
-                      {ex.description || 'ไม่มีคำอธิบาย'}
-                    </p>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs bg-slate-950 p-3 rounded-2xl border border-slate-800/80">
-                      <div>
-                        <span className="text-slate-500">ข้อต่อเป้าหมาย:</span>
-                        <div className="font-semibold text-slate-300">{ex.target_joint || '-'}</div>
                       </div>
-                      <div>
-                        <span className="text-slate-500">ค่าเริ่มต้น:</span>
-                        <div className="font-semibold text-teal-400">
-                          {ex.default_sets} เซ็ต × {ex.default_reps} ครั้ง
+
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-lg border text-[10px] font-bold ${
+                            isTimer
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : 'bg-teal-50 text-teal-700 border-teal-200'
+                          }`}
+                        >
+                          {isTimer
+                            ? '⏱️ โหมดจับเวลานำ (Timer Mode)'
+                            : '📹 โหมดกล้อง AI (Camera Mode)'}
+                        </span>
+                        {ex.default_hold_sec ? (
+                          <span className="px-2 py-0.5 rounded-lg bg-teal-50 font-mono text-teal-700 border border-teal-200 text-[10px] font-semibold">
+                            ค้าง {ex.default_hold_sec} วิ
+                          </span>
+                        ) : null}
+                        {ex.default_duration_sec ? (
+                          <span className="px-2 py-0.5 rounded-lg bg-blue-50 font-mono text-blue-700 border border-blue-200 text-[10px] font-semibold">
+                            {ex.default_duration_sec} วิ/เซ็ต
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <p className="text-xs text-slate-600 line-clamp-2">
+                        {ex.description || 'ไม่มีคำอธิบาย'}
+                      </p>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                        <div>
+                          <span className="text-slate-500">ข้อต่อเป้าหมาย:</span>
+                          <div className="font-semibold text-slate-800">{ex.target_joint || '-'}</div>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">ค่าเริ่มต้น:</span>
+                          <div className="font-bold text-emerald-700">
+                            {ex.default_sets} เซ็ต × {ex.default_reps} ครั้ง
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Clinical Citation & PT Adjustment Notice */}
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] space-y-1">
+                        {(ex.clinical_source || ex.source) && (
+                          <div className="text-slate-600 font-mono text-[10px] truncate" title={ex.clinical_source || ex.source || ''}>
+                            <span className="text-blue-700 font-bold">🏛️ แหล่งอ้างอิง:</span> {ex.clinical_source || ex.source}
+                          </div>
+                        )}
+                        <div className="text-emerald-700 font-medium text-[10px] flex items-center gap-1">
+                          <span>👩‍⚕️</span>
+                          <span>นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Clinical Citation & PT Adjustment Notice */}
-                    <div className="p-2.5 rounded-2xl bg-slate-950 border border-slate-800/80 text-[11px] space-y-1">
-                      {(ex.clinical_source || ex.source) && (
-                        <div className="text-slate-400 font-mono text-[10px] truncate" title={ex.clinical_source || ex.source || ''}>
-                          <span className="text-teal-400 font-bold">🏛️ แหล่งอ้างอิง:</span> {ex.clinical_source || ex.source}
-                        </div>
-                      )}
-                      <div className="text-emerald-400/90 font-medium text-[10px] flex items-center gap-1">
-                        <span>👩‍⚕️</span>
-                        <span>นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย</span>
-                      </div>
-                    </div>
-                  </div>
-
-                    <div className="pt-4 mt-4 border-t border-slate-800 flex items-center justify-between gap-2">
+                    <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => {
@@ -615,7 +619,7 @@ export const LibraryView: React.FC = () => {
                             setIsCloneMode(false);
                             setIsExerciseBuilderOpen(true);
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-medium flex items-center gap-1 transition"
+                          className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center gap-1 transition"
                           title="ตั้งค่า AI ตรวจจับมุม & Calibrate"
                         >
                           <Sliders className="w-3 h-3" />
@@ -627,7 +631,7 @@ export const LibraryView: React.FC = () => {
                             setIsCloneMode(true);
                             setIsExerciseBuilderOpen(true);
                           }}
-                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1 transition"
+                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1 transition"
                           title="โคลนท่านี้เป็นท่าใหม่"
                         >
                           <Copy className="w-3 h-3" />
@@ -636,10 +640,10 @@ export const LibraryView: React.FC = () => {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-slate-500">ID: {ex.id.slice(0, 8)}...</span>
+                        <span className="text-[11px] font-mono text-slate-400">ID: {ex.id.slice(0, 8)}...</span>
                         <button
                           onClick={() => handleDeleteExercise(ex.id, ex.title)}
-                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
                           title="ลบท่านี้"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -647,8 +651,9 @@ export const LibraryView: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                ))
-              )}
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -665,40 +670,40 @@ export const LibraryView: React.FC = () => {
               modpacks.map((mp) => (
                 <div
                   key={mp.id}
-                  className="bg-slate-900 border border-slate-800 rounded-3xl p-5 flex flex-col justify-between"
+                  className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-emerald-300 transition flex flex-col justify-between"
                 >
                   <div className="space-y-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                        <span className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200">
                           <Package className="w-4 h-4" />
                         </span>
-                        <h3 className="font-bold text-white text-base">{mp.name}</h3>
+                        <h3 className="font-bold text-slate-900 text-base">{mp.name}</h3>
                       </div>
                       <button
                         onClick={() => handleDeleteModpack(mp.id, mp.name)}
-                        className="text-slate-500 hover:text-rose-400"
+                        className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg transition"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
 
-                    <p className="text-xs text-slate-400">{mp.description || 'ไม่มีคำอธิบาย'}</p>
+                    <p className="text-xs text-slate-600">{mp.description || 'ไม่มีคำอธิบาย'}</p>
 
-                    <div className="space-y-1.5 bg-slate-950 p-3 rounded-2xl border border-slate-800/80">
-                      <div className="text-xs font-semibold text-slate-400 mb-1">
+                    <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                      <div className="text-xs font-semibold text-slate-700 mb-1">
                         รายการท่าในชุด ({mp.items?.length || 0} ท่า):
                       </div>
                       {mp.items && mp.items.length > 0 ? (
                         mp.items.map((it, idx: number) => (
                           <div
                             key={idx}
-                            className="flex items-center justify-between text-xs text-slate-300"
+                            className="flex items-center justify-between text-xs text-slate-700"
                           >
                             <span>
                               {idx + 1}. {it.exercise?.title || `Exercise ${it.exercise_id.slice(0, 6)}`}
                             </span>
-                            <span className="font-mono text-teal-400">
+                            <span className="font-mono text-emerald-700 font-bold">
                               {it.sets}×{it.reps}
                             </span>
                           </div>
@@ -723,17 +728,17 @@ export const LibraryView: React.FC = () => {
               <div
                 key={game.id}
                 onClick={() => openMinigameQuestions(game)}
-                className={`p-5 rounded-3xl border-2 transition-all cursor-pointer ${
+                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer ${
                   selectedMinigame?.id === game.id
-                    ? 'bg-slate-900 border-teal-400 shadow-xl shadow-teal-500/20 ring-2 ring-teal-500/40'
-                    : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
+                    ? 'bg-white border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
+                    : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50 shadow-sm'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Gamepad2 className={`w-7 h-7 flex-shrink-0 ${selectedMinigame?.id === game.id ? 'text-teal-300' : 'text-slate-400'}`} />
+                  <Gamepad2 className={`w-7 h-7 flex-shrink-0 ${selectedMinigame?.id === game.id ? 'text-emerald-600' : 'text-slate-400'}`} />
                   <div>
-                    <h3 className="font-bold text-white text-base leading-snug">{game.title}</h3>
-                    <p className={`text-xs mt-1 ${selectedMinigame?.id === game.id ? 'text-teal-200' : 'text-slate-400'}`}>
+                    <h3 className="font-bold text-slate-900 text-base leading-snug">{game.title}</h3>
+                    <p className={`text-xs mt-1 ${selectedMinigame?.id === game.id ? 'text-emerald-700 font-medium' : 'text-slate-600'}`}>
                       {game.description || 'มินิเกมฝึกสมอง'}
                     </p>
                   </div>
@@ -743,20 +748,20 @@ export const LibraryView: React.FC = () => {
           </div>
 
           {selectedMinigame && (
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div className="bg-white border border-blue-100 rounded-2xl p-6 space-y-4 shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <HelpCircle className="w-5 h-5 text-teal-400" />
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <HelpCircle className="w-5 h-5 text-blue-600" />
                     <span>โจทย์คำถามสำหรับ: {selectedMinigame.title}</span>
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     คำถามจะถูกสุ่มแสดงให้คนไข้ตอบบนหน้าจอตู้ Kiosk ระหว่างฝึก
                   </p>
                 </div>
                 <button
                   onClick={() => setIsQuestionModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-xs font-semibold"
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-sm active:scale-95"
                 >
                   <Plus className="w-4 h-4" />
                   <span>เพิ่มโจทย์ใหม่</span>
@@ -772,18 +777,18 @@ export const LibraryView: React.FC = () => {
                   questions.map((q) => (
                     <div
                       key={q.id}
-                      className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-start justify-between"
+                      className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-start justify-between"
                     >
                       <div className="space-y-2">
-                        <div className="text-sm font-semibold text-white">{q.prompt}</div>
+                        <div className="text-sm font-semibold text-slate-900">{q.prompt}</div>
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           {q.choices.map((c: string, idx: number) => (
                             <div
                               key={idx}
                               className={`px-3 py-1.5 rounded-lg border ${
                                 c === q.answer
-                                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300 font-bold'
-                                  : 'bg-slate-900 border-slate-800 text-slate-400'
+                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
+                                  : 'bg-white border-slate-200 text-slate-700'
                               }`}
                             >
                               {idx + 1}. {c} {c === q.answer && '✓ (เฉลย)'}
@@ -793,7 +798,7 @@ export const LibraryView: React.FC = () => {
                       </div>
                       <button
                         onClick={() => handleDeleteQuestion(q.id)}
-                        className="text-slate-500 hover:text-rose-400 p-1"
+                        className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1 rounded-lg transition"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -808,16 +813,16 @@ export const LibraryView: React.FC = () => {
 
       {/* Create Exercise Modal */}
       {isExerciseModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Dumbbell className="w-5 h-5 text-teal-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white border border-blue-100 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Dumbbell className="w-5 h-5 text-blue-600" />
                 <span>เพิ่มท่ากายภาพใหม่</span>
               </h3>
               <button
                 onClick={() => setIsExerciseModalOpen(false)}
-                className="text-slate-500 hover:text-slate-300"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -825,7 +830,7 @@ export const LibraryView: React.FC = () => {
 
             <form onSubmit={handleCreateExercise} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">ชื่อท่ากายภาพ *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่อท่ากายภาพ *</label>
                 <input
                   type="text"
                   required
@@ -834,12 +839,12 @@ export const LibraryView: React.FC = () => {
                   onChange={(e) =>
                     setExerciseFormData({ ...exerciseFormData, title: e.target.value })
                   }
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">คำอธิบายวิธีฝึก</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">คำอธิบายวิธีฝึก</label>
                 <textarea
                   rows={2}
                   placeholder="นอนหงาย เกร็งกล้ามเนื้อหน้าขา ยกขาขึ้น 45 องศา ค้างไว้ 5 วินาที..."
@@ -847,13 +852,13 @@ export const LibraryView: React.FC = () => {
                   onChange={(e) =>
                     setExerciseFormData({ ...exerciseFormData, description: e.target.value })
                   }
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ข้อต่อเป้าหมาย</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ข้อต่อเป้าหมาย</label>
                   <input
                     type="text"
                     placeholder="เช่น knee, shoulder, lumbar"
@@ -861,11 +866,11 @@ export const LibraryView: React.FC = () => {
                     onChange={(e) =>
                       setExerciseFormData({ ...exerciseFormData, target_joint: e.target.value })
                     }
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ระดับความยาก</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ระดับความยาก</label>
                   <select
                     value={exerciseFormData.difficulty}
                     onChange={(e) =>
@@ -874,7 +879,7 @@ export const LibraryView: React.FC = () => {
                         difficulty: e.target.value as 'beginner' | 'intermediate' | 'advanced',
                       })
                     }
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   >
                     <option value="beginner">ง่าย (Beginner)</option>
                     <option value="intermediate">ปานกลาง (Intermediate)</option>
@@ -885,7 +890,7 @@ export const LibraryView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">จำนวนเซ็ตเริ่มต้น</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">จำนวนเซ็ตเริ่มต้น</label>
                   <input
                     type="number"
                     min={1}
@@ -897,11 +902,11 @@ export const LibraryView: React.FC = () => {
                         default_sets: parseInt(e.target.value, 10),
                       })
                     }
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">จำนวนครั้งต่อเซ็ต</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">จำนวนครั้งต่อเซ็ต</label>
                   <input
                     type="number"
                     min={1}
@@ -913,35 +918,35 @@ export const LibraryView: React.FC = () => {
                         default_reps: parseInt(e.target.value, 10),
                       })
                     }
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   ไฟล์รูปภาพประกอบท่า (ส่งผ่าน API Private Bucket)
                 </label>
                 <input
                   type="file"
                   accept="image/*,video/*"
                   onChange={(e) => setSelectedMediaFile(e.target.files?.[0] || null)}
-                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-teal-500/10 file:text-teal-400 hover:file:bg-teal-500/20"
+                  className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsExerciseModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-sm font-medium"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-semibold transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold shadow-lg shadow-teal-950/40 disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold shadow-md shadow-emerald-950/20 disabled:opacity-50 transition active:scale-95"
                 >
                   บันทึกท่ากายภาพ
                 </button>
@@ -953,16 +958,16 @@ export const LibraryView: React.FC = () => {
 
       {/* Create Modpack Modal */}
       {isModpackModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Package className="w-5 h-5 text-teal-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white border border-blue-100 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Package className="w-5 h-5 text-blue-600" />
                 <span>สร้างชุดท่าสำเร็จรูป (Modpack)</span>
               </h3>
               <button
                 onClick={() => setIsModpackModalOpen(false)}
-                className="text-slate-500 hover:text-slate-300"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -970,7 +975,7 @@ export const LibraryView: React.FC = () => {
 
             <form onSubmit={handleCreateModpack} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">ชื่อชุดท่า Modpack *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่อชุดท่า Modpack *</label>
                 <input
                   type="text"
                   required
@@ -979,12 +984,12 @@ export const LibraryView: React.FC = () => {
                   onChange={(e) =>
                     setModpackFormData({ ...modpackFormData, name: e.target.value })
                   }
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">คำอธิบาย</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">คำอธิบาย</label>
                 <input
                   type="text"
                   placeholder="เหมาะสำหรับผู้ป่วยหลังผ่าตัด 2 สัปดาห์แรก..."
@@ -992,15 +997,15 @@ export const LibraryView: React.FC = () => {
                   onChange={(e) =>
                     setModpackFormData({ ...modpackFormData, description: e.target.value })
                   }
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-2">
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
                   เลือกท่ากายภาพที่ต้องการรวมในชุด ({modpackFormData.items.length} ท่าที่เลือก)
                 </label>
-                <div className="max-h-60 overflow-y-auto space-y-2 border border-slate-800 rounded-2xl p-3 bg-slate-950">
+                <div className="max-h-60 overflow-y-auto space-y-2 border border-slate-200 rounded-xl p-3 bg-slate-50">
                   {exercises.map((ex) => {
                     const isSelected = modpackFormData.items.some((i) => i.exercise_id === ex.id);
                     return (
@@ -1009,15 +1014,15 @@ export const LibraryView: React.FC = () => {
                         onClick={() => toggleExerciseInModpack(ex.id)}
                         className={`p-3 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition ${
                           isSelected
-                            ? 'bg-teal-500/10 border-teal-500 text-teal-300'
-                            : 'bg-slate-900 border-slate-800/80 text-slate-400 hover:border-slate-700'
+                            ? 'bg-blue-50 border-blue-400 text-blue-900 font-semibold'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300'
                         }`}
                       >
                         <div>
-                          <div className="font-semibold text-white">{ex.title}</div>
+                          <div className="font-semibold text-slate-900">{ex.title}</div>
                           <div className="text-[11px] text-slate-500">{ex.target_joint}</div>
                         </div>
-                        <div className="font-mono text-teal-400">
+                        <div className="font-mono text-emerald-700 font-bold">
                           {isSelected ? '✓ เลือกแล้ว' : '+ คลิกเพื่อเลือก'}
                         </div>
                       </div>
@@ -1026,18 +1031,18 @@ export const LibraryView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsModpackModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-sm font-medium"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-semibold transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold shadow-lg shadow-teal-950/40 disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold shadow-md shadow-emerald-950/20 disabled:opacity-50 transition active:scale-95"
                 >
                   สร้าง Modpack
                 </button>
@@ -1049,13 +1054,13 @@ export const LibraryView: React.FC = () => {
 
       {/* Add Question Modal */}
       {isQuestionModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-base font-bold text-white">เพิ่มโจทย์คำถามมินิเกม</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white border border-blue-100 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-base font-bold text-slate-900">เพิ่มโจทย์คำถามมินิเกม</h3>
               <button
                 onClick={() => setIsQuestionModalOpen(false)}
-                className="text-slate-500 hover:text-slate-300"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1063,7 +1068,7 @@ export const LibraryView: React.FC = () => {
 
             <form onSubmit={handleCreateQuestion} className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">คำถาม / โจทย์ *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">คำถาม / โจทย์ *</label>
                 <input
                   type="text"
                   required
@@ -1072,13 +1077,13 @@ export const LibraryView: React.FC = () => {
                   onChange={(e) =>
                     setQuestionFormData({ ...questionFormData, prompt: e.target.value })
                   }
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
               {[0, 1, 2, 3].map((idx) => (
                 <div key={idx}>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     ตัวเลือกที่ {idx + 1} *
                   </label>
                   <input
@@ -1091,13 +1096,13 @@ export const LibraryView: React.FC = () => {
                       updated[idx] = e.target.value;
                       setQuestionFormData({ ...questionFormData, choices: updated });
                     }}
-                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
               ))}
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">คำตอบที่ถูกต้อง (เฉลย) *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">คำตอบที่ถูกต้อง (เฉลย) *</label>
                 <input
                   type="text"
                   required
@@ -1106,22 +1111,22 @@ export const LibraryView: React.FC = () => {
                   onChange={(e) =>
                     setQuestionFormData({ ...questionFormData, answer: e.target.value })
                   }
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsQuestionModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium"
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-semibold transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-sm active:scale-95"
                 >
                   บันทึกโจทย์
                 </button>

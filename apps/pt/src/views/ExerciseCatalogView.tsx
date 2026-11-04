@@ -245,10 +245,12 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
   return (
     <div className="p-8 space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-            <Dumbbell className="w-6 h-6 text-teal-600" />
+          <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2.5">
+            <span className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 shadow-xs">
+              <Dumbbell className="w-6 h-6" />
+            </span>
             <span>คลังท่ากายภาพบำบัด (Exercise Catalog)</span>
           </h2>
           <p className="text-sm text-slate-500 mt-1">
@@ -256,12 +258,12 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
           {onOpenPrescription && (
             <button
               type="button"
               onClick={onOpenPrescription}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition shadow-lg shadow-emerald-950/40 cursor-pointer active:scale-95"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95"
             >
               <Sliders className="w-4 h-4" />
               <span>📅 จัดคอร์ส/สั่งจ่ายท่าฝึกเฉพาะคน</span>
@@ -280,28 +282,28 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
               setIsCloneMode(false);
               setIsExerciseBuilderOpen(true);
             }}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 via-cyan-600 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm transition shadow-md shadow-blue-950/20 active:scale-95"
           >
             <Video className="w-4 h-4" />
             <span>🎯 AI Pose Studio</span>
           </button>
           <button
             onClick={() => setIsSmartExerciseModalOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-blue-200 hover:bg-blue-50/80 text-blue-700 font-bold text-sm transition shadow-sm active:scale-95"
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Smart Upload (v4)</span>
+            <Sparkles className="w-4 h-4 text-blue-600" />
+            <span>Smart Upload</span>
           </button>
           <button
             onClick={() => setIsSmartModpackModalOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-blue-200 hover:bg-blue-50/80 text-blue-700 font-bold text-sm transition shadow-sm active:scale-95"
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Smart Modpack (v4)</span>
+            <Sparkles className="w-4 h-4 text-blue-600" />
+            <span>Smart Modpack</span>
           </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-400 hover:to-cyan-500 text-white font-medium text-sm shadow-lg shadow-teal-500/20 transition"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md shadow-emerald-950/20 transition active:scale-95"
           >
             <Plus className="w-4 h-4" />
             <span>สร้างท่ากายภาพใหม่</span>
@@ -311,68 +313,68 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
 
       {/* Alerts */}
       {errorMsg && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm flex items-center justify-between">
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-            <span>{errorMsg}</span>
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 text-rose-600" />
+            <span className="font-medium">{errorMsg}</span>
           </div>
-          <button onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-200">
+          <button onClick={() => setErrorMsg(null)} className="text-rose-500 hover:text-rose-700">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
       {successMsg && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm flex items-center justify-between">
+        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-            <span>{successMsg}</span>
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-600" />
+            <span className="font-medium">{successMsg}</span>
           </div>
-          <button onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-emerald-200">
+          <button onClick={() => setSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-700">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {/* Search & Filter Bar */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row gap-4 justify-between items-center">
+      <div className="bg-slate-50/80 border border-slate-200 p-4 rounded-2xl flex flex-col md:flex-row gap-4 justify-between items-center shadow-xs">
         <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="ค้นหาชื่อท่า, กล้ามเนื้อเป้าหมาย..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto">
           <button
             onClick={() => setOwnershipFilter('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${
               ownershipFilter === 'all'
-                ? 'bg-teal-500 text-white'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             ทั้งหมด ({exercises.length})
           </button>
           <button
             onClick={() => setOwnershipFilter('mine')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${
               ownershipFilter === 'mine'
-                ? 'bg-teal-500 text-white'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             ท่าที่ฉันสร้าง
           </button>
           <button
             onClick={() => setOwnershipFilter('hospital')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${
               ownershipFilter === 'hospital'
-                ? 'bg-cyan-500 text-white'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             คลังส่วนกลาง
@@ -393,18 +395,19 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
         ) : (
           filteredExercises.map((ex) => {
             const isMine = ex.created_by === currentUserId;
+            const isTimer = ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum';
             return (
               <div
                 key={ex.id}
-                className="bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-5 space-y-4 shadow-lg transition flex flex-col justify-between group"
+                className="bg-white rounded-2xl border border-blue-100/90 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all flex flex-col justify-between overflow-hidden p-5 group"
               >
                 <div className="space-y-3">
                   {/* Medical Posture Illustration */}
-                  <div className="w-full h-36 bg-slate-950/80 rounded-xl flex items-center justify-center overflow-hidden border border-slate-800/80 p-2">
+                  <div className="w-full h-36 bg-gradient-to-br from-slate-900 via-blue-950 to-emerald-950 rounded-xl flex items-center justify-center overflow-hidden border border-blue-900/30 p-2 shadow-inner">
                     <img
                       src={ex.image_path || `/assets/exercises/${ex.id}.svg`}
                       alt={ex.title}
-                      className="max-h-32 w-auto object-contain opacity-90 group-hover:opacity-100 group-hover:scale-105 transition duration-200"
+                      className="max-h-32 w-auto object-contain opacity-95 group-hover:scale-105 transition duration-200"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
                       }}
@@ -412,46 +415,46 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                   </div>
 
                   <div className="flex items-start justify-between gap-2">
-                    <h4 className="font-bold text-white text-base leading-snug">{ex.title}</h4>
+                    <h4 className="font-bold text-slate-900 text-base leading-snug">{ex.title}</h4>
                     {isMine ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-teal-500/20 text-teal-300 border border-teal-500/30 flex items-center gap-1">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 shadow-2xs">
                         <Sparkles className="w-3 h-3" />
                         <span>ท่าของฉัน</span>
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1 shadow-2xs">
                         <Lock className="w-3 h-3" />
                         <span>ส่วนกลาง</span>
                       </span>
                     )}
                   </div>
 
-                  <p className="text-xs text-slate-400 line-clamp-2">
+                  <p className="text-xs text-slate-600 line-clamp-2">
                     {ex.description || 'ไม่มีคำอธิบายเพิ่มเติม'}
                   </p>
 
                   <div className="flex flex-wrap gap-2 pt-1 text-xs">
                     <span
-                      className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold ${
-                        ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum'
-                          ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-                          : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                      className={`px-2.5 py-0.5 rounded-lg border text-[10px] font-bold ${
+                        isTimer
+                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                          : 'bg-teal-50 text-teal-700 border-teal-200'
                       }`}
                     >
-                      {ex.mode === 'timer' || ex.id === 'chin-tuck' || ex.id === 'shoulder-pendulum'
-                        ? '⏱️ โหมดจับเวลา (Timer Mode)'
-                        : '📷 โหมดกล้อง AI (Camera Mode)'}
+                      {isTimer
+                        ? '⏱️ โหมดจับเวลานำ (Timer Mode)'
+                        : '📹 โหมดกล้อง AI (Camera Mode)'}
                     </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-950 text-slate-300 border border-slate-800">
+                    <span className="px-2 py-0.5 rounded-lg bg-slate-50 text-slate-700 border border-slate-200 font-medium">
                       🎯 {ex.target_muscle || 'กล้ามเนื้อรวม'}
                     </span>
                     <span
-                      className={`px-2 py-0.5 rounded-lg border text-[11px] font-medium ${
+                      className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold uppercase ${
                         ex.difficulty === 'hard' || ex.difficulty === 'advanced'
-                          ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
                           : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
-                          ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-                          : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       }`}
                     >
                       {ex.difficulty === 'hard' || ex.difficulty === 'advanced'
@@ -460,37 +463,37 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                         ? 'ปานกลาง (Intermediate)'
                         : 'ง่าย (Beginner)'}
                     </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-950 font-mono text-teal-400 border border-slate-800">
+                    <span className="px-2 py-0.5 rounded-lg bg-emerald-50 font-mono text-emerald-700 font-bold border border-emerald-200">
                       {ex.default_sets} เซ็ต × {ex.default_reps} ครั้ง
                     </span>
                     {ex.default_hold_sec ? (
-                      <span className="px-2 py-0.5 rounded-lg bg-teal-950/60 font-mono text-teal-300 border border-teal-800/60 text-[10px]">
+                      <span className="px-2 py-0.5 rounded-lg bg-teal-50 font-mono text-teal-700 border border-teal-200 text-[10px] font-semibold">
                         ค้าง {ex.default_hold_sec} วิ
                       </span>
                     ) : null}
                     {ex.default_duration_sec ? (
-                      <span className="px-2 py-0.5 rounded-lg bg-amber-950/60 font-mono text-amber-300 border border-amber-800/60 text-[10px]">
+                      <span className="px-2 py-0.5 rounded-lg bg-blue-50 font-mono text-blue-700 border border-blue-200 text-[10px] font-semibold">
                         รอบละ {ex.default_duration_sec} วิ
                       </span>
                     ) : null}
                   </div>
 
                   {/* Clinical Citation & PT Adjustment Notice */}
-                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 text-[11px] space-y-1">
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] space-y-1">
                     {(ex.clinical_source || ex.source) && (
-                      <div className="text-slate-400 font-mono text-[10px] truncate" title={ex.clinical_source || ex.source || ''}>
-                        <span className="text-teal-400 font-bold">🏛️ แหล่งอ้างอิง:</span> {ex.clinical_source || ex.source}
+                      <div className="text-slate-600 font-mono text-[10px] truncate" title={ex.clinical_source || ex.source || ''}>
+                        <span className="text-blue-700 font-bold">🏛️ แหล่งอ้างอิง:</span> {ex.clinical_source || ex.source}
                       </div>
                     )}
-                    <div className="text-emerald-400/90 font-medium text-[10px] flex items-center gap-1">
+                    <div className="text-emerald-700 font-medium text-[10px] flex items-center gap-1">
                       <span>👩‍⚕️</span>
                       <span>นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-500">
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[11px] font-mono text-slate-400">
                     ระยะเวลา ~{ex.duration_seconds || ex.default_duration_sec || 30} วิ
                   </span>
 
@@ -502,7 +505,7 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                         setIsCloneMode(false);
                         setIsExerciseBuilderOpen(true);
                       }}
-                      className="px-2 py-1 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-medium flex items-center gap-1 transition"
+                      className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center gap-1 transition"
                       title="ตั้งค่า AI ตรวจจับมุม & Calibrate"
                     >
                       <Sliders className="w-3 h-3" />
@@ -516,7 +519,7 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                         setIsCloneMode(true);
                         setIsExerciseBuilderOpen(true);
                       }}
-                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1 transition"
+                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1 transition"
                       title="โคลนท่านี้เป็นท่าใหม่"
                     >
                       <Copy className="w-3 h-3" />
@@ -526,7 +529,7 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                     {/* Media Upload (Only mine) */}
                     {isMine && (
                       <label
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-teal-400 hover:bg-slate-800 cursor-pointer transition"
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer transition"
                         title="อัปโหลดรูปภาพ/วิดีโอประกอบ"
                       >
                         <Upload className="w-4 h-4" />
@@ -543,13 +546,13 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                     {isMine ? (
                       <button
                         onClick={() => handleOpenEdit(ex)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition"
                         title="แก้ไขท่ากายภาพนี้"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                     ) : (
-                      <span className="p-1.5 text-slate-600" title="ท่าส่วนกลาง แก้ไขไม่ได้">
+                      <span className="p-1.5 text-slate-300" title="ท่าส่วนกลาง แก้ไขไม่ได้">
                         <Lock className="w-4 h-4" />
                       </span>
                     )}
@@ -558,7 +561,7 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                     {isMine && (
                       <button
                         onClick={() => handleDeleteExercise(ex)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
                         title="ลบท่านี้"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -574,16 +577,16 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
 
       {/* Modal: Create Exercise */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Plus className="w-5 h-5 text-teal-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-white border border-blue-100 rounded-2xl shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-blue-600" />
                 <span>สร้างท่ากายภาพใหม่</span>
               </h3>
               <button
                 onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -591,35 +594,35 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
 
             <form onSubmit={handleCreateExercise} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">ชื่อท่ากายภาพ</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่อท่ากายภาพ</label>
                 <input
                   type="text"
                   required
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   placeholder="เช่น Quad Sets, Wall Squat, Straight Leg Raise"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">กล้ามเนื้อเป้าหมาย</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">กล้ามเนื้อเป้าหมาย</label>
                 <input
                   type="text"
                   value={formData.target_muscle}
                   onChange={(e) => setFormData({ ...formData, target_muscle: e.target.value })}
                   placeholder="เช่น Quadriceps, Hamstrings, Core, กล้ามเนื้อสะโพก"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ความยาก</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ความยาก</label>
                   <select
                     value={formData.difficulty}
                     onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as 'beginner' | 'intermediate' | 'advanced' })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   >
                     <option value="beginner">ง่าย (Beginner)</option>
                     <option value="intermediate">ปานกลาง (Intermediate)</option>
@@ -627,52 +630,52 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">เซ็ตเริ่มต้น</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">เซ็ตเริ่มต้น</label>
                   <input
                     type="number"
                     min={1}
                     max={20}
                     value={formData.default_sets}
                     onChange={(e) => setFormData({ ...formData, default_sets: parseInt(e.target.value, 10) || 1 })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ครั้งเริ่มต้น</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ครั้งเริ่มต้น</label>
                   <input
                     type="number"
                     min={1}
                     max={100}
                     value={formData.default_reps}
                     onChange={(e) => setFormData({ ...formData, default_reps: parseInt(e.target.value, 10) || 1 })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">คำแนะนำ / ข้อควรระวัง</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">คำแนะนำ / ข้อควรระวัง</label>
                 <textarea
                   rows={3}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="ระบุข้อควรระวัง เช่น อย่าเกร็งคอ, หายใจออกขณะออกแรง..."
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-white font-medium text-sm transition shadow-lg shadow-teal-500/20"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
                 >
                   {actionLoading ? 'กำลังสร้าง...' : 'สร้างท่า'}
                 </button>
@@ -684,16 +687,16 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
 
       {/* Modal: Edit Exercise */}
       {isEditModalOpen && editingExercise && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Edit className="w-5 h-5 text-teal-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-white border border-blue-100 rounded-2xl shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Edit className="w-5 h-5 text-blue-600" />
                 <span>แก้ไขท่ากายภาพ</span>
               </h3>
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -701,33 +704,33 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
 
             <form onSubmit={handleUpdateExercise} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">ชื่อท่ากายภาพ</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่อท่ากายภาพ</label>
                 <input
                   type="text"
                   required
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">กล้ามเนื้อเป้าหมาย</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">กล้ามเนื้อเป้าหมาย</label>
                 <input
                   type="text"
                   value={formData.target_muscle}
                   onChange={(e) => setFormData({ ...formData, target_muscle: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ความยาก</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ความยาก</label>
                   <select
                     value={formData.difficulty}
                     onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as 'beginner' | 'intermediate' | 'advanced' })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   >
                     <option value="beginner">ง่าย (Beginner)</option>
                     <option value="intermediate">ปานกลาง (Intermediate)</option>
@@ -735,51 +738,51 @@ export const ExerciseCatalogView: React.FC<ExerciseCatalogViewProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">เซ็ตเริ่มต้น</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">เซ็ตเริ่มต้น</label>
                   <input
                     type="number"
                     min={1}
                     max={20}
                     value={formData.default_sets}
                     onChange={(e) => setFormData({ ...formData, default_sets: parseInt(e.target.value, 10) || 1 })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">ครั้งเริ่มต้น</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">ครั้งเริ่มต้น</label>
                   <input
                     type="number"
                     min={1}
                     max={100}
                     value={formData.default_reps}
                     onChange={(e) => setFormData({ ...formData, default_reps: parseInt(e.target.value, 10) || 1 })}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">คำแนะนำ / ข้อควรระวัง</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">คำแนะนำ / ข้อควรระวัง</label>
                 <textarea
                   rows={3}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-white font-medium text-sm transition shadow-lg shadow-teal-500/20"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
                 >
                   {actionLoading ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
                 </button>

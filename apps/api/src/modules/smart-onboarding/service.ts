@@ -1177,7 +1177,7 @@ export class SmartOnboardingService {
       distance: number;
       percent: number;
     } | null = null;
-    let nearestCandidate: { name: string; hn: string; sim: number; dist: number } | null = null;
+    let nearestCandidate: { name: string; hn: string; sim: number; dist: number; percent?: number } | null = null;
 
     const isSingleUserInDb = records.length === 1;
 
@@ -1226,6 +1226,7 @@ export class SmartOnboardingService {
             hn: record.hn,
             sim: result.cosineSimilarity,
             dist: result.euclideanDistance,
+            percent: result.similarityPercentage,
           };
         }
       }
@@ -1318,7 +1319,8 @@ export class SmartOnboardingService {
         requirePin: true,
         candidateName: nearestCandidate.name,
         candidateHn: nearestCandidate.hn,
-        message: 'กรุณากรอก PIN 4 หลักเพื่อยืนยันตัวตน',
+        similarityPercentage: nearestCandidate.percent,
+        message: 'เพื่อความปลอดภัยของผู้ป่วย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก',
       };
     }
 

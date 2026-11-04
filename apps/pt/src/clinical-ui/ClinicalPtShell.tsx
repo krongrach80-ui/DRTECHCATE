@@ -300,15 +300,15 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
         }}
       />
 
-      {/* Floating Quick Launcher for Physical Cards Minigame in PT Admin */}
+      {/* Floating Quick Launcher for Physical Cards Minigame in PT Admin (Docked neatly at bottom-right) */}
       <button
         type="button"
         id="pt-physical-cards-btn"
         onClick={() => setIsPhysicalCardGameOpen(true)}
-        className="fixed bottom-6 right-6 z-40 px-4 py-2.5 rounded-2xl bg-[#063932] hover:bg-[#084c43] border border-emerald-400/40 text-emerald-100 font-bold text-xs shadow-2xl flex items-center gap-2 transition active:scale-95 cursor-pointer backdrop-blur-md"
+        className="fixed bottom-3 right-4 z-20 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 border border-white/30 text-white font-bold text-xs shadow-lg flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md opacity-90 hover:opacity-100"
         title="เปิดแบบฝึกหัดการ์ดกายภาพ (10 ข้อ/รอบ)"
       >
-        <span className="text-base">🎮</span>
+        <span className="text-sm">🎮</span>
         <span>การ์ดกายภาพ (10 ข้อ/รอบ)</span>
       </button>
 

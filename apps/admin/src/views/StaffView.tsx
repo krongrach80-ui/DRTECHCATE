@@ -405,15 +405,15 @@ export const StaffView: React.FC = () => {
       )}
 
       {/* Filter and Search Bar */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row gap-4 justify-between items-center">
+      <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 flex flex-col md:flex-row gap-3 justify-between items-center shadow-xs">
         <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="ค้นหาชื่อ, username, เบอร์โทร..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
           />
         </div>
 
@@ -421,7 +421,7 @@ export const StaffView: React.FC = () => {
           <select
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value as 'all' | 'admin' | 'pt' | 'patient')}
-            className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-300 focus:outline-none focus:border-teal-500"
+            className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
           >
             <option value="all">ทุกบทบาท (All Roles)</option>
             <option value="admin">ผู้อำนวยการ (Admin)</option>
@@ -432,7 +432,7 @@ export const StaffView: React.FC = () => {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'suspended')}
-            className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-300 focus:outline-none focus:border-teal-500"
+            className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
           >
             <option value="all">ทุกสถานะ (All Status)</option>
             <option value="active">ใช้งานปกติ (Active)</option>
@@ -442,10 +442,10 @@ export const StaffView: React.FC = () => {
       </div>
 
       {/* Staff Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-950/70 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
+          <table className="w-full text-left text-sm text-slate-700">
+            <thead className="bg-blue-50/80 text-blue-950 font-semibold text-xs uppercase tracking-wider border-b border-blue-100">
               <tr>
                 <th className="px-6 py-4 font-semibold">ชื่อ-นามสกุล</th>
                 <th className="px-6 py-4 font-semibold">Username / HN</th>
@@ -455,11 +455,11 @@ export const StaffView: React.FC = () => {
                 <th className="px-6 py-4 font-semibold text-right">การจัดการ</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="bg-white hover:bg-emerald-50/40 divide-y divide-slate-100 text-slate-800">
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-400" />
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-600" />
                     <span>กำลังโหลดรายชื่อผู้ใช้...</span>
                   </td>
                 </tr>
@@ -471,32 +471,32 @@ export const StaffView: React.FC = () => {
                 </tr>
               ) : (
                 filteredStaff.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-800/40 transition">
+                  <tr key={user.id} className="hover:bg-emerald-50/40 transition">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-300">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-bold">
                           {user.full_name?.charAt(0) || 'U'}
                         </div>
                         <div>
-                          <div className="font-medium text-white">{user.full_name?.replace(/\s*-\s*$/, '').trim() || user.full_name}</div>
-                          {user.phone && <div className="text-xs text-slate-400">{user.phone}</div>}
+                          <div className="font-semibold text-slate-900">{user.full_name?.replace(/\s*-\s*$/, '').trim() || user.full_name}</div>
+                          {user.phone && <div className="text-xs text-slate-500 font-mono">{user.phone}</div>}
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs text-slate-300">@{user.username}</td>
+                    <td className="px-6 py-4 font-mono text-xs text-blue-700 font-bold">@{user.username}</td>
                     <td className="px-6 py-4">
                       {user.role === 'admin' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/30">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
                           <Shield className="w-3 h-3" />
                           <span>ผู้อำนวยการ (Admin)</span>
                         </span>
                       ) : user.role === 'pt' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-400 border border-teal-500/30">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <UserCheck className="w-3 h-3" />
                           <span>นักกายภาพบำบัด (PT)</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                           <Users className="w-3 h-3" />
                           <span>คนไข้ (Patient)</span>
                         </span>
@@ -504,18 +504,18 @@ export const StaffView: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       {user.status === 'active' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                          <CheckCircle2 className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                           <span>ปกติ</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                          <AlertTriangle className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                          <AlertTriangle className="w-3 h-3 text-rose-600" />
                           <span>ระงับการใช้งาน</span>
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-400">
+                    <td className="px-6 py-4 text-xs text-slate-600">
                       {user.last_login_at
                         ? new Date(user.last_login_at).toLocaleString('th-TH')
                         : 'ยังไม่เคยเข้าสู่ระบบ'}
@@ -526,7 +526,7 @@ export const StaffView: React.FC = () => {
                           <button
                             onClick={() => setResetModalUser(user)}
                             title="รีเซ็ตรหัสผ่าน"
-                            className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-amber-400 hover:bg-slate-700 transition"
+                            className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
                           >
                             <KeyRound className="w-4 h-4" />
                           </button>
@@ -534,10 +534,10 @@ export const StaffView: React.FC = () => {
                         <button
                           onClick={() => handleToggleSuspend(user)}
                           title={user.status === 'suspended' ? 'ยกเลิกระงับ' : 'ระงับการใช้งาน'}
-                          className={`p-2 rounded-lg transition ${
+                          className={`p-2 rounded-lg transition cursor-pointer ${
                             user.status === 'suspended'
-                              ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                              : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                              ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
                           }`}
                         >
                           <UserX className="w-4 h-4" />
@@ -546,7 +546,7 @@ export const StaffView: React.FC = () => {
                           <button
                             onClick={() => handleDeleteStaff(user)}
                             title={`ลบ${(user.role as string) === 'patient' ? 'คนไข้' : user.role === 'pt' ? 'นักกายภาพบำบัด' : 'เจ้าหน้าที่'}ถาวร`}
-                            className="p-2 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 transition"
+                            className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -563,22 +563,22 @@ export const StaffView: React.FC = () => {
 
       {/* Multi-step Create User Wizard Modal */}
       {isWizardOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+          <div className="bg-white border border-blue-100 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl text-slate-800">
             {/* Modal Header */}
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between bg-blue-50/50">
               <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <UserPlus className="w-5 h-5 text-teal-400" />
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-emerald-600" />
                   <span>เพิ่มผู้ใช้ใหม่ (Staff / PT / คนไข้)</span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-slate-500 mt-1">
                   ขั้นตอนที่ {wizardStep} จาก {formData.role === 'admin' ? 2 : 3}
                 </p>
               </div>
               <button
                 onClick={() => setIsWizardOpen(false)}
-                className="text-slate-500 hover:text-slate-300"
+                className="text-slate-400 hover:text-slate-600 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -587,9 +587,9 @@ export const StaffView: React.FC = () => {
             {/* Wizard Steps Form */}
             <form onSubmit={handleCreateStaff} className="p-6 space-y-5">
               {errorMsg && (
-                <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs sm:text-sm flex items-center justify-between">
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs sm:text-sm flex items-center justify-between">
                   <span>{errorMsg}</span>
-                  <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-white ml-2">
+                  <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-700 ml-2">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -855,35 +855,35 @@ export const StaffView: React.FC = () => {
 
       {/* Reset Password Modal */}
       {resetModalUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <KeyRound className="w-5 h-5 text-amber-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white border border-blue-100 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-amber-500" />
                 <span>รีเซ็ตรหัสผ่านเจ้าหน้าที่</span>
               </h3>
               <button
                 onClick={() => setResetModalUser(null)}
-                className="text-slate-500 hover:text-slate-300"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               กำลังรีเซ็ตรหัสผ่านสำหรับ{' '}
-              <strong className="text-white">{resetModalUser.full_name}</strong> (@
+              <strong className="text-slate-900">{resetModalUser.full_name}</strong> (@
               {resetModalUser.username}) การดำเนินการนี้จะบังคับล็อกเอาต์เซสชันที่มีอยู่ทั้งหมดทันที
             </p>
 
             {resetSuccessMessage ? (
-              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">
                 {resetSuccessMessage}
               </div>
             ) : (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     รหัสผ่านใหม่ (ปล่อยว่างเพื่อสุ่มรหัสผ่านปลอดภัยอัตโนมัติ)
                   </label>
                   <input
@@ -891,7 +891,7 @@ export const StaffView: React.FC = () => {
                     placeholder="อย่างน้อย 12 ตัวอักษร"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-amber-500"
                   />
                 </div>
 
@@ -899,7 +899,7 @@ export const StaffView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setResetModalUser(null)}
-                    className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 text-sm font-medium"
+                    className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-semibold transition"
                   >
                     ยกเลิก
                   </button>
@@ -907,7 +907,7 @@ export const StaffView: React.FC = () => {
                     type="button"
                     onClick={handleResetPassword}
                     disabled={actionLoading}
-                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium shadow-lg shadow-amber-950/40 disabled:opacity-50"
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold shadow-md shadow-amber-950/20 disabled:opacity-50 transition active:scale-95"
                   >
                     ยืนยันรีเซ็ตรหัสผ่าน
                   </button>

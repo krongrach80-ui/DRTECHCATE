@@ -42,9 +42,9 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
   onToggleMobileMenu,
 }) => {
   return (
-    <header className="h-20 bg-white border-b border-slate-200/90 px-4 md:px-8 flex items-center justify-between shadow-sm shrink-0 z-20">
+    <header className="min-h-20 py-2.5 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs px-4 md:px-8 flex items-center justify-between gap-4 shrink-0 z-20">
       {/* Left Title with English Subtitle & Mobile Hamburger */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 shrink-0">
         {onToggleMobileMenu && (
           <button
             type="button"
@@ -67,7 +67,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
       </div>
 
       {/* Right Action Bar */}
-      <div className="flex items-center gap-3.5">
+      <div className="flex items-center gap-2.5 sm:gap-3.5 flex-wrap justify-end">
         {/* Trilingual Language Switcher (zh-CN, th-TH, en-US) */}
         <LanguageSwitcher />
 
