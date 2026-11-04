@@ -113,8 +113,11 @@ export interface ExerciseRecord {
   duration_seconds?: number;
   difficulty: 'beginner' | 'intermediate' | 'advanced' | 'easy' | 'medium' | 'hard' | string;
   created_by?: string;
+  calibration_notes?: string | null;
+  is_active?: boolean;
   detection_config?: any | null;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface MinigameRecord {
@@ -1929,48 +1932,212 @@ export class ApiClient {
           }
         }
 
-        // 7.2 Handle GET /exercises
-        try {
-          const supaRes = await fetch(
-            `${DEFAULT_SUPABASE_URL}/rest/v1/exercises?select=*&is_active=neq.false&order=created_at.desc&limit=50`,
-            {
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-              },
-            }
-          );
-          if (supaRes.ok) {
-            let list = await supaRes.json();
-            list = Array.isArray(list) ? list.filter((e: any) => e.is_active !== false) : [];
-            const hasPendulum = list.some((e: any) => e.title?.toLowerCase().includes('pendulum') || e.title?.includes('แกว่งแขน'));
-            if (!hasPendulum) {
-              list.unshift({
-                id: 'e1000000-0000-0000-0000-000000000001',
-                title: 'Shoulder Pendulum (แกว่งแขนวงกลมผ่อนคลายหัวไหล่)',
-                description: 'โน้มลำตัวไปข้างหน้า ปล่อยแขนห้อยลงตามแรงโน้มถ่วง และแกว่งเป็นวงกลมเบาๆ เพื่อผ่อนคลายข้อต่อและเพิ่มการไหลเวียนเลือด',
-                target_joint: 'shoulder',
-                difficulty: 'easy',
-                detection_config: {
-                  version: '1.0',
-                  evaluationMode: 'pendulum_circular',
-                  side: 'right',
-                  targetJoint: 'shoulder',
-                  cameraGuide: {
-                    recommendedView: 'side_45',
-                    recommendedDistanceMeters: [1.5, 2.5],
-                    instructionTextTh: 'กรุณายืนหันข้างเฉียง 45° ถึง 90° ระยะห่าง 1.5 - 2.5 เมตรจากกล้อง',
-                  },
-                  defaultPrescription: { repsPerSet: 10, totalSets: 3, restBetweenSetsSec: 30 },
-                  safetyContraindications: { stopOnPainMessageTh: 'หากเจ็บให้หยุดทันที', maxSafeAngleCapDeg: 90 },
-                },
-                is_active: true,
-              });
-            }
-            return { ok: true, data: list } as T;
+        // 7.2 Handle POST /exercises
+        if (options.method && options.method.toUpperCase() === 'POST') {
+          const body = parseSafeBody(options.body);
+          const title = (body.title || '').trim();
+          if (!title) {
+            throw new Error('กรุณาระบุชื่อท่ากายภาพ');
           }
-        } catch {
-          // ignore
+
+          const nowIso = new Date().toISOString();
+          const targetId =
+            body.id ||
+            (typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `e-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+
+          let calNotes = body.calibration_notes || null;
+          if (body.detection_config && !calNotes) {
+            calNotes =
+              typeof body.detection_config === 'string'
+                ? body.detection_config
+                : JSON.stringify(body.detection_config);
+          }
+
+          const insertPayload: Record<string, any> = {
+            id: targetId,
+            title: title,
+            description: body.description || null,
+            target_joint: body.target_joint || 'knee',
+            suitable_for: body.suitable_for || null,
+            warnings: body.warnings || null,
+            default_sets: Number(body.default_sets) || 3,
+            default_reps: Number(body.default_reps) || 10,
+            difficulty: body.difficulty || 'beginner',
+            image_path: body.image_path || null,
+            video_url: body.video_url || null,
+            thumbnail_url: body.thumbnail_url || null,
+            category: body.category || 'general',
+            target_muscle: body.target_muscle || null,
+            rom_threshold_min: body.rom_threshold_min !== undefined ? body.rom_threshold_min : null,
+            rom_threshold_max: body.rom_threshold_max !== undefined ? body.rom_threshold_max : null,
+            calibration_notes: calNotes,
+            created_by: body.created_by || this.getUserProfile()?.id || 'd1000000-0000-0000-0000-000000000001',
+            is_active: true,
+            created_at: nowIso,
+            updated_at: nowIso,
+          };
+
+          const createRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/exercises`, {
+            method: 'POST',
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=representation',
+            },
+            body: JSON.stringify(insertPayload),
+          });
+
+          if (!createRes.ok) {
+            const errData = await createRes.json().catch(() => ({}));
+            throw new Error(errData.message || errData.error_description || 'ไม่สามารถบันทึกท่ากายภาพลงฐานข้อมูลได้');
+          }
+
+          const createdRows = await createRes.json().catch(() => []);
+          const created = Array.isArray(createdRows) && createdRows.length > 0 ? createdRows[0] : insertPayload;
+          if (created.calibration_notes && !created.detection_config) {
+            try {
+              if (created.calibration_notes.startsWith('{') || created.calibration_notes.startsWith('[')) {
+                created.detection_config = JSON.parse(created.calibration_notes);
+              }
+            } catch {
+              // ignore
+            }
+          }
+          return created as T;
+        }
+
+        // 7.3 Handle PATCH / PUT /exercises/:id
+        if (options.method && (options.method.toUpperCase() === 'PATCH' || options.method.toUpperCase() === 'PUT')) {
+          const parts = endpointPath.split('?')[0].split('/');
+          const targetExerciseId = parts[parts.length - 1];
+          if (targetExerciseId && targetExerciseId !== 'exercises') {
+            const body = parseSafeBody(options.body);
+            const nowIso = new Date().toISOString();
+
+            let calNotes = body.calibration_notes;
+            if (body.detection_config !== undefined && calNotes === undefined) {
+              calNotes =
+                typeof body.detection_config === 'string'
+                  ? body.detection_config
+                  : JSON.stringify(body.detection_config);
+            }
+
+            const updatePayload: Record<string, any> = {
+              updated_at: nowIso,
+            };
+            if (body.title !== undefined) updatePayload.title = String(body.title).trim();
+            if (body.description !== undefined) updatePayload.description = body.description;
+            if (body.target_joint !== undefined) updatePayload.target_joint = body.target_joint;
+            if (body.suitable_for !== undefined) updatePayload.suitable_for = body.suitable_for;
+            if (body.warnings !== undefined) updatePayload.warnings = body.warnings;
+            if (body.default_sets !== undefined) updatePayload.default_sets = Number(body.default_sets);
+            if (body.default_reps !== undefined) updatePayload.default_reps = Number(body.default_reps);
+            if (body.difficulty !== undefined) updatePayload.difficulty = body.difficulty;
+            if (body.image_path !== undefined) updatePayload.image_path = body.image_path;
+            if (body.video_url !== undefined) updatePayload.video_url = body.video_url;
+            if (body.thumbnail_url !== undefined) updatePayload.thumbnail_url = body.thumbnail_url;
+            if (body.category !== undefined) updatePayload.category = body.category;
+            if (body.target_muscle !== undefined) updatePayload.target_muscle = body.target_muscle;
+            if (body.rom_threshold_min !== undefined) updatePayload.rom_threshold_min = body.rom_threshold_min;
+            if (body.rom_threshold_max !== undefined) updatePayload.rom_threshold_max = body.rom_threshold_max;
+            if (calNotes !== undefined) updatePayload.calibration_notes = calNotes;
+            if (body.is_active !== undefined) updatePayload.is_active = body.is_active;
+
+            const patchRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/exercises?id=eq.${encodeURIComponent(targetExerciseId)}`,
+              {
+                method: 'PATCH',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json',
+                  Prefer: 'return=representation',
+                },
+                body: JSON.stringify(updatePayload),
+              }
+            );
+
+            if (!patchRes.ok) {
+              const errData = await patchRes.json().catch(() => ({}));
+              throw new Error(errData.message || 'ไม่สามารถแก้ไขท่ากายภาพได้');
+            }
+
+            const updatedRows = await patchRes.json().catch(() => []);
+            const updated = Array.isArray(updatedRows) && updatedRows.length > 0 ? updatedRows[0] : updatePayload;
+            if (updated.calibration_notes && !updated.detection_config) {
+              try {
+                if (updated.calibration_notes.startsWith('{') || updated.calibration_notes.startsWith('[')) {
+                  updated.detection_config = JSON.parse(updated.calibration_notes);
+                }
+              } catch {
+                // ignore
+              }
+            }
+            return updated as T;
+          }
+        }
+
+        // 7.4 Handle GET /exercises
+        if (!options.method || options.method.toUpperCase() === 'GET') {
+          try {
+            const supaRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/exercises?select=*&is_active=neq.false&order=created_at.desc&limit=50`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            );
+            if (supaRes.ok) {
+              let list = await supaRes.json();
+              list = Array.isArray(list) ? list.filter((e: any) => e.is_active !== false) : [];
+              list.forEach((e: any) => {
+                if (e.calibration_notes && !e.detection_config) {
+                  try {
+                    if (e.calibration_notes.startsWith('{') || e.calibration_notes.startsWith('[')) {
+                      e.detection_config = JSON.parse(e.calibration_notes);
+                    }
+                  } catch {
+                    // ignore
+                  }
+                }
+              });
+              const hasPendulum = list.some(
+                (e: any) => e.title?.toLowerCase().includes('pendulum') || e.title?.includes('แกว่งแขน')
+              );
+              if (!hasPendulum) {
+                list.unshift({
+                  id: 'e1000000-0000-0000-0000-000000000001',
+                  title: 'Shoulder Pendulum (แกว่งแขนวงกลมผ่อนคลายหัวไหล่)',
+                  description:
+                    'โน้มลำตัวไปข้างหน้า ปล่อยแขนห้อยลงตามแรงโน้มถ่วง และแกว่งเป็นวงกลมเบาๆ เพื่อผ่อนคลายข้อต่อและเพิ่มการไหลเวียนเลือด',
+                  target_joint: 'shoulder',
+                  difficulty: 'easy',
+                  detection_config: {
+                    version: '1.0',
+                    evaluationMode: 'pendulum_circular',
+                    side: 'right',
+                    targetJoint: 'shoulder',
+                    cameraGuide: {
+                      recommendedView: 'side_45',
+                      recommendedDistanceMeters: [1.5, 2.5],
+                      instructionTextTh: 'กรุณายืนหันข้างเฉียง 45° ถึง 90° ระยะห่าง 1.5 - 2.5 เมตรจากกล้อง',
+                    },
+                    defaultPrescription: { repsPerSet: 10, totalSets: 3, restBetweenSetsSec: 30 },
+                    safetyContraindications: { stopOnPainMessageTh: 'หากเจ็บให้หยุดทันที', maxSafeAngleCapDeg: 90 },
+                  },
+                  is_active: true,
+                });
+              }
+              return { ok: true, data: list } as T;
+            }
+          } catch {
+            // ignore
+          }
         }
       }
 
@@ -2273,7 +2440,16 @@ export class ApiClient {
 
       // 15. Catch-all safety for GET operations in static edge mode to return valid empty container
       return { ok: true, data: [] } as T;
-    } catch {
+    } catch (fallbackErr: any) {
+      if (
+        fallbackErr instanceof Error &&
+        (fallbackErr.message.includes('ชื่อ') ||
+          fallbackErr.message.includes('title') ||
+          fallbackErr.message.includes('ไม่สามารถ') ||
+          fallbackErr.message.includes('required'))
+      ) {
+        throw fallbackErr;
+      }
       // In static edge mode, even if fallback encountered an error, provide a valid response for non-GET
       if (options.method && options.method.toUpperCase() !== 'GET') {
         return { ok: true, message: 'ดำเนินการสำเร็จ (Safe Fallback)' } as T;
@@ -2865,9 +3041,13 @@ export class ApiClient {
     },
 
     create: async (data: Partial<ExerciseRecord>) => {
+      const title = (data?.title || '').trim();
+      if (!title) {
+        throw new Error('กรุณาระบุชื่อท่ากายภาพ');
+      }
       return this.request<ExerciseRecord>('/exercises', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, title }),
       });
     },
 

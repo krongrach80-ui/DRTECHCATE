@@ -151,6 +151,7 @@ export const LibraryView: React.FC = () => {
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [exerciseModalError, setExerciseModalError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
 
   const fetchData = async () => {
@@ -190,15 +191,61 @@ export const LibraryView: React.FC = () => {
 
   const handleCreateExercise = async (e: React.FormEvent) => {
     e.preventDefault();
+    setExerciseModalError(null);
+    setErrorMsg(null);
+
+    const title = (exerciseFormData.title || '').trim();
+    if (!title) {
+      setExerciseModalError('กรุณากรอกชื่อท่ากายภาพ');
+      return;
+    }
+
+    // Check duplicate title against existing active exercises
+    const isDuplicate = exercises.some(
+      (ex) => ex.title.trim().toLowerCase() === title.toLowerCase()
+    );
+    if (isDuplicate) {
+      setExerciseModalError(`มีท่ากายภาพชื่อ "${title}" ในระบบแล้ว กรุณาใช้ชื่ออื่น`);
+      return;
+    }
+
+    const sets = Number(exerciseFormData.default_sets);
+    const reps = Number(exerciseFormData.default_reps);
+    if (isNaN(sets) || sets < 1) {
+      setExerciseModalError('จำนวนเซ็ตเริ่มต้นต้องเป็นตัวเลขตั้งแต่ 1 ขึ้นไป');
+      return;
+    }
+    if (isNaN(reps) || reps < 1) {
+      setExerciseModalError('จำนวนครั้งต่อเซ็ตต้องเป็นตัวเลขตั้งแต่ 1 ขึ้นไป');
+      return;
+    }
+
     try {
       setActionLoading(true);
-      const created = await defaultApiClient.exercises.create(exerciseFormData);
+      const payload = {
+        ...exerciseFormData,
+        title,
+        default_sets: sets,
+        default_reps: reps,
+      };
+      const created = await defaultApiClient.exercises.create(payload);
       if (selectedMediaFile && created.id) {
-        await defaultApiClient.exercises.uploadMedia(created.id, selectedMediaFile);
+        try {
+          await defaultApiClient.exercises.uploadMedia(created.id, selectedMediaFile);
+        } catch {
+          // Non-blocking media error
+        }
       }
-      setSuccessMsg(`เพิ่มท่ากายภาพ "${created.title}" สำเร็จเรียบร้อย`);
+
+      const exerciseTitle = created.title || title;
+      setSuccessMsg(`เพิ่มท่ากายภาพ "${exerciseTitle}" สำเร็จเรียบร้อย`);
+
+      // Immediately prepend into state so tab count and card update instantaneously
+      setExercises((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+
       setIsExerciseModalOpen(false);
       setSelectedMediaFile(null);
+      setExerciseModalError(null);
       setExerciseFormData({
         title: '',
         description: '',
@@ -209,8 +256,10 @@ export const LibraryView: React.FC = () => {
         default_reps: 10,
         difficulty: 'beginner',
       });
-      await fetchData();
+      fetchData().catch(() => {});
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ไม่สามารถเพิ่มท่ากายภาพได้';
+      setExerciseModalError(msg);
       handleLibraryError(err, 'ไม่สามารถเพิ่มท่ากายภาพได้');
     } finally {
       setActionLoading(false);
@@ -407,7 +456,10 @@ export const LibraryView: React.FC = () => {
                 <span>Smart Exercise Upload</span>
               </button>
               <button
-                onClick={() => setIsExerciseModalOpen(true)}
+                onClick={() => {
+                  setExerciseModalError(null);
+                  setIsExerciseModalOpen(true);
+                }}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
               >
                 <Plus className="w-4 h-4" />
@@ -827,6 +879,22 @@ export const LibraryView: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {exerciseModalError && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{exerciseModalError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExerciseModalError(null)}
+                  className="text-rose-400 hover:text-rose-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleCreateExercise} className="space-y-4">
               <div>

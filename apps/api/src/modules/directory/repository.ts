@@ -93,25 +93,35 @@ export class DirectoryRepository implements IDirectoryRepository {
 
     try {
       const adminClient = getAdminClient();
+      let calNotes = (input as any).calibration_notes || null;
+      if (input.detection_config && !calNotes) {
+        calNotes =
+          typeof input.detection_config === 'string'
+            ? input.detection_config
+            : JSON.stringify(input.detection_config);
+      }
+
+      const insertPayload: Record<string, any> = {
+        id,
+        title: input.title.trim(),
+        image_path: input.image_path || null,
+        description: input.description || null,
+        target_joint: input.target_joint || 'knee',
+        suitable_for: input.suitable_for || null,
+        warnings: input.warnings || null,
+        default_sets: input.default_sets ?? 3,
+        default_reps: input.default_reps ?? 10,
+        difficulty: input.difficulty ?? 'beginner',
+        calibration_notes: calNotes,
+        created_by: createdBy || 'd1000000-0000-0000-0000-000000000001',
+        is_active: true,
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+
       const { data, error } = await adminClient
         .from('exercises')
-        .insert({
-          id,
-          title: input.title,
-          image_path: input.image_path || null,
-          description: input.description || null,
-          target_joint: input.target_joint || null,
-          suitable_for: input.suitable_for || null,
-          warnings: input.warnings || null,
-          default_sets: input.default_sets ?? 3,
-          default_reps: input.default_reps ?? 10,
-          difficulty: input.difficulty ?? 'beginner',
-          detection_config: input.detection_config || null,
-          created_by: createdBy,
-          is_active: true,
-          created_at: nowIso,
-          updated_at: nowIso,
-        })
+        .insert(insertPayload)
         .select('*')
         .single();
 
@@ -120,7 +130,17 @@ export class DirectoryRepository implements IDirectoryRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return data as ExerciseRecord;
+      const record = data as ExerciseRecord;
+      if (record.calibration_notes && !record.detection_config) {
+        try {
+          if (record.calibration_notes.startsWith('{') || record.calibration_notes.startsWith('[')) {
+            record.detection_config = JSON.parse(record.calibration_notes);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return record;
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, input }, 'Unexpected error in createExercise');
@@ -195,12 +215,27 @@ export class DirectoryRepository implements IDirectoryRepository {
   async updateExercise(id: string, input: UpdateExerciseInput): Promise<ExerciseRecord> {
     try {
       const adminClient = getAdminClient();
+      const { detection_config, ...safeInput } = input as any;
+
+      let calNotes = safeInput.calibration_notes;
+      if (detection_config !== undefined && calNotes === undefined) {
+        calNotes =
+          typeof detection_config === 'string'
+            ? detection_config
+            : JSON.stringify(detection_config);
+      }
+
+      const updatePayload: Record<string, any> = {
+        ...safeInput,
+        updated_at: new Date().toISOString(),
+      };
+      if (calNotes !== undefined) {
+        updatePayload.calibration_notes = calNotes;
+      }
+
       const { data, error } = await adminClient
         .from('exercises')
-        .update({
-          ...input,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', id)
         .select('*')
         .maybeSingle();
@@ -210,7 +245,17 @@ export class DirectoryRepository implements IDirectoryRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return data as ExerciseRecord;
+      const record = data as ExerciseRecord;
+      if (record.calibration_notes && !record.detection_config) {
+        try {
+          if (record.calibration_notes.startsWith('{') || record.calibration_notes.startsWith('[')) {
+            record.detection_config = JSON.parse(record.calibration_notes);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return record;
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, id }, 'Unexpected error in updateExercise');

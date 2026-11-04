@@ -4466,28 +4466,42 @@ var init_repository7 = __esm({
         const id = (0, import_crypto6.randomUUID)();
         try {
           const adminClient = getAdminClient();
-          const { data, error } = await adminClient.from("exercises").insert({
+          let calNotes = input.calibration_notes || null;
+          if (input.detection_config && !calNotes) {
+            calNotes = typeof input.detection_config === "string" ? input.detection_config : JSON.stringify(input.detection_config);
+          }
+          const insertPayload = {
             id,
-            title: input.title,
+            title: input.title.trim(),
             image_path: input.image_path || null,
             description: input.description || null,
-            target_joint: input.target_joint || null,
+            target_joint: input.target_joint || "knee",
             suitable_for: input.suitable_for || null,
             warnings: input.warnings || null,
             default_sets: input.default_sets ?? 3,
             default_reps: input.default_reps ?? 10,
             difficulty: input.difficulty ?? "beginner",
-            detection_config: input.detection_config || null,
-            created_by: createdBy,
+            calibration_notes: calNotes,
+            created_by: createdBy || "d1000000-0000-0000-0000-000000000001",
             is_active: true,
             created_at: nowIso,
             updated_at: nowIso
-          }).select("*").single();
+          };
+          const { data, error } = await adminClient.from("exercises").insert(insertPayload).select("*").single();
           if (error || !data) {
             logger.error({ error, input }, "Database error creating exercise");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
           }
-          return data;
+          const record = data;
+          if (record.calibration_notes && !record.detection_config) {
+            try {
+              if (record.calibration_notes.startsWith("{") || record.calibration_notes.startsWith("[")) {
+                record.detection_config = JSON.parse(record.calibration_notes);
+              }
+            } catch {
+            }
+          }
+          return record;
         } catch (err) {
           if (err instanceof AppError) throw err;
           logger.error({ err, input }, "Unexpected error in createExercise");
@@ -4554,15 +4568,33 @@ var init_repository7 = __esm({
       async updateExercise(id, input) {
         try {
           const adminClient = getAdminClient();
-          const { data, error } = await adminClient.from("exercises").update({
-            ...input,
+          const { detection_config, ...safeInput } = input;
+          let calNotes = safeInput.calibration_notes;
+          if (detection_config !== void 0 && calNotes === void 0) {
+            calNotes = typeof detection_config === "string" ? detection_config : JSON.stringify(detection_config);
+          }
+          const updatePayload = {
+            ...safeInput,
             updated_at: (/* @__PURE__ */ new Date()).toISOString()
-          }).eq("id", id).select("*").maybeSingle();
+          };
+          if (calNotes !== void 0) {
+            updatePayload.calibration_notes = calNotes;
+          }
+          const { data, error } = await adminClient.from("exercises").update(updatePayload).eq("id", id).select("*").maybeSingle();
           if (error || !data) {
             logger.error({ error, id, input }, "Database error updating exercise");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
           }
-          return data;
+          const record = data;
+          if (record.calibration_notes && !record.detection_config) {
+            try {
+              if (record.calibration_notes.startsWith("{") || record.calibration_notes.startsWith("[")) {
+                record.detection_config = JSON.parse(record.calibration_notes);
+              }
+            } catch {
+            }
+          }
+          return record;
         } catch (err) {
           if (err instanceof AppError) throw err;
           logger.error({ err, id }, "Unexpected error in updateExercise");

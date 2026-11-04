@@ -57,6 +57,7 @@ export interface ExerciseRecord {
   difficulty: ExerciseDifficulty;
   created_by: string;
   is_active: boolean;
+  calibration_notes?: string | null;
   detection_config?: any | null;
   created_at: string;
   updated_at: string;
