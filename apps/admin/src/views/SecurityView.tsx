@@ -31,19 +31,21 @@ interface SecurityViewProps {
 }
 
 const formatSafeThaiDateTime = (raw?: string | null): string => {
-  if (!raw) return 'เมื่อสักครู่ (วันนี้)';
+  if (!raw) return '-';
   const d = new Date(raw);
-  if (isNaN(d.getTime())) return 'เมื่อสักครู่ (วันนี้)';
+  if (isNaN(d.getTime())) return '-';
   return (
     d.toLocaleDateString('th-TH', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
+      timeZone: 'Asia/Bangkok',
     }) +
     ' • ' +
     d.toLocaleTimeString('th-TH', {
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: 'Asia/Bangkok',
     }) +
     ' น.'
   );
@@ -303,7 +305,19 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
     }
   };
 
-  const unhandledCalls = staffCalls.filter((c) => !c.handled_at);
+  // Deduplicate staff calls by unique id
+  const deduplicatedCalls = React.useMemo(() => {
+    const seen = new Set<string>();
+    return staffCalls.filter((c) => {
+      const callId = c.id || (c as any).call_id;
+      if (!callId) return true;
+      if (seen.has(callId)) return false;
+      seen.add(callId);
+      return true;
+    });
+  }, [staffCalls]);
+
+  const unhandledCalls = deduplicatedCalls.filter((c) => !c.handled_at);
 
   return (
     <div className="p-8 space-y-6">
@@ -477,14 +491,14 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
                 </tr>
               </thead>
               <tbody className="bg-white hover:bg-emerald-50/40 divide-y divide-slate-100 text-slate-800">
-                {staffCalls.length === 0 ? (
+                {deduplicatedCalls.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                       ไม่มีประวัติคำเรียกเจ้าหน้าที่
                     </td>
                   </tr>
                 ) : (
-                  staffCalls.map((call) => (
+                  deduplicatedCalls.map((call) => (
                     <tr key={call.id} className="hover:bg-emerald-50/40 transition">
                       <td className="px-6 py-4 text-xs font-mono text-slate-600 whitespace-nowrap">
                         {formatSafeThaiDateTime((call as any).created_at || (call as any).timestamp || (call as any).requested_at)}

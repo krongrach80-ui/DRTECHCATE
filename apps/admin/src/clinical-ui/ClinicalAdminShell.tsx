@@ -63,7 +63,15 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
     if (!currentUser) return;
     try {
       const calls = await defaultApiClient.kiosk.listStaffCalls();
-      setStaffCalls(calls);
+      const seen = new Set<string>();
+      const deduped = (calls || []).filter((c) => {
+        const id = c.id || (c as any).call_id;
+        if (!id) return true;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setStaffCalls(deduped);
     } catch {
       // non-blocking
     }
@@ -71,7 +79,15 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
 
   useEffect(() => {
     if (initialStaffCalls) {
-      setStaffCalls(initialStaffCalls);
+      const seen = new Set<string>();
+      const deduped = initialStaffCalls.filter((c) => {
+        const id = c.id || (c as any).call_id;
+        if (!id) return true;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setStaffCalls(deduped);
     } else {
       fetchCalls();
     }

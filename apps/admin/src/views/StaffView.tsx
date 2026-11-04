@@ -564,7 +564,23 @@ export const StaffView: React.FC = () => {
       {/* Multi-step Create User Wizard Modal */}
       {isWizardOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
-          <div className="bg-white border border-blue-100 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl text-slate-800">
+          <div
+            className="bg-white border border-blue-100 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl text-slate-800"
+            style={{
+              /* Scoped CSS Variables สำหรับ Modal สร้างผู้ใช้ใหม่ ให้ผ่านเกณฑ์ WCAG 2.1 AA/AAA ทุกคู่สี */
+              ['--modal-label' as any]: '#1e293b',          /* ป้ายชื่อช่อง: slate-800 (Contrast 14.6:1 บนพื้นขาว) */
+              ['--modal-heading-teal' as any]: '#115e59',   /* หัวข้อเขียวมิ้นต์เข้ม: teal-800 (Contrast 7.6:1 บนพื้นขาว) */
+              ['--modal-heading-blue' as any]: '#1e40af',   /* หัวข้อน้ำเงินเข้ม: blue-800 (Contrast 8.7:1 บนพื้นขาว) */
+              ['--modal-input-bg' as any]: '#f8fafc',       /* พื้นหลังช่องกรอก: slate-50 สะอาดตา */
+              ['--modal-input-text' as any]: '#0f172a',     /* ตัวอักษรที่พิมพ์: slate-900 (Contrast 17.1:1 บน slate-50) */
+              ['--modal-placeholder' as any]: '#64748b',    /* ตัวอักษรตัวอย่าง: slate-500 (Contrast 4.6:1 บน slate-50) */
+              ['--modal-input-border' as any]: '#64748b',   /* เส้นขอบช่องกรอก: slate-500 (Contrast 4.54:1 ผ่านเกณฑ์ Non-text Contrast >= 3:1) */
+              ['--modal-card-unselected-bg' as any]: '#ffffff',
+              ['--modal-card-unselected-border' as any]: '#e2e8f0',
+              ['--modal-card-unselected-text' as any]: '#0f172a',
+              ['--modal-card-unselected-desc' as any]: '#475569',
+            }}
+          >
             {/* Modal Header */}
             <div className="p-6 border-b border-slate-200 flex items-center justify-between bg-blue-50/50">
               <div>
@@ -596,12 +612,12 @@ export const StaffView: React.FC = () => {
               )}
               {wizardStep === 1 && (
                 <div className="space-y-4">
-                  <h4 className="text-sm sm:text-base font-bold text-teal-300 tracking-normal">
+                  <h4 className="text-sm sm:text-base font-bold text-teal-800 tracking-normal">
                     1. ข้อมูลบัญชีผู้ใช้
                   </h4>
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
-                      ชื่อผู้ใช้ (Username) *
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      ชื่อผู้ใช้ (Username) <span className="text-rose-600 font-bold ml-0.5">*</span>
                     </label>
                     <input
                       type="text"
@@ -609,13 +625,13 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น pt.somchai หรือ somchai"
                       value={formData.username}
                       onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
+                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
-                      รหัสผ่านเริ่มต้น (ขั้นต่ำ 12 ตัวอักษร) *
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      รหัสผ่านเริ่มต้น (ขั้นต่ำ 12 ตัวอักษร) <span className="text-rose-600 font-bold ml-0.5">*</span>
                     </label>
                     <input
                       type="password"
@@ -624,13 +640,13 @@ export const StaffView: React.FC = () => {
                       placeholder="••••••••••••"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
+                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
-                      ชื่อ - นามสกุลจริง *
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      ชื่อ - นามสกุลจริง <span className="text-rose-600 font-bold ml-0.5">*</span>
                     </label>
                     <input
                       type="text"
@@ -638,12 +654,12 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น กภ. วิภาวี สุขใจ หรือ นายสมชาย ใจดี"
                       value={formData.full_name}
                       onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
+                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
                       เบอร์โทรศัพท์
                     </label>
                     <input
@@ -651,7 +667,7 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น 0812345678"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
+                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
                 </div>
@@ -659,7 +675,7 @@ export const StaffView: React.FC = () => {
 
               {wizardStep === 2 && (
                 <div className="space-y-4">
-                  <h4 className="text-sm sm:text-base font-bold text-teal-300 tracking-normal">
+                  <h4 className="text-sm sm:text-base font-bold text-teal-800 tracking-normal">
                     2. กำหนดบทบาทและสิทธิ์การใช้งาน
                   </h4>
 
@@ -667,48 +683,60 @@ export const StaffView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, role: 'pt' })}
-                      className={`p-3.5 rounded-2xl border text-left transition ${
+                      className={`p-3.5 rounded-2xl border-2 text-left transition cursor-pointer ${
                         formData.role === 'pt'
-                          ? 'bg-teal-600/20 border-teal-500 text-teal-300 ring-2 ring-teal-500/30'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                          ? 'bg-teal-50 border-teal-600 ring-2 ring-teal-600/20 shadow-xs'
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/70'
                       }`}
                     >
-                      <UserCheck className="w-5 h-5 mb-1.5 text-teal-400" />
-                      <div className="font-bold text-xs sm:text-sm text-white">นักกายภาพบำบัด (PT)</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">ดูแลเคส สั่งคอร์ส และลงเวชระเบียน</div>
+                      <UserCheck className={`w-5 h-5 mb-1.5 ${formData.role === 'pt' ? 'text-teal-700' : 'text-teal-600'}`} />
+                      <div className={`font-bold text-xs sm:text-sm ${formData.role === 'pt' ? 'text-teal-950 font-black' : 'text-slate-900'}`}>
+                        นักกายภาพบำบัด (PT)
+                      </div>
+                      <div className={`text-[11px] mt-0.5 ${formData.role === 'pt' ? 'text-teal-800 font-medium' : 'text-slate-600'}`}>
+                        ดูแลเคส สั่งคอร์ส และลงเวชระเบียน
+                      </div>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, role: 'admin' })}
-                      className={`p-3.5 rounded-2xl border text-left transition ${
+                      className={`p-3.5 rounded-2xl border-2 text-left transition cursor-pointer ${
                         formData.role === 'admin'
-                          ? 'bg-purple-600/20 border-purple-500 text-purple-300 ring-2 ring-purple-500/30'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                          ? 'bg-purple-50 border-purple-600 ring-2 ring-purple-600/20 shadow-xs'
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/70'
                       }`}
                     >
-                      <Shield className="w-5 h-5 mb-1.5 text-purple-400" />
-                      <div className="font-bold text-xs sm:text-sm text-white">ผู้อำนวยการ (Admin)</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">สิทธิ์สูงสุด จัดการระบบและตรวจสอบ</div>
+                      <Shield className={`w-5 h-5 mb-1.5 ${formData.role === 'admin' ? 'text-purple-700' : 'text-purple-600'}`} />
+                      <div className={`font-bold text-xs sm:text-sm ${formData.role === 'admin' ? 'text-purple-950 font-black' : 'text-slate-900'}`}>
+                        ผู้อำนวยการ (Admin)
+                      </div>
+                      <div className={`text-[11px] mt-0.5 ${formData.role === 'admin' ? 'text-purple-800 font-medium' : 'text-slate-600'}`}>
+                        สิทธิ์สูงสุด จัดการระบบและตรวจสอบ
+                      </div>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, role: 'patient' })}
-                      className={`p-3.5 rounded-2xl border text-left transition ${
+                      className={`p-3.5 rounded-2xl border-2 text-left transition cursor-pointer ${
                         formData.role === 'patient'
-                          ? 'bg-blue-600/20 border-blue-500 text-blue-300 ring-2 ring-blue-500/30'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                          ? 'bg-blue-50 border-blue-600 ring-2 ring-blue-600/20 shadow-xs'
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/70'
                       }`}
                     >
-                      <Users className="w-5 h-5 mb-1.5 text-blue-400" />
-                      <div className="font-bold text-xs sm:text-sm text-white">คนไข้ (Patient)</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">ผู้ป่วยรับการฝึกฟื้นฟูกายภาพบำบัด</div>
+                      <Users className={`w-5 h-5 mb-1.5 ${formData.role === 'patient' ? 'text-blue-700' : 'text-blue-600'}`} />
+                      <div className={`font-bold text-xs sm:text-sm ${formData.role === 'patient' ? 'text-blue-950 font-black' : 'text-slate-900'}`}>
+                        คนไข้ (Patient)
+                      </div>
+                      <div className={`text-[11px] mt-0.5 ${formData.role === 'patient' ? 'text-blue-800 font-medium' : 'text-slate-600'}`}>
+                        ผู้ป่วยรับการฝึกฟื้นฟูกายภาพบำบัด
+                      </div>
                     </button>
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
                       ประวัติโดยย่อ / ข้อมูลเพิ่มเติม
                     </label>
                     <textarea
@@ -716,7 +744,7 @@ export const StaffView: React.FC = () => {
                       placeholder="ระบุข้อมูลเพิ่มเติม..."
                       value={formData.bio}
                       onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                      className="w-full p-3.5 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition leading-relaxed"
+                      className="w-full p-3.5 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition leading-relaxed"
                     />
                   </div>
                 </div>
@@ -724,13 +752,13 @@ export const StaffView: React.FC = () => {
 
               {wizardStep === 3 && formData.role === 'pt' && (
                 <div className="space-y-4">
-                  <h4 className="text-sm sm:text-base font-bold text-teal-300 tracking-normal">
+                  <h4 className="text-sm sm:text-base font-bold text-teal-800 tracking-normal">
                     3. ข้อมูลใบอนุญาตประกอบวิชาชีพกายภาพบำบัด
                   </h4>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
-                      เลขที่ใบประกอบวิชาชีพ (License No.) *
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      เลขที่ใบประกอบวิชาชีพ (License No.) <span className="text-rose-600 font-bold ml-0.5">*</span>
                     </label>
                     <input
                       type="text"
@@ -738,24 +766,24 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น กภ.12345"
                       value={formData.license_no}
                       onChange={(e) => setFormData({ ...formData, license_no: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
+                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
                       วันหมดอายุใบอนุญาต
                     </label>
                     <input
                       type="date"
                       value={formData.license_expiry}
                       onChange={(e) => setFormData({ ...formData, license_expiry: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
+                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
                       ความเชี่ยวชาญเฉพาะทาง (Specialty)
                     </label>
                     <input
@@ -763,7 +791,7 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น เวชศาสตร์ฟื้นฟูกายภาพบำบัด"
                       value={formData.specialty}
                       onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
+                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
                 </div>
@@ -771,14 +799,14 @@ export const StaffView: React.FC = () => {
 
               {wizardStep === 3 && formData.role === 'patient' && (
                 <div className="space-y-4">
-                  <h4 className="text-sm sm:text-base font-bold text-blue-300 tracking-normal">
+                  <h4 className="text-sm sm:text-base font-bold text-blue-800 tracking-normal">
                     3. ข้อมูลผู้ป่วยและอาการเริ่มต้น
                   </h4>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
-                        อายุ (ปี) *
+                      <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                        อายุ (ปี) <span className="text-rose-600 font-bold ml-0.5">*</span>
                       </label>
                       <input
                         type="number"
@@ -787,18 +815,18 @@ export const StaffView: React.FC = () => {
                         max={120}
                         value={formData.age}
                         onChange={(e) => setFormData({ ...formData, age: Number(e.target.value) || 45 })}
-                        className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-teal-500"
+                        className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
-                        เพศ *
+                      <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                        เพศ <span className="text-rose-600 font-bold ml-0.5">*</span>
                       </label>
                       <select
                         value={formData.sex}
                         onChange={(e) => setFormData({ ...formData, sex: e.target.value as any })}
-                        className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-teal-500"
+                        className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer"
                       >
                         <option value="male">ชาย (Male)</option>
                         <option value="female">หญิง (Female)</option>
@@ -808,8 +836,8 @@ export const StaffView: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-200 mb-1.5">
-                      อาการบาดเจ็บ / วินิจฉัยเบื้องต้น *
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      อาการบาดเจ็บ / วินิจฉัยเบื้องต้น <span className="text-rose-600 font-bold ml-0.5">*</span>
                     </label>
                     <input
                       type="text"
@@ -817,19 +845,19 @@ export const StaffView: React.FC = () => {
                       placeholder="เช่น ข้อไหล่ติด, ปวดหลังส่วนล่าง"
                       value={formData.injury}
                       onChange={(e) => setFormData({ ...formData, injury: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-950 border border-slate-700/80 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-teal-500"
+                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
                 </div>
               )}
 
               {/* Wizard Navigation Buttons */}
-              <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
                 {wizardStep > 1 ? (
                   <button
                     type="button"
                     onClick={() => setWizardStep((prev) => prev - 1)}
-                    className="h-11 px-5 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 text-sm font-semibold transition"
+                    className="h-11 px-5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-sm font-semibold transition active:scale-95 cursor-pointer"
                   >
                     ย้อนกลับ
                   </button>
@@ -840,7 +868,7 @@ export const StaffView: React.FC = () => {
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="h-11 flex items-center gap-2 px-6 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm sm:text-base transition shadow-lg shadow-teal-950/40 disabled:opacity-50 active:scale-[0.98]"
+                  className="h-11 flex items-center gap-2 px-6 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm sm:text-base transition shadow-sm disabled:opacity-50 active:scale-95 cursor-pointer"
                 >
                   <span>
                     {wizardStep < (formData.role === 'pt' ? 3 : (formData.role === 'patient' ? 3 : 2)) ? 'ขั้นตอนถัดไป' : 'บันทึกและสร้างบัญชี'}

@@ -1573,6 +1573,10 @@ export class FakeKioskRepository implements IKioskRepository {
   }
 
   async createStaffCall(kioskId: string, reason: string): Promise<{ id: string; kiosk_id: string; reason: string; created_at: string; handled_by: string | null; handled_at: string | null }> {
+    const existing = this.inMemoryStaffCalls.find((c) => c.kiosk_id === kioskId && !c.handled_at);
+    if (existing) {
+      return existing;
+    }
     const id = randomUUID();
     const call = {
       id,

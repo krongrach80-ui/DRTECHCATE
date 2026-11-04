@@ -103,6 +103,10 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
     'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
   ];
+  const englishMonths = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
 
   const loadData = useCallback(async () => {
     try {
@@ -188,7 +192,8 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       );
       const curSched = targetDossier?.schedule;
 
-      const dateObj = new Date(dateStr);
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dateObj = new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
       const dayKey = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
 
       // Clean dateStr out of excluded_dates & cancelled_dates
@@ -384,10 +389,12 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       }
     >();
 
-    const todayDate = new Date();
-    const todayYear = todayDate.getFullYear();
-    const todayMonth = todayDate.getMonth();
-    const todayDay = todayDate.getDate();
+    // Strict Asia/Bangkok Today calculation
+    const todayBkkStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+    const [tY, tM, tD] = todayBkkStr.split('-').map(Number);
+    const todayYear = tY;
+    const todayMonth = tM - 1;
+    const todayDay = tD;
 
     for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
       const isToday =
@@ -396,7 +403,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         todayDay === dayNum;
 
       const dateStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-      const dateObj = new Date(currentYear, currentMonthIndex, dayNum);
+      const dateObj = new Date(currentYear, currentMonthIndex, dayNum, 12, 0, 0);
       const dayKey = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
       const aliases = dayAliases[dayKey] || [dayKey];
 
@@ -417,10 +424,20 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           const startDate = (s.startDate || s.start_date || '1970-01-01').slice(0, 10);
           const endDate = (s.endDate || s.end_date || '2099-12-31').slice(0, 10);
           const days = s.daysOfWeek || s.days_of_week || [];
+          const sDates = Array.isArray(s.scheduled_dates)
+            ? s.scheduled_dates
+            : Array.isArray(s.scheduledDates)
+            ? s.scheduledDates
+            : [];
+          const isExplicitDate = sDates.includes(dateStr);
+          const isRecurringDay =
+            dateStr >= startDate &&
+            dateStr <= endDate &&
+            days.some((d: string) => aliases.includes(d));
+
           hasSession =
-            (dateStr >= startDate &&
-              dateStr <= endDate &&
-              days.some((d: string) => aliases.includes(d))) ||
+            isExplicitDate ||
+            isRecurringDay ||
             (startDate === dateStr && endDate === dateStr);
           timeSlot = s.timeSlot || s.time_slot || '09:00 - 10:00';
           kioskId = s.kioskId || s.assigned_kiosk_id || 'kiosk-01';
@@ -463,10 +480,20 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           const startDate = (s.startDate || s.start_date || '1970-01-01').slice(0, 10);
           const endDate = (s.endDate || s.end_date || '2099-12-31').slice(0, 10);
           const days = s.daysOfWeek || s.days_of_week || [];
+          const sDates = Array.isArray(s.scheduled_dates)
+            ? s.scheduled_dates
+            : Array.isArray(s.scheduledDates)
+            ? s.scheduledDates
+            : [];
+          const isExplicitDate = sDates.includes(dateStr);
+          const isRecurringDay =
+            dateStr >= startDate &&
+            dateStr <= endDate &&
+            days.some((alias: string) => aliases.includes(alias));
+
           if (
-            (dateStr >= startDate &&
-              dateStr <= endDate &&
-              days.some((alias: string) => aliases.includes(alias))) ||
+            isExplicitDate ||
+            isRecurringDay ||
             (startDate === dateStr && endDate === dateStr)
           ) {
             matchingSessions.push({
@@ -694,7 +721,13 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           <div>
             <span className="text-xs font-semibold text-slate-400">ตารางนัดหมายทั้งหมด</span>
             <div className="text-2xl font-black text-slate-800 mt-1">{kpiStats.total} นัด</div>
-            <span className="text-[11px] text-emerald-600 font-medium">สม่ำเสมอ 92%</span>
+            <span className={`text-[11px] font-medium ${kpiStats.total > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+              {kpiStats.total > 0
+                ? (kpiStats.completed > 0
+                    ? `ความสม่ำเสมอ ${Math.round((kpiStats.completed / kpiStats.total) * 100)}%`
+                    : 'พร้อมฝึก 100%')
+                : '-'}
+            </span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
             <CalendarIcon className="w-6 h-6" />
@@ -705,7 +738,11 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           <div>
             <span className="text-xs font-semibold text-slate-400">กำลังรักษา (Active)</span>
             <div className="text-2xl font-black text-emerald-600 mt-1">{kpiStats.active} นัด</div>
-            <span className="text-[11px] text-slate-400 font-medium">สัปดาห์ละ 3 วัน</span>
+            <span className="text-[11px] text-slate-400 font-medium">
+              {kpiStats.active > 0
+                ? `สัปดาห์ละ ${(activeDossier?.schedule?.daysOfWeek || activeDossier?.schedule?.days_of_week || []).length || 3} วัน`
+                : '-'}
+            </span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
             <Activity className="w-6 h-6" />
@@ -716,7 +753,9 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           <div>
             <span className="text-xs font-semibold text-slate-400">พักชั่วคราว (Paused)</span>
             <div className="text-2xl font-black text-amber-600 mt-1">{kpiStats.paused} นัด</div>
-            <span className="text-[11px] text-amber-600 font-medium">ลาพักฟื้น</span>
+            <span className={`text-[11px] font-medium ${kpiStats.paused > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+              {kpiStats.paused > 0 ? 'ลาพักฟื้น' : '-'}
+            </span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
             <PauseCircle className="w-6 h-6" />
@@ -727,7 +766,9 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           <div>
             <span className="text-xs font-semibold text-slate-400">สำเร็จแล้ว (Completed)</span>
             <div className="text-2xl font-black text-sky-600 mt-1">{kpiStats.completed} นัด</div>
-            <span className="text-[11px] text-sky-600 font-medium">ผ่านเกณฑ์ ROM</span>
+            <span className={`text-[11px] font-medium ${kpiStats.completed > 0 ? 'text-sky-600' : 'text-slate-400'}`}>
+              {kpiStats.completed > 0 ? 'ผ่านเกณฑ์ ROM' : '-'}
+            </span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold">
             <CheckCircle2 className="w-6 h-6" />
@@ -744,7 +785,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
             <h3 className="text-lg font-black text-slate-800">
               {thaiMonths[currentMonthIndex]} {currentYear + 543}
             </h3>
-            <span className="text-xs text-slate-400 font-medium">({thaiMonths[currentMonthIndex]} {currentYear + 543})</span>
+            <span className="text-xs text-slate-400 font-medium">({englishMonths[currentMonthIndex]} {currentYear})</span>
           </div>
 
           {/* Status Dots Legend */}

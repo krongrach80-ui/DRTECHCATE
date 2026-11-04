@@ -361,7 +361,7 @@ export class KioskFaceAuthService {
       // Ignore in-memory mock errors in unit tests
     }
 
-    if (failedCount >= this.MAX_FAILED_ATTEMPTS) {
+    if (failedCount === this.MAX_FAILED_ATTEMPTS) {
       const call = await this.kioskRepo.createStaffCall(
         kioskId,
         `Excessive failed face verification (${failedCount} attempts): ${reason}`
@@ -372,6 +372,7 @@ export class KioskFaceAuthService {
         event: 'staff_call',
         data: {
           call_id: call.id,
+          id: call.id,
           kiosk_id: kioskId,
           reason: 'Excessive failed face verification',
           failed_attempts: failedCount,

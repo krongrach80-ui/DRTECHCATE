@@ -197,14 +197,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
         const nextFailedCount = failedCountRef.current + 1;
         if (nextFailedCount >= 3) {
           // Automatic staff call on 3 failures (Spec 12 & DoD 3)
-          try {
-            await defaultApiClient.kiosk.callStaff({
-              kiosk_id: kioskId,
-              reason: 'ผู้ป่วยสแกนใบหน้าไม่ผ่านครบ 3 ครั้ง',
-            });
-          } catch {
-            // Ignore call failure
-          }
+          // Delegate to single coordinator in App.tsx (eliminates duplicate cascade)
           onCallStaffRef.current();
         } else {
           onFailureRef.current?.(msg);

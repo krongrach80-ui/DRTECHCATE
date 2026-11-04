@@ -159,7 +159,15 @@ export const App: React.FC = () => {
     if (!currentStaffUser) return;
     try {
       const calls = await defaultApiClient.kiosk.listStaffCalls();
-      setStaffCalls(calls);
+      const seen = new Set<string>();
+      const deduped = (calls || []).filter((c) => {
+        const id = c.id || (c as any).call_id;
+        if (!id) return true;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setStaffCalls(deduped);
     } catch {
       // non-blocking
     }
@@ -404,9 +412,21 @@ export const App: React.FC = () => {
     }
   }, [state, context.patientId, kioskId, machine]);
 
-  // Handle staff emergency call
+  // Handle staff emergency call with 30s cooldown and pending guard
+  const lastStaffCallTimeRef = useRef<number>(0);
+  const isStaffCallPendingRef = useRef<boolean>(false);
+
   const handleTriggerStaffCall = useCallback(
     async (reason?: string) => {
+      const now = Date.now();
+      // Enforce 30-second cooldown per kiosk and avoid concurrent calls
+      if (isStaffCallPendingRef.current || (now - lastStaffCallTimeRef.current < 30000 && lastStaffCallTimeRef.current > 0)) {
+        return;
+      }
+
+      isStaffCallPendingRef.current = true;
+      lastStaffCallTimeRef.current = now;
+
       try {
         const res = await defaultApiClient.kiosk.callStaff({
           kiosk_id: kioskId,
@@ -424,6 +444,8 @@ export const App: React.FC = () => {
           reason: 'คนไข้กดเรียกเจ้าหน้าที่กายภาพบำบัด',
           ticketId: `call-${Date.now().toString().slice(-4)}`,
         });
+      } finally {
+        isStaffCallPendingRef.current = false;
       }
     },
     [kioskId, machine]

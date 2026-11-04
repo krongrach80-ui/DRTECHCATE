@@ -165,9 +165,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
   const [enteredPin, setEnteredPin] = useState<string>('');
   const [isAboutModalOpen, setIsAboutModalOpen] = useState<boolean>(false);
+  const [isCallingStaff, setIsCallingStaff] = useState<boolean>(false);
+  const lastManualCallStaffTimeRef = useRef<number>(0);
 
-  // Effective pause state
-  const isScanningPaused = Boolean(isPaused || isAboutModalOpen || isPinModalOpen || ambiguousCandidate || userDisabledCamera);
+  // Effective pause state (paused while modal/alert/candidate popup is active)
+  const isScanningPaused = Boolean(
+    isPaused || isAboutModalOpen || isPinModalOpen || ambiguousCandidate || unrecognizedAlert || userDisabledCamera
+  );
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -2013,12 +2017,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   type="button"
                   id="kiosk-call-staff-btn"
                   data-testid="kiosk-call-staff-btn"
+                  disabled={isCallingStaff}
                   onClick={() => {
+                    const now = Date.now();
+                    if (isCallingStaff || (now - lastManualCallStaffTimeRef.current < 30000 && lastManualCallStaffTimeRef.current > 0)) {
+                      return;
+                    }
+                    lastManualCallStaffTimeRef.current = now;
+                    setIsCallingStaff(true);
                     pendingRegistrationBiometricsRef.current = null;
                     setUnrecognizedAlert(null);
                     defaultApiClient.kiosk
                       .callStaff({ kiosk_id: 'kiosk-01', reason: 'unrecognized_face_kiosk' })
-                      .catch(() => {});
+                      .catch(() => {})
+                      .finally(() => {
+                        setIsCallingStaff(false);
+                      });
                     setStatusText(
                       lang === 'zh-CN'
                         ? '🔔 已呼叫医护人员，请稍候...'
@@ -2027,7 +2041,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                         : '🔔 เรียกเจ้าหน้าที่เรียบร้อยแล้ว กรุณารอสักครู่...'
                     );
                   }}
-                  className="py-3 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 shadow-xs"
+                  className={`py-3 px-3 rounded-xl border border-amber-200 text-amber-900 font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs ${
+                    isCallingStaff
+                      ? 'bg-amber-100 opacity-60 cursor-not-allowed'
+                      : 'bg-amber-50 hover:bg-amber-100 cursor-pointer active:scale-95'
+                  }`}
                 >
                   <Bell className="w-3.5 h-3.5 text-amber-600" />
                   <span>

@@ -21,11 +21,19 @@ const PtAppContent: React.FC = () => {
   const { currentUser, logout, refreshToken } = usePTState();
   const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>([]);
 
-  // Fetch initial staff calls
+  // Fetch initial staff calls with deduplication
   const fetchStaffCalls = useCallback(async () => {
     try {
       const calls = await defaultApiClient.kiosk.listStaffCalls();
-      setStaffCalls(calls);
+      const seen = new Set<string>();
+      const deduped = (calls || []).filter((c) => {
+        const id = c.id || (c as any).call_id;
+        if (!id) return true;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setStaffCalls(deduped);
     } catch {
       // offline or no permissions
     }

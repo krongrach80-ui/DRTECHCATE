@@ -550,7 +550,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
     loadExistingCourse();
   }, [selectedPatient]);
 
-  // Compute scheduled dates for Mode A
+  // Compute scheduled dates for Mode A using safe local date arithmetic (no UTC day-shift)
   const computeDatesFromRangeAndDays = useCallback(
     (startStr: string, endStr: string, daysList: string[]) => {
       const dates: string[] = [];
@@ -567,11 +567,17 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
       };
       const allowedDayNums = daysList.map((d) => dayMap[d]).filter((n) => n !== undefined);
 
-      const cur = new Date(startStr);
-      const end = new Date(endStr);
+      const [sY, sM, sD] = startStr.split('-').map(Number);
+      const [eY, eM, eD] = endStr.split('-').map(Number);
+      const cur = new Date(sY, (sM || 1) - 1, sD || 1, 12, 0, 0);
+      const end = new Date(eY, (eM || 1) - 1, eD || 1, 12, 0, 0);
+
       while (cur <= end) {
         if (allowedDayNums.includes(cur.getDay())) {
-          dates.push(cur.toISOString().slice(0, 10));
+          const y = cur.getFullYear();
+          const m = String(cur.getMonth() + 1).padStart(2, '0');
+          const d = String(cur.getDate()).padStart(2, '0');
+          dates.push(`${y}-${m}-${d}`);
         }
         cur.setDate(cur.getDate() + 1);
       }
@@ -749,8 +755,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
       const targetPid = selectedPatient.id || selectedPatient.hn;
       const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
 
-      const finalStartDate = scheduledDates[0] || startDate;
-      const finalEndDate = scheduledDates[scheduledDates.length - 1] || endDate;
+      const cleanDates = Array.from(new Set(scheduledDates)).sort();
+      const finalStartDate = cleanDates[0] || startDate;
+      const finalEndDate = cleanDates[cleanDates.length - 1] || endDate;
 
       // 0. Save Authoritative Clinical Prescription Record
       try {
@@ -761,7 +768,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
           contraindications: selectedPatient.contraindications || undefined,
           start_date: finalStartDate,
           end_date: finalEndDate,
-          scheduled_dates: scheduledDates,
+          scheduled_dates: cleanDates,
           exercises: prescribedExercises.map((e, idx) => ({
             exercise_id: e.exercise_id,
             exercise_name: e.name || e.name_th || 'ท่าฝึกกายภาพ',
@@ -785,8 +792,8 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
         endDate: finalEndDate,
         days_of_week: selectedDays,
         daysOfWeek: selectedDays,
-        scheduled_dates: scheduledDates,
-        scheduledDates: scheduledDates,
+        scheduled_dates: cleanDates,
+        scheduledDates: cleanDates,
         time_slot: timeSlot,
         timeSlot: timeSlot,
         assigned_kiosk_id: assignedKioskId,
@@ -1608,7 +1615,19 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                   {scheduledDates.length} {t.daysUnit}
                 </span>
                 <span className="text-slate-400 text-[11px]">
-                  ({scheduledDates[0] || startDate} ถึง {scheduledDates[scheduledDates.length - 1] || endDate})
+                  ({(() => {
+                    const formatP = (s: string) => {
+                      if (!s) return '';
+                      const [y, m, d] = s.split('-').map(Number);
+                      if (!y || !m || !d) return s;
+                      if (lang === 'th') {
+                        const thaiShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+                        return `${d} ${thaiShort[m - 1]} ${y + 543}`;
+                      }
+                      return s;
+                    };
+                    return `${formatP(scheduledDates[0] || startDate)} ถึง ${formatP(scheduledDates[scheduledDates.length - 1] || endDate)}`;
+                  })()})
                 </span>
               </div>
 

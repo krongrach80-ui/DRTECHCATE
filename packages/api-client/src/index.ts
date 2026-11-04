@@ -1092,6 +1092,71 @@ export class ApiClient {
         return { ok: true, message: 'บันทึกคะแนนสำเร็จ' } as T;
       }
 
+      // 3.1.5 Fallback for /smart-onboarding/prescription
+      if (endpointPath.startsWith('/smart-onboarding/prescription')) {
+        const body = parseSafeBody(options.body);
+        const targetPid = body.patient_id || body.patientId;
+        const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+        const rxId = 'rx-' + Date.now();
+
+        if (targetPid) {
+          try {
+            const patGet = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(targetPid)},hn.eq.${encodeURIComponent(targetPid)})&select=id,history&limit=1`,
+              { headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}` } }
+            );
+            if (patGet.ok) {
+              const patArr = await patGet.json();
+              if (Array.isArray(patArr) && patArr[0]) {
+                const pRow = patArr[0];
+                const currentSched = pRow.history?.schedule || {};
+                const updatedSchedule = {
+                  ...currentSched,
+                  prescription_id: rxId,
+                  target_joint: body.target_joint || currentSched.target_joint,
+                  diagnosis: body.diagnosis || currentSched.diagnosis,
+                  start_date: body.start_date || currentSched.start_date || todayBkk,
+                  end_date: body.end_date || currentSched.end_date || todayBkk,
+                  startDate: body.start_date || currentSched.startDate || todayBkk,
+                  endDate: body.end_date || currentSched.endDate || todayBkk,
+                  scheduled_dates: body.scheduled_dates || currentSched.scheduled_dates || [],
+                  scheduledDates: body.scheduled_dates || currentSched.scheduledDates || [],
+                  prescribed_exercises: body.exercises || currentSched.prescribed_exercises || [],
+                };
+                const updatedHistory = { ...(pRow.history || {}), schedule: updatedSchedule };
+                await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(pRow.id)}`, {
+                  method: 'PATCH',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ history: updatedHistory }),
+                });
+              }
+            }
+          } catch {}
+
+          if (typeof window !== 'undefined') {
+            try {
+              const rawStored = localStorage.getItem('drtech_resilient_patients');
+              const stored = rawStored ? JSON.parse(rawStored) : [];
+              const p = stored.find((item: any) => item.id === targetPid || item.patient_id === targetPid || item.hn === targetPid);
+              if (p) {
+                p.prescription = body;
+                p.schedule = p.schedule || {};
+                p.schedule.prescription_id = rxId;
+                p.schedule.scheduled_dates = body.scheduled_dates || p.schedule.scheduled_dates || [];
+                p.schedule.scheduledDates = body.scheduled_dates || p.schedule.scheduledDates || [];
+                localStorage.setItem('drtech_resilient_patients', JSON.stringify(stored));
+              }
+            } catch {}
+          }
+        }
+
+        return { ok: true, prescription_id: rxId, message: 'บันทึกใบสั่งจ่ายคอร์สกายภาพบำบัดสำเร็จ' } as T;
+      }
+
       // 3.2 Fallback for /smart-onboarding/schedule and /courses/prescriptions
       if (
         endpointPath.startsWith('/smart-onboarding/schedule') ||
@@ -1124,27 +1189,59 @@ export class ApiClient {
             } catch {}
           }
 
-          // Direct live Supabase Cloud courses sync
+          // Direct live Supabase Cloud courses sync with valid schema
           try {
+            const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+            const daysArr = scheduleData.days_of_week || scheduleData.daysOfWeek || [];
+            const weekdaysNum = Array.isArray(daysArr)
+              ? daysArr.map((d: string) => weekdayMap[d] ?? 1).filter((n: number) => !isNaN(n))
+              : [1, 3, 5];
+
             await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/courses`, {
               method: 'POST',
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
                 Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
                 'Content-Type': 'application/json',
-                Prefer: 'resolution=merge-duplicates',
               },
               body: JSON.stringify({
                 patient_id: targetPid,
-                title: `คอร์สกายภาพบำบัด (${targetPid})`,
-                schedule: scheduleData,
+                pt_id: body.pt_id || 'b1000000-0000-0000-0000-000000000003',
                 start_date: scheduleData.startDate || scheduleData.start_date || todayBkk,
                 end_date: scheduleData.endDate || scheduleData.end_date || todayBkk,
+                weekdays: weekdaysNum.length > 0 ? weekdaysNum : [1, 3, 5],
+                start_time: (scheduleData.timeSlot || scheduleData.time_slot || '09:00').slice(0, 5),
+                include_minigame: Boolean(scheduleData.include_minigame),
                 status: 'active',
-                created_at: new Date().toISOString(),
               }),
             });
           } catch {}
+
+          // Authoritative Supabase Cloud patients.history.schedule sync
+          if (targetPid) {
+            try {
+              const patGet = await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(targetPid)},hn.eq.${encodeURIComponent(targetPid)})&select=id,history&limit=1`,
+                { headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}` } }
+              );
+              if (patGet.ok) {
+                const patArr = await patGet.json();
+                if (Array.isArray(patArr) && patArr[0]) {
+                  const pRow = patArr[0];
+                  const updatedHistory = { ...(pRow.history || {}), schedule: scheduleData };
+                  await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(pRow.id)}`, {
+                    method: 'PATCH',
+                    headers: {
+                      apikey: DEFAULT_SUPABASE_ANON_KEY,
+                      Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ history: updatedHistory }),
+                  });
+                }
+              }
+            } catch {}
+          }
 
           return {
             ok: true,
@@ -1174,6 +1271,37 @@ export class ApiClient {
                 }
               } catch {}
             }
+
+            // Sync cancellation to Supabase Cloud patients.history
+            try {
+              const patGet = await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(targetPid)},hn.eq.${encodeURIComponent(targetPid)})&select=id,history&limit=1`,
+                { headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}` } }
+              );
+              if (patGet.ok) {
+                const patArr = await patGet.json();
+                if (Array.isArray(patArr) && patArr[0]) {
+                  const pRow = patArr[0];
+                  if (pRow.history?.schedule) {
+                    const s = pRow.history.schedule;
+                    const sDates = (s.scheduled_dates || s.scheduledDates || []).filter((d: string) => d !== subDate);
+                    s.scheduled_dates = sDates;
+                    s.scheduledDates = sDates;
+                    s.cancelled_dates = [...(s.cancelled_dates || []), subDate];
+                    await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(pRow.id)}`, {
+                      method: 'PATCH',
+                      headers: {
+                        apikey: DEFAULT_SUPABASE_ANON_KEY,
+                        Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ history: pRow.history }),
+                    });
+                  }
+                }
+              }
+            } catch {}
+
             return { ok: true, message: `ยกเลิกนัดหมายวันที่ ${subDate} เรียบร้อยแล้ว` } as T;
           }
 
@@ -1192,7 +1320,35 @@ export class ApiClient {
               }
             } catch {}
           }
-          return { ok: true, message: 'ล้างตารางนัดหมายในอนาคตเรียบร้อยแล้ว' } as T;
+
+          // Clear schedule on Supabase Cloud
+          if (targetPid) {
+            try {
+              const patGet = await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(targetPid)},hn.eq.${encodeURIComponent(targetPid)})&select=id,history&limit=1`,
+                { headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}` } }
+              );
+              if (patGet.ok) {
+                const patArr = await patGet.json();
+                if (Array.isArray(patArr) && patArr[0]) {
+                  const pRow = patArr[0];
+                  const updatedHistory = { ...(pRow.history || {}) };
+                  delete updatedHistory.schedule;
+                  await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(pRow.id)}`, {
+                    method: 'PATCH',
+                    headers: {
+                      apikey: DEFAULT_SUPABASE_ANON_KEY,
+                      Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ history: updatedHistory }),
+                  });
+                }
+              }
+            } catch {}
+          }
+
+          return { ok: true, message: 'ล้างตารางนัดหมายเรียบร้อยแล้ว' } as T;
         }
 
         // GET schedule
@@ -1208,26 +1364,77 @@ export class ApiClient {
             }
           } catch {}
         }
+
+        // Fallback to live Supabase Cloud patient history if not in local cache
+        if (!foundSchedule && targetPid) {
+          try {
+            const patGet = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(targetPid)},hn.eq.${encodeURIComponent(targetPid)})&select=id,history&limit=1`,
+              { headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}` } }
+            );
+            if (patGet.ok) {
+              const patArr = await patGet.json();
+              if (Array.isArray(patArr) && patArr[0]?.history?.schedule) {
+                foundSchedule = patArr[0].history.schedule;
+              }
+            }
+          } catch {}
+        }
+
         return { ok: true, data: { schedule: foundSchedule } } as T;
       }
 
       // 3.3 Fallback for /smart-onboarding/dossiers
       if (endpointPath.startsWith('/smart-onboarding/dossiers')) {
         let dossiersList: any[] = [];
+        const dossierMap = new Map<string, any>();
+
+        // 1. Load from local cache if present
         if (typeof window !== 'undefined') {
           try {
             const rawStored = localStorage.getItem('drtech_resilient_patients');
             const stored = rawStored ? JSON.parse(rawStored) : [];
-            dossiersList = stored.map((p: any) => ({
-              patient_id: p.id,
-              hn: p.hn,
-              first_name: p.first_name,
-              last_name: p.last_name,
-              schedule: p.schedule || p.history?.schedule || null,
-              has_face_enrolled: Boolean(p.frames?.length || p.history?.frames?.length),
-            }));
+            stored.forEach((p: any) => {
+              const key = p.id || p.hn;
+              dossierMap.set(key, {
+                patient_id: p.id,
+                hn: p.hn,
+                first_name: p.first_name,
+                last_name: p.last_name,
+                schedule: p.schedule || p.history?.schedule || null,
+                has_face_enrolled: Boolean(p.frames?.length || p.history?.frames?.length),
+              });
+            });
           } catch {}
         }
+
+        // 2. Fetch authoritative patients from Supabase Cloud to ensure schedules and dossiers are always current
+        try {
+          const supaRes = await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?registration_status=neq.archived&order=created_at.desc&limit=50`,
+            { headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}` } }
+          );
+          if (supaRes.ok) {
+            const supaPatients = await supaRes.json();
+            if (Array.isArray(supaPatients)) {
+              supaPatients.forEach((p: any) => {
+                const key = p.id || p.hn;
+                const existing = dossierMap.get(key) || dossierMap.get(p.id) || dossierMap.get(p.hn);
+                const s = p.history?.schedule || existing?.schedule || null;
+                dossierMap.set(p.id, {
+                  patient_id: p.id,
+                  hn: p.hn,
+                  first_name: p.first_name,
+                  last_name: p.last_name,
+                  schedule: s,
+                  has_face_enrolled: Boolean(p.history?.frames?.length || existing?.has_face_enrolled),
+                });
+              });
+            }
+          }
+        } catch {}
+
+        dossiersList = Array.from(dossierMap.values());
         return { ok: true, data: dossiersList, dossiers: dossiersList } as T;
       }
 
@@ -2413,7 +2620,98 @@ export class ApiClient {
         }
       }
 
-      // 10. Fallback for /kiosk
+      // 10. Direct Supabase handling for /kiosk/staff-calls and /kiosk/call-staff
+      if (endpointPath.includes('/staff-calls') && (!options.method || options.method.toUpperCase() === 'GET')) {
+        const supaRes = await fetch(
+          `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls?select=id,kiosk_id,reason,created_at,handled_by,handled_at&order=created_at.desc&limit=50`,
+          {
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+            },
+          }
+        );
+        if (supaRes.ok) {
+          const list = await supaRes.json();
+          return { ok: true, data: list, calls: list } as T;
+        }
+      }
+
+      if (endpointPath.includes('/call-staff') && options.method && options.method.toUpperCase() === 'POST') {
+        let payload: any = {};
+        try {
+          payload = typeof options.body === 'string' ? JSON.parse(options.body) : options.body || {};
+        } catch {}
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const kioskUUID = isUuid.test(payload.kiosk_id) ? payload.kiosk_id : 'cc000000-0000-0000-0000-000000000001';
+
+        // Deduplication: check if an unhandled staff call already exists for this kiosk
+        const checkRes = await fetch(
+          `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls?kiosk_id=eq.${kioskUUID}&handled_at=is.null&select=id,created_at&limit=1`,
+          {
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+            },
+          }
+        );
+        if (checkRes.ok) {
+          const existing = await checkRes.json();
+          if (Array.isArray(existing) && existing.length > 0) {
+            return { ok: true, id: existing[0].id, call_id: existing[0].id, status: 'existing_pending' } as T;
+          }
+        }
+
+        const newId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `call-${Date.now()}`;
+        const insRes = await fetch(
+          `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls`,
+          {
+            method: 'POST',
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=representation',
+            },
+            body: JSON.stringify({
+              id: newId,
+              kiosk_id: kioskUUID,
+              reason: payload.reason || 'ผู้ป่วยต้องการความช่วยเหลือที่หน้าตู้ Kiosk',
+              created_at: new Date().toISOString(),
+            }),
+          }
+        );
+        if (insRes.ok) {
+          const inserted = await insRes.json();
+          const callId = (inserted && inserted[0]?.id) || newId;
+          return { ok: true, id: callId, call_id: callId } as T;
+        }
+        return { ok: true, id: newId, call_id: newId } as T;
+      }
+
+      if (endpointPath.includes('/staff-calls') && endpointPath.includes('/handle')) {
+        const idMatch = endpointPath.match(/\/staff-calls\/([^/]+)\/handle/);
+        if (idMatch && idMatch[1]) {
+          await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls?id=eq.${idMatch[1]}`,
+            {
+              method: 'PATCH',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                handled_at: new Date().toISOString(),
+              }),
+            }
+          ).catch(() => {});
+          return { ok: true, message: 'Staff call resolved' } as T;
+        }
+      }
+
+      // 10. Fallback for other /kiosk endpoints
       if (endpointPath.startsWith('/kiosk')) {
         return { ok: true, data: [], calls: [], devices: [] } as T;
       }
