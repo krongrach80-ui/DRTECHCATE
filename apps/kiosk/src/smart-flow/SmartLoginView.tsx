@@ -1296,32 +1296,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       {/* Unified Master Kiosk Shell Card */}
       <div className="w-full max-w-6xl mx-auto my-auto bg-white/95 backdrop-blur-md rounded-[32px] border border-blue-100/90 shadow-xl p-5 sm:p-7 relative z-10 flex flex-col">
-        
-        {/* A. Top Integrated Greeting Header (Full Width inside Master Card) */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pb-5 mb-5 border-b border-slate-100 select-none">
-          {/* Left Brand & Greeting */}
-          <div className="flex items-center gap-3.5 min-w-0">
-            <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50 to-blue-50 border border-teal-300/80 flex items-center justify-center shrink-0 shadow-xs">
-              <svg className="w-8 h-8 sm:w-9 sm:h-9" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M48 20 C30 20 18 34 18 52 C18 69 31 82 48 82 C44 76 40 68 40 52 C40 38 43 27 48 20 Z" fill="#0284C7" />
-                <path d="M52 80 C70 80 82 66 82 48 C82 31 69 18 52 18 C56 24 60 32 60 48 C60 62 57 73 52 80 Z" fill="#10B981" />
-                <path d="M44 38 H56 V44 H62 V56 H56 V62 H44 V56 H38 V44 H44 Z" fill="#10B981" />
-                <path d="M47 41 H53 V47 H59 V53 H53 V59 H47 V53 H41 V47 H47 Z" fill="#0284C7" />
-                <circle cx="50" cy="50" r="4" fill="#FFFFFF" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
-                {lang === 'zh-CN' ? '智能面部识别系统 (Smart Biometric Check-in)' : lang === 'en-US' ? 'Smart Biometric Check-in' : 'ระบบยืนยันตัวตนอัจฉริยะ (Smart Biometric Check-in)'}
-              </h2>
-              <p className="text-xs sm:text-sm text-teal-700 font-semibold mt-0.5 leading-snug">
-                {lang === 'zh-CN' ? '您准备好进行康复训练了吗？请正视摄像头，或举起双手开始自动扫描' : lang === 'en-US' ? 'Ready for rehab? Look at camera or raise both hands to start auto-scan' : 'คุณพร้อมจะกายภาพรึยัง? มองตรงที่กล้อง หรือยก 2 มือขึ้นเพื่อเริ่มสแกนใบหน้าอัตโนมัติ'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* B. Main Content Grid (12-Columns on XL Displays, Clean Stack on Smaller Displays) */}
+        {/* Main Content Grid (12-Columns on XL Displays, Clean Stack on Smaller Displays) */}
         <div className="w-full grid grid-cols-1 xl:grid-cols-12 gap-6 items-center">
           
           {/* 🎥 LEFT: Camera Scanner Stage (7 Cols on XL) */}
