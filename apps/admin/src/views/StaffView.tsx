@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users,
   UserPlus,
@@ -9,12 +9,202 @@ import {
   CheckCircle2,
   RefreshCw,
   AlertTriangle,
+  AlertCircle,
   X,
   ChevronRight,
   UserCheck,
   Trash2
 } from 'lucide-react';
 import { UserProfile, defaultApiClient } from '../../../../packages/api-client/src/index.js';
+import { getSavedLanguage, ClinicalLanguage } from '../../../../packages/clinical-i18n/src/index';
+
+interface FormValidationErrors {
+  username?: string;
+  password?: string;
+  full_name?: string;
+  phone?: string;
+  role?: string;
+  license_no?: string;
+  age?: string;
+  sex?: string;
+  injury?: string;
+}
+
+const VALIDATION_I18N = {
+  'th-TH': {
+    summaryPrefix: 'กรุณาตรวจสอบและแก้ไข',
+    summarySuffix: 'รายการในขั้นตอนนี้',
+    summaryGeneral: 'กรุณาตรวจสอบและกรอกข้อมูลที่จำเป็นให้ครบถ้วน',
+    usernameRequired: 'กรุณากรอกชื่อผู้ใช้ (Username)',
+    usernameMinLength: 'ชื่อผู้ใช้ต้องมีความยาวอย่างน้อย 3 ตัวอักษร',
+    usernamePattern: 'ชื่อผู้ใช้ต้องประกอบด้วยตัวอักษรภาษาอังกฤษพิมพ์เล็ก ตัวเลข จุด หรือขีดล่างเท่านั้น',
+    passwordRequired: 'กรุณากรอกรหัสผ่านเริ่มต้น',
+    passwordMinLength: 'รหัสผ่านเริ่มต้นต้องมีความยาวอย่างน้อย 12 ตัวอักษร',
+    fullNameRequired: 'กรุณากรอกชื่อ - นามสกุลจริง',
+    phoneInvalid: 'เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก (เช่น 0812345678)',
+    roleRequired: 'กรุณาเลือกบทบาทผู้ใช้',
+    licenseNoRequired: 'กรุณาระบุเลขที่ใบประกอบวิชาชีพกายภาพบำบัด',
+    ageRequired: 'กรุณาระบุอายุของผู้ป่วย',
+    ageInvalid: 'อายุต้องอยู่ระหว่าง 1 ถึง 120 ปี',
+    sexRequired: 'กรุณาระบุเพศของผู้ป่วย',
+    injuryRequired: 'กรุณาระบุอาการบาดเจ็บหรือการวินิจฉัยเบื้องต้น',
+    stepNavBlocked: 'ไม่สามารถไปขั้นตอนถัดไปได้ กรุณากรอกข้อมูลในขั้นตอนนี้ให้ถูกต้องครบถ้วน',
+    stepRedirectNotice: (step: number) => `พบข้อมูลไม่ครบถ้วนในขั้นตอนที่ ${step} กรุณาแก้ไขก่อนบันทึก`,
+  },
+  'en-US': {
+    summaryPrefix: 'Please review and correct',
+    summarySuffix: 'item(s) in this step',
+    summaryGeneral: 'Please review and fill in all required fields',
+    usernameRequired: 'Please enter a username',
+    usernameMinLength: 'Username must be at least 3 characters',
+    usernamePattern: 'Username can only contain lowercase letters, numbers, dots, or hyphens/underscores',
+    passwordRequired: 'Please enter a temporary password',
+    passwordMinLength: 'Temporary password must be at least 12 characters',
+    fullNameRequired: 'Please enter full name',
+    phoneInvalid: 'Phone number must be 10 digits (e.g. 0812345678)',
+    roleRequired: 'Please select a user role',
+    licenseNoRequired: 'Please enter physical therapy license number',
+    ageRequired: 'Please enter patient age',
+    ageInvalid: 'Age must be between 1 and 120',
+    sexRequired: 'Please select patient sex',
+    injuryRequired: 'Please enter primary injury / condition',
+    stepNavBlocked: 'Cannot proceed. Please complete all required fields in this step',
+    stepRedirectNotice: (step: number) => `Incomplete fields found in Step ${step}. Please correct before saving`,
+  },
+  'zh-CN': {
+    summaryPrefix: '请检查并修正本步骤中的',
+    summarySuffix: '项内容',
+    summaryGeneral: '请检查并填写所有必填项',
+    usernameRequired: '请输入用户名',
+    usernameMinLength: '用户名至少需要3个字符',
+    usernamePattern: '用户名仅允许包含小写英文字母、数字、点或下划线/连字符',
+    passwordRequired: '请输入初始密码',
+    passwordMinLength: '初始密码长度至少需要12位字符',
+    fullNameRequired: '请输入真实姓名',
+    phoneInvalid: '电话号码必须为10位数字 (如 0812345678)',
+    roleRequired: '请选择用户角色',
+    licenseNoRequired: '请输入物理治疗师执业许可证编号',
+    ageRequired: '请输入患者年龄',
+    ageInvalid: '年龄必须在 1 至 120 岁之间',
+    sexRequired: '请选择患者性别',
+    injuryRequired: '请输入初步诊断或病症',
+    stepNavBlocked: '无法进入下一步，请先完整填写本步骤中的必填项',
+    stepRedirectNotice: (step: number) => `第 ${step} 步存在未填项，请在保存前更正`,
+  },
+};
+
+function getValidationText(lang: string) {
+  if (lang.startsWith('en')) return VALIDATION_I18N['en-US'];
+  if (lang.startsWith('zh') || lang.startsWith('cn')) return VALIDATION_I18N['zh-CN'];
+  return VALIDATION_I18N['th-TH'];
+}
+
+function validateWizardStep(
+  step: number,
+  role: 'admin' | 'pt' | 'patient',
+  data: {
+    username: string;
+    password: string;
+    role: 'admin' | 'pt' | 'patient';
+    full_name: string;
+    phone: string;
+    bio: string;
+    license_no: string;
+    license_expiry: string;
+    specialty: string;
+    age: number | string;
+    sex: 'male' | 'female' | 'other';
+    injury: string;
+  },
+  t: typeof VALIDATION_I18N['th-TH']
+): FormValidationErrors {
+  const errors: FormValidationErrors = {};
+
+  if (step === 1) {
+    // 1. Username
+    const cleanUsername = (data.username || '').trim().toLowerCase();
+    if (!cleanUsername) {
+      errors.username = t.usernameRequired;
+    } else if (cleanUsername.length < 3) {
+      errors.username = t.usernameMinLength;
+    } else if (!/^[a-z0-9._-]+$/.test(cleanUsername)) {
+      errors.username = t.usernamePattern;
+    }
+
+    // 2. Password
+    const password = data.password || '';
+    if (!password) {
+      errors.password = t.passwordRequired;
+    } else if (password.length < 12) {
+      errors.password = t.passwordMinLength;
+    }
+
+    // 3. Full Name
+    const fullName = (data.full_name || '').trim();
+    if (!fullName) {
+      errors.full_name = t.fullNameRequired;
+    }
+
+    // 4. Phone (optional, but if filled, must be 10 digits)
+    const phoneRaw = (data.phone || '').trim().replace(/[-\s]/g, '');
+    if (phoneRaw.length > 0 && !/^0[0-9]{9}$/.test(phoneRaw)) {
+      errors.phone = t.phoneInvalid;
+    }
+  }
+
+  if (step === 2) {
+    if (!data.role || !['admin', 'pt', 'patient'].includes(data.role)) {
+      errors.role = t.roleRequired;
+    }
+  }
+
+  if (step === 3) {
+    if (role === 'pt') {
+      const license = (data.license_no || '').trim();
+      if (!license) {
+        errors.license_no = t.licenseNoRequired;
+      }
+    } else if (role === 'patient') {
+      const ageNum = Number(data.age);
+      if (data.age === '' || data.age === null || data.age === undefined) {
+        errors.age = t.ageRequired;
+      } else if (isNaN(ageNum) || ageNum < 1 || ageNum > 120) {
+        errors.age = t.ageInvalid;
+      }
+
+      if (!data.sex) {
+        errors.sex = t.sexRequired;
+      }
+
+      const injury = (data.injury || '').trim();
+      if (!injury) {
+        errors.injury = t.injuryRequired;
+      }
+    }
+  }
+
+  return errors;
+}
+
+function focusFirstErrorField(errors: FormValidationErrors, step: number) {
+  setTimeout(() => {
+    const fieldOrder = step === 1 
+      ? ['username', 'password', 'full_name', 'phone']
+      : step === 2
+      ? ['role']
+      : ['license_no', 'age', 'sex', 'injury'];
+    
+    for (const key of fieldOrder) {
+      if (errors[key as keyof FormValidationErrors]) {
+        const el = document.getElementById(`field-${key}`) as HTMLInputElement | HTMLSelectElement | null;
+        if (el) {
+          el.focus();
+          break;
+        }
+      }
+    }
+  }, 50);
+}
 
 const DEMO_STAFF: UserProfile[] = [
   {
@@ -74,10 +264,66 @@ export const StaffView: React.FC = () => {
     license_no: '',
     license_expiry: '',
     specialty: '',
-    age: 45,
+    age: 45 as number | string,
     sex: 'male' as 'male' | 'female' | 'other',
     injury: '',
   });
+
+  // Validation state for wizard modal
+  const [fieldErrors, setFieldErrors] = useState<FormValidationErrors>({});
+  const [, setTouchedFields] = useState<Record<string, boolean>>({});
+  const [wizardErrorMsg, setWizardErrorMsg] = useState<string | null>(null);
+  const [currentLang, setCurrentLang] = useState<ClinicalLanguage>(() => getSavedLanguage());
+
+  useEffect(() => {
+    const onLangChange = (e: any) => {
+      if (e?.detail) setCurrentLang(e.detail);
+    };
+    window.addEventListener('drtech:lang_change', onLangChange);
+    return () => window.removeEventListener('drtech:lang_change', onLangChange);
+  }, []);
+
+  const t = useMemo(() => getValidationText(currentLang), [currentLang]);
+
+  // Real-time change handler: clears error as user types valid input
+  const handleFieldChange = (field: keyof typeof formData, value: any) => {
+    const nextData = { ...formData, [field]: value };
+    setFormData(nextData);
+
+    if (fieldErrors[field as keyof FormValidationErrors]) {
+      const singleErrors = validateWizardStep(wizardStep, nextData.role, nextData, t);
+      if (!singleErrors[field as keyof FormValidationErrors]) {
+        setFieldErrors((prev) => {
+          const updated = { ...prev };
+          delete updated[field as keyof FormValidationErrors];
+          return updated;
+        });
+        const remainingKeys = Object.keys(fieldErrors).filter((k) => k !== field);
+        if (remainingKeys.length === 0) {
+          setWizardErrorMsg(null);
+        } else {
+          setWizardErrorMsg(`${t.summaryPrefix} ${remainingKeys.length} ${t.summarySuffix}`);
+        }
+      } else {
+        setFieldErrors((prev) => ({
+          ...prev,
+          [field]: singleErrors[field as keyof FormValidationErrors],
+        }));
+      }
+    }
+  };
+
+  // Real-time blur handler: validates field once user leaves it
+  const handleFieldBlur = (field: keyof typeof formData) => {
+    setTouchedFields((prev) => ({ ...prev, [field]: true }));
+    const stepErrs = validateWizardStep(wizardStep, formData.role, formData, t);
+    if (stepErrs[field as keyof FormValidationErrors]) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        [field]: stepErrs[field as keyof FormValidationErrors],
+      }));
+    }
+  };
 
   // Reset password modal state
   const [resetModalUser, setResetModalUser] = useState<UserProfile | null>(null);
@@ -139,6 +385,23 @@ export const StaffView: React.FC = () => {
 
   const handleStaffError = (err: unknown, defaultMessage: string) => {
     const msg = err instanceof Error ? err.message : String(err || defaultMessage);
+    if (isWizardOpen) {
+      setWizardErrorMsg(msg);
+      if (msg.includes('ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว') || msg.includes('ชื่อผู้ใช้')) {
+        setWizardStep(1);
+        setFieldErrors((prev) => ({ ...prev, username: msg }));
+        focusFirstErrorField({ username: msg }, 1);
+      } else if (msg.includes('ใบประกอบวิชาชีพ')) {
+        setWizardStep(3);
+        setFieldErrors((prev) => ({ ...prev, license_no: msg }));
+        focusFirstErrorField({ license_no: msg }, 3);
+      } else if (msg.includes('รหัสผ่าน')) {
+        setWizardStep(1);
+        setFieldErrors((prev) => ({ ...prev, password: msg }));
+        focusFirstErrorField({ password: msg }, 1);
+      }
+      return;
+    }
     if (
       msg.includes('มีอยู่ในระบบแล้ว') ||
       msg.includes('ชื่อผู้ใช้') ||
@@ -171,15 +434,50 @@ export const StaffView: React.FC = () => {
 
   const handleCreateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    const maxSteps = formData.role === 'pt' ? 3 : (formData.role === 'patient' ? 3 : 2);
+    if (actionLoading) return; // Prevent double-submit
+
+    const maxSteps = formData.role === 'admin' ? 2 : 3;
+
+    // 1. Validate CURRENT step before advancing
+    const stepErrors = validateWizardStep(wizardStep, formData.role, formData, t);
+    if (Object.keys(stepErrors).length > 0) {
+      setFieldErrors((prev) => ({ ...prev, ...stepErrors }));
+      const count = Object.keys(stepErrors).length;
+      setWizardErrorMsg(`${t.summaryPrefix} ${count} ${t.summarySuffix}`);
+      focusFirstErrorField(stepErrors, wizardStep);
+      return;
+    }
+
+    // Current step is valid! Clear step errors
+    setFieldErrors({});
+    setWizardErrorMsg(null);
+
+    // If not final step, advance to next step
     if (wizardStep < maxSteps) {
       setWizardStep((prev) => prev + 1);
       return;
     }
 
+    // 2. We are on the final step ("บันทึกและสร้างบัญชี")
+    // Re-validate ALL steps (1 to maxSteps) to prevent bypassing
+    for (let s = 1; s <= maxSteps; s++) {
+      const errs = validateWizardStep(s, formData.role, formData, t);
+      if (Object.keys(errs).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...errs }));
+        setWizardStep(s); // Automatically navigate back to earliest invalid step!
+        const count = Object.keys(errs).length;
+        setWizardErrorMsg(`${t.stepRedirectNotice(s)} (${t.summaryPrefix} ${count} ${t.summarySuffix})`);
+        focusFirstErrorField(errs, s);
+        return;
+      }
+    }
+
+    // 3. All validations passed! Proceed with account creation
     try {
       setActionLoading(true);
+      setWizardErrorMsg(null);
       setErrorMsg(null);
+
       if (formData.role === 'patient') {
         const parts = formData.full_name.trim().split(' ');
         const firstName = parts[0] || 'ผู้ป่วย';
@@ -189,26 +487,15 @@ export const StaffView: React.FC = () => {
           last_name: lastName,
           age: Number(formData.age) || 45,
           sex: formData.sex,
-          phone: formData.phone || '-',
-          injury: formData.injury || formData.bio || 'กายภาพบำบัดฟื้นฟูทั่วไป',
+          phone: formData.phone?.trim() || '-',
+          injury: formData.injury?.trim() || formData.bio?.trim() || 'กายภาพบำบัดฟื้นฟูทั่วไป',
         });
         window.dispatchEvent(new CustomEvent('patient-created'));
         setSuccessMsg(`สร้างบัญชีคนไข้ ${formData.full_name} สำเร็จเรียบร้อย`);
       } else {
         const cleanUsername = formData.username.trim().toLowerCase();
         const safePassword = formData.password;
-        if (!safePassword || safePassword.length < 12) {
-          setErrorMsg('รหัสผ่านเริ่มต้นต้องมีความยาวอย่างน้อย 12 ตัวอักษร');
-          setActionLoading(false);
-          return;
-        }
-
         const safeLicense = formData.license_no?.trim();
-        if (formData.role === 'pt' && !safeLicense) {
-          setErrorMsg('กรุณาระบุเลขที่ใบประกอบวิชาชีพกายภาพบำบัด');
-          setActionLoading(false);
-          return;
-        }
 
         const res = await defaultApiClient.staff.create({
           username: cleanUsername,
@@ -231,9 +518,13 @@ export const StaffView: React.FC = () => {
         window.dispatchEvent(new CustomEvent('staff-updated'));
         setSuccessMsg(`สร้างผู้ใช้ ${cleanUsername} สำเร็จเรียบร้อย`);
       }
+
       await fetchStaff();
       setIsWizardOpen(false);
       setWizardStep(1);
+      setFieldErrors({});
+      setTouchedFields({});
+      setWizardErrorMsg(null);
       setFormData({
         username: '',
         password: '',
@@ -392,6 +683,9 @@ export const StaffView: React.FC = () => {
             onClick={() => {
               setIsWizardOpen(true);
               setWizardStep(1);
+              setFieldErrors({});
+              setTouchedFields({});
+              setWizardErrorMsg(null);
             }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
           >
@@ -614,7 +908,13 @@ export const StaffView: React.FC = () => {
                 </p>
               </div>
               <button
-                onClick={() => setIsWizardOpen(false)}
+                type="button"
+                onClick={() => {
+                  setIsWizardOpen(false);
+                  setFieldErrors({});
+                  setTouchedFields({});
+                  setWizardErrorMsg(null);
+                }}
                 className="text-slate-400 hover:text-slate-600 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -622,11 +922,14 @@ export const StaffView: React.FC = () => {
             </div>
 
             {/* Wizard Steps Form */}
-            <form onSubmit={handleCreateStaff} className="p-6 space-y-5">
-              {errorMsg && (
-                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs sm:text-sm flex items-center justify-between">
-                  <span>{errorMsg}</span>
-                  <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-700 ml-2">
+            <form noValidate onSubmit={handleCreateStaff} className="p-6 space-y-5">
+              {wizardErrorMsg && (
+                <div role="alert" className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs sm:text-sm flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" aria-hidden="true" />
+                    <span>{wizardErrorMsg}</span>
+                  </div>
+                  <button type="button" onClick={() => setWizardErrorMsg(null)} className="text-rose-400 hover:text-rose-700 ml-2">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -637,59 +940,115 @@ export const StaffView: React.FC = () => {
                     1. ข้อมูลบัญชีผู้ใช้
                   </h4>
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
-                      ชื่อผู้ใช้ (Username) <span className="text-rose-600 font-bold ml-0.5">*</span>
+                    <label htmlFor="field-username" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      ชื่อผู้ใช้ (Username) <span className="text-rose-600 font-bold ml-0.5" aria-hidden="true">*</span>
                     </label>
                     <input
+                      id="field-username"
+                      name="username"
                       type="text"
-                      required
                       placeholder="เช่น pt.somchai หรือ somchai"
                       value={formData.username}
-                      onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
+                      onChange={(e) => handleFieldChange('username', e.target.value)}
+                      onBlur={() => handleFieldBlur('username')}
+                      aria-invalid={!!fieldErrors.username}
+                      aria-describedby={fieldErrors.username ? "field-username-error" : undefined}
+                      className={`w-full h-11 px-4 bg-slate-50 border ${
+                        fieldErrors.username ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-500'
+                      } rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none ${
+                        fieldErrors.username ? 'focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20' : 'focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20'
+                      } transition`}
                     />
+                    {fieldErrors.username && (
+                      <p id="field-username-error" role="alert" className="text-xs text-rose-700 font-medium flex items-center gap-1.5 mt-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                        <span>{fieldErrors.username}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
-                      รหัสผ่านเริ่มต้น (ขั้นต่ำ 12 ตัวอักษร) <span className="text-rose-600 font-bold ml-0.5">*</span>
+                    <label htmlFor="field-password" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      รหัสผ่านเริ่มต้น (ขั้นต่ำ 12 ตัวอักษร) <span className="text-rose-600 font-bold ml-0.5" aria-hidden="true">*</span>
                     </label>
                     <input
+                      id="field-password"
+                      name="password"
                       type="password"
-                      required
-                      minLength={12}
                       placeholder="••••••••••••"
                       value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
+                      onChange={(e) => handleFieldChange('password', e.target.value)}
+                      onBlur={() => handleFieldBlur('password')}
+                      aria-invalid={!!fieldErrors.password}
+                      aria-describedby={fieldErrors.password ? "field-password-error" : undefined}
+                      className={`w-full h-11 px-4 bg-slate-50 border ${
+                        fieldErrors.password ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-500'
+                      } rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none ${
+                        fieldErrors.password ? 'focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20' : 'focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20'
+                      } transition`}
                     />
+                    {fieldErrors.password && (
+                      <p id="field-password-error" role="alert" className="text-xs text-rose-700 font-medium flex items-center gap-1.5 mt-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                        <span>{fieldErrors.password}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
-                      ชื่อ - นามสกุลจริง <span className="text-rose-600 font-bold ml-0.5">*</span>
+                    <label htmlFor="field-full_name" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      ชื่อ - นามสกุลจริง <span className="text-rose-600 font-bold ml-0.5" aria-hidden="true">*</span>
                     </label>
                     <input
+                      id="field-full_name"
+                      name="full_name"
                       type="text"
-                      required
                       placeholder="เช่น กภ. วิภาวี สุขใจ หรือ นายสมชาย ใจดี"
                       value={formData.full_name}
-                      onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
+                      onChange={(e) => handleFieldChange('full_name', e.target.value)}
+                      onBlur={() => handleFieldBlur('full_name')}
+                      aria-invalid={!!fieldErrors.full_name}
+                      aria-describedby={fieldErrors.full_name ? "field-full_name-error" : undefined}
+                      className={`w-full h-11 px-4 bg-slate-50 border ${
+                        fieldErrors.full_name ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-500'
+                      } rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none ${
+                        fieldErrors.full_name ? 'focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20' : 'focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20'
+                      } transition`}
                     />
+                    {fieldErrors.full_name && (
+                      <p id="field-full_name-error" role="alert" className="text-xs text-rose-700 font-medium flex items-center gap-1.5 mt-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                        <span>{fieldErrors.full_name}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                    <label htmlFor="field-phone" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
                       เบอร์โทรศัพท์
                     </label>
                     <input
+                      id="field-phone"
+                      name="phone"
                       type="tel"
                       placeholder="เช่น 0812345678"
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
+                      onChange={(e) => handleFieldChange('phone', e.target.value)}
+                      onBlur={() => handleFieldBlur('phone')}
+                      aria-invalid={!!fieldErrors.phone}
+                      aria-describedby={fieldErrors.phone ? "field-phone-error" : undefined}
+                      className={`w-full h-11 px-4 bg-slate-50 border ${
+                        fieldErrors.phone ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-500'
+                      } rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none ${
+                        fieldErrors.phone ? 'focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20' : 'focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20'
+                      } transition`}
                     />
+                    {fieldErrors.phone && (
+                      <p id="field-phone-error" role="alert" className="text-xs text-rose-700 font-medium flex items-center gap-1.5 mt-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                        <span>{fieldErrors.phone}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -700,10 +1059,12 @@ export const StaffView: React.FC = () => {
                     2. กำหนดบทบาทและสิทธิ์การใช้งาน
                   </h4>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" role="radiogroup" aria-label="บทบาทผู้ใช้">
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, role: 'pt' })}
+                      role="radio"
+                      aria-checked={formData.role === 'pt'}
+                      onClick={() => handleFieldChange('role', 'pt')}
                       className={`p-3.5 rounded-2xl border-2 text-left transition cursor-pointer ${
                         formData.role === 'pt'
                           ? 'bg-teal-50 border-teal-600 ring-2 ring-teal-600/20 shadow-xs'
@@ -721,7 +1082,9 @@ export const StaffView: React.FC = () => {
 
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, role: 'admin' })}
+                      role="radio"
+                      aria-checked={formData.role === 'admin'}
+                      onClick={() => handleFieldChange('role', 'admin')}
                       className={`p-3.5 rounded-2xl border-2 text-left transition cursor-pointer ${
                         formData.role === 'admin'
                           ? 'bg-purple-50 border-purple-600 ring-2 ring-purple-600/20 shadow-xs'
@@ -739,7 +1102,9 @@ export const StaffView: React.FC = () => {
 
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, role: 'patient' })}
+                      role="radio"
+                      aria-checked={formData.role === 'patient'}
+                      onClick={() => handleFieldChange('role', 'patient')}
                       className={`p-3.5 rounded-2xl border-2 text-left transition cursor-pointer ${
                         formData.role === 'patient'
                           ? 'bg-blue-50 border-blue-600 ring-2 ring-blue-600/20 shadow-xs'
@@ -756,15 +1121,24 @@ export const StaffView: React.FC = () => {
                     </button>
                   </div>
 
+                  {fieldErrors.role && (
+                    <p id="field-role-error" role="alert" className="text-xs text-rose-700 font-medium flex items-center gap-1.5 mt-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                      <span>{fieldErrors.role}</span>
+                    </p>
+                  )}
+
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                    <label htmlFor="field-bio" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
                       ประวัติโดยย่อ / ข้อมูลเพิ่มเติม
                     </label>
                     <textarea
+                      id="field-bio"
+                      name="bio"
                       rows={3}
                       placeholder="ระบุข้อมูลเพิ่มเติม..."
                       value={formData.bio}
-                      onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                      onChange={(e) => handleFieldChange('bio', e.target.value)}
                       className="w-full p-3.5 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition leading-relaxed"
                     />
                   </div>
@@ -778,40 +1152,58 @@ export const StaffView: React.FC = () => {
                   </h4>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
-                      เลขที่ใบประกอบวิชาชีพ (License No.) <span className="text-rose-600 font-bold ml-0.5">*</span>
+                    <label htmlFor="field-license_no" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      เลขที่ใบประกอบวิชาชีพ (License No.) <span className="text-rose-600 font-bold ml-0.5" aria-hidden="true">*</span>
                     </label>
                     <input
+                      id="field-license_no"
+                      name="license_no"
                       type="text"
-                      required
                       placeholder="เช่น กภ.12345"
                       value={formData.license_no}
-                      onChange={(e) => setFormData({ ...formData, license_no: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
+                      onChange={(e) => handleFieldChange('license_no', e.target.value)}
+                      onBlur={() => handleFieldBlur('license_no')}
+                      aria-invalid={!!fieldErrors.license_no}
+                      aria-describedby={fieldErrors.license_no ? "field-license_no-error" : undefined}
+                      className={`w-full h-11 px-4 bg-slate-50 border ${
+                        fieldErrors.license_no ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-500'
+                      } rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none ${
+                        fieldErrors.license_no ? 'focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20' : 'focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20'
+                      } transition`}
                     />
+                    {fieldErrors.license_no && (
+                      <p id="field-license_no-error" role="alert" className="text-xs text-rose-700 font-medium flex items-center gap-1.5 mt-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                        <span>{fieldErrors.license_no}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                    <label htmlFor="field-license_expiry" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
                       วันหมดอายุใบอนุญาต
                     </label>
                     <input
+                      id="field-license_expiry"
+                      name="license_expiry"
                       type="date"
                       value={formData.license_expiry}
-                      onChange={(e) => setFormData({ ...formData, license_expiry: e.target.value })}
+                      onChange={(e) => handleFieldChange('license_expiry', e.target.value)}
                       className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                    <label htmlFor="field-specialty" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
                       ความเชี่ยวชาญเฉพาะทาง (Specialty)
                     </label>
                     <input
+                      id="field-specialty"
+                      name="specialty"
                       type="text"
                       placeholder="เช่น เวชศาสตร์ฟื้นฟูกายภาพบำบัด"
                       value={formData.specialty}
-                      onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
+                      onChange={(e) => handleFieldChange('specialty', e.target.value)}
                       className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
                     />
                   </div>
@@ -826,48 +1218,91 @@ export const StaffView: React.FC = () => {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
-                        อายุ (ปี) <span className="text-rose-600 font-bold ml-0.5">*</span>
+                      <label htmlFor="field-age" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                        อายุ (ปี) <span className="text-rose-600 font-bold ml-0.5" aria-hidden="true">*</span>
                       </label>
                       <input
+                        id="field-age"
+                        name="age"
                         type="number"
-                        required
                         min={1}
                         max={120}
                         value={formData.age}
-                        onChange={(e) => setFormData({ ...formData, age: Number(e.target.value) || 45 })}
-                        className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
+                        onChange={(e) => handleFieldChange('age', e.target.value === '' ? '' : Number(e.target.value))}
+                        onBlur={() => handleFieldBlur('age')}
+                        aria-invalid={!!fieldErrors.age}
+                        aria-describedby={fieldErrors.age ? "field-age-error" : undefined}
+                        className={`w-full h-11 px-4 bg-slate-50 border ${
+                          fieldErrors.age ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-500'
+                        } rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none ${
+                          fieldErrors.age ? 'focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20' : 'focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20'
+                        } transition`}
                       />
+                      {fieldErrors.age && (
+                        <p id="field-age-error" role="alert" className="text-xs text-rose-700 font-medium flex items-center gap-1.5 mt-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                          <span>{fieldErrors.age}</span>
+                        </p>
+                      )}
                     </div>
 
                     <div>
-                      <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
-                        เพศ <span className="text-rose-600 font-bold ml-0.5">*</span>
+                      <label htmlFor="field-sex" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                        เพศ <span className="text-rose-600 font-bold ml-0.5" aria-hidden="true">*</span>
                       </label>
                       <select
+                        id="field-sex"
+                        name="sex"
                         value={formData.sex}
-                        onChange={(e) => setFormData({ ...formData, sex: e.target.value as any })}
-                        className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer"
+                        onChange={(e) => handleFieldChange('sex', e.target.value as any)}
+                        onBlur={() => handleFieldBlur('sex')}
+                        aria-invalid={!!fieldErrors.sex}
+                        aria-describedby={fieldErrors.sex ? "field-sex-error" : undefined}
+                        className={`w-full h-11 px-4 bg-slate-50 border ${
+                          fieldErrors.sex ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-500'
+                        } rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none ${
+                          fieldErrors.sex ? 'focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20' : 'focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20'
+                        } transition cursor-pointer`}
                       >
                         <option value="male">ชาย (Male)</option>
                         <option value="female">หญิง (Female)</option>
                         <option value="other">อื่นๆ (Other)</option>
                       </select>
+                      {fieldErrors.sex && (
+                        <p id="field-sex-error" role="alert" className="text-xs text-rose-700 font-medium flex items-center gap-1.5 mt-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                          <span>{fieldErrors.sex}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
-                      อาการบาดเจ็บ / วินิจฉัยเบื้องต้น <span className="text-rose-600 font-bold ml-0.5">*</span>
+                    <label htmlFor="field-injury" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
+                      อาการบาดเจ็บ / วินิจฉัยเบื้องต้น <span className="text-rose-600 font-bold ml-0.5" aria-hidden="true">*</span>
                     </label>
                     <input
+                      id="field-injury"
+                      name="injury"
                       type="text"
-                      required
                       placeholder="เช่น ข้อไหล่ติด, ปวดหลังส่วนล่าง"
                       value={formData.injury}
-                      onChange={(e) => setFormData({ ...formData, injury: e.target.value })}
-                      className="w-full h-11 px-4 bg-slate-50 border border-slate-500 rounded-xl text-sm text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition"
+                      onChange={(e) => handleFieldChange('injury', e.target.value)}
+                      onBlur={() => handleFieldBlur('injury')}
+                      aria-invalid={!!fieldErrors.injury}
+                      aria-describedby={fieldErrors.injury ? "field-injury-error" : undefined}
+                      className={`w-full h-11 px-4 bg-slate-50 border ${
+                        fieldErrors.injury ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-500'
+                      } rounded-xl text-sm text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none ${
+                        fieldErrors.injury ? 'focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20' : 'focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20'
+                      } transition`}
                     />
+                    {fieldErrors.injury && (
+                      <p id="field-injury-error" role="alert" className="text-xs text-rose-700 font-medium flex items-center gap-1.5 mt-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                        <span>{fieldErrors.injury}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -877,7 +1312,11 @@ export const StaffView: React.FC = () => {
                 {wizardStep > 1 ? (
                   <button
                     type="button"
-                    onClick={() => setWizardStep((prev) => prev - 1)}
+                    onClick={() => {
+                      setWizardStep((prev) => prev - 1);
+                      setFieldErrors({});
+                      setWizardErrorMsg(null);
+                    }}
                     className="h-11 px-5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-sm font-semibold transition active:scale-95 cursor-pointer"
                   >
                     ย้อนกลับ
@@ -891,10 +1330,19 @@ export const StaffView: React.FC = () => {
                   disabled={actionLoading}
                   className="h-11 flex items-center gap-2 px-6 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm sm:text-base transition shadow-sm disabled:opacity-50 active:scale-95 cursor-pointer"
                 >
-                  <span>
-                    {wizardStep < (formData.role === 'pt' ? 3 : (formData.role === 'patient' ? 3 : 2)) ? 'ขั้นตอนถัดไป' : 'บันทึกและสร้างบัญชี'}
-                  </span>
-                  <ChevronRight className="w-4 h-4" />
+                  {actionLoading ? (
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>กำลังดำเนินการ...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <span>
+                        {wizardStep < (formData.role === 'admin' ? 2 : 3) ? 'ขั้นตอนถัดไป' : 'บันทึกและสร้างบัญชี'}
+                      </span>
+                      <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </form>
