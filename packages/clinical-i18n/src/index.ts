@@ -400,9 +400,54 @@ export const CLINICAL_DICTIONARY = {
     'en-US': 'Hold to answer',
   },
   card_bottom_hint: {
-    'zh-CN': '点击屏幕卡片，或面对镜头举起左/右手保持0.6秒以作答',
-    'th-TH': 'แตะการ์ดบนหน้าจอ หรือยกมือซ้าย/ขวาผ่านกล้องค้างไว้ 0.6 วินาทีเพื่อตอบ',
-    'en-US': 'Tap card on screen, or raise left/right hand and hold for 0.6s to answer',
+    'zh-CN': '举起右手 = 是 · 举起左手 = 否（保持0.6秒）',
+    'th-TH': 'ยกมือขวา = ใช่ · ยกมือซ้าย = ไม่ (ค้างไว้ 0.6 วินาที)',
+    'en-US': 'Raise Right Hand = Yes · Raise Left Hand = No (Hold for 0.6s)',
+  },
+  card_intro_popup_hint: {
+    'zh-CN': '举起右手 = 是 · 举起左手 = 否',
+    'th-TH': 'ยกมือขวา = ใช่ · ยกมือซ้าย = ไม่',
+    'en-US': 'Raise Right Hand = Yes · Raise Left Hand = No',
+  },
+  card_right_hand_yes: {
+    'zh-CN': '右手 = 是',
+    'th-TH': 'มือขวา = ใช่',
+    'en-US': 'Right Hand = Yes',
+  },
+  card_left_hand_no: {
+    'zh-CN': '左手 = 否',
+    'th-TH': 'มือซ้าย = ไม่',
+    'en-US': 'Left Hand = No',
+  },
+  card_both_hands_warning: {
+    'zh-CN': '请仅举起一只手',
+    'th-TH': 'กรุณายกมือเพียงข้างเดียว',
+    'en-US': 'Please raise only one hand',
+  },
+  card_confirmed_yes: {
+    'zh-CN': 'ตอบ: ใช่ / 已答：是',
+    'th-TH': 'ตอบ: ใช่',
+    'en-US': 'Answer: Yes',
+  },
+  card_confirmed_no: {
+    'zh-CN': 'ตอบ: ไม่ / 已答：否',
+    'th-TH': 'ตอบ: ไม่',
+    'en-US': 'Answer: No',
+  },
+  card_move_to_center: {
+    'zh-CN': '请移入画面中央',
+    'th-TH': 'ขยับเข้ากลางภาพ',
+    'en-US': 'Move to center of frame',
+  },
+  card_btn_tap_yes: {
+    'zh-CN': 'ใช่ (ขวา) / 是',
+    'th-TH': 'ใช่ (ยกมือขวา)',
+    'en-US': 'Yes (Right Hand)',
+  },
+  card_btn_tap_no: {
+    'zh-CN': 'ไม่ (ซ้าย) / 否',
+    'th-TH': 'ไม่ (ยกมือซ้าย)',
+    'en-US': 'No (Left Hand)',
   },
   card_stand_visible_hint: {
     'zh-CN': '请退后至能看清双手的位置（保持0.6秒作答）',

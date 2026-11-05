@@ -1,11 +1,22 @@
 /**
  * apps/kiosk/src/minigame-cards/PhysicalCardGame.tsx
  * มินิเกม "การ์ดกายภาพ" สำหรับฝึกสมองและการเคลื่อนไหว (Physical & Cognitive Cards)
- * ออกแบบตามภาพตัวอย่าง 100%:
- * - หัวข้อ "การ์ดกายภาพ" และแถบคะแนน
- * - การ์ดคำถามด้านบน "รูปนี้ใช่ผลไม้หรือไม่" / คำถามประจำข้อ
- * - 3 การ์ด: "ใช่ (ยกมือซ้าย)" | "รูปภาพ" | "ไม่ (ยกมือขวา)"
- * - จอกล้องด้านล่างพร้อมกรอบมุม "ยืนให้เห็นมือทั้งสองข้าง" และระบบตรวจจับการยกมือ / สัมผัสหน้าจอ
+ * ปรับปรุงระบบใหม่:
+ * 1. ตรวจจับมือ 2 ข้างพร้อมกัน (Two-hand detection) ผ่าน MediaPipe HandLandmarker (numHands: 2)
+ *    - วาด skeleton ให้ทุกมือที่ตรวจพบ
+ *    - แยกซ้าย/ขวาตามกายวิภาคจริงของผู้เล่น (Anatomical Handedness)
+ *    - ป้องกันมือถูกตัดขอบภาพด้วย object-contain
+ *    - กรองเฉพาะผู้เล่นหลัก (largest palm) ป้องกันคนเดินผ่านข้างหลัง
+ * 2. นำแผงด้านข้าง "ใช่" & "ไม่" ออก ขยายจอกล้องเต็มพื้นที่
+ *    - สลับการตอบ: ยกมือขวา = "ใช่", ยกมือซ้าย = "ไม่"
+ *    - ค้างไว้ 0.6 วินาทีเพื่อยืนยันคำตอบ
+ *    - หากยก 2 ข้างพร้อมกัน ระบบจะไม่ตอบ
+ *    - ปุ่มสัมผัสสำรองขนาดกะทัดรัดใต้กล้อง
+ * 3. Animated Dynamic Popup แจ้งเตือนมือกำลังตอบ
+ *    - ตัวอักษรขนาดใหญ่ >= 28px คอนทราสต์สูง มองเห็นชัดจากระยะ 1-2 เมตร
+ *    - ลอยอยู่กึ่งกลางด้านบนกล้อง ไม่บังใบหน้าและมือ
+ *    - แสดงหลอดความคืบหน้า 0.6 วินาที
+ *    - ป้ายเตือนยกมือข้างเดียว / ป้ายขยับเข้ากลางภาพ / ป้ายยืนยันคำตอบ
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -16,9 +27,11 @@ import {
 } from './PhysicalCardGameData.js';
 import { PhysicalCardVisual } from './PhysicalCardVisuals.js';
 import {
-  verifyRealHandGesture,
-  drawHandSkeleton,
-  HandLandmarkPoint,
+  HAND_ANSWER_MAP,
+  MinigameHandEvaluation,
+  MinigameFrameResult,
+  evaluateMinigameFrame,
+  drawAllMinigameHands,
 } from './HandGestureVerifier.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
@@ -102,13 +115,32 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
 
+  // Animated Dynamic Popup States
+  const [activeHandState, setActiveHandState] = useState<{
+    anatomicalSide: 'left' | 'right';
+    answerSide: 'yes' | 'no';
+  } | null>(null);
+  const [isBothHandsWarning, setIsBothHandsWarning] = useState<boolean>(false);
+  const [isNearEdge, setIsNearEdge] = useState<boolean>(false);
+  const [confirmedAnswer, setConfirmedAnswer] = useState<'yes' | 'no' | null>(null);
+  const [showIntroBanner, setShowIntroBanner] = useState<boolean>(true);
+
+  // Question 1 intro banner (3s fade out)
+  useEffect(() => {
+    if (currentIndex === 0) {
+      setShowIntroBanner(true);
+      const timer = setTimeout(() => {
+        setShowIntroBanner(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    } else {
+      setShowIntroBanner(false);
+    }
+  }, [currentIndex]);
+
   // High-performance DOM Refs (Zero React re-renders during motion detection)
-  const leftProgressRef = useRef<HTMLDivElement | null>(null);
-  const rightProgressRef = useRef<HTMLDivElement | null>(null);
-  const leftProgressBarInnerRef = useRef<HTMLDivElement | null>(null);
-  const rightProgressBarInnerRef = useRef<HTMLDivElement | null>(null);
-  const leftProgressPercentRef = useRef<HTMLSpanElement | null>(null);
-  const rightProgressPercentRef = useRef<HTMLSpanElement | null>(null);
+  const popupProgressBarRef = useRef<HTMLDivElement | null>(null);
+  const popupProgressPercentRef = useRef<HTMLSpanElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Camera & Real Hand Landmarker Detection
@@ -122,8 +154,6 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const [isModelLoading, setIsModelLoading] = useState<boolean>(true);
   const [modelError, setModelError] = useState<string | null>(null);
   const [isMirrored, setIsMirrored] = useState<boolean>(true);
-  const [activeHandZone, setActiveHandZone] = useState<'LEFT' | 'RIGHT' | 'CENTER' | 'BOTH' | 'NONE'>('NONE');
-  const [isBothHandsWarning, setIsBothHandsWarning] = useState<boolean>(false);
 
   const activeQuestion: PhysicalCardQuestion =
     filteredList[currentIndex] || ALL_99_PHYSICAL_CARD_QUESTIONS[0];
@@ -313,18 +343,19 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
       }
 
       setShowExplanation(true);
+      setConfirmedAnswer(choice);
 
       // Auto transition to next question after 1.4s
       setTimeout(() => {
         setShowExplanation(false);
         setAnswerState('idle');
         setSelectedSide(null);
-        if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-        if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-        if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-        if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-        if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-        if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+        setConfirmedAnswer(null);
+        setActiveHandState(null);
+        setIsBothHandsWarning(false);
+        setIsNearEdge(false);
+        if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+        if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
 
         if (currentIndex + 1 < filteredList.length) {
           const nextIdx = currentIndex + 1;
@@ -366,7 +397,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     handleAnswerRef.current = handleAnswer;
   }, [handleAnswer]);
 
-  // 1. Initialize MediaPipe HandLandmarker (Multi-tier WASM & Model Resolver + GPU-to-CPU Fallback)
+  // 1. Initialize MediaPipe HandLandmarker with 2-Hand Detection (GPU + CPU fallback)
   useEffect(() => {
     let isCancelled = false;
 
@@ -377,7 +408,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         const vision = await import('@mediapipe/tasks-vision');
         const { HandLandmarker, FilesetResolver } = vision;
 
-        const baseUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL)
+        const baseUrl = typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL
           ? (import.meta as any).env.BASE_URL
           : '/';
         const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
@@ -416,7 +447,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
         for (const mSource of modelSources) {
           if (isCancelled) return;
-          // 1. Try GPU delegate
+          // 1. Try GPU delegate with numHands = 2, confidence 0.5
           try {
             landmarker = await HandLandmarker.createFromOptions(fileset, {
               baseOptions: {
@@ -425,13 +456,13 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               },
               runningMode: 'VIDEO',
               numHands: 2,
-              minHandDetectionConfidence: 0.45,
-              minHandPresenceConfidence: 0.45,
-              minTrackingConfidence: 0.45,
+              minHandDetectionConfidence: 0.5,
+              minHandPresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
             });
             if (landmarker) break;
-          } catch (gpuErr) {
-            // 2. Fallback to CPU delegate
+          } catch {
+            // 2. Fallback to CPU delegate with numHands = 2, confidence 0.5
             try {
               landmarker = await HandLandmarker.createFromOptions(fileset, {
                 baseOptions: {
@@ -440,9 +471,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 },
                 runningMode: 'VIDEO',
                 numHands: 2,
-                minHandDetectionConfidence: 0.45,
-                minHandPresenceConfidence: 0.45,
-                minTrackingConfidence: 0.45,
+                minHandDetectionConfidence: 0.5,
+                minHandPresenceConfidence: 0.5,
+                minTrackingConfidence: 0.5,
               });
               if (landmarker) break;
             } catch (cpuErr: any) {
@@ -476,7 +507,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         console.warn('MediaPipe HandLandmarker init error:', err);
         if (!isCancelled) {
           setIsModelLoading(false);
-          setModelError(err?.message || 'โมเดลตรวจจับมือขัดข้อง แตะการ์ดเพื่อตอบได้ทันที');
+          setModelError(err?.message || 'โมเดลตรวจจับมือขัดข้อง แตะปุ่มด้านล่างเพื่อตอบได้ทันที');
         }
       }
     }
@@ -496,15 +527,11 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     };
   }, []);
 
-  // 2. Strict Real Hand Detection Loop with Downscaling (480px), 20 FPS Throttle, Hysteresis & 600ms Dwell
+  // 2. Two-Hand Detection Loop: 480px Downscale, ~20 FPS Throttle, Anatomical Left/Right, Inverted Mapping & 600ms Dwell
   useEffect(() => {
     if (!cameraActive || isGameOver || answerState !== 'idle') {
-      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-      if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-      if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-      if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-      if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+      if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+      if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
       if (overlayCanvasRef.current) {
         const ctx = overlayCanvasRef.current.getContext('2d');
         if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
@@ -514,25 +541,20 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
     let animFrame: number;
     let lastDetectTime = 0;
-    const TARGET_INTERVAL_MS = 50; // ~20 FPS: optimal for ML tracking without GPU overload
+    const TARGET_INTERVAL_MS = 50; // ~20 FPS throttle
     const HOLD_DWELL_MS = 600; // 0.6 seconds continuous hold requirement
-    const GRACE_PERIOD_MS = 200; // 200ms grace period tolerance for brief occlusion
+    const GRACE_PERIOD_MS = 200; // 200ms grace period tolerance for frame drops
 
-    let activeZone: 'LEFT' | 'RIGHT' | null = null;
-    let zoneHoldStart = 0;
+    let activeSide: 'left' | 'right' | null = null;
+    let sideHoldStart = 0;
     let lastValidSeenTime = 0;
     let handNeutralFrames = 0;
-    let candidateZone: 'LEFT' | 'RIGHT' | null = null;
+    let candidateSide: 'left' | 'right' | null = null;
     let candidateCount = 0;
-    const smoothXHistory: number[] = [];
 
     const resetProgressDom = () => {
-      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-      if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-      if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-      if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-      if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+      if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+      if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
     };
 
     const detectHands = (timestamp: number) => {
@@ -564,7 +586,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         }
 
         try {
-          // Downscale input frame to 480px width canvas to dramatically reduce ML latency and avoid lag
+          // Downscale input frame to 480px width canvas to keep ML inference smooth
           let dCanvas = detectCanvasRef.current;
           if (!dCanvas) {
             dCanvas = document.createElement('canvas');
@@ -586,186 +608,133 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
           lastTimestampRef.current = monotonicTimestamp;
 
           const result = landmarker.detectForVideo(dCanvas, monotonicTimestamp);
-          const hands = result?.landmarks || [];
+          const rawHands = result?.landmarks || [];
+          const handednessList = result?.handednesses || [];
 
-          // Verify all detected hands without early break
-          const verifiedList = hands.map((handPts: HandLandmarkPoint[]) => ({
-            handPts,
-            verification: verifyRealHandGesture(handPts, 0.85, {
-              isMirrored,
-              minConfidence: 0.45,
-              leftZoneThreshold: 0.46,
-              rightZoneThreshold: 0.54,
-              maxYThreshold: 0.88,
-              raisedTipMargin: 0.02,
-            }),
-          }));
+          // Multi-hand evaluation using anatomical left/right and inverted mapping
+          const frameResult: MinigameFrameResult = evaluateMinigameFrame(rawHands, handednessList, {
+            isMirrored,
+            minConfidence: 0.5,
+            maxYThreshold: 0.82,
+            raisedTipMargin: 0.03,
+          });
 
-          const leftHand = verifiedList.find((h: any) => h.verification.isValidHand && h.verification.zone === 'LEFT');
-          const rightHand = verifiedList.find((h: any) => h.verification.isValidHand && h.verification.zone === 'RIGHT');
+          // Edge detection state
+          setIsNearEdge((prev) => (prev !== frameResult.hasNearEdgeHand ? frameResult.hasNearEdgeHand : prev));
 
-          // Bilateral Ambiguity Check: Both hands raised in active answer zones simultaneously
-          if (leftHand && rightHand) {
-            activeZone = null;
-            candidateZone = null;
+          // 1. Bilateral Ambiguity Check: Both hands raised simultaneously
+          if (frameResult.isBothHandsRaised) {
+            activeSide = null;
+            candidateSide = null;
             candidateCount = 0;
-            zoneHoldStart = 0;
+            sideHoldStart = 0;
             resetProgressDom();
             setIsBothHandsWarning(true);
-            setActiveHandZone('BOTH');
+            setActiveHandState(null);
 
             if (ctx) {
-              drawHandSkeleton(ctx, leftHand.handPts, canvas.width, canvas.height, 'CENTER', 0);
-              drawHandSkeleton(ctx, rightHand.handPts, canvas.width, canvas.height, 'CENTER', 0);
+              drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, true);
             }
           } else {
             setIsBothHandsWarning(false);
-            const activeCandidate = leftHand || rightHand;
-            const neutralCandidate = verifiedList.find((h: any) => h.verification.isHandDetected);
-            const chosen = activeCandidate || neutralCandidate;
 
-            if (chosen && chosen.handPts && ctx) {
-              const { verification, handPts } = chosen;
-
-              // Neutral Hand Reset Gate Check: Must lower hand before next question
-              if (neutralGateRef.current) {
-                const isLowered =
-                  !verification.isOpenPalm ||
-                  verification.mirroredY > 0.70 ||
-                  verification.zone === 'CENTER' ||
-                  verification.zone === 'NONE';
-
-                if (isLowered) {
-                  handNeutralFrames++;
-                  if (handNeutralFrames >= 4) {
-                    neutralGateRef.current = false;
-                    handNeutralFrames = 0;
-                  }
-                } else {
+            // 2. Neutral Hand Reset Gate Check: Must lower hands between questions
+            if (neutralGateRef.current) {
+              const isLowered = frameResult.raisedHands.length === 0;
+              if (isLowered) {
+                handNeutralFrames++;
+                if (handNeutralFrames >= 3) {
+                  neutralGateRef.current = false;
                   handNeutralFrames = 0;
                 }
+              } else {
+                handNeutralFrames = 0;
+              }
 
-                activeZone = null;
-                candidateZone = null;
-                candidateCount = 0;
-                zoneHoldStart = 0;
-                resetProgressDom();
-                setActiveHandZone('CENTER');
-                drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, 'CENTER', 0);
-              } else if (verification.isValidHand && verification.side) {
-                // Apply 3-frame smoothing to X coordinate
-                smoothXHistory.push(verification.mirroredX);
-                if (smoothXHistory.length > 3) smoothXHistory.shift();
-                const avgX = smoothXHistory.reduce((a: number, b: number) => a + b, 0) / smoothXHistory.length;
-                const detectedZone = (avgX < 0.46 ? 'LEFT' : avgX > 0.54 ? 'RIGHT' : 'CENTER') as 'LEFT' | 'RIGHT' | 'CENTER';
+              activeSide = null;
+              candidateSide = null;
+              candidateCount = 0;
+              sideHoldStart = 0;
+              resetProgressDom();
+              setActiveHandState(null);
 
-                if (detectedZone === 'LEFT' || detectedZone === 'RIGHT') {
-                  lastValidSeenTime = monotonicTimestamp;
-                  setActiveHandZone(detectedZone);
+              if (ctx) {
+                drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false);
+              }
+            } else if (frameResult.activeHand) {
+              // 3. One hand raised
+              const currentHand = frameResult.activeHand;
+              const detectedSide = currentHand.anatomicalSide; // 'left' | 'right'
+              lastValidSeenTime = monotonicTimestamp;
 
-                  if (activeZone === detectedZone) {
-                    const elapsed = monotonicTimestamp - zoneHoldStart;
-                    const progress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
+              if (activeSide === detectedSide) {
+                const elapsed = monotonicTimestamp - sideHoldStart;
+                const progress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
+                const percentStr = `${Math.round(progress * 100)}%`;
 
-                    const progressScale = progress.toFixed(3);
-                    const percentStr = `${Math.round(progress * 100)}%`;
-                    if (detectedZone === 'LEFT' && leftProgressRef.current) {
-                      leftProgressRef.current.style.transform = `scaleY(${progressScale})`;
-                      if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = percentStr;
-                      if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = percentStr;
-                      if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                      if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-                      if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-                    } else if (detectedZone === 'RIGHT' && rightProgressRef.current) {
-                      rightProgressRef.current.style.transform = `scaleY(${progressScale})`;
-                      if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = percentStr;
-                      if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = percentStr;
-                      if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-                      if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-                      if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-                    }
+                if (popupProgressBarRef.current) {
+                  popupProgressBarRef.current.style.width = percentStr;
+                }
+                if (popupProgressPercentRef.current) {
+                  popupProgressPercentRef.current.textContent = percentStr;
+                }
 
-                    drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, detectedZone, progress);
+                if (ctx) {
+                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, currentHand, progress, false);
+                }
 
-                    if (progress >= 1.0) {
-                      activeZone = null;
-                      candidateZone = null;
-                      candidateCount = 0;
-                      zoneHoldStart = 0;
-                      neutralGateRef.current = true;
-                      handNeutralFrames = 0;
-                      resetProgressDom();
-                      handleAnswerRef.current(verification.side);
-                    }
-                  } else {
-                    // Hysteresis: Require 2 consecutive frames before switching activeZone
-                    if (candidateZone === detectedZone) {
-                      candidateCount++;
-                      if (candidateCount >= 2) {
-                        activeZone = detectedZone;
-                        zoneHoldStart = monotonicTimestamp;
-                        candidateCount = 0;
-                        if (detectedZone === 'LEFT') {
-                          if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-                          if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-                          if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
-                        }
-                        if (detectedZone === 'RIGHT') {
-                          if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-                          if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-                          if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-                        }
-                      }
-                    } else {
-                      candidateZone = detectedZone;
-                      candidateCount = 1;
-                    }
-
-                    drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, detectedZone, 0);
-                  }
-                } else {
-                  // Center neutral zone
-                  setActiveHandZone('CENTER');
-                  if (activeZone && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
-                    // Hold progress during brief grace period
-                  } else {
-                    activeZone = null;
-                    candidateZone = null;
-                    candidateCount = 0;
-                    zoneHoldStart = 0;
-                    resetProgressDom();
-                  }
-                  drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, 'CENTER', 0);
+                if (progress >= 1.0) {
+                  const finalAnswer = currentHand.answerSide; // 'yes' or 'no'
+                  activeSide = null;
+                  candidateSide = null;
+                  candidateCount = 0;
+                  sideHoldStart = 0;
+                  neutralGateRef.current = true;
+                  handNeutralFrames = 0;
+                  resetProgressDom();
+                  handleAnswerRef.current(finalAnswer);
                 }
               } else {
-                // Hand detected but not raised or in neutral posture
-                setActiveHandZone('CENTER');
-                if (activeZone && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
-                  // Grace period tolerance
+                // Hysteresis: Require 2 consecutive frames before switching activeSide
+                if (candidateSide === detectedSide) {
+                  candidateCount++;
+                  if (candidateCount >= 2) {
+                    activeSide = detectedSide;
+                    sideHoldStart = monotonicTimestamp;
+                    candidateCount = 0;
+                    resetProgressDom();
+                    setActiveHandState({
+                      anatomicalSide: activeSide,
+                      answerSide: currentHand.answerSide,
+                    });
+                  }
                 } else {
-                  activeZone = null;
-                  candidateZone = null;
-                  candidateCount = 0;
-                  zoneHoldStart = 0;
-                  resetProgressDom();
+                  candidateSide = detectedSide;
+                  candidateCount = 1;
                 }
-                drawHandSkeleton(ctx, handPts, canvas.width, canvas.height, verification.zone || 'CENTER', 0);
+
+                if (ctx) {
+                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, currentHand, 0, false);
+                }
               }
             } else {
-              // No hand detected
-              setActiveHandZone('NONE');
-              if (activeZone && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
-                // Grace period tolerance
-              } else {
-                activeZone = null;
-                candidateZone = null;
-                candidateCount = 0;
-                zoneHoldStart = 0;
-                handNeutralFrames++;
-                if (handNeutralFrames >= 4) {
-                  neutralGateRef.current = false;
+              // 4. No hand raised (hands neutral or absent)
+              if (activeSide && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
+                // Grace period tolerance: hold active state for brief frame drops
+                if (ctx) {
+                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false);
                 }
+              } else {
+                activeSide = null;
+                candidateSide = null;
+                candidateCount = 0;
+                sideHoldStart = 0;
                 resetProgressDom();
+                setActiveHandState(null);
+
+                if (ctx) {
+                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false);
+                }
               }
             }
           }
@@ -779,28 +748,16 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
     animFrame = requestAnimationFrame(detectHands);
 
-    const leftEl = leftProgressRef.current;
-    const rightEl = rightProgressRef.current;
-    const leftInnerEl = leftProgressBarInnerRef.current;
-    const rightInnerEl = rightProgressBarInnerRef.current;
-    const leftPercentEl = leftProgressPercentRef.current;
-    const rightPercentEl = rightProgressPercentRef.current;
-    const canvasEl = overlayCanvasRef.current;
-
     return () => {
       cancelAnimationFrame(animFrame);
-      if (leftEl) leftEl.style.transform = 'scaleY(0)';
-      if (rightEl) rightEl.style.transform = 'scaleY(0)';
-      if (leftInnerEl) leftInnerEl.style.width = '0%';
-      if (rightInnerEl) rightInnerEl.style.width = '0%';
-      if (leftPercentEl) leftPercentEl.textContent = '0%';
-      if (rightPercentEl) rightPercentEl.textContent = '0%';
-      if (canvasEl) {
-        const ctx = canvasEl.getContext('2d');
-        if (ctx) ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+      if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+      if (overlayCanvasRef.current) {
+        const ctx = overlayCanvasRef.current.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
       }
     };
-  }, [cameraActive, isGameOver, answerState]);
+  }, [cameraActive, isGameOver, answerState, isMirrored]);
 
   const handleRestart = () => {
     try {
@@ -811,19 +768,20 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     setScore(0);
     setAnswerState('idle');
     setSelectedSide(null);
+    setConfirmedAnswer(null);
+    setActiveHandState(null);
+    setIsBothHandsWarning(false);
+    setIsNearEdge(false);
+    setShowIntroBanner(true);
     setIsGameOver(false);
     setShowExplanation(false);
-    if (leftProgressRef.current) leftProgressRef.current.style.transform = 'scaleY(0)';
-    if (rightProgressRef.current) rightProgressRef.current.style.transform = 'scaleY(0)';
-    if (leftProgressBarInnerRef.current) leftProgressBarInnerRef.current.style.width = '0%';
-    if (rightProgressBarInnerRef.current) rightProgressBarInnerRef.current.style.width = '0%';
-    if (leftProgressPercentRef.current) leftProgressPercentRef.current.textContent = '0%';
-    if (rightProgressPercentRef.current) rightProgressPercentRef.current.textContent = '0%';
+    if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+    if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
   };
 
   return (
     <div className="w-full h-full flex flex-col justify-between pt-3 pb-3 px-3 sm:pt-4 sm:pb-4 sm:px-5 md:px-6 bg-[#EDF7F1] text-slate-800 select-none overflow-hidden font-sans relative">
-      {/* Top Header Bar (Safe top margin to prevent clipping against modal border) */}
+      {/* Top Header Bar */}
       <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex items-center justify-between gap-2 shrink-0 pt-0.5">
         <div className="flex items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl font-black text-[#134E43] tracking-normal">
@@ -850,7 +808,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
           </button>
 
-          {/* Score Pill Badge (ตามภาพต้นฉบับ: แถบสีเขียวเข้มพร้อมวงกลมคะแนนสีขาว) */}
+          {/* Score Pill Badge */}
           <div className="flex items-center gap-2 bg-[#134E43] text-white pl-4 pr-1.5 py-1 rounded-full shadow-md border border-emerald-800">
             <span className="text-xs sm:text-sm font-bold tracking-wide">{t('card_score_label')}</span>
             <div className="w-7 h-7 rounded-full bg-white text-[#134E43] font-black flex items-center justify-center text-sm shadow-inner">
@@ -873,14 +831,14 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
       {/* Main Game Screen */}
       {!isGameOver ? (
-        <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex-1 flex flex-col justify-between gap-2.5 sm:gap-3 my-auto min-h-0">
-          {/* Question Banner (ตามแบบภาพ: กล่องขาวมน ข้อความใหญ่ตรงกลาง พร้อม safe margins ไม่ให้ตัวหนังสือถูกตัดทับ) */}
-          <div className="w-full bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-4 text-center shadow-xs border border-emerald-100/90 transition animate-fade-in relative overflow-hidden min-h-[64px] sm:min-h-[72px] flex items-center justify-center shrink-0">
+        <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex-1 flex flex-col justify-between gap-2 sm:gap-2.5 my-auto min-h-0">
+          {/* Question Banner */}
+          <div className="w-full bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-4 text-center shadow-xs border border-emerald-100/90 transition animate-fade-in relative overflow-hidden min-h-[60px] sm:min-h-[68px] flex items-center justify-center shrink-0">
             <h2 className="text-xl sm:text-2xl xl:text-3xl font-extrabold text-[#113C34] tracking-normal leading-tight">
               {activeQuestion.prompt}
             </h2>
 
-            {/* Answer Result Banner Alert - safe padding to ensure no text clipping */}
+            {/* Answer Result Banner Alert */}
             {answerState !== 'idle' && (
               <div
                 className={`absolute inset-0 flex items-center justify-center gap-2 text-base sm:text-lg font-bold text-white transition animate-scale-up px-4 py-3 z-30 ${
@@ -912,65 +870,15 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             </div>
           )}
 
-          {/* 3-Column Zero-Scroll Layout (Left: ใช่ | Center: Full Camera Viewport | Right: ไม่) */}
-          <div className="w-full flex-1 min-h-0 grid grid-cols-12 gap-2.5 sm:gap-4 items-stretch my-auto">
-            {/* Card 1 (Column 1): ใช่ (ยกมือซ้าย) - cols 3 */}
-            <div
-              onClick={() => handleAnswer('yes')}
-              className={`col-span-3 bg-white rounded-3xl border-3 flex flex-col items-center justify-between p-3 sm:p-5 text-center cursor-pointer transition-all duration-200 active:scale-98 shadow-sm relative overflow-hidden select-none hover:shadow-md ${
-                selectedSide === 'yes'
-                  ? answerState === 'correct'
-                    ? 'border-emerald-500 bg-emerald-50 ring-4 ring-emerald-400/40'
-                    : 'border-rose-500 bg-rose-50'
-                  : 'border-[#16A34A] hover:bg-emerald-50/40'
-              }`}
-            >
-              {/* GPU-Accelerated Detection progress bar */}
-              <div
-                ref={leftProgressRef}
-                className="absolute bottom-0 left-0 right-0 h-full bg-emerald-500/25 origin-bottom pointer-events-none will-change-transform"
-                style={{ transform: 'scaleY(0)' }}
-              />
-
-              <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-[#DCFCE7] flex items-center justify-center text-[#16A34A] shadow-inner mb-1 sm:mb-2 shrink-0">
-                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#16A34A] stroke-[2.3]" />
-              </div>
-
-              <div className="flex-1 flex flex-col items-center justify-center my-1 sm:my-2">
-                <div className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#16A34A] tracking-tight">
-                  {t('card_yes_label')}
-                </div>
-              </div>
-
-              <div className="w-full mt-auto space-y-2 shrink-0 z-10">
-                <span className="inline-block w-full py-1.5 sm:py-2 px-2.5 rounded-full bg-[#DCFCE7] text-[#15803D] text-xs sm:text-sm font-black shadow-xs tracking-wide">
-                  {t('card_raise_left_hand')}
-                </span>
-                {/* Horizontal Mini Progress Track with Percent Indicator */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-[#15803D] px-1">
-                    <span>{t('card_hold_to_answer')}</span>
-                    <span ref={leftProgressPercentRef} className="font-mono font-black">0%</span>
-                  </div>
-                  <div className="w-full bg-emerald-100/90 rounded-full h-2 sm:h-2.5 overflow-hidden border border-emerald-200">
-                    <div
-                      ref={leftProgressBarInnerRef}
-                      className="h-full bg-[#16A34A] rounded-full transition-all duration-75"
-                      style={{ width: '0%' }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Column 2: Full Center Camera Viewport - cols 6 */}
-            <div className="col-span-6 bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center">
-              {/* Live Video Feed */}
+          {/* Center Area: Full Camera Viewport with Top Animated Dynamic Popups (No Sidebars) */}
+          <div className="w-full flex-1 min-h-0 flex flex-col items-center justify-center relative my-auto">
+            <div className="w-full h-full max-h-[60vh] sm:max-h-[64vh] aspect-video bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center">
+              {/* Live Video Feed (Uncropped object-contain) */}
               <video
                 ref={videoRef}
                 playsInline
                 muted
-                className={`absolute inset-0 w-full h-full object-cover transform ${
+                className={`absolute inset-0 w-full h-full object-contain transform ${
                   isMirrored ? 'scale-x-[-1]' : ''
                 } transition-opacity duration-500 ${
                   cameraActive ? 'opacity-100' : 'opacity-0'
@@ -990,24 +898,21 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               {/* Real Hand Skeleton & Dwell Progress Ring Overlay */}
               <canvas
                 ref={overlayCanvasRef}
-                className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+                className="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
               />
 
-              {/* Subtle Center Guide Line (เส้นแบ่งโซนกึ่งกลางจาง ๆ ไม่บดบังภาพ) */}
-              <div className="absolute top-4 bottom-14 left-1/2 -translate-x-1/2 w-px border-l border-dashed border-white/20 pointer-events-none z-10" />
-
-              {/* Center Floating Question Illustration Badge (อยู่ตรงกลางด้านบน ไม่บังหน้าและมือ) */}
-              <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-2xl bg-white/95 border border-emerald-200/90 shadow-lg flex items-center gap-2.5 pointer-events-none max-w-[85%]">
-                <div className="w-9 h-9 sm:w-11 sm:h-11 shrink-0 bg-emerald-50/80 rounded-xl flex items-center justify-center p-0.5 border border-emerald-100 overflow-hidden">
+              {/* Question Illustration (Docked at bottom-left corner inside camera) */}
+              <div className="absolute bottom-3 left-4 z-20 px-3 py-1.5 rounded-2xl bg-white/95 border border-emerald-200/90 shadow-lg flex items-center gap-2.5 pointer-events-none max-w-[48%] sm:max-w-[42%]">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 bg-emerald-50/80 rounded-xl flex items-center justify-center p-0.5 border border-emerald-100 overflow-hidden">
                   <PhysicalCardVisual
                     visualKey={activeQuestion.visualKey}
                     imageDescription={activeQuestion.imageDescription}
                     compact
                   />
                 </div>
-                <div className="flex flex-col text-left">
-                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">ภาพประกอบโจทย์</span>
-                  <span className="text-xs sm:text-sm font-extrabold text-slate-800 line-clamp-1 leading-snug">
+                <div className="flex flex-col text-left overflow-hidden">
+                  <span className="text-[9px] sm:text-[10px] font-bold text-emerald-800 uppercase tracking-wider">ภาพประกอบโจทย์</span>
+                  <span className="text-xs sm:text-sm font-extrabold text-slate-800 truncate leading-snug">
                     {activeQuestion.imageDescription || activeQuestion.prompt}
                   </span>
                 </div>
@@ -1025,145 +930,138 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               {modelError && (
                 <div className="absolute top-16 z-25 px-3.5 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs font-bold flex items-center gap-1.5 shadow-lg max-w-[90%]">
                   <AlertTriangle className="w-4 h-4 text-amber-900 shrink-0" />
-                  <span className="truncate">{modelError} (แตะการ์ดบนจอเพื่อตอบแทนได้)</span>
+                  <span className="truncate">{modelError} (แตะปุ่มด้านล่างเพื่อตอบแทนได้)</span>
                 </div>
               )}
 
-              {/* When camera is connecting / permission not active */}
+              {/* Camera Inactive placeholder */}
               {!cameraActive && (
                 <div className="relative z-10 flex flex-col items-center justify-center gap-1.5 text-emerald-300/70 pointer-events-none">
                   <Camera className="w-7 h-7 opacity-60 animate-pulse" />
-                  <span className="text-xs sm:text-sm font-semibold">กำลังเชื่อมต่อกล้อง หรือแตะการ์ดบนจอเพื่อตอบ</span>
+                  <span className="text-xs sm:text-sm font-semibold">กำลังเชื่อมต่อกล้อง หรือแตะปุ่มด้านล่างเพื่อตอบ</span>
                 </div>
               )}
 
-              {/* Corner Viewfinder HUD Brackets (กรอบ 4 มุมสีเขียวมิ้นต์ตามภาพ) */}
+              {/* Corner Viewfinder HUD Brackets */}
               <div className="absolute top-3 left-3 w-6 h-6 border-t-3 border-l-3 border-[#6EE7B7] rounded-tl-lg pointer-events-none z-15" />
               <div className="absolute bottom-3 left-3 w-6 h-6 border-b-3 border-l-3 border-[#6EE7B7] rounded-bl-lg pointer-events-none z-15" />
               <div className="absolute bottom-3 right-3 w-6 h-6 border-b-3 border-r-3 border-[#6EE7B7] rounded-br-lg pointer-events-none z-15" />
 
-              {/* Bottom Dynamic Pill Banner */}
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 whitespace-nowrap">
-                <div
-                  className={`px-4 sm:px-5 py-1.5 rounded-full text-xs sm:text-sm font-extrabold shadow-lg flex items-center gap-2 border transition-all ${
-                    isBothHandsWarning
-                      ? 'bg-rose-600 text-white border-rose-400 animate-bounce'
-                      : activeHandZone === 'LEFT'
-                      ? 'bg-emerald-600 text-white border-emerald-400'
-                      : activeHandZone === 'RIGHT'
-                      ? 'bg-orange-600 text-white border-orange-400'
-                      : activeHandZone === 'CENTER'
-                      ? 'bg-teal-50 text-teal-900 border-teal-300'
-                      : 'bg-white text-[#0F2D24] border-emerald-100'
-                  }`}
-                >
-                  {isBothHandsWarning ? (
-                    <>
-                      <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />
-                      <span>
-                        {lang.startsWith('zh')
-                          ? '⚠️ 请仅举起一只手作答（左右手不可同时举起）'
-                          : lang.startsWith('en')
-                          ? '⚠️ Please raise only ONE hand to answer'
-                          : '⚠️ กรุณายกมือเพียงข้างเดียวเพื่อตอบ (ห้ามยกพร้อมกันสองข้าง)'}
+              {/* ANIMATED DYNAMIC POPUPS (Floating Top-Center above camera, >= 28px font, high contrast) */}
+              <div className="absolute top-3 sm:top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none flex flex-col items-center gap-2 max-w-[90%]">
+                {/* 1. Confirmed Answer Banner */}
+                {confirmedAnswer && (
+                  <div
+                    className={`px-6 sm:px-8 py-3 rounded-2xl text-white shadow-2xl flex items-center gap-3 animate-scale-up border-2 ${
+                      confirmedAnswer === 'yes'
+                        ? 'bg-emerald-600 border-emerald-300'
+                        : 'bg-orange-600 border-orange-300'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-8 h-8 text-white shrink-0 animate-bounce" />
+                    <span className="text-[28px] sm:text-3xl md:text-4xl font-black">
+                      {confirmedAnswer === 'yes' ? t('card_confirmed_yes') : t('card_confirmed_no')}
+                    </span>
+                  </div>
+                )}
+
+                {/* 2. Both Hands Warning Banner */}
+                {!confirmedAnswer && isBothHandsWarning && (
+                  <div className="px-6 sm:px-8 py-3 rounded-2xl bg-rose-600 text-white border-2 border-rose-300 shadow-2xl flex items-center gap-3 animate-bounce">
+                    <AlertTriangle className="w-8 h-8 text-amber-300 shrink-0" />
+                    <span className="text-[28px] sm:text-3xl md:text-4xl font-black">
+                      {t('card_both_hands_warning')}
+                    </span>
+                  </div>
+                )}
+
+                {/* 3. Active Hand Raised Dwell Progress Popup */}
+                {!confirmedAnswer && !isBothHandsWarning && activeHandState && (
+                  <div
+                    className={`px-6 sm:px-8 py-3 rounded-2xl text-white shadow-2xl flex flex-col items-center gap-2 border-2 min-w-[280px] sm:min-w-[340px] animate-fade-in ${
+                      activeHandState.answerSide === 'yes'
+                        ? 'bg-emerald-600 border-emerald-300'
+                        : 'bg-orange-600 border-orange-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Hand className="w-8 h-8 text-white shrink-0 animate-pulse" />
+                      <span className="text-[28px] sm:text-3xl md:text-4xl font-black tracking-wide">
+                        {activeHandState.answerSide === 'yes'
+                          ? t('card_right_hand_yes')
+                          : t('card_left_hand_no')}
                       </span>
-                    </>
-                  ) : activeHandZone === 'LEFT' ? (
-                    <>
-                      <Hand className="w-4 h-4 text-emerald-200 shrink-0" />
-                      <span>
-                        {lang.startsWith('zh')
-                          ? '🟢 正在选择“是”：保持举手 0.6 秒以确认'
-                          : lang.startsWith('en')
-                          ? '🟢 Holding Left: Confirming "Yes"...'
-                          : '🟢 ค้างมือซ้าย 0.6 วินาที เพื่อตอบ "ใช่"'}
+                      <span ref={popupProgressPercentRef} className="text-xl sm:text-2xl font-black font-mono ml-2">
+                        0%
                       </span>
-                    </>
-                  ) : activeHandZone === 'RIGHT' ? (
-                    <>
-                      <Hand className="w-4 h-4 text-orange-200 shrink-0" />
-                      <span>
-                        {lang.startsWith('zh')
-                          ? '🟠 正在选择“否”：保持举手 0.6 秒以确认'
-                          : lang.startsWith('en')
-                          ? '🟠 Holding Right: Confirming "No"...'
-                          : '🟠 ค้างมือขวา 0.6 วินาที เพื่อตอบ "ไม่"'}
-                      </span>
-                    </>
-                  ) : activeHandZone === 'CENTER' ? (
-                    <>
-                      <Hand className="w-4 h-4 text-teal-600 shrink-0" />
-                      <span>
-                        {lang.startsWith('zh')
-                          ? '👋 举起左手以选“是” | 举起右手以选“否”'
-                          : lang.startsWith('en')
-                          ? '👋 Raise Left for "Yes" | Raise Right for "No"'
-                          : '👋 ยกมือไปทางซ้าย (ใช่) หรือขวา (ไม่)'}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                      <span>{t('card_stand_visible_hint')}</span>
-                    </>
-                  )}
-                </div>
+                    </div>
+                    {/* 0.6s Progress Bar */}
+                    <div className="w-full bg-black/25 rounded-full h-3 overflow-hidden border border-white/40">
+                      <div
+                        ref={popupProgressBarRef}
+                        className="h-full bg-white rounded-full transition-[width] duration-75"
+                        style={{ width: '0%' }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Question 1 Intro Banner (3 seconds) */}
+                {!confirmedAnswer && !isBothHandsWarning && !activeHandState && showIntroBanner && (
+                  <div className="px-6 py-2.5 rounded-2xl bg-white/95 border-2 border-emerald-500 shadow-2xl flex items-center gap-3 animate-fade-in">
+                    <span className="text-[24px] sm:text-[28px] font-black text-[#134E43]">
+                      {t('card_intro_popup_hint')}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {/* Near Edge Warning (Floating at bottom-center) */}
+              {!confirmedAnswer && !isBothHandsWarning && isNearEdge && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-25 px-4 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-lg pointer-events-none animate-pulse">
+                  <AlertTriangle className="w-4 h-4 text-amber-950 shrink-0" />
+                  <span>{t('card_move_to_center')}</span>
+                </div>
+              )}
             </div>
 
-            {/* Card 3 (Column 3): ไม่ (ยกมือขวา) - cols 3 */}
-            <div
-              onClick={() => handleAnswer('no')}
-              className={`col-span-3 bg-white rounded-3xl border-3 flex flex-col items-center justify-between p-3 sm:p-5 text-center cursor-pointer transition-all duration-200 active:scale-98 shadow-sm relative overflow-hidden select-none hover:shadow-md ${
-                selectedSide === 'no'
-                  ? answerState === 'correct'
-                    ? 'border-emerald-500 bg-emerald-50 ring-4 ring-emerald-400/40'
-                    : 'border-rose-500 bg-rose-50'
-                  : 'border-[#EA580C] hover:bg-orange-50/40'
-              }`}
-            >
-              {/* GPU-Accelerated Detection progress bar */}
-              <div
-                ref={rightProgressRef}
-                className="absolute bottom-0 left-0 right-0 h-full bg-orange-500/25 origin-bottom pointer-events-none will-change-transform"
-                style={{ transform: 'scaleY(0)' }}
-              />
+            {/* Compact Touch Fallback Buttons under camera */}
+            <div className="flex items-center justify-center gap-3 sm:gap-6 mt-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleAnswer('no')}
+                className={`px-5 sm:px-8 py-2.5 sm:py-3 rounded-2xl border-2 font-extrabold text-base sm:text-lg shadow-sm hover:shadow-md transition active:scale-95 flex items-center gap-2 cursor-pointer ${
+                  selectedSide === 'no'
+                    ? answerState === 'correct'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                      : 'border-rose-500 bg-rose-50 text-rose-800'
+                    : 'bg-white hover:bg-orange-50 border-[#EA580C] text-[#EA580C]'
+                }`}
+              >
+                <Hand className="w-5 h-5 text-[#EA580C]" />
+                <span>{t('card_btn_tap_no')}</span>
+              </button>
 
-              <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-[#FFEDD5] flex items-center justify-center text-[#EA580C] shadow-inner mb-1 sm:mb-2 shrink-0">
-                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#EA580C] stroke-[2.3]" />
-              </div>
-
-              <div className="flex-1 flex flex-col items-center justify-center my-1 sm:my-2">
-                <div className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#EA580C] tracking-tight">
-                  {t('card_no_label')}
-                </div>
-              </div>
-
-              <div className="w-full mt-auto space-y-2 shrink-0 z-10">
-                <span className="inline-block w-full py-1.5 sm:py-2 px-2.5 rounded-full bg-[#FFEDD5] text-[#C2410C] text-xs sm:text-sm font-black shadow-xs tracking-wide">
-                  {t('card_raise_right_hand')}
-                </span>
-                {/* Horizontal Mini Progress Track with Percent Indicator */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-[#C2410C] px-1">
-                    <span>{t('card_hold_to_answer')}</span>
-                    <span ref={rightProgressPercentRef} className="font-mono font-black">0%</span>
-                  </div>
-                  <div className="w-full bg-orange-100/90 rounded-full h-2 sm:h-2.5 overflow-hidden border border-orange-200">
-                    <div
-                      ref={rightProgressBarInnerRef}
-                      className="h-full bg-[#EA580C] rounded-full transition-all duration-75"
-                      style={{ width: '0%' }}
-                    />
-                  </div>
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => handleAnswer('yes')}
+                className={`px-5 sm:px-8 py-2.5 sm:py-3 rounded-2xl border-2 font-extrabold text-base sm:text-lg shadow-sm hover:shadow-md transition active:scale-95 flex items-center gap-2 cursor-pointer ${
+                  selectedSide === 'yes'
+                    ? answerState === 'correct'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                      : 'border-rose-500 bg-rose-50 text-rose-800'
+                    : 'bg-white hover:bg-emerald-50 border-[#16A34A] text-[#16A34A]'
+                }`}
+              >
+                <Hand className="w-5 h-5 text-[#16A34A]" />
+                <span>{t('card_btn_tap_yes')}</span>
+              </button>
             </div>
-          </div>
 
-          {/* Assistive Hint */}
-          <div className="flex items-center justify-center gap-2 pt-1 text-xs text-slate-500 font-medium shrink-0">
-            <span>{t('card_bottom_hint')}</span>
+            {/* Assistive Hint */}
+            <div className="flex items-center justify-center gap-2 pt-2 text-xs sm:text-sm text-slate-600 font-bold shrink-0">
+              <span>{t('card_bottom_hint')}</span>
+            </div>
           </div>
         </div>
       ) : (
@@ -1215,4 +1113,3 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     </div>
   );
 };
-

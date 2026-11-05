@@ -499,3 +499,324 @@ export function evaluateAnatomicalHand(
     anatomicalSide: side,
   };
 }
+
+/**
+ * Canonical Hand-to-Answer Mapping for Physical Card Minigame:
+ * Right Hand (มือขวา) = 'yes' (ใช่)
+ * Left Hand (มือซ้าย) = 'no' (ไม่)
+ */
+export const HAND_ANSWER_MAP = {
+  right: 'yes',
+  left: 'no',
+} as const;
+
+export type HandAnswerMapped = (typeof HAND_ANSWER_MAP)[keyof typeof HAND_ANSWER_MAP];
+
+export interface MinigameHandEvaluation {
+  handIndex: number;
+  landmarks: HandLandmarkPoint[];
+  anatomicalSide: 'left' | 'right';
+  answerSide: 'yes' | 'no';
+  isRaised: boolean;
+  confidence: number;
+  extendedFingers: number;
+  palmCenter: { x: number; y: number; mirroredX: number; mirroredY: number };
+  palmSize: number;
+  isNearEdge: boolean;
+  rejectionReason?: string;
+}
+
+export interface MinigameFrameResult {
+  allHands: MinigameHandEvaluation[];
+  raisedHands: MinigameHandEvaluation[];
+  activeHand: MinigameHandEvaluation | null;
+  isBothHandsRaised: boolean;
+  hasNearEdgeHand: boolean;
+}
+
+/**
+ * Multi-hand evaluation specifically engineered for Minigame "การ์ดกายภาพ"
+ * - Supports 2 hands simultaneously
+ * - Decides Left/Right from anatomical handedness
+ * - Inverts mapping: Right hand = "yes", Left hand = "no"
+ * - Rejects background users by focusing on the largest palm close to center
+ * - Flags near-edge positioning
+ */
+export function evaluateMinigameFrame(
+  rawHands: HandLandmarkPoint[][] | null | undefined,
+  handednessList: any[] | null | undefined,
+  options: {
+    isMirrored?: boolean;
+    minConfidence?: number;
+    maxYThreshold?: number;
+    raisedTipMargin?: number;
+  } = {}
+): MinigameFrameResult {
+  const {
+    isMirrored = true,
+    minConfidence = 0.45,
+    maxYThreshold = 0.82,
+    raisedTipMargin = 0.03,
+  } = options;
+
+  if (!rawHands || !Array.isArray(rawHands) || rawHands.length === 0) {
+    return {
+      allHands: [],
+      raisedHands: [],
+      activeHand: null,
+      isBothHandsRaised: false,
+      hasNearEdgeHand: false,
+    };
+  }
+
+  const dist = (p1: HandLandmarkPoint, p2: HandLandmarkPoint) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+  // 1. Evaluate all detected hands
+  const evaluatedList: MinigameHandEvaluation[] = [];
+
+  for (let i = 0; i < rawHands.length; i++) {
+    const landmarks = rawHands[i];
+    if (!landmarks || landmarks.length < 21) continue;
+
+    const rawHandedness = handednessList?.[i];
+    const catName = Array.isArray(rawHandedness)
+      ? rawHandedness[0]?.categoryName || ''
+      : (rawHandedness as any)?.categoryName || '';
+    const confidence = Array.isArray(rawHandedness)
+      ? rawHandedness[0]?.score ?? 0.85
+      : (rawHandedness as any)?.score ?? 0.85;
+
+    const wrist = landmarks[0];
+    const indexTip = landmarks[8];
+    const indexMcp = landmarks[5];
+    const middleTip = landmarks[12];
+    const middleMcp = landmarks[9];
+    const ringTip = landmarks[16];
+    const ringMcp = landmarks[13];
+    const pinkyTip = landmarks[20];
+    const pinkyMcp = landmarks[17];
+
+    const mirroredX = isMirrored ? 1.0 - middleMcp.x : middleMcp.x;
+    const mirroredY = middleMcp.y;
+    const palmSize = Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y);
+
+    const isNearEdge =
+      mirroredX < 0.08 ||
+      mirroredX > 0.92 ||
+      middleTip.y < 0.04 ||
+      wrist.y > 0.94;
+
+    // Determine anatomical hand:
+    // When input raw frame is unmirrored:
+    // MediaPipe predicts 'Right' for person's real Right hand, 'Left' for Left hand.
+    let anatomicalSide: 'left' | 'right';
+    const norm = catName.toLowerCase();
+    if (norm === 'right' || norm === 'left') {
+      anatomicalSide = norm;
+    } else {
+      anatomicalSide = mirroredX > 0.5 ? 'right' : 'left';
+    }
+
+    // Spatial consistency guard on mirrored screen:
+    if (mirroredX > 0.68) {
+      anatomicalSide = 'right';
+    } else if (mirroredX < 0.32) {
+      anatomicalSide = 'left';
+    }
+
+    const answerSide = HAND_ANSWER_MAP[anatomicalSide];
+
+    // Extended fingers check
+    const fingers = [
+      { tip: indexTip, mcp: indexMcp },
+      { tip: middleTip, mcp: middleMcp },
+      { tip: ringTip, mcp: ringMcp },
+      { tip: pinkyTip, mcp: pinkyMcp },
+    ];
+    let extendedFingers = 0;
+    for (const f of fingers) {
+      const tipToWrist = dist(f.tip, wrist);
+      const mcpToWrist = dist(f.mcp, wrist);
+      if (mcpToWrist > 0.02 && (tipToWrist > 1.18 * mcpToWrist || f.tip.y < f.mcp.y)) {
+        extendedFingers++;
+      }
+    }
+
+    // Raised hand check:
+    const isUpward = middleTip.y < wrist.y - raisedTipMargin || indexTip.y < wrist.y - raisedTipMargin;
+    const isAboveChest = middleMcp.y <= maxYThreshold && wrist.y <= 0.92;
+    const isOpen = extendedFingers >= 2;
+    const isConfOk = confidence >= minConfidence;
+
+    const isRaised = isUpward && isAboveChest && isOpen && isConfOk;
+
+    evaluatedList.push({
+      handIndex: i,
+      landmarks,
+      anatomicalSide,
+      answerSide,
+      isRaised,
+      confidence,
+      extendedFingers,
+      palmCenter: { x: middleMcp.x, y: middleMcp.y, mirroredX, mirroredY },
+      palmSize,
+      isNearEdge,
+    });
+  }
+
+  if (evaluatedList.length === 0) {
+    return {
+      allHands: [],
+      raisedHands: [],
+      activeHand: null,
+      isBothHandsRaised: false,
+      hasNearEdgeHand: false,
+    };
+  }
+
+  // 2. Multi-person filter: Focus on primary player (largest palm)
+  const maxPalm = Math.max(...evaluatedList.map((h) => h.palmSize));
+  const primaryHands = evaluatedList.filter((h) => h.palmSize >= maxPalm * 0.45);
+
+  const raisedHands = primaryHands.filter((h) => h.isRaised);
+  const hasNearEdgeHand = primaryHands.some((h) => h.isNearEdge);
+
+  const hasRaisedRight = raisedHands.some((h) => h.anatomicalSide === 'right');
+  const hasRaisedLeft = raisedHands.some((h) => h.anatomicalSide === 'left');
+  const isBothHandsRaised = hasRaisedRight && hasRaisedLeft;
+
+  let activeHand: MinigameHandEvaluation | null = null;
+  if (!isBothHandsRaised && raisedHands.length > 0) {
+    activeHand = raisedHands[0];
+  }
+
+  return {
+    allHands: primaryHands,
+    raisedHands,
+    activeHand,
+    isBothHandsRaised,
+    hasNearEdgeHand,
+  };
+}
+
+/**
+ * Draw all detected hand skeletons on the overlay canvas with side-specific clinical colors:
+ * - Right hand (answering 'yes'): Emerald Green
+ * - Left hand (answering 'no'): Amber / Orange
+ * - Neutral / Lowered: Clean White
+ * - Dwell Progress Ring centered on active palm MCP
+ */
+export function drawAllMinigameHands(
+  ctx: CanvasRenderingContext2D,
+  hands: MinigameHandEvaluation[],
+  canvasWidth: number,
+  canvasHeight: number,
+  activeHand: MinigameHandEvaluation | null,
+  dwellProgress: number = 0,
+  isBothHandsWarning: boolean = false
+) {
+  if (!hands || hands.length === 0) return;
+
+  ctx.save();
+
+  for (const h of hands) {
+    const isCurrentActive = Boolean(activeHand && activeHand.handIndex === h.handIndex);
+    const isRight = h.anatomicalSide === 'right';
+
+    let strokeColor = 'rgba(255, 255, 255, 0.45)';
+    let jointColor = '#E2E8F0';
+
+    if (isBothHandsWarning && h.isRaised) {
+      strokeColor = 'rgba(244, 63, 94, 0.85)'; // Rose warning
+      jointColor = '#FB7185';
+    } else if (isCurrentActive) {
+      if (isRight) {
+        strokeColor = 'rgba(16, 185, 129, 0.95)'; // Vibrant Emerald (Right = Yes)
+        jointColor = '#34D399';
+      } else {
+        strokeColor = 'rgba(249, 115, 22, 0.95)'; // Vibrant Orange (Left = No)
+        jointColor = '#FB923C';
+      }
+    } else if (h.isRaised) {
+      strokeColor = isRight ? 'rgba(16, 185, 129, 0.6)' : 'rgba(249, 115, 22, 0.6)';
+      jointColor = isRight ? '#6EE7B7' : '#FDBA74';
+    }
+
+    // Draw 21-point connections
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = isCurrentActive ? 4 : 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for (const [startIdx, endIdx] of HAND_CONNECTIONS) {
+      const p1 = h.landmarks[startIdx];
+      const p2 = h.landmarks[endIdx];
+      if (p1 && p2) {
+        const x1 = (1.0 - p1.x) * canvasWidth;
+        const y1 = p1.y * canvasHeight;
+        const x2 = (1.0 - p2.x) * canvasWidth;
+        const y2 = p2.y * canvasHeight;
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+    }
+
+    // Draw 21 joints
+    for (let i = 0; i < h.landmarks.length; i++) {
+      const pt = h.landmarks[i];
+      const x = (1.0 - pt.x) * canvasWidth;
+      const y = pt.y * canvasHeight;
+
+      const isTip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20;
+      const radius = isTip ? 5 : i === 0 || i === 9 ? 6 : 3;
+
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = jointColor;
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Draw Dwell Progress Ring on the Active Hand's Palm (MCP 9)
+    if (isCurrentActive && dwellProgress > 0) {
+      const palm = h.landmarks[9];
+      const px = (1.0 - palm.x) * canvasWidth;
+      const py = palm.y * canvasHeight;
+      const ringRadius = 32;
+
+      // Outer glow / track
+      ctx.beginPath();
+      ctx.arc(px, py, ringRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.lineWidth = 7;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(px, py, ringRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 5;
+      ctx.stroke();
+
+      // Progress arc
+      ctx.beginPath();
+      ctx.arc(
+        px,
+        py,
+        ringRadius,
+        -Math.PI / 2,
+        -Math.PI / 2 + Math.PI * 2 * Math.min(1.0, dwellProgress)
+      );
+      ctx.strokeStyle = isRight ? '#10B981' : '#F97316';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
