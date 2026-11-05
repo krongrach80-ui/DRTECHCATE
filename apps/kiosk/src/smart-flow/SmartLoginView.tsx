@@ -1297,24 +1297,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       {/* Unified Master Kiosk Shell Card */}
       <div className="w-full max-w-5xl h-full min-h-[calc(100vh-140px)] sm:min-h-[calc(100vh-160px)] md:min-h-[calc(100vh-180px)] bg-white/95 backdrop-blur-md rounded-[32px] border border-blue-100 shadow-2xl p-4 sm:p-6 flex flex-col justify-between gap-3 sm:gap-4 relative z-10">
         
-        {/* Compact Header & Welcome Banner */}
-        <div className="w-full flex items-center justify-between pb-2 border-b border-slate-100/90 text-xs sm:text-sm select-none gap-2 shrink-0">
-          <div className="flex items-center gap-2 font-black text-slate-800 tracking-tight">
-            <span className="text-base sm:text-lg">🩺</span>
-            <span className="truncate">
-              {lang === 'zh-CN' ? '智能面部识别系统 (Smart Biometric Check-in)' : lang === 'en-US' ? 'Smart Biometric Check-in' : 'ระบบยืนยันตัวตนอัจฉริยะ (Smart Biometric Check-in)'}
-            </span>
-          </div>
-
-          <div className="hidden sm:flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <span className="px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/80 whitespace-nowrap">👀 1. มองกล้อง</span>
-            <span className="text-slate-400">→</span>
-            <span className="px-2.5 py-0.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-200/80 whitespace-nowrap">😉 2. กะพริบตา</span>
-            <span className="text-slate-400">→</span>
-            <span className="px-2.5 py-0.5 rounded-lg bg-teal-50 text-teal-800 border border-teal-200/80 whitespace-nowrap">🏃 3. เริ่มฝึกทันที</span>
-          </div>
-        </div>
-
         {/* 🎥 Hero Camera Scanning Stage (Full Width & Generous Height - Fills Remaining Space) */}
         <div className="flex-1 w-full min-h-[460px] md:min-h-[540px] bg-gradient-to-br from-[#07192B] via-[#0B2740] to-[#062826] rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col items-center justify-center cursor-pointer group">
           {/* 4 Glowing Cyan/Emerald Corner Viewfinder Brackets */}
