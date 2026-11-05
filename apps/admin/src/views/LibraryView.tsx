@@ -130,13 +130,19 @@ export const LibraryView: React.FC = () => {
   const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
 
   // Minigame Questions State
+  interface ExtendedQuestionRecord extends QuestionRecord {
+    isBuiltIn?: boolean;
+  }
+
   const [selectedMinigame, setSelectedMinigame] = useState<MinigameRecord | null>(null);
-  const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  const [questions, setQuestions] = useState<ExtendedQuestionRecord[]>([]);
   const [isQuestionModalOpen, setIsQuestionModalOpen] = useState<boolean>(false);
+  const [questionModalError, setQuestionModalError] = useState<string | null>(null);
+  const [customQuestionCount, setCustomQuestionCount] = useState<number>(0);
   const [questionFormData, setQuestionFormData] = useState({
     prompt: '',
-    choices: ['', '', '', ''],
-    answer: '',
+    choices: ['ใช่ (ยกมือซ้าย)', 'ไม่ (ยกมือขวา)'],
+    answer: 'ใช่ (ยกมือซ้าย)',
   });
 
   // Modpack Modal
@@ -160,10 +166,11 @@ export const LibraryView: React.FC = () => {
     try {
       setLoading(true);
       setErrorMsg(null);
-      const [exData, mgData, mpData] = await Promise.all([
+      const [exData, mgData, mpData, customQuestions] = await Promise.all([
         defaultApiClient.exercises.list().catch(() => []),
         defaultApiClient.minigames.list().catch(() => []),
         defaultApiClient.modpacks.list().catch(() => []),
+        defaultApiClient.minigames.listQuestions('mg-physical-cards').catch(() => []),
       ]);
       const filteredEx = Array.isArray(exData) ? exData.filter((e: any) => e.is_active !== false) : [];
       const safeEx = filteredEx.length > 0 ? filteredEx : DEMO_EXERCISES;
@@ -173,6 +180,9 @@ export const LibraryView: React.FC = () => {
       setExercises(safeEx);
       setMinigames(safeMg);
       setModpacks(safeMp);
+      if (Array.isArray(customQuestions)) {
+        setCustomQuestionCount(customQuestions.length);
+      }
     } catch {
       setExercises(DEMO_EXERCISES);
       setMinigames(DEMO_MINIGAMES);
@@ -288,36 +298,110 @@ export const LibraryView: React.FC = () => {
 
   const openMinigameQuestions = async (game: MinigameRecord) => {
     setSelectedMinigame(game);
-    if (game.id === 'mg-physical-cards') {
-      const mapped = ALL_99_PHYSICAL_CARD_QUESTIONS.map((q) => ({
-        id: q.id,
-        prompt: `[${q.category}] ภาพ: ${q.imageDescription} — ${q.prompt}`,
-        choices: ['ใช่ (ยกมือซ้าย)', 'ไม่ (ยกมือขวา)'],
-        answer: q.correctAnswer === 'yes' ? 'ใช่ (ยกมือซ้าย)' : 'ไม่ (ยกมือขวา)',
-        minigame_id: 'mg-physical-cards',
-      }));
-      setQuestions(mapped);
-      return;
-    }
+    const isPhysicalCard = game.id === 'mg-physical-cards' || game.id === 'fa000000-0000-0000-0000-000000000003';
+
     try {
       const qList = await defaultApiClient.minigames.listQuestions(game.id);
-      setQuestions(qList);
+      if (isPhysicalCard) {
+        const builtInCards: ExtendedQuestionRecord[] = ALL_99_PHYSICAL_CARD_QUESTIONS.map((q) => ({
+          id: q.id,
+          prompt: `[${q.category}] ภาพ: ${q.imageDescription} — ${q.prompt}`,
+          choices: ['ใช่ (ยกมือซ้าย)', 'ไม่ (ยกมือขวา)'],
+          answer: q.correctAnswer === 'yes' ? 'ใช่ (ยกมือซ้าย)' : 'ไม่ (ยกมือขวา)',
+          minigame_id: 'mg-physical-cards',
+          isBuiltIn: true,
+        }));
+        const customMapped: ExtendedQuestionRecord[] = (Array.isArray(qList) ? qList : []).map((q) => ({
+          ...q,
+          isBuiltIn: false,
+        }));
+        setQuestions([...customMapped, ...builtInCards]);
+        setCustomQuestionCount(customMapped.length);
+      } else {
+        const mapped: ExtendedQuestionRecord[] = (Array.isArray(qList) ? qList : []).map((q) => ({
+          ...q,
+          isBuiltIn: false,
+        }));
+        setQuestions(mapped);
+      }
     } catch {
-      setQuestions([]);
+      if (isPhysicalCard) {
+        const builtInCards: ExtendedQuestionRecord[] = ALL_99_PHYSICAL_CARD_QUESTIONS.map((q) => ({
+          id: q.id,
+          prompt: `[${q.category}] ภาพ: ${q.imageDescription} — ${q.prompt}`,
+          choices: ['ใช่ (ยกมือซ้าย)', 'ไม่ (ยกมือขวา)'],
+          answer: q.correctAnswer === 'yes' ? 'ใช่ (ยกมือซ้าย)' : 'ไม่ (ยกมือขวา)',
+          minigame_id: 'mg-physical-cards',
+          isBuiltIn: true,
+        }));
+        setQuestions(builtInCards);
+      } else {
+        setQuestions([]);
+      }
     }
   };
 
   const handleCreateQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMinigame) return;
+    setQuestionModalError(null);
+
+    const prompt = (questionFormData.prompt || '').trim();
+    if (!prompt) {
+      setQuestionModalError('กรุณากรอกข้อความคำถาม / โจทย์');
+      return;
+    }
+
+    const validChoices = (questionFormData.choices || []).map((c) => String(c).trim()).filter(Boolean);
+    if (validChoices.length < 2) {
+      setQuestionModalError('กรุณาระบุตัวเลือกคำตอบอย่างน้อย 2 ตัวเลือก');
+      return;
+    }
+
+    const answer = (questionFormData.answer || '').trim();
+    if (!answer) {
+      setQuestionModalError('กรุณาระบุคำตอบที่ถูกต้อง (เฉลย)');
+      return;
+    }
+
+    if (!validChoices.includes(answer)) {
+      setQuestionModalError('คำตอบที่ถูกต้องต้องตรงกับหนึ่งในตัวเลือกที่ระบุ');
+      return;
+    }
+
+    // Check duplicate in current loaded questions
+    const isDup = questions.some(
+      (q) => q.prompt.trim().toLowerCase() === prompt.toLowerCase()
+    );
+    if (isDup) {
+      setQuestionModalError(`มีโจทย์ข้อความ "${prompt}" อยู่แล้วในมินิเกมนี้`);
+      return;
+    }
+
     try {
       setActionLoading(true);
-      await defaultApiClient.minigames.createQuestion(selectedMinigame.id, questionFormData);
+      const res = await defaultApiClient.minigames.createQuestion(selectedMinigame.id, {
+        prompt,
+        choices: validChoices,
+        answer,
+      });
+
+      if (!res || !res.id) {
+        throw new Error('ไม่สามารถบันทึกโจทย์ได้: ไม่พบข้อมูลที่ยืนยันจากเซิร์ฟเวอร์');
+      }
+
       setSuccessMsg('เพิ่มโจทย์มินิเกมเรียบร้อย');
       setIsQuestionModalOpen(false);
-      setQuestionFormData({ prompt: '', choices: ['', '', '', ''], answer: '' });
+      const isPhysical = selectedMinigame.id === 'mg-physical-cards' || selectedMinigame.id === 'fa000000-0000-0000-0000-000000000003';
+      setQuestionFormData({
+        prompt: '',
+        choices: isPhysical ? ['ใช่ (ยกมือซ้าย)', 'ไม่ (ยกมือขวา)'] : ['', '', '', ''],
+        answer: isPhysical ? 'ใช่ (ยกมือซ้าย)' : '',
+      });
       await openMinigameQuestions(selectedMinigame);
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ไม่สามารถเพิ่มโจทย์ได้';
+      setQuestionModalError(msg);
       handleLibraryError(err, 'ไม่สามารถเพิ่มโจทย์ได้');
     } finally {
       setActionLoading(false);
@@ -782,27 +866,33 @@ export const LibraryView: React.FC = () => {
       {activeTab === 'minigames' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {minigames.map((game) => (
-              <div
-                key={game.id}
-                onClick={() => openMinigameQuestions(game)}
-                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer ${
-                  selectedMinigame?.id === game.id
-                    ? 'bg-white border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
-                    : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50 shadow-sm'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Gamepad2 className={`w-7 h-7 flex-shrink-0 ${selectedMinigame?.id === game.id ? 'text-emerald-600' : 'text-slate-400'}`} />
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-base leading-snug">{game.title}</h3>
-                    <p className={`text-xs mt-1 ${selectedMinigame?.id === game.id ? 'text-emerald-700 font-medium' : 'text-slate-600'}`}>
-                      {game.description || 'มินิเกมฝึกสมอง'}
-                    </p>
+            {minigames.map((game) => {
+              const isPhysical = game.id === 'mg-physical-cards' || game.id === 'fa000000-0000-0000-0000-000000000003';
+              const displayTitle = isPhysical
+                ? `การ์ดกายภาพ (Physical Rehab Card Game - ${99 + customQuestionCount} ข้อ)`
+                : game.title;
+              return (
+                <div
+                  key={game.id}
+                  onClick={() => openMinigameQuestions(game)}
+                  className={`p-5 rounded-2xl border-2 transition-all cursor-pointer ${
+                    selectedMinigame?.id === game.id
+                      ? 'bg-white border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
+                      : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50 shadow-sm'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Gamepad2 className={`w-7 h-7 flex-shrink-0 ${selectedMinigame?.id === game.id ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-base leading-snug">{displayTitle}</h3>
+                      <p className={`text-xs mt-1 ${selectedMinigame?.id === game.id ? 'text-emerald-700 font-medium' : 'text-slate-600'}`}>
+                        {game.description || 'มินิเกมฝึกสมอง'}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {selectedMinigame && (
@@ -811,14 +901,28 @@ export const LibraryView: React.FC = () => {
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                     <HelpCircle className="w-5 h-5 text-blue-600" />
-                    <span>โจทย์คำถามสำหรับ: {selectedMinigame.title}</span>
+                    <span>
+                      โจทย์คำถามสำหรับ:{' '}
+                      {selectedMinigame.id === 'mg-physical-cards' || selectedMinigame.id === 'fa000000-0000-0000-0000-000000000003'
+                        ? `การ์ดกายภาพ (Physical Rehab Card Game - ${99 + customQuestionCount} ข้อ)`
+                        : selectedMinigame.title}
+                    </span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
                     คำถามจะถูกสุ่มแสดงให้คนไข้ตอบบนหน้าจอตู้ Kiosk ระหว่างฝึก
                   </p>
                 </div>
                 <button
-                  onClick={() => setIsQuestionModalOpen(true)}
+                  onClick={() => {
+                    setQuestionModalError(null);
+                    const isPhysical = selectedMinigame.id === 'mg-physical-cards' || selectedMinigame.id === 'fa000000-0000-0000-0000-000000000003';
+                    setQuestionFormData({
+                      prompt: '',
+                      choices: isPhysical ? ['ใช่ (ยกมือซ้าย)', 'ไม่ (ยกมือขวา)'] : ['', '', '', ''],
+                      answer: isPhysical ? 'ใช่ (ยกมือซ้าย)' : '',
+                    });
+                    setIsQuestionModalOpen(true);
+                  }}
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-sm active:scale-95"
                 >
                   <Plus className="w-4 h-4" />
@@ -835,10 +939,25 @@ export const LibraryView: React.FC = () => {
                   questions.map((q) => (
                     <div
                       key={q.id}
-                      className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-start justify-between"
+                      className={`p-4 rounded-xl border flex items-start justify-between ${
+                        q.isBuiltIn
+                          ? 'bg-slate-50 border-slate-200'
+                          : 'bg-emerald-50/40 border-emerald-300 ring-1 ring-emerald-500/10'
+                      }`}
                     >
-                      <div className="space-y-2">
-                        <div className="text-sm font-semibold text-slate-900">{q.prompt}</div>
+                      <div className="space-y-2 flex-1 mr-4">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="text-sm font-semibold text-slate-900">{q.prompt}</div>
+                          {q.isBuiltIn ? (
+                            <span className="text-[10px] font-semibold text-slate-400 bg-slate-200/70 px-2 py-0.5 rounded-md whitespace-nowrap">
+                              โจทย์มาตรฐาน (99 ข้อ)
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md whitespace-nowrap">
+                              โจทย์ใหม่ (คลินิก)
+                            </span>
+                          )}
+                        </div>
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           {q.choices.map((c: string, idx: number) => (
                             <div
@@ -854,12 +973,15 @@ export const LibraryView: React.FC = () => {
                           ))}
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteQuestion(q.id)}
-                        className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1 rounded-lg transition"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {!q.isBuiltIn && (
+                        <button
+                          onClick={() => handleDeleteQuestion(q.id)}
+                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg transition shrink-0"
+                          title="ลบโจทย์ที่เพิ่มเอง"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
@@ -1131,7 +1253,12 @@ export const LibraryView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white border border-blue-100 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="text-base font-bold text-slate-900">เพิ่มโจทย์คำถามมินิเกม</h3>
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-emerald-600" />
+                <span>
+                  เพิ่มโจทย์ใหม่: {selectedMinigame?.id === 'mg-physical-cards' || selectedMinigame?.id === 'fa000000-0000-0000-0000-000000000003' ? 'การ์ดกายภาพ' : selectedMinigame?.title}
+                </span>
+              </h3>
               <button
                 onClick={() => setIsQuestionModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600"
@@ -1140,54 +1267,140 @@ export const LibraryView: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleCreateQuestion} className="space-y-3">
+            {questionModalError && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{questionModalError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuestionModalError(null)}
+                  className="text-rose-400 hover:text-rose-600 ml-2"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateQuestion} className="space-y-3.5">
+              {Boolean(selectedMinigame?.id === 'mg-physical-cards' || selectedMinigame?.id === 'fa000000-0000-0000-0000-000000000003') && (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>โหมดการ์ดกายภาพ: คนไข้จะตอบด้วยการยกมือซ้าย (ใช่) หรือขวา (ไม่) ผ่านกล้องตู้ Kiosk</span>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">คำถาม / โจทย์ *</label>
                 <input
                   type="text"
                   required
-                  placeholder="เช่น ข้อใดเป็นท่าบริหารที่ช่วยลดอาการปวดเข่า?"
+                  placeholder={
+                    selectedMinigame?.id === 'mg-physical-cards' || selectedMinigame?.id === 'fa000000-0000-0000-0000-000000000003'
+                      ? 'เช่น การออกกำลังกายช่วยลดอาการข้อเข่าเสื่อมใช่หรือไม่?'
+                      : 'เช่น ข้อใดเป็นท่าบริหารที่ช่วยลดอาการปวดเข่า?'
+                  }
                   value={questionFormData.prompt}
                   onChange={(e) =>
                     setQuestionFormData({ ...questionFormData, prompt: e.target.value })
                   }
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500 transition"
                 />
               </div>
 
-              {[0, 1, 2, 3].map((idx) => (
-                <div key={idx}>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    ตัวเลือกที่ {idx + 1} *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder={`คำตอบตัวเลือกที่ ${idx + 1}`}
-                    value={questionFormData.choices[idx]}
-                    onChange={(e) => {
-                      const updated = [...questionFormData.choices];
-                      updated[idx] = e.target.value;
-                      setQuestionFormData({ ...questionFormData, choices: updated });
-                    }}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
-                  />
+              {Boolean(selectedMinigame?.id === 'mg-physical-cards' || selectedMinigame?.id === 'fa000000-0000-0000-0000-000000000003') ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        ตัวเลือก 1 (ยกมือซ้าย) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={questionFormData.choices[0] || 'ใช่ (ยกมือซ้าย)'}
+                        onChange={(e) => {
+                          const updated = [...questionFormData.choices];
+                          updated[0] = e.target.value;
+                          setQuestionFormData({ ...questionFormData, choices: updated });
+                        }}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:bg-white focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        ตัวเลือก 2 (ยกมือขวา) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={questionFormData.choices[1] || 'ไม่ (ยกมือขวา)'}
+                        onChange={(e) => {
+                          const updated = [...questionFormData.choices];
+                          updated[1] = e.target.value;
+                          setQuestionFormData({ ...questionFormData, choices: updated });
+                        }}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:bg-white focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">คำตอบที่ถูกต้อง (เฉลย) *</label>
+                    <select
+                      value={questionFormData.answer}
+                      onChange={(e) =>
+                        setQuestionFormData({ ...questionFormData, answer: e.target.value })
+                      }
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-emerald-800 focus:outline-none focus:bg-white focus:border-emerald-500 cursor-pointer"
+                    >
+                      <option value={questionFormData.choices[0] || 'ใช่ (ยกมือซ้าย)'}>
+                        ✓ ตอบ: {questionFormData.choices[0] || 'ใช่ (ยกมือซ้าย)'}
+                      </option>
+                      <option value={questionFormData.choices[1] || 'ไม่ (ยกมือขวา)'}>
+                        ✓ ตอบ: {questionFormData.choices[1] || 'ไม่ (ยกมือขวา)'}
+                      </option>
+                    </select>
+                  </div>
                 </div>
-              ))}
+              ) : (
+                <>
+                  {[0, 1, 2, 3].map((idx) => (
+                    <div key={idx}>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        ตัวเลือกที่ {idx + 1} *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder={`คำตอบตัวเลือกที่ ${idx + 1}`}
+                        value={questionFormData.choices[idx] || ''}
+                        onChange={(e) => {
+                          const updated = [...questionFormData.choices];
+                          updated[idx] = e.target.value;
+                          setQuestionFormData({ ...questionFormData, choices: updated });
+                        }}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
+                      />
+                    </div>
+                  ))}
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">คำตอบที่ถูกต้อง (เฉลย) *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="พิมพ์ข้อความที่ตรงกับตัวเลือกที่ถูกต้องเป๊ะๆ"
-                  value={questionFormData.answer}
-                  onChange={(e) =>
-                    setQuestionFormData({ ...questionFormData, answer: e.target.value })
-                  }
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">คำตอบที่ถูกต้อง (เฉลย) *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="พิมพ์ข้อความที่ตรงกับตัวเลือกที่ถูกต้องเป๊ะๆ"
+                      value={questionFormData.answer}
+                      onChange={(e) =>
+                        setQuestionFormData({ ...questionFormData, answer: e.target.value })
+                      }
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
@@ -1200,9 +1413,9 @@ export const LibraryView: React.FC = () => {
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-sm active:scale-95"
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition shadow-sm active:scale-95 flex items-center gap-1.5"
                 >
-                  บันทึกโจทย์
+                  {actionLoading ? 'กำลังบันทึก...' : 'บันทึกโจทย์'}
                 </button>
               </div>
             </form>

@@ -139,6 +139,20 @@ export const StaffView: React.FC = () => {
 
   const handleStaffError = (err: unknown, defaultMessage: string) => {
     const msg = err instanceof Error ? err.message : String(err || defaultMessage);
+    if (
+      msg.includes('มีอยู่ในระบบแล้ว') ||
+      msg.includes('ชื่อผู้ใช้') ||
+      msg.includes('ใบประกอบวิชาชีพ') ||
+      msg.includes('รหัสผ่าน') ||
+      msg.includes('กรุณากรอก')
+    ) {
+      setErrorMsg(msg);
+      return;
+    }
+    if (msg.includes('Forbidden') || msg.includes('insufficient permissions') || msg.includes('สิทธิ์ไม่เพียงพอ')) {
+      setErrorMsg('สิทธิ์ไม่เพียงพอ: บัญชีปัจจุบันเป็น "นักกายภาพบำบัด (PT)" เฉพาะผู้อำนวยการ (Admin) เท่านั้นที่สามารถจัดการบัญชีเจ้าหน้าที่ได้ กรุณาเข้าสู่ระบบด้วยบัญชี @director หรือ @admin');
+      return;
+    }
     const status = (err as any)?.status;
     const code = (err as any)?.code;
     if (
@@ -147,15 +161,9 @@ export const StaffView: React.FC = () => {
       msg.includes('405') ||
       msg.includes('Method Not Allowed') ||
       msg.includes('Resilient Edge') ||
-      msg.includes('DELEGATE_TO_SUPABASE_CLOUD') ||
-      msg.includes('Failed to fetch') ||
-      msg.includes('Network request failed')
+      msg.includes('DELEGATE_TO_SUPABASE_CLOUD')
     ) {
       setSuccessMsg('ดำเนินการบันทึกข้อมูลเรียบร้อยแล้ว (Direct Cloud Mode)');
-      return;
-    }
-    if (msg.includes('Forbidden') || msg.includes('insufficient permissions')) {
-      setErrorMsg('สิทธิ์ไม่เพียงพอ: บัญชีปัจจุบันเป็น "นักกายภาพบำบัด (PT)" เฉพาะผู้อำนวยการ (Admin) เท่านั้นที่สามารถจัดการบัญชีเจ้าหน้าที่ได้ กรุณาเข้าสู่ระบบด้วยบัญชี @director');
       return;
     }
     setErrorMsg(msg || defaultMessage);
@@ -187,28 +195,41 @@ export const StaffView: React.FC = () => {
         window.dispatchEvent(new CustomEvent('patient-created'));
         setSuccessMsg(`สร้างบัญชีคนไข้ ${formData.full_name} สำเร็จเรียบร้อย`);
       } else {
-        const safePassword =
-          formData.password && formData.password.length >= 12
-            ? formData.password
-            : formData.password
-            ? formData.password.padEnd(12, '0')
-            : 'Password12345!';
-        const safeLicense =
-          formData.license_no?.trim() ||
-          (formData.role === 'pt' ? `กภ.${Math.floor(10000 + Math.random() * 90000)}` : undefined);
-        await defaultApiClient.staff.create({
-          username: formData.username,
+        const cleanUsername = formData.username.trim().toLowerCase();
+        const safePassword = formData.password;
+        if (!safePassword || safePassword.length < 12) {
+          setErrorMsg('รหัสผ่านเริ่มต้นต้องมีความยาวอย่างน้อย 12 ตัวอักษร');
+          setActionLoading(false);
+          return;
+        }
+
+        const safeLicense = formData.license_no?.trim();
+        if (formData.role === 'pt' && !safeLicense) {
+          setErrorMsg('กรุณาระบุเลขที่ใบประกอบวิชาชีพกายภาพบำบัด');
+          setActionLoading(false);
+          return;
+        }
+
+        const res = await defaultApiClient.staff.create({
+          username: cleanUsername,
           password: safePassword,
           role: formData.role,
-          full_name: formData.full_name,
-          phone: formData.phone || undefined,
-          bio: formData.bio || undefined,
+          full_name: formData.full_name.trim(),
+          phone: formData.phone?.trim() || undefined,
+          bio: formData.bio?.trim() || undefined,
           license_no: safeLicense,
-          license_expiry: formData.license_expiry || (formData.role === 'pt' ? '2030-12-31' : undefined),
-          specialty: formData.specialty || (formData.role === 'pt' ? 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด' : undefined),
+          license_expiry: formData.license_expiry?.trim() || (formData.role === 'pt' ? '2030-12-31' : undefined),
+          specialty: formData.specialty?.trim() || (formData.role === 'pt' ? 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด' : undefined),
+          age: Number(formData.age) || 35,
+          sex: formData.sex || 'male',
         });
+
+        if (!res || (res as any).ok === false) {
+          throw new Error((res as any)?.message || 'เกิดข้อผิดพลาดในการสร้างผู้ใช้');
+        }
+
         window.dispatchEvent(new CustomEvent('staff-updated'));
-        setSuccessMsg(`สร้างผู้ใช้ ${formData.username} สำเร็จเรียบร้อย`);
+        setSuccessMsg(`สร้างผู้ใช้ ${cleanUsername} สำเร็จเรียบร้อย`);
       }
       await fetchStaff();
       setIsWizardOpen(false);

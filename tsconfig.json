@@ -32,6 +32,7 @@
     "node_modules",
     "dist",
     "legacy-src",
-    "tests/scripts"
+    "tests/scripts",
+    "supabase/functions"
   ]
 }
