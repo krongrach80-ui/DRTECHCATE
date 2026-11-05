@@ -15,6 +15,7 @@ import {
   Copy,
   Video,
   Calendar,
+  Loader2,
 } from 'lucide-react';
 import {
   ExerciseRecord,
@@ -107,6 +108,7 @@ export const LibraryView: React.FC = () => {
   const [isSmartExerciseModalOpen, setIsSmartExerciseModalOpen] = useState<boolean>(false);
   const [isSmartModpackModalOpen, setIsSmartModpackModalOpen] = useState<boolean>(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState<boolean>(false);
+  const [modpackToDelete, setModpackToDelete] = useState<ModpackRecord | null>(null);
 
   // AI Pose Studio State
   const [isExerciseBuilderOpen, setIsExerciseBuilderOpen] = useState<boolean>(false);
@@ -362,18 +364,20 @@ export const LibraryView: React.FC = () => {
     }
   };
 
-  const handleDeleteModpack = async (id: string, name: string) => {
-    if (!window.confirm(`ยืนยันการลบชุดท่า "${name}"?`)) return;
+  const handleDeleteModpack = (modpack: ModpackRecord) => {
+    setModpackToDelete(modpack);
+  };
+
+  const handleConfirmDeleteModpack = async () => {
+    if (!modpackToDelete) return;
     try {
       setActionLoading(true);
-      // Optimistic state removal: remove modpack from screen immediately
-      setModpacks((prev) => prev.filter((m) => m.id !== id));
-      await defaultApiClient.modpacks.delete(id);
-      setSuccessMsg('ลบชุดท่าเรียบร้อย');
+      await defaultApiClient.modpacks.delete(modpackToDelete.id);
+      setSuccessMsg(`ลบชุดท่ากายภาพ "${modpackToDelete.name}" เรียบร้อย`);
+      setModpackToDelete(null);
       await fetchData();
     } catch (err: unknown) {
       handleLibraryError(err, 'ไม่สามารถลบชุดท่าได้');
-      await fetchData();
     } finally {
       setActionLoading(false);
     }
@@ -733,8 +737,10 @@ export const LibraryView: React.FC = () => {
                         <h3 className="font-bold text-slate-900 text-base">{mp.name}</h3>
                       </div>
                       <button
-                        onClick={() => handleDeleteModpack(mp.id, mp.name)}
-                        className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg transition"
+                        onClick={() => handleDeleteModpack(mp)}
+                        disabled={actionLoading}
+                        className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg transition disabled:opacity-50 cursor-pointer active:scale-95"
+                        title="ลบชุดท่านี้"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1249,6 +1255,89 @@ export const LibraryView: React.FC = () => {
           fetchData();
         }}
       />
+
+      {/* Clinical Modpack Delete Confirmation Modal */}
+      {modpackToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl text-slate-800 animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-rose-50/60">
+              <div className="flex items-center gap-2.5 text-rose-700">
+                <div className="p-2 bg-rose-100 rounded-xl">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-rose-950">ยืนยันการลบชุดท่ากายภาพ</h3>
+                  <p className="text-xs text-rose-700/80">Delete Clinical Modpack</p>
+                </div>
+              </div>
+              <button
+                onClick={() => !actionLoading && setModpackToDelete(null)}
+                disabled={actionLoading}
+                className="text-slate-400 hover:text-slate-600 transition disabled:opacity-50 cursor-pointer p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2">
+                <div className="text-xs text-slate-500 font-medium">ชื่อชุดท่ากายภาพ (Modpack Name):</div>
+                <div className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                  <Package className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>{modpackToDelete.name}</span>
+                </div>
+                {modpackToDelete.description && (
+                  <p className="text-xs text-slate-600 pt-1 border-t border-slate-200/60">
+                    {modpackToDelete.description}
+                  </p>
+                )}
+                <div className="text-xs text-slate-600 flex items-center gap-1.5 pt-1">
+                  <span className="font-semibold text-slate-700">จำนวนท่าในชุด:</span>
+                  <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold font-mono">
+                    {modpackToDelete.items?.length || 0} ท่า
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-xs text-slate-600 bg-amber-50/80 border border-amber-200 rounded-xl p-3 leading-relaxed">
+                <span className="font-semibold text-amber-900">คำเตือนทางคลินิก:</span> การลบชุดท่านี้จะไม่ลบท่ามาตรฐาน 15 ท่าในคลังท่าหลัก และหากมีคอร์สคนไข้กำลังใช้งานอยู่ระบบจะไม่อนุญาตให้ลบ
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setModpackToDelete(null)}
+                disabled={actionLoading}
+                className="h-10 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold transition disabled:opacity-50 cursor-pointer"
+              >
+                ยกเลิก (Cancel)
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteModpack}
+                disabled={actionLoading}
+                className="h-10 px-5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition disabled:opacity-50 shadow-sm shadow-rose-600/30 cursor-pointer"
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>กำลังลบ...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>ยืนยันลบชุดท่า</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

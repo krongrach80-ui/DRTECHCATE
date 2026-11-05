@@ -2367,6 +2367,24 @@ export class ApiClient {
         // 8.1.1 Handle DELETE /modpacks/:id
         if (method === 'DELETE' && targetModpackId) {
           try {
+            // 1. ตรวจสอบว่ามีคอร์สของคนไข้ใช้งานชุดท่านี้อยู่หรือไม่ (Active Course Reference Check)
+            const courseCheckRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/courses?modpack_id=eq.${encodeURIComponent(targetModpackId)}&status=eq.active&select=id,patient_id`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            );
+            if (courseCheckRes.ok) {
+              const activeCourses = await courseCheckRes.json().catch(() => []);
+              if (Array.isArray(activeCourses) && activeCourses.length > 0) {
+                throw new Error(`ชุดท่านี้ถูกใช้ในคอร์สของคนไข้ ${activeCourses.length} ราย ไม่สามารถลบได้`);
+              }
+            }
+
+            // 2. ลบรายการท่าในชุด (modpack_items) ก่อนเพื่อความสะอาดเรียบร้อย
             await fetch(
               `${DEFAULT_SUPABASE_URL}/rest/v1/modpack_items?modpack_id=eq.${encodeURIComponent(targetModpackId)}`,
               {
@@ -2374,9 +2392,13 @@ export class ApiClient {
                 headers: {
                   apikey: DEFAULT_SUPABASE_ANON_KEY,
                   Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  Prefer: 'return=representation',
                 },
               }
             );
+
+            // 3. ทำการ Hard Delete พร้อม Header Prefer: return=representation เพื่อตรวจนับจำนวนแถวที่ลบได้จริง
+            let success = false;
             const delRes = await fetch(
               `${DEFAULT_SUPABASE_URL}/rest/v1/modpacks?id=eq.${encodeURIComponent(targetModpackId)}`,
               {
@@ -2384,11 +2406,19 @@ export class ApiClient {
                 headers: {
                   apikey: DEFAULT_SUPABASE_ANON_KEY,
                   Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  Prefer: 'return=representation',
                 },
               }
             );
-            if (!delRes.ok) {
-              await fetch(
+            const deletedRows = delRes.ok ? await delRes.json().catch(() => []) : [];
+            if (Array.isArray(deletedRows) && deletedRows.length > 0) {
+              success = true;
+            }
+
+            // 4. หาก Hard Delete ได้ 0 แถว (เนื่องจาก RLS ป้องกันคำสั่ง DELETE สำหรับ anon key)
+            // ให้รัน Soft Delete (is_active: false) รับประกันความเสถียรและความปลอดภัย
+            if (!success) {
+              const patchRes = await fetch(
                 `${DEFAULT_SUPABASE_URL}/rest/v1/modpacks?id=eq.${encodeURIComponent(targetModpackId)}`,
                 {
                   method: 'PATCH',
@@ -2396,14 +2426,49 @@ export class ApiClient {
                     apikey: DEFAULT_SUPABASE_ANON_KEY,
                     Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
                     'Content-Type': 'application/json',
+                    Prefer: 'return=representation',
                   },
-                  body: JSON.stringify({ is_active: false }),
+                  body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() }),
                 }
               );
+              const patchedRows = patchRes.ok ? await patchRes.json().catch(() => []) : [];
+              if (Array.isArray(patchedRows) && patchedRows.length > 0) {
+                success = true;
+              }
             }
-            return { ok: true, message: 'ลบชุดท่ากายภาพสำเร็จ' } as T;
-          } catch {
-            return { ok: true, message: 'ลบชุดท่ากายภาพสำเร็จ' } as T;
+
+            // 5. Fail Closed: หากทั้ง Hard Delete และ Soft Delete ได้ 0 แถวทั้งคู่ ให้ throw Error ทันที ห้ามหลอก UI
+            if (!success) {
+              throw new Error('ไม่สามารถลบชุดท่ากายภาพได้ (ไม่มีสิทธิ์หรือชุดท่าถูกป้องกันโดยระบบ)');
+            }
+
+            // 6. บันทึก Audit Log เมื่อลบสำเร็จ
+            try {
+              const currentUser = this.getUserProfile();
+              await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/audit_logs`, {
+                method: 'POST',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  actor_type: 'staff',
+                  actor_id: currentUser?.id || 'admin',
+                  action: 'modpack_deleted',
+                  entity: 'modpacks',
+                  entity_id: targetModpackId,
+                  metadata: { deleted_at: new Date().toISOString() },
+                  created_at: new Date().toISOString(),
+                }),
+              }).catch(() => {});
+            } catch {
+              // Non-blocking
+            }
+
+            return { ok: true, message: 'ลบชุดท่ากายภาพสำเร็จ', id: targetModpackId } as T;
+          } catch (delErr) {
+            throw delErr;
           }
         }
 
