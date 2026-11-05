@@ -1319,37 +1319,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               </p>
             </div>
           </div>
-
-          {/* Right Status Badge & 3-Step Pills */}
-          <div className="flex items-center gap-2.5">
-            {/* 3-Step Guide Pills (Tablet/Desktop) */}
-            <div className="hidden md:flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/80 whitespace-nowrap">
-                👀 1. มองกล้อง
-              </span>
-              <span className="text-slate-400 font-bold">→</span>
-              <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200/80 whitespace-nowrap">
-                😉 2. กะพริบตา
-              </span>
-              <span className="text-slate-400 font-bold">→</span>
-              <span className="px-2.5 py-1 rounded-lg bg-teal-50 text-teal-800 border border-teal-200/80 whitespace-nowrap">
-                🏃 3. เริ่มฝึกทันที
-              </span>
-            </div>
-
-            {/* Live Camera Status Badge */}
-            {cameraReady && !userDisabledCamera && !isScanningPaused ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 font-bold text-xs shadow-xs shrink-0 whitespace-nowrap">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>กล้องพร้อมสแกน</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-bold text-xs shadow-xs shrink-0 whitespace-nowrap">
-                <span className="w-2 h-2 rounded-full bg-slate-400" />
-                <span>รอเปิดกล้อง</span>
-              </span>
-            )}
-          </div>
         </div>
 
         {/* B. Main Content Grid (12-Columns on XL Displays, Clean Stack on Smaller Displays) */}
