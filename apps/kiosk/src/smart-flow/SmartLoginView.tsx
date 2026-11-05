@@ -86,6 +86,28 @@ interface CachedPatientBiometric {
   vectors: number[][];
 }
 
+const CornerOrnament: React.FC<{ position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' }> = ({ position }) => {
+  const positionClasses = {
+    'top-left': 'top-4 left-4',
+    'top-right': 'top-4 right-4 rotate-90',
+    'bottom-left': 'bottom-4 left-4 -rotate-90',
+    'bottom-right': 'bottom-4 right-4 rotate-180',
+  }[position];
+
+  return (
+    <svg
+      className={`absolute ${positionClasses} w-7 h-7 pointer-events-none opacity-30 text-[#0284C7]`}
+      viewBox="0 0 28 28"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path d="M2 26V8C2 4.68629 4.68629 2 8 2H26" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx="5" cy="5" r="2" fill="currentColor" />
+    </svg>
+  );
+};
+
 export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   onLoginSuccess,
   onNavigateToEnroll,
@@ -916,8 +938,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     countdownIntervalRef.current = interval;
   }, [cancelCountdown, finishCountdownAndVerify, isScanning, isScanningPaused, matchedPatient, rateLimitCooldownSec, lang, t]);
 
-  // Trigger manual scan (activates countdown if face is aligned)
+  // Trigger manual scan (activates countdown if face is aligned or restarts camera if inactive)
   const executeScanLogin = useCallback(() => {
+    if (!cameraReady || userDisabledCamera) {
+      setUserDisabledCamera(false);
+      isCameraStartedRef.current = false;
+      startCamera();
+      return;
+    }
     if (isScanning || isProcessingScanRef.current || isScanningPaused) return;
     if (rateLimitCooldownSec > 0) {
       alert(`กรุณารอระบบคูลดาวน์ ${rateLimitCooldownSec} วินาที`);
@@ -928,7 +956,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       return;
     }
     startCountdown();
-  }, [faceInCircle, isScanning, isScanningPaused, rateLimitCooldownSec, startCountdown]);
+  }, [cameraReady, userDisabledCamera, isScanningPaused, faceInCircle, isScanning, rateLimitCooldownSec, startCountdown, startCamera]);
 
   // ISOLATED CAMERA LIFECYCLE
   useEffect(() => {
@@ -1243,7 +1271,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   };
 
   return (
-    <div className="w-full h-full min-h-screen relative flex items-center justify-center p-4 bg-gradient-to-br from-[#E6F8F5] via-[#F4FBF9] to-[#E0F2FE] text-[#063932] select-none overflow-hidden font-sans">
+    <div className="w-full min-h-screen relative flex flex-col items-center justify-center p-4 bg-gradient-to-b from-[#EBF5FA] via-[#F2F9FC] to-[#E6F4F8] text-slate-900 select-none overflow-x-hidden font-sans">
       <video
         ref={videoRef}
         playsInline
@@ -1260,57 +1288,92 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         aria-hidden="true"
       />
 
-      {/* Ambient Top-Right Decorative Aesthetics */}
-      <div className="absolute top-0 right-0 w-[480px] h-[480px] bg-[radial-gradient(circle_at_85%_15%,rgba(16,185,129,0.16)_0%,rgba(14,165,233,0.10)_40%,transparent_70%)] pointer-events-none z-0" />
-      <div className="absolute top-6 right-7 w-52 h-52 bg-[radial-gradient(#0EA5E9_1px,transparent_1px)] bg-[size:16px_16px] opacity-20 pointer-events-none z-0" />
+      {/* Decorative Technical Corner Filigree Frame Ornaments */}
+      <CornerOrnament position="top-left" />
+      <CornerOrnament position="top-right" />
+      <CornerOrnament position="bottom-left" />
+      <CornerOrnament position="bottom-right" />
 
-      {/* Centered Vertical Kiosk Card */}
-      <div className="w-full max-w-[440px] bg-white border-[1.5px] border-[#1E293B] rounded-[28px] shadow-2xl shadow-emerald-950/10 p-6 flex flex-col relative z-10 animate-scale-up">
+      {/* Vertical Centered Kiosk Body Stack */}
+      <div className="w-full max-w-xl mx-auto flex flex-col items-center py-4 px-2 sm:px-4 gap-4 sm:gap-5 relative z-10">
         
-        {/* 1. Camera Box */}
-        <div className="w-full min-h-[160px] rounded-2xl relative overflow-hidden">
-          {!cameraReady ? (
-            /* Fallback Box: Yellow Amber Dashed */
-            <div className="w-full bg-[#FFFBEB] border-[1.5px] border-dashed border-[#F59E0B] rounded-2xl p-4 text-center flex flex-col items-center justify-center">
-              <div className="w-7 h-7 rounded-full border-2 border-[#F59E0B] text-[#F59E0B] flex items-center justify-center font-bold text-xs mb-1.5">
-                {userDisabledCamera || isScanningPaused ? '⏸️' : '!'}
-              </div>
-              <h3 className="text-sm font-bold text-[#78350F]">
-                {userDisabledCamera || isScanningPaused ? 'หยุดการสแกนชั่วคราว' : 'กล้องยังไม่พร้อมใช้งาน'}
-              </h3>
-              <p className="text-[11px] text-[#B45309] font-medium mt-0.5 mb-3.5">
-                {userDisabledCamera || isScanningPaused
-                  ? 'ระบบหยุดตรวจจับใบหน้าอัตโนมัติขณะเปิดเมนูอื่น หรือเมื่อกดหยุดสแกน'
-                  : 'กรุณาอนุญาตการใช้กล้อง หรือใช้รหัส PIN แทน'}
-              </p>
+        {/* Section A: Top Brand Viewfinder Emblem */}
+        <div
+          onClick={() => executeScanLogin()}
+          className="relative w-36 h-36 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center p-3 cursor-pointer group hover:shadow-md transition active:scale-95"
+          title="แตะเพื่อเริ่มสแกนใบหน้าเข้าใช้งาน"
+        >
+          {/* 4 Viewfinder Cyan Brackets */}
+          <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-sky-400 rounded-tl-sm pointer-events-none group-hover:scale-110 transition-transform" />
+          <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-sky-400 rounded-tr-sm pointer-events-none group-hover:scale-110 transition-transform" />
+          <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-sky-400 rounded-bl-sm pointer-events-none group-hover:scale-110 transition-transform" />
+          <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-sky-400 rounded-br-sm pointer-events-none group-hover:scale-110 transition-transform" />
 
-              <button
-                type="button"
-                onClick={handleRetryCamera}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#10B981] to-[#2563EB] text-white text-xs font-bold shadow-md shadow-emerald-500/25 hover:brightness-105 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>{userDisabledCamera || isScanningPaused ? 'เปิดกล้องเริ่มสแกนใหม่' : 'ลองเปิดกล้องอีกครั้ง'}</span>
-              </button>
+          {/* Circular Ring with Logo */}
+          <div className="w-28 h-28 rounded-full border-2 border-teal-400 flex flex-col items-center justify-center p-1 text-center bg-white shadow-xs group-hover:scale-105 transition-transform">
+            <svg className="w-9 h-9 mb-0.5" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M48 20 C30 20 18 34 18 52 C18 69 31 82 48 82 C44 76 40 68 40 52 C40 38 43 27 48 20 Z" fill="#0284C7" />
+              <path d="M52 80 C70 80 82 66 82 48 C82 31 69 18 52 18 C56 24 60 32 60 48 C60 62 57 73 52 80 Z" fill="#10B981" />
+              <path d="M44 38 H56 V44 H62 V56 H56 V62 H44 V56 H38 V44 H44 Z" fill="#10B981" />
+              <path d="M47 41 H53 V47 H59 V53 H53 V59 H47 V53 H41 V47 H47 Z" fill="#0284C7" />
+              <circle cx="50" cy="50" r="4" fill="#FFFFFF" />
+            </svg>
+            <div className="text-[9px] font-extrabold text-[#0369A1] tracking-wider leading-tight">
+              DR TECH CARE
+            </div>
+            <div className="text-[6px] font-semibold text-slate-400 tracking-wider uppercase mt-0.5">
+              Health Technology
+            </div>
+          </div>
+        </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  stopCamera();
-                  setEnteredPin('');
-                  setIsPinModalOpen(true);
-                }}
-                className="w-full py-2 rounded-xl bg-white border border-[#CBD5E1] text-[#334155] text-xs font-semibold shadow-xs hover:bg-slate-50 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5 mt-2"
+        {/* Section B: Interactive Greeting & Two-Hand Prompt Banner */}
+        <div
+          onClick={() => executeScanLogin()}
+          className="w-full bg-white/95 border-2 border-emerald-300/90 rounded-3xl px-5 sm:px-6 py-3.5 sm:py-4 shadow-sm hover:shadow-md transition cursor-pointer flex items-center gap-3.5 sm:gap-4 active:scale-[0.99]"
+          title="แตะเพื่อเริ่มสแกน"
+        >
+          <span className="text-2xl sm:text-3xl leading-none shrink-0 animate-bounce">🙌</span>
+          <div className="flex-1 text-left">
+            <div className="font-extrabold text-sm sm:text-base text-[#064E3B] leading-snug">
+              {lang === 'zh-CN' ? '您准备好进行康复训练了吗？请举起双手或点击此处' : lang === 'en-US' ? 'Ready for rehab? Raise both hands or tap here' : 'คุณพร้อมจะกายภาพรึยัง? ยก 2 มือขึ้น หรือแตะที่นี่'}
+            </div>
+            <div className="text-xs text-[#059669] leading-snug mt-0.5 font-medium">
+              {lang === 'zh-CN' ? '人脸即时自动识别，或点击下方按钮登录' : lang === 'en-US' ? 'Instant auto-face scan or tap below to login' : 'สแกนใบหน้าอัตโนมัติทันที หรือแตะปุ่มด้านล่างเพื่อเข้าสู่ระบบ'}
+            </div>
+          </div>
+        </div>
+
+        {/* Section C: Central Square Camera Viewport */}
+        <div className="w-full max-w-[380px] aspect-square bg-[#EEF6FA] rounded-3xl border-2 border-white shadow-inner relative overflow-hidden flex items-center justify-center">
+          {!cameraReady || userDisabledCamera || isScanningPaused ? (
+            /* Idle Viewport: Centered Black Outline Camera SVG matching Mockup */
+            <div
+              onClick={() => {
+                handleRetryCamera();
+                executeScanLogin();
+              }}
+              className="w-full h-full flex flex-col items-center justify-center cursor-pointer group"
+              title="แตะเพื่อเปิดกล้องและเริ่มสแกนใบหน้า"
+            >
+              <svg
+                className="w-20 h-20 text-slate-800 transition-transform group-hover:scale-110"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                <span>ใช้รหัส PIN แทน</span>
-              </button>
+                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
             </div>
           ) : (
-            /* Active Live Camera Box */
+            /* Active Live Camera Stream */
             <div
               onClick={() => executeScanLogin()}
-              className="w-full h-52 rounded-2xl bg-[#02201C] border-2 border-[#10B981] relative overflow-hidden flex items-center justify-center cursor-pointer group hover:border-emerald-300 transition"
+              className="w-full h-full relative flex items-center justify-center cursor-pointer group"
               title="แตะที่นี่เพื่อสแกนใบหน้าทันที"
             >
               <canvas ref={previewCanvasRef} className="w-full h-full object-cover" />
@@ -1329,7 +1392,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               {/* Reticle Circle / Face scan guide with 3s Countdown & Live Score % */}
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
                 <div
-                  className={`w-32 h-40 rounded-full transition-all duration-300 relative flex items-center justify-center ${
+                  className={`w-36 h-44 rounded-full transition-all duration-300 relative flex items-center justify-center ${
                     countdownValue !== null
                       ? 'border-4 border-emerald-400 shadow-[0_0_35px_rgba(16,185,129,0.95)] ring-4 ring-emerald-500/40 animate-pulse'
                       : !faceInCircle
@@ -1520,84 +1583,65 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           )}
         </div>
 
-        {/* 2. Middle Emblem & Manual Trigger */}
-        <div
-          onClick={() => executeScanLogin()}
-          className="relative w-36 h-36 mx-auto my-3 flex items-center justify-center cursor-pointer group"
-          title="แตะเพื่อเริ่มสแกนใบหน้าเข้าใช้งาน"
-        >
-          <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#38BDF8] rounded-tl-sm pointer-events-none group-hover:scale-110 transition-transform" />
-          <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#38BDF8] rounded-tr-sm pointer-events-none group-hover:scale-110 transition-transform" />
-          <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#38BDF8] rounded-bl-sm pointer-events-none group-hover:scale-110 transition-transform" />
-          <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#38BDF8] rounded-br-sm pointer-events-none group-hover:scale-110 transition-transform" />
+        {/* Section D: Immediate Camera Control Buttons */}
+        <div className="w-full max-w-[360px] flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              handleRetryCamera();
+              executeScanLogin();
+            }}
+            className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-[#00B074] via-[#009688] to-[#1D63DC] hover:opacity-95 active:scale-[0.98] shadow-md flex items-center justify-center gap-2 cursor-pointer transition text-sm"
+          >
+            <RefreshCw className="w-4 h-4 text-white" />
+            <span>เปิดกล้องเริ่มสแกนใหม่</span>
+          </button>
 
-          <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-[#10B981] to-[#0EA5E9] p-0.5 flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-105 active:scale-95 transition-transform">
-            <div className="w-full h-full bg-white rounded-full border border-slate-100 flex flex-col items-center justify-center p-2 text-center">
-              <svg className="w-10 h-10 mb-0.5" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M48 20 C30 20 18 34 18 52 C18 69 31 82 48 82 C44 76 40 68 40 52 C40 38 43 27 48 20 Z" fill="#0284C7" />
-                <path d="M52 80 C70 80 82 66 82 48 C82 31 69 18 52 18 C56 24 60 32 60 48 C60 62 57 73 52 80 Z" fill="#10B981" />
-                <path d="M44 38 H56 V44 H62 V56 H56 V62 H44 V56 H38 V44 H44 Z" fill="#10B981" />
-                <path d="M47 41 H53 V47 H59 V53 H53 V59 H47 V53 H41 V47 H47 Z" fill="#0284C7" />
-                <circle cx="50" cy="50" r="4" fill="#FFFFFF" />
-              </svg>
-              <div className="text-[9px] font-extrabold text-[#0369A1] tracking-wider leading-tight">
-                DR TECH CARE
-              </div>
-              <div className="text-[6px] font-semibold text-slate-400 tracking-wider uppercase">
-                Health Technology
-              </div>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              stopCamera();
+              setEnteredPin('');
+              setIsPinModalOpen(true);
+            }}
+            className="w-full py-2.5 rounded-xl font-bold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.98] shadow-xs flex items-center justify-center gap-2 cursor-pointer transition text-xs sm:text-sm"
+          >
+            <KeyRound className="w-4 h-4 text-amber-600" />
+            <span>ใช้รหัส PIN แทน</span>
+          </button>
         </div>
 
-        {/* 3. AI Instructions Green Pill Banner */}
-        <div
-          onClick={() => executeScanLogin()}
-          className="bg-[#ECFDF5] border border-[#6EE7B7] rounded-xl p-2.5 flex items-center gap-2.5 mb-2.5 text-left cursor-pointer hover:bg-emerald-100/70 active:scale-[0.99] transition shadow-xs"
-          title="แตะเพื่อเริ่มสแกน"
-        >
-          <span className="text-xl leading-none shrink-0 animate-bounce">🙌</span>
-          <div>
-            <div className="font-bold text-xs text-[#065F46] leading-snug">
-              {lang === 'zh-CN' ? '您准备好进行康复训练了吗？请举起双手或点击此处' : lang === 'en-US' ? 'Ready for rehab? Raise both hands or tap here' : 'คุณพร้อมจะกายภาพรึยัง? ยก 2 มือขึ้น หรือแตะที่นี่'}
-            </div>
-            <div className="text-[10px] text-[#059669] leading-snug mt-0.5 font-medium">
-              {lang === 'zh-CN' ? '人脸即时自动识别，或点击下方按钮登录' : lang === 'en-US' ? 'Instant auto-face scan or tap below to login' : 'สแกนใบหน้าอัตโนมัติทันที หรือแตะปุ่มด้านล่างเพื่อเข้าสู่ระบบ'}
-            </div>
-          </div>
-        </div>
-
-        {/* Action Buttons Section */}
-        <div className="w-full flex flex-col gap-2 mb-2">
-          {/* Primary Action Button: Scan Face Now */}
+        {/* Section E: Bottom Main Action Dock */}
+        <div className="w-full max-w-xl flex flex-col gap-3 mt-1">
+          {/* Giant Primary Face Scan Button */}
           <button
             type="button"
             id="kiosk-scan-face-btn"
             data-testid="kiosk-scan-face-btn"
             disabled={isScanning || countdownValue !== null}
             onClick={() => executeScanLogin()}
-            className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-[#10B981] via-[#059669] to-[#0284C7] hover:from-[#059669] hover:to-[#0369A1] text-white font-extrabold text-sm shadow-md shadow-emerald-500/25 active:scale-[0.98] transition cursor-pointer flex items-center justify-center gap-2 border border-emerald-400/30"
+            className="w-full py-4 rounded-2xl text-lg sm:text-xl font-extrabold text-white bg-gradient-to-r from-[#059E69] via-[#0891B2] to-[#0284C7] hover:brightness-105 active:scale-[0.99] shadow-lg flex items-center justify-center gap-3 cursor-pointer transition border border-emerald-400/30"
           >
             {countdownValue !== null ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                <RefreshCw className="w-5 h-5 animate-spin text-white" />
                 <span>กำลังนับถอยหลัง {countdownValue}...</span>
               </>
             ) : isScanning ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                <RefreshCw className="w-5 h-5 animate-spin text-white" />
                 <span>{t('kiosk_verifying_identity')}</span>
               </>
             ) : (
               <>
-                <Camera className="w-4 h-4 text-emerald-100" />
-                <span>{t('kiosk_scan_face_now')}</span>
+                <Camera className="w-6 h-6 text-emerald-100" />
+                <span>สแกนใบหน้าเข้าใช้งานทันที</span>
               </>
             )}
           </button>
 
-          {/* Secondary Action Row: PIN Login & New Patient */}
-          <div className="grid grid-cols-2 gap-2">
+          {/* 2-Column Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
             <button
               type="button"
               id="kiosk-pin-login-btn"
@@ -1607,9 +1651,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 setEnteredPin('');
                 setIsPinModalOpen(true);
               }}
-              className="py-2.5 px-3 rounded-xl bg-white border border-[#CBD5E1] text-[#1E293B] text-xs font-bold hover:bg-slate-50 hover:border-slate-400 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+              className="py-3.5 px-4 rounded-2xl bg-white border-2 border-slate-200 hover:border-amber-400 text-slate-900 font-extrabold text-base sm:text-lg shadow-xs flex items-center justify-center gap-2.5 cursor-pointer active:scale-95 transition"
             >
-              <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+              <KeyRound className="w-5 h-5 text-amber-500" />
               <span>ใช้รหัส PIN 4 หลัก</span>
             </button>
 
@@ -1625,45 +1669,25 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   onNavigateToEnroll();
                 }
               }}
-              className="py-2.5 px-3 rounded-xl bg-white border border-blue-200 text-blue-700 text-xs font-bold hover:bg-blue-50 hover:border-blue-300 active:scale-98 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+              className="py-3.5 px-4 rounded-2xl bg-white border-2 border-blue-200 hover:border-blue-500 text-blue-700 font-extrabold text-base sm:text-lg shadow-xs flex items-center justify-center gap-2.5 cursor-pointer active:scale-95 transition"
             >
-              <UserPlus className="w-3.5 h-3.5 text-blue-600" />
-              <span>➕ สมัครคนไข้ใหม่</span>
+              <UserPlus className="w-5 h-5 text-blue-600" />
+              <span>สมัครคนไข้ใหม่</span>
             </button>
           </div>
         </div>
 
-        {/* 4. Footer Branding */}
-        <div className="text-center mt-0.5">
-          <h2 className="text-lg sm:text-xl font-extrabold text-[#064E3B] tracking-normal">
-            Dr.Tech.Care
-          </h2>
-          <div>
-            <span className="inline-block mt-1 px-3.5 py-0.5 rounded-full bg-[#ECFDF5] border border-[#A7F3D0] text-[#047857] text-[11px] font-bold">
-              ระบบกายภาพบำบัดและดูแลสุขภาพอัจฉริยะ
-            </span>
-          </div>
-        </div>
       </div>
 
-      {/* Bottom Smooth Mint Waves */}
-      <div className="absolute bottom-0 left-0 w-full h-48 pointer-events-none z-0 overflow-hidden">
-        <svg className="w-full h-full block" viewBox="0 0 1440 280" fill="none" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M0 160 C320 100 480 220 800 160 C1120 100 1280 180 1440 140 V280 H0 Z" fill="#C7F1E7" fillOpacity="0.35" />
-          <path d="M0 180 C240 240 540 140 840 200 C1140 260 1340 160 1440 190 V280 H0 Z" fill="#E6F8F5" fillOpacity="0.65" />
-          <path d="M0 210 C360 170 600 240 960 210 C1200 190 1380 230 1440 220 V280 H0 Z" fill="#A7F3D0" fillOpacity="0.4" />
-        </svg>
-      </div>
-
-      {/* Bottom-Right Floating Action Pills */}
-      <div className="fixed bottom-6 right-7 flex items-center gap-3 z-30">
+      {/* Section F: Floating Bottom-Right System Info Pill */}
+      <div className="fixed bottom-3 right-3 z-30">
         <button
           type="button"
           onClick={() => {
             stopCamera();
             setIsAboutModalOpen(true);
           }}
-          className="px-4 py-1.5 rounded-full bg-white border border-[#CBD5E1] text-[#475569] text-xs font-semibold shadow-md hover:-translate-y-0.5 active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
+          className="px-3.5 py-1.5 rounded-full bg-white/90 hover:bg-white border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold shadow-xs hover:shadow-sm active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
         >
           <Info className="w-3.5 h-3.5 text-slate-500" />
           <span>เกี่ยวกับระบบ</span>

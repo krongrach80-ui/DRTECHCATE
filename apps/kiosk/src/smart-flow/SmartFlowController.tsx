@@ -90,7 +90,7 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
       onReset={() => changeStep('login')}
       onExit={() => changeStep('login')}
     >
-      <div className="w-full h-full bg-[#F0FDF9] overflow-hidden">
+      <div className="w-full h-full bg-transparent overflow-x-hidden overflow-y-auto">
         {currentStep === 'login' && (
           <SmartLoginView
             onLoginSuccess={handleLoginSuccess}

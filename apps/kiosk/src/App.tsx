@@ -562,7 +562,7 @@ export const App: React.FC = () => {
 
   if (flowMode === 'smart') {
     return (
-      <div className="w-screen h-screen flex flex-col bg-gradient-to-br from-[#E6F8F5] via-[#F4FBF9] to-[#E0F2FE] text-[#063932] select-none overflow-hidden relative font-sans">
+      <div className="w-screen h-screen flex flex-col bg-gradient-to-b from-[#EBF5FA] via-[#F2F9FC] to-[#E6F4F8] text-slate-900 select-none overflow-hidden relative font-sans">
         <KioskClinicalHeader
           kioskId={kioskId}
           onCallStaff={() => handleTriggerStaffCall('คนไข้กดเรียกเจ้าหน้าที่จากตู้ Kiosk')}
