@@ -142,9 +142,13 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         setLoading(true);
       }
       setLoadError(null);
-      const targetId = patient.patient_id || patient.hn || '';
+      const targetId = patient.patient_id || patient.hn || (patient as any).id || '';
       const res = await defaultApiClient.smartOnboarding.getDailyPlan(targetId);
       if (!isMountedRef.current) return;
+
+      if (!res || (res as any).ok === false) {
+        throw new Error((res as any)?.message || (res as any)?.error || 'ไม่สามารถโหลดตารางกายภาพบำบัดได้');
+      }
 
       setDailyPlanResponse(res);
       const scheduled = Boolean(res.is_scheduled_today);
@@ -240,7 +244,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       setCallStaffStatus('sending');
       await defaultApiClient.kiosk.callStaff({
         kiosk_id: 'kiosk-01',
-        reason: `คนไข้ ${patient.first_name} (HN: ${patient.patient_id || patient.hn || '-'}) ขอความช่วยเหลือ / สอบถามตารางนัดหมาย`,
+        reason: `คนไข้ ${patient.first_name} (HN: ${patient.hn || patient.patient_id || '-'}) ขอความช่วยเหลือ / สอบถามตารางนัดหมาย`,
       });
       setCallStaffStatus('sent');
       setTimeout(() => {
@@ -259,7 +263,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       setPainAlertActive(true);
       await defaultApiClient.kiosk.callStaff({
         kiosk_id: 'kiosk-01',
-        reason: `[🚨 รู้สึกเจ็บ] ผู้ป่วย ${patient.first_name || ''} (HN: ${patient.patient_id || patient.hn || '-'}) กดหยุดฉุกเฉินเนื่องจากรู้สึกเจ็บปวด`,
+        reason: `[🚨 รู้สึกเจ็บ] ผู้ป่วย ${patient.first_name || ''} (HN: ${patient.hn || patient.patient_id || '-'}) กดหยุดฉุกเฉินเนื่องจากรู้สึกเจ็บปวด`,
       });
     } catch {
       // non-blocking
@@ -543,14 +547,70 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     return () => clearInterval(timer);
   }, [isSessionCompleted, onLogout]);
 
+  // Helper for localized rest reason description
+  const getLocalizedRestReason = (reason: string, currentLang: string) => {
+    switch (reason) {
+      case 'not_scheduled_today':
+        return currentLang === 'zh-CN'
+          ? '今日无预约康复训练安排，请好好休息。'
+          : currentLang === 'en-US'
+          ? 'No physical therapy session scheduled for you today. Please feel free to rest.'
+          : 'วันนี้ไม่มีนัดหมายในตารางฝึกกายภาพบำบัดของคุณ เชิญพักผ่อนตามอัธยาศัยครับ';
+      case 'archived_or_suspended':
+        return currentLang === 'zh-CN'
+          ? '您的账户处于暂停或归档状态，请联系医护人员'
+          : currentLang === 'en-US'
+          ? 'Your account is paused or archived. Please contact hospital staff.'
+          : 'บัญชีของคุณอยู่ระหว่างระงับหรือพักการรักษา กรุณาติดต่อเจ้าหน้าที่';
+      case 'no_plan_found':
+        return currentLang === 'zh-CN'
+          ? '未找到今日训练方案，请联系医护人员'
+          : currentLang === 'en-US'
+          ? 'No rehabilitation schedule found. Please contact staff.'
+          : 'ไม่พบข้อมูลตารางฝึกประจำวันนี้ กรุณาติดต่อเจ้าหน้าที่';
+      case 'rest_day_default':
+      default:
+        return currentLang === 'zh-CN'
+          ? '今日是您的休息日，暂无训练安排'
+          : currentLang === 'en-US'
+          ? 'Today is your scheduled rest day'
+          : 'วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้';
+    }
+  };
+
   // Compute Next Appointment Date String
   const nextApptDateStr = React.useMemo(() => {
+    const nextDate = dailyPlanResponse?.next_appointment_date;
+    const timeSlot = dailyPlanResponse?.time_slot || dailyPlanResponse?.schedule?.time_slot || '09:00 - 10:00 น.';
+    if (nextDate) {
+      const parts = nextDate.split('-');
+      if (parts.length === 3) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        const dateObj = new Date(y, m, d);
+        if (!isNaN(dateObj.getTime())) {
+          if (lang === 'zh-CN') {
+            const weekdaysZh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+            return `${y}年${m + 1}月${d}日 (${weekdaysZh[dateObj.getDay()]}) ${timeSlot}`;
+          }
+          if (lang === 'en-US') {
+            const weekdaysEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${weekdaysEn[dateObj.getDay()]}, ${d} ${monthsEn[m]} ${y} (${timeSlot})`;
+          }
+          const weekdaysTh = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์'];
+          const monthsTh = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+          return `${weekdaysTh[dateObj.getDay()]}ที่ ${d} ${monthsTh[m]} ${y + 543} (${timeSlot})`;
+        }
+      }
+    }
     const d = new Date();
-    d.setDate(d.getDate() + 2);
+    d.setDate(d.getDate() + 1);
     const day = d.getDate();
     const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
     return `${day} ${months[d.getMonth()]} ${d.getFullYear() + 543} (09:00 - 10:00 น.)`;
-  }, []);
+  }, [dailyPlanResponse?.next_appointment_date, dailyPlanResponse?.time_slot, dailyPlanResponse?.schedule?.time_slot, lang]);
 
   // Clinical Touchless Gesture Starter Hook
   const isGestureStarterEnabled = Boolean(
@@ -639,7 +699,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               <div className="text-base font-bold text-white">
                 คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
               </div>
-              <div className="text-xs text-slate-400">HN: {patient?.patient_id || patient?.hn || '-'}</div>
+              <div className="text-xs text-slate-400">HN: {patient?.hn || patient?.patient_id || '-'}</div>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -663,7 +723,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           <h2 className="text-xl font-bold text-white mb-2">
             {lang === 'zh-CN' ? '今天是您的休息日' : lang === 'en-US' ? 'Your Scheduled Rest Day' : 'วันพักผ่อนของคุณ'}
           </h2>
-          <p className="text-sm text-slate-300 leading-relaxed mb-6">
+          <p className="text-sm text-slate-300 leading-relaxed mb-5">
             {lang === 'zh-CN'
               ? '🌿 今日没有为您安排康复训练，或当前为休息日。请好好休息，保持良好状态。'
               : lang === 'en-US'
@@ -671,13 +731,24 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               : '🌿 วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้ เชิญพักผ่อนตามอัธยาศัยครับ'}
           </p>
 
-          <div className="text-sm text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-2.5 w-full mb-4">
-            {restReason === 'rest_day_default'
-              ? (lang === 'zh-CN' ? '今日是您的休息日，暂无训练安排' : lang === 'en-US' ? 'Today is your scheduled rest day' : 'วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้')
-              : restReason === 'no_plan_found'
-              ? (lang === 'zh-CN' ? '未找到今日训练计划' : lang === 'en-US' ? 'No daily rehab schedule found' : 'ไม่พบข้อมูลตารางฝึกประจำวันนี้')
-              : restReason || (lang === 'zh-CN' ? '今日无预约训练' : lang === 'en-US' ? 'No scheduled appointment today' : 'วันนี้ไม่มีนัดหมายในตารางฝึก')}
+          <div className="text-sm text-slate-300 bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-3 w-full mb-4">
+            {getLocalizedRestReason(restReason, lang)}
           </div>
+
+          {/* Next Appointment Card if available */}
+          {dailyPlanResponse?.next_appointment_date && (
+            <div className="w-full bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 text-center mb-5 shadow-sm">
+              <div className="text-xs text-emerald-300 font-semibold mb-1 flex items-center justify-center gap-1.5">
+                <Clock className="w-4 h-4 text-emerald-400" />
+                <span>
+                  {lang === 'zh-CN' ? '下次康复训练预约时间' : lang === 'en-US' ? 'Next Scheduled Session' : 'วันนัดฝึกกายภาพบำบัดครั้งถัดไปของคุณ'}
+                </span>
+              </div>
+              <div className="text-sm font-bold text-white">
+                📅 {nextApptDateStr}
+              </div>
+            </div>
+          )}
 
           {/* Call Staff Button */}
           <button
@@ -728,7 +799,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               <div className="text-base font-bold text-white">
                 คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
               </div>
-              <div className="text-xs text-slate-400">HN: {patient?.patient_id || patient?.hn || '-'}</div>
+              <div className="text-xs text-slate-400">HN: {patient?.hn || patient?.patient_id || '-'}</div>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -860,7 +931,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               {lang === 'zh-CN' ? '康复训练方案' : lang === 'en-US' ? 'Rehab Program' : 'โปรแกรมกายภาพบำบัด'}: คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
             </div>
             <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-              <span>HN: {patient?.patient_id || patient?.hn || '-'}</span>
+              <span>HN: {patient?.hn || patient?.patient_id || '-'}</span>
               <span>•</span>
               <span className="text-emerald-400 font-semibold">
                 {lang === 'zh-CN' ? `训练进度: ${completedExerciseIds.size}/${exercises.length} 项动作` : lang === 'en-US' ? `Progress: ${completedExerciseIds.size}/${exercises.length} exercises` : `ความคืบหน้า: ${completedExerciseIds.size}/${exercises.length} ท่า`}

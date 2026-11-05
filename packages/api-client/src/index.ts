@@ -1005,111 +1005,329 @@ export class ApiClient {
       // 3. Fallback for /smart-onboarding/daily-plan/:patientId
       if (endpointPath.startsWith('/smart-onboarding/daily-plan/')) {
         const parts = endpointPath.split('?')[0].split('/');
-        const patientId = parts[parts.length - 1];
+        const rawPatientId = parts[parts.length - 1];
+        const cleanTarget = (rawPatientId || '').trim();
 
-        // 1. Resolve patient from local resilient store or Supabase Cloud
+        if (!cleanTarget) {
+          throw new Error('ไม่พบรหัสผู้ป่วยที่ต้องการค้นหาตารางฝึก');
+        }
+
+        // 1. Resolve patient from Supabase Cloud first (authoritative), then local resilient store
         let patientRec: any = null;
-        if (typeof window !== 'undefined') {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTarget);
+        const queryFilter = isUuid
+          ? `or=(id.eq.${encodeURIComponent(cleanTarget)},hn.eq.${encodeURIComponent(cleanTarget)})`
+          : `hn.eq.${encodeURIComponent(cleanTarget)}`;
+
+        try {
+          const supaRes = await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?${queryFilter}&limit=1`,
+            {
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+              },
+            }
+          );
+          if (!supaRes.ok) {
+            throw new Error(`ไม่สามารถเชื่อมต่อฐานข้อมูลคนไข้ได้ (HTTP ${supaRes.status})`);
+          }
+          const list = await supaRes.json();
+          if (Array.isArray(list) && list.length > 0) {
+            patientRec = list[0];
+          }
+        } catch (fetchErr: any) {
+          // If network error occurred, rethrow unless local cache has the record
+          if (typeof window === 'undefined') {
+            throw fetchErr;
+          }
+        }
+
+        if (!patientRec && typeof window !== 'undefined') {
           try {
             const rawStored = localStorage.getItem('drtech_resilient_patients');
             const stored = rawStored ? JSON.parse(rawStored) : [];
-            patientRec = stored.find((p: any) => p.id === patientId || p.patient_id === patientId || p.hn === patientId) || null;
+            patientRec = stored.find((p: any) => p.id === cleanTarget || p.patient_id === cleanTarget || p.hn === cleanTarget) || null;
           } catch {}
         }
 
         if (!patientRec) {
-          try {
-            const cleanTarget = (patientId || '').trim();
-            const supaRes = await fetch(
-              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(cleanTarget)},hn.eq.${encodeURIComponent(cleanTarget)})&limit=1`,
-              {
-                headers: {
-                  apikey: DEFAULT_SUPABASE_ANON_KEY,
-                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-                },
-              }
-            );
-            if (supaRes.ok) {
-              const list = await supaRes.json();
-              if (Array.isArray(list) && list.length > 0) {
-                patientRec = list[0];
-              }
-            }
-          } catch {}
+          throw new Error(`ไม่พบประวัติผู้ป่วยสำหรับรหัส "${cleanTarget}" ในระบบ`);
         }
 
-        // 2. Resolve schedule by Asia/Bangkok date
-        const now = new Date();
-        const bkkIsoDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(now);
-        const bkkDayShort = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Asia/Bangkok' }).format(now);
-        const bkkDayNum = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' })).getDay();
+        const targetUuid = patientRec.id || cleanTarget;
+        const _targetHn = patientRec.hn || '';
 
-        let isScheduled = true;
-        let isCompleted = false;
-        let restReason = '';
-
-        if (patientRec) {
-          const status = patientRec.registration_status;
-          if (status === 'archived' || status === 'suspended') {
-            isScheduled = false;
-            restReason = 'archived_or_suspended';
-          } else {
-            const schedule = patientRec.schedule || patientRec.history?.schedule;
-            if (schedule) {
-              const dates: string[] = schedule.schedule_dates || [];
-              const days: any[] = schedule.days_of_week || [];
-              const matchDate = dates.includes(bkkIsoDate);
-              const matchDay = days.includes(bkkDayNum) || days.includes(bkkDayShort);
-              if (dates.length > 0 || days.length > 0) {
-                isScheduled = matchDate || matchDay;
-                if (!isScheduled) restReason = 'not_scheduled_today';
-              }
+        // 2. Resolve active courses directly from public.courses on Supabase Cloud
+        let activeCourses: any[] = [];
+        try {
+          const coursesRes = await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/courses?patient_id=eq.${encodeURIComponent(targetUuid)}&status=eq.active&order=created_at.desc`,
+            {
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+              },
             }
+          );
+          if (coursesRes.ok) {
+            const cList = await coursesRes.json();
+            if (Array.isArray(cList)) {
+              activeCourses = cList;
+            }
+          }
+        } catch {}
 
-            const checklists = patientRec.daily_checklists || patientRec.history?.daily_checklists || {};
-            isCompleted = Boolean(checklists[bkkIsoDate]);
+        // 3. Resolve date and time in Asia/Bangkok
+        const queryDateMatch = endpointPath.match(/[?&]date=([^&]+)/);
+        const queryDateStr = queryDateMatch ? decodeURIComponent(queryDateMatch[1]) : undefined;
+        let evalDate: Date;
+        if (queryDateStr) {
+          const sanitized = queryDateStr.includes(' ') ? queryDateStr.replace(' ', '+') : queryDateStr;
+          const parsed = new Date(sanitized);
+          evalDate = isNaN(parsed.getTime()) ? new Date() : parsed;
+        } else {
+          evalDate = new Date();
+        }
+
+        const bkkIsoDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(evalDate);
+        const bkkDayShort = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Asia/Bangkok' }).format(evalDate);
+        const bkkDayNum = new Date(evalDate.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' })).getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+        const dayAliases: Record<string, (string | number)[]> = {
+          Sun: ['Sun', 'sun', 'Sunday', 'อาทิตย์', 'อา.', 0, '0'],
+          Mon: ['Mon', 'mon', 'Monday', 'จันทร์', 'จ.', 1, '1'],
+          Tue: ['Tue', 'tue', 'Tuesday', 'อังคาร', 'อ.', 2, '2'],
+          Wed: ['Wed', 'wed', 'Wednesday', 'พุธ', 'พ.', 3, '3'],
+          Thu: ['Thu', 'thu', 'Thursday', 'พฤหัสบดี', 'พฤ.', 4, '4'],
+          Fri: ['Fri', 'fri', 'Friday', 'ศุกร์', 'ศ.', 5, '5'],
+          Sat: ['Sat', 'sat', 'Saturday', 'เสาร์', 'ส.', 6, '6'],
+        };
+        const validTodayAliases = dayAliases[bkkDayShort] || [bkkDayShort, bkkDayNum, String(bkkDayNum)];
+
+        const status = patientRec.registration_status;
+        const schedule = patientRec.schedule || patientRec.history?.schedule || null;
+
+        // Collect dates from schedule supporting all naming conventions
+        const dates: string[] = (
+          schedule?.scheduled_dates ||
+          schedule?.scheduledDates ||
+          schedule?.schedule_dates ||
+          []
+        );
+        const days: any[] = (
+          schedule?.days_of_week ||
+          schedule?.daysOfWeek ||
+          schedule?.weekdays ||
+          []
+        );
+
+        const schedStart = (schedule?.startDate || schedule?.start_date || '1970-01-01').slice(0, 10);
+        const schedEnd = (schedule?.endDate || schedule?.end_date || '2099-12-31').slice(0, 10);
+        const schedInRange = bkkIsoDate >= schedStart && bkkIsoDate <= schedEnd;
+        const schedDayMatch = days.some((d: any) =>
+          validTodayAliases.includes(d) ||
+          validTodayAliases.includes(Number(d)) ||
+          validTodayAliases.includes(String(d))
+        );
+        const scheduleMatchesToday = dates.includes(bkkIsoDate) || (schedDayMatch && schedInRange);
+
+        // Check if any active course matches today
+        let matchedCourse: any = null;
+        if (Array.isArray(activeCourses)) {
+          for (const c of activeCourses) {
+            const cStart = (c.start_date || '1970-01-01').slice(0, 10);
+            const cEnd = (c.end_date || '2099-12-31').slice(0, 10);
+            const cInRange = bkkIsoDate >= cStart && bkkIsoDate <= cEnd;
+            const cWeekdays: any[] = Array.isArray(c.weekdays) ? c.weekdays : [];
+            const cDayMatch = cWeekdays.some((w: any) =>
+              validTodayAliases.includes(w) ||
+              validTodayAliases.includes(Number(w)) ||
+              validTodayAliases.includes(String(w))
+            );
+            if (cInRange && cDayMatch) {
+              matchedCourse = c;
+              break;
+            }
           }
         }
 
-        const standardExercises = [
-          {
-            exercise_id: 'active-shoulder-flexion',
-            id: 'active-shoulder-flexion',
-            name: 'ยกแขนไปข้างหน้า (Active Shoulder Flexion)',
-            name_th: 'ยกแขนไปข้างหน้า (Active Shoulder Flexion)',
-            name_en: 'Active Shoulder Flexion',
-            name_cn: '肩部前屈举臂',
-            target_joint: 'shoulder',
-            mode: 'camera',
-            sets: 3,
-            reps: 10,
-            clinical_source: 'AAOS Clinical Standards / JOSPT Shoulder Impingement CPG',
-            pt_adjustable_notice: 'นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย',
-          },
-          {
-            exercise_id: 'shoulder-pendulum',
-            id: 'shoulder-pendulum',
-            name: 'แกว่งแขนลูกตุ้ม (Codman Shoulder Pendulum)',
-            name_th: 'แกว่งแขนลูกตุ้ม (Codman Shoulder Pendulum)',
-            name_en: 'Codman Shoulder Pendulum',
-            name_cn: '考德曼肩部钟摆松动训练',
-            target_joint: 'shoulder',
-            mode: 'timer',
-            sets: 3,
-            reps: 1,
-            default_duration_sec: 45,
-            clinical_source: 'Codman Classical Exercise / AAOS Frozen Shoulder Rehab',
-            pt_adjustable_notice: 'นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย',
-          },
-        ];
+        let isScheduled = false;
+        let restReason = '';
+
+        if (status === 'archived' || status === 'suspended') {
+          isScheduled = false;
+          restReason = 'archived_or_suspended';
+        } else if (matchedCourse || scheduleMatchesToday) {
+          isScheduled = true;
+          restReason = '';
+        } else if (dates.length > 0 || days.length > 0 || (Array.isArray(activeCourses) && activeCourses.length > 0)) {
+          isScheduled = false;
+          restReason = 'not_scheduled_today';
+        } else {
+          isScheduled = false;
+          restReason = 'no_plan_found';
+        }
+
+        // 4. Calculate next appointment date if today is a rest day
+        let nextAppointmentDate: string | null = null;
+        if (!isScheduled && status !== 'archived' && status !== 'suspended') {
+          const upcomingSet = new Set<string>();
+
+          // 4.1 From explicit scheduled dates
+          for (const d of dates) {
+            if (typeof d === 'string' && d > bkkIsoDate) {
+              upcomingSet.add(d.slice(0, 10));
+            }
+          }
+
+          // 4.2 From courses and weekly schedules for next 45 days
+          const baseDateObj = new Date(evalDate.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+          for (let offset = 1; offset <= 45; offset++) {
+            const futureObj = new Date(baseDateObj);
+            futureObj.setDate(futureObj.getDate() + offset);
+            const futureIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(futureObj);
+            const futureDayNum = futureObj.getDay();
+            const futureDayShort = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Asia/Bangkok' }).format(futureObj);
+            const futureAliases = dayAliases[futureDayShort] || [futureDayShort, futureDayNum, String(futureDayNum)];
+
+            // Check schedule pattern
+            if (futureIso >= schedStart && futureIso <= schedEnd) {
+              if (days.some((d: any) => futureAliases.includes(d) || futureAliases.includes(Number(d)) || futureAliases.includes(String(d)))) {
+                upcomingSet.add(futureIso);
+              }
+            }
+
+            // Check course pattern
+            if (Array.isArray(activeCourses)) {
+              for (const c of activeCourses) {
+                const cStart = (c.start_date || '1970-01-01').slice(0, 10);
+                const cEnd = (c.end_date || '2099-12-31').slice(0, 10);
+                if (futureIso >= cStart && futureIso <= cEnd) {
+                  const cWeekdays: any[] = Array.isArray(c.weekdays) ? c.weekdays : [];
+                  if (cWeekdays.some((w: any) => futureAliases.includes(w) || futureAliases.includes(Number(w)) || futureAliases.includes(String(w)))) {
+                    upcomingSet.add(futureIso);
+                  }
+                }
+              }
+            }
+          }
+
+          const sortedUpcoming = Array.from(upcomingSet).sort();
+          if (sortedUpcoming.length > 0) {
+            nextAppointmentDate = sortedUpcoming[0];
+          }
+        }
+
+        // 5. Resolve exercises if scheduled
+        let resolvedExercises: any[] = [];
+        if (isScheduled) {
+          if (matchedCourse) {
+            try {
+              const itemsRes = await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/course_items?course_id=eq.${encodeURIComponent(matchedCourse.id)}&select=id,exercise_id,sets,reps,position,exercises(id,title,target_joint,image_path,description,difficulty)&order=position.asc`,
+                {
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                  },
+                }
+              );
+              if (itemsRes.ok) {
+                const dbItems = await itemsRes.json();
+                if (Array.isArray(dbItems) && dbItems.length > 0) {
+                  resolvedExercises = dbItems.map((item: any) => ({
+                    exercise_id: item.exercise_id,
+                    id: item.exercise_id,
+                    name: item.exercises?.title || item.exercise_id,
+                    name_th: item.exercises?.title || item.exercise_id,
+                    name_en: item.exercises?.title || item.exercise_id,
+                    name_cn: item.exercises?.title || item.exercise_id,
+                    target_joint: item.exercises?.target_joint || 'shoulder',
+                    sets: item.sets || 3,
+                    reps: item.reps || 10,
+                    demo_url: item.exercises?.image_path || undefined,
+                  }));
+                }
+              }
+            } catch {}
+          }
+
+          if (resolvedExercises.length === 0) {
+            const schedExercises = schedule?.prescribed_exercises || schedule?.assigned_exercises || [];
+            if (Array.isArray(schedExercises) && schedExercises.length > 0) {
+              resolvedExercises = schedExercises.map((ex: any) => ({
+                exercise_id: ex.exercise_id || ex.id,
+                id: ex.exercise_id || ex.id,
+                name: ex.name || ex.name_th || ex.title || 'ท่ากายภาพบำบัด',
+                name_th: ex.name_th || ex.name || ex.title || 'ท่ากายภาพบำบัด',
+                name_en: ex.name_en || ex.name || 'Physical Therapy Exercise',
+                name_cn: ex.name_cn || ex.name || '康复动作',
+                target_joint: ex.target_joint || 'shoulder',
+                sets: ex.sets || 3,
+                reps: ex.reps || 10,
+                hold_duration_sec: ex.hold_duration_sec,
+                target_max_deg: ex.target_max_deg,
+                target_min_deg: ex.target_min_deg,
+              }));
+            }
+          }
+
+          if (resolvedExercises.length === 0) {
+            resolvedExercises = [
+              {
+                exercise_id: 'active-shoulder-flexion',
+                id: 'active-shoulder-flexion',
+                name: 'ยกแขนไปข้างหน้า (Active Shoulder Flexion)',
+                name_th: 'ยกแขนไปข้างหน้า (Active Shoulder Flexion)',
+                name_en: 'Active Shoulder Flexion',
+                name_cn: '肩部前屈举臂',
+                target_joint: 'shoulder',
+                mode: 'camera',
+                sets: 3,
+                reps: 10,
+                clinical_source: 'AAOS Clinical Standards / JOSPT Shoulder Impingement CPG',
+                pt_adjustable_notice: 'นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย',
+              },
+              {
+                exercise_id: 'shoulder-pendulum',
+                id: 'shoulder-pendulum',
+                name: 'แกว่งแขนลูกตุ้ม (Codman Shoulder Pendulum)',
+                name_th: 'แกว่งแขนลูกตุ้ม (Codman Shoulder Pendulum)',
+                name_en: 'Codman Shoulder Pendulum',
+                name_cn: '考德曼肩部钟摆松动训练',
+                target_joint: 'shoulder',
+                mode: 'timer',
+                sets: 3,
+                reps: 1,
+                default_duration_sec: 45,
+                clinical_source: 'Codman Classical Exercise / AAOS Frozen Shoulder Rehab',
+                pt_adjustable_notice: 'นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย',
+              },
+            ];
+          }
+        }
+
+        const checklists = patientRec.daily_checklists || patientRec.history?.daily_checklists || {};
+        const isCompleted = Boolean(checklists[bkkIsoDate]);
+        const includeMinigame = matchedCourse?.include_minigame ?? schedule?.include_minigame ?? true;
+        const timeSlot = matchedCourse?.start_time || schedule?.timeSlot || schedule?.time_slot || '09:00 - 10:00';
+        const allowedHand = matchedCourse?.allowed_start_hand || schedule?.allowed_start_hand || 'both';
 
         return {
           ok: true,
           is_scheduled_today: isScheduled,
           is_completed_today: isCompleted,
           reason: restReason,
-          exercises: isScheduled ? standardExercises : [],
-          include_minigame: true,
+          next_appointment_date: nextAppointmentDate,
+          time_slot: timeSlot,
+          schedule: schedule || (matchedCourse ? { ...matchedCourse, time_slot: timeSlot } : null),
+          allowed_start_hand: allowedHand,
+          exercises: isScheduled ? resolvedExercises : [],
+          include_minigame: Boolean(includeMinigame),
         } as T;
       }
 
@@ -3399,9 +3617,11 @@ export class ApiClient {
           fallbackErr.message.includes('ตัวเลือก') ||
           fallbackErr.message.includes('คำตอบ') ||
           fallbackErr.message.includes('required') ||
+          fallbackErr.message.includes('ไม่พบประวัติผู้ป่วย') ||
           cleanEndpoint.startsWith('/staff') ||
           cleanEndpoint.includes('/staff') ||
-          cleanEndpoint.includes('/questions')
+          cleanEndpoint.includes('/questions') ||
+          cleanEndpoint.includes('daily-plan')
         ) {
           throw fallbackErr;
         }
@@ -4969,10 +5189,14 @@ export class ApiClient {
     getDailyPlan: async (patientId: string, date?: string) => {
       const q = date ? `?date=${encodeURIComponent(date)}` : '';
       return this.request<{
+        ok?: boolean;
         is_scheduled_today: boolean;
         is_completed_today?: boolean;
         reason?: string;
+        next_appointment_date?: string | null;
+        time_slot?: string;
         schedule?: any;
+        allowed_start_hand?: 'both' | 'left' | 'right';
         exercises: any[];
         include_minigame: boolean;
       }>(`/smart-onboarding/daily-plan/${patientId}${q}`, {
