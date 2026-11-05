@@ -16,12 +16,14 @@ export interface PainStopEmergencyBarProps {
   onReportPainStop: () => void;
   isPaused?: boolean;
   onTogglePause?: () => void;
+  onSkipOrFinish?: () => void;
 }
 
 export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
   onReportPainStop,
   isPaused = false,
   onTogglePause,
+  onSkipOrFinish,
 }) => {
   const { lang, t } = useClinicalI18n();
   const [isSubmittingPain, setIsSubmittingPain] = useState(false);
@@ -46,71 +48,82 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
   }, [onReportPainStop, isSubmittingPain]);
 
   return (
-    <div className="w-full bg-slate-950/95 border-t border-slate-800 backdrop-blur-md px-6 sm:px-10 py-3.5 sm:py-4 flex items-center justify-between z-30 select-none gap-4">
-      {/* 1. Left Large Button: Pause / Resume (min-h >= 56px) */}
+    <div className="w-full bg-white border-t border-blue-100 px-6 py-3.5 flex items-center justify-between gap-4 z-20 shrink-0 select-none shadow-xs">
+      {/* 1. Left Large Button: Pause / Resume */}
       <button
         type="button"
         id="kiosk-pause-btn"
         data-testid="kiosk-header-pause-btn"
         onClick={onTogglePause}
-        className={`min-h-[56px] sm:min-h-[62px] px-7 sm:px-9 py-3 rounded-2xl font-black text-xl sm:text-2xl flex items-center gap-3 transition active:scale-95 cursor-pointer border-2 shadow-xl ${
-          isPaused
-            ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300 shadow-amber-500/30'
-            : 'bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white border-slate-700 shadow-slate-950/60'
-        }`}
+        className="bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 font-extrabold px-6 py-3.5 rounded-2xl transition cursor-pointer text-sm sm:text-base flex items-center gap-2 active:scale-95 shadow-xs"
         title={isPaused ? t('resume_session', 'ฝึกต่อ') : t('pause_session', 'พักการฝึก')}
       >
         {isPaused ? (
           <>
-            <Play className="w-7 h-7 fill-current shrink-0 text-slate-950" />
+            <Play className="w-5 h-5 fill-current text-blue-800" />
             <span>{t('resume_session', '▶️ ฝึกต่อ')}</span>
           </>
         ) : (
           <>
-            <Pause className="w-7 h-7 shrink-0 text-amber-300" />
-            <span>{t('pause_session', '⏸️ พัก')}</span>
+            <Pause className="w-5 h-5 text-blue-800" />
+            <span>{t('pause_session', '⏸️ พักชั่วคราว')}</span>
           </>
         )}
       </button>
 
-      {/* 2. Right Large Button: Emergency Pain Stop (min-h >= 56px) */}
-      <button
-        type="button"
-        id="pain-stop-emergency-btn"
-        data-testid="pain-stop-emergency-btn"
-        disabled={isSubmittingPain}
-        onClick={handlePainClick}
-        className={`min-h-[56px] sm:min-h-[62px] px-7 sm:px-9 py-3 rounded-2xl font-black text-xl sm:text-2xl shadow-2xl flex items-center gap-3 transition active:scale-95 cursor-pointer border-2 ${
-          isSubmittingPain
-            ? 'bg-rose-900/60 border-rose-700 text-rose-200 cursor-not-allowed opacity-80'
-            : 'bg-gradient-to-r from-rose-600 via-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-950/80 border-rose-400/50'
-        }`}
-        title="หยุดการฝึกทันทีเมื่อรู้สึกเจ็บ"
-      >
-        {isSubmittingPain ? (
-          <>
-            <Loader2 className="w-7 h-7 shrink-0 animate-spin" />
-            <span>
-              {lang === 'zh-CN'
-                ? '正在呼叫治疗师...'
-                : lang === 'en-US'
-                ? 'Notifying therapist...'
-                : 'กำลังแจ้งเจ้าหน้าที่...'}
-            </span>
-          </>
-        ) : (
-          <>
-            <AlertOctagon className="w-7 h-7 shrink-0 text-white" />
-            <span>
-              {lang === 'zh-CN'
-                ? '🚨 感到疼痛 (停止并呼叫治疗师)'
-                : lang === 'en-US'
-                ? '🚨 Feeling Pain (Stop & Alert PT)'
-                : '🚨 รู้สึกเจ็บ (หยุดและแจ้งนักกายภาพ)'}
-            </span>
-          </>
+      {/* 2. Center/Right: Skip / Record + Emergency Pain Stop */}
+      <div className="flex items-center gap-3">
+        {onSkipOrFinish && (
+          <button
+            type="button"
+            id="kiosk-skip-btn"
+            data-testid="kiosk-skip-btn"
+            onClick={onSkipOrFinish}
+            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold px-5 py-3.5 rounded-2xl transition cursor-pointer text-sm sm:text-base flex items-center gap-2 active:scale-95 shadow-xs"
+            title="ข้ามท่านี้ หรือบันทึกผลการฝึก"
+          >
+            <span>⏭️ ข้ามท่านี้ / บันทึกผล</span>
+          </button>
         )}
-      </button>
+
+        <button
+          type="button"
+          id="pain-stop-emergency-btn"
+          data-testid="pain-stop-emergency-btn"
+          disabled={isSubmittingPain}
+          onClick={handlePainClick}
+          className={`px-6 py-3.5 rounded-2xl font-extrabold text-sm sm:text-base shadow-md flex items-center gap-2.5 transition active:scale-95 cursor-pointer border ${
+            isSubmittingPain
+              ? 'bg-rose-100 border-rose-300 text-rose-500 cursor-not-allowed opacity-80'
+              : 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-rose-950/20'
+          }`}
+          title="หยุดการฝึกทันทีเมื่อรู้สึกเจ็บ"
+        >
+          {isSubmittingPain ? (
+            <>
+              <Loader2 className="w-5 h-5 shrink-0 animate-spin" />
+              <span>
+                {lang === 'zh-CN'
+                  ? '正在呼叫治疗师...'
+                  : lang === 'en-US'
+                  ? 'Notifying therapist...'
+                  : 'กำลังแจ้งเจ้าหน้าที่...'}
+              </span>
+            </>
+          ) : (
+            <>
+              <AlertOctagon className="w-5 h-5 shrink-0 text-white" />
+              <span>
+                {lang === 'zh-CN'
+                  ? '🚨 感到疼痛 (停止并呼叫治疗师)'
+                  : lang === 'en-US'
+                  ? '🚨 Feeling Pain (Stop & Alert PT)'
+                  : '🚨 รู้สึกเจ็บ (หยุดและแจ้งนักกายภาพ)'}
+              </span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 };

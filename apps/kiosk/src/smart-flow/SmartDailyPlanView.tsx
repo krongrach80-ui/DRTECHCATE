@@ -645,9 +645,9 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   if (loading) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-slate-950 text-white select-none">
-        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <div className="text-base font-semibold text-slate-300">
+      <div className="w-full min-h-[calc(100vh-64px)] flex flex-col items-center justify-center p-8 bg-gradient-to-b from-[#EBF5FA] via-[#F4F9FC] to-[#E6F4F8] text-slate-900 select-none">
+        <div className="w-14 h-14 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <div className="text-lg font-bold text-slate-800">
           {lang === 'zh-CN' ? '正在载入今日康复方案...' : lang === 'en-US' ? 'Loading daily rehab plan...' : 'กำลังโหลดตารางกายภาพบำบัดประจำวัน...'}
         </div>
       </div>
@@ -656,17 +656,17 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   if (loadError) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-slate-950 text-white select-none">
-        <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl p-6 text-center shadow-2xl">
-          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-white mb-2">
+      <div className="w-full min-h-[calc(100vh-64px)] flex flex-col items-center justify-center p-8 bg-gradient-to-b from-[#EBF5FA] via-[#F4F9FC] to-[#E6F4F8] text-slate-900 select-none">
+        <div className="max-w-md w-full bg-white border border-rose-200 rounded-3xl p-6 text-center shadow-xl">
+          <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+          <h2 className="text-xl font-extrabold text-slate-900 mb-2">
             {lang === 'zh-CN' ? '无法载入康复数据' : lang === 'en-US' ? 'Unable to load schedule' : 'ไม่สามารถโหลดข้อมูลได้'}
           </h2>
-          <p className="text-xs text-slate-400 mb-6">{loadError}</p>
-          <div className="flex flex-col gap-2">
+          <p className="text-sm text-slate-600 mb-6">{loadError}</p>
+          <div className="flex flex-col gap-2.5">
             <button
               onClick={loadPlan}
-              className="w-full py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer"
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-blue-600 hover:brightness-105 text-white text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
             >
               <RotateCcw className="w-4 h-4" />
               <span>{lang === 'zh-CN' ? '重试 (Retry)' : lang === 'en-US' ? 'Retry' : 'ลองใหม่อีกครั้ง (Retry)'}</span>
@@ -674,9 +674,9 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             <button
               data-testid="plan-call-staff-btn"
               onClick={handleCallStaff}
-              className="w-full py-2.5 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer"
+              className="w-full py-3 rounded-2xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-xs"
             >
-              <PhoneCall className="w-4 h-4" />
+              <PhoneCall className="w-4 h-4 text-amber-600" />
               <span>{lang === 'zh-CN' ? '呼叫医护人员 (Call Staff)' : lang === 'en-US' ? 'Call Staff' : 'เรียกเจ้าหน้าที่ (Call Staff)'}</span>
             </button>
           </div>
@@ -688,98 +688,111 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   // 1. Rest Day View (Friendly notice when no appointment today - camera never opened)
   if (!isScheduledToday) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-between p-8 bg-slate-950 text-white select-none">
-        {/* Top Header */}
-        <div className="w-full flex items-center justify-between border-b border-slate-800 pb-4">
+      <div className="w-full min-h-[calc(100vh-64px)] flex flex-col justify-between bg-gradient-to-b from-[#EBF5FA] via-[#F4F9FC] to-[#E6F4F8] text-slate-900 select-none">
+        {/* Patient Top Bar (Clean White Card Bar & No Duplicate Language Switcher) */}
+        <div className="w-full bg-white border-b border-blue-100 px-6 py-3.5 shadow-xs flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-emerald-400">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-extrabold text-lg flex items-center justify-center shadow-xs">
               {patient?.first_name?.[0] || (patient as any)?.name?.[0] || 'P'}
             </div>
             <div>
-              <div className="text-base font-bold text-white">
+              <div className="text-base sm:text-lg font-black text-slate-900 leading-tight">
                 คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
               </div>
-              <div className="text-xs text-slate-400">HN: {patient?.hn || patient?.patient_id || '-'}</div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200/80">
+                  HN: {patient?.hn || patient?.patient_id || '-'}
+                </span>
+              </div>
             </div>
           </div>
+
           <div className="flex items-center gap-3">
-            <LanguageSwitcher variant="dark" />
             <button
               onClick={onLogout}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-200 font-bold text-xs sm:text-sm transition cursor-pointer active:scale-95 shadow-xs"
+              title="ออกจากระบบ หรือ สลับผู้ป่วย"
             >
               <LogOut className="w-4 h-4" />
-              <span>{lang === 'zh-CN' ? '退出系统' : lang === 'en-US' ? 'Sign Out' : 'ออกจากระบบ'}</span>
+              <span>{lang === 'zh-CN' ? '退出 / 切换患者' : lang === 'en-US' ? 'Sign Out / Switch' : '🚪 ออกจากระบบ / สลับผู้ป่วย'}</span>
             </button>
           </div>
         </div>
 
-        {/* Center Friendly Notice */}
-        <div className="max-w-md w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl flex flex-col items-center my-auto">
-          <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4 shadow-lg shadow-emerald-950/40">
-            <Sun className="w-8 h-8" />
+        {/* Center Friendly Notice Bento Card (No Redundant Text Boxes) */}
+        <div className="max-w-2xl w-full bg-white rounded-[32px] border border-blue-100 shadow-xl p-8 sm:p-10 text-center space-y-6 my-auto mx-auto animate-in fade-in zoom-in-95 duration-300">
+          <div className="w-20 h-20 rounded-3xl bg-emerald-50 border-2 border-emerald-200 text-emerald-600 mx-auto flex items-center justify-center shadow-sm">
+            <Sun className="w-10 h-10" />
           </div>
 
-          <h2 className="text-xl font-bold text-white mb-2">
-            {lang === 'zh-CN' ? '今天是您的休息日' : lang === 'en-US' ? 'Your Scheduled Rest Day' : 'วันพักผ่อนของคุณ'}
-          </h2>
-          <p className="text-sm text-slate-300 leading-relaxed mb-5">
-            {lang === 'zh-CN'
-              ? '🌿 今日没有为您安排康复训练，或当前为休息日。请好好休息，保持良好状态。'
-              : lang === 'en-US'
-              ? '🌿 There is no physical therapy session scheduled for you today. Please feel free to rest.'
-              : '🌿 วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้ เชิญพักผ่อนตามอัธยาศัยครับ'}
-          </p>
-
-          <div className="text-sm text-slate-300 bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-3 w-full mb-4">
-            {getLocalizedRestReason(restReason, lang)}
+          <div className="space-y-2">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              {lang === 'zh-CN' ? '今天是您的休息日' : lang === 'en-US' ? 'Your Scheduled Rest Day' : 'วันนี้เป็นวันพักผ่อนของคุณ'}
+            </h2>
+            <p className="text-slate-600 text-base sm:text-lg leading-relaxed">
+              {lang === 'zh-CN'
+                ? '今日没有为您安排康复训练，建议您好好休息并补充充足水分。'
+                : lang === 'en-US'
+                ? 'No physical therapy session scheduled for today. We recommend resting and staying well-hydrated.'
+                : 'ไม่มีรายการฝึกกายภาพสำหรับวันนี้ แนะนำให้พักผ่อนและดื่มน้ำให้เพียงพอครับ'}
+            </p>
           </div>
 
-          {/* Next Appointment Card if available */}
-          {dailyPlanResponse?.next_appointment_date && (
-            <div className="w-full bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 text-center mb-5 shadow-sm">
-              <div className="text-xs text-emerald-300 font-semibold mb-1 flex items-center justify-center gap-1.5">
-                <Clock className="w-4 h-4 text-emerald-400" />
-                <span>
-                  {lang === 'zh-CN' ? '下次康复训练预约时间' : lang === 'en-US' ? 'Next Scheduled Session' : 'วันนัดฝึกกายภาพบำบัดครั้งถัดไปของคุณ'}
-                </span>
-              </div>
-              <div className="text-sm font-bold text-white">
-                📅 {nextApptDateStr}
-              </div>
+          {/* Next Appointment Highlight Box */}
+          <div className="w-full bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border-2 border-emerald-200 rounded-2xl p-5 text-center shadow-xs">
+            <div className="text-sm text-teal-800 font-bold flex items-center justify-center gap-1.5">
+              <Clock className="w-4 h-4 text-emerald-600" />
+              <span>
+                {lang === 'zh-CN' ? '📅 下次康复训练预约时间' : lang === 'en-US' ? '📅 Your Next Scheduled Session' : '📅 วันนัดฝึกกายภาพบำบัดครั้งถัดไปของคุณ'}
+              </span>
             </div>
-          )}
+            <div className="text-xl sm:text-2xl font-extrabold text-blue-950 mt-1.5">
+              {nextApptDateStr}
+            </div>
+          </div>
 
-          {/* Call Staff Button */}
-          <button
-            type="button"
-            onClick={handleCallStaff}
-            disabled={callStaffStatus === 'sending' || callStaffStatus === 'sent'}
-            className="w-full py-3.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-semibold text-xs border border-slate-700/80 flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60 shadow-md"
-          >
-            {callStaffStatus === 'sent' ? (
-              <Check className="w-4 h-4 text-emerald-400" />
-            ) : (
-              <Bell className="w-4 h-4 text-amber-400" />
-            )}
-            <span>
-              {callStaffStatus === 'sending'
-                ? (lang === 'zh-CN' ? '正在呼叫工作人员...' : lang === 'en-US' ? 'Calling staff...' : 'กำลังเรียกเจ้าหน้าที่...')
-                : callStaffStatus === 'sent'
-                ? (lang === 'zh-CN' ? '✓ 已成功通知医护人员' : lang === 'en-US' ? '✓ Staff Notified' : '✓ แจ้งเจ้าหน้าที่เรียบร้อยแล้ว')
-                : (lang === 'zh-CN' ? '呼叫医护人员 / 咨询预约' : lang === 'en-US' ? 'Call Staff / Inquire Schedule' : 'เรียกเจ้าหน้าที่ / ปรึกษาตารางนัด')}
-            </span>
-          </button>
+          {/* 2 Clear Bottom Action Buttons */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
+            <button
+              type="button"
+              onClick={onLogout}
+              className="py-4 px-6 rounded-2xl font-extrabold text-white bg-gradient-to-r from-emerald-600 to-blue-600 hover:brightness-105 active:scale-98 shadow-md transition flex items-center justify-center gap-2 cursor-pointer text-base sm:text-lg"
+            >
+              <span>🏠</span>
+              <span>{lang === 'zh-CN' ? '返回首页 (完成)' : lang === 'en-US' ? 'Home (Complete)' : 'กลับหน้าแรก (เสร็จสิ้น)'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCallStaff}
+              disabled={callStaffStatus === 'sending' || callStaffStatus === 'sent'}
+              className="py-4 px-6 rounded-2xl font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 text-base sm:text-lg shadow-xs"
+            >
+              {callStaffStatus === 'sent' ? (
+                <Check className="w-5 h-5 text-emerald-600" />
+              ) : (
+                <Bell className="w-5 h-5 text-amber-500" />
+              )}
+              <span>
+                {callStaffStatus === 'sending'
+                  ? (lang === 'zh-CN' ? '正在呼叫工作人员...' : lang === 'en-US' ? 'Calling staff...' : 'กำลังเรียกเจ้าหน้าที่...')
+                  : callStaffStatus === 'sent'
+                  ? (lang === 'zh-CN' ? '✓ 已成功通知医护人员' : lang === 'en-US' ? '✓ Staff Notified' : '✓ แจ้งเจ้าหน้าที่เรียบร้อยแล้ว')
+                  : (lang === 'zh-CN' ? '呼叫医护人员 / 咨询预约' : lang === 'en-US' ? 'Call Staff / Inquire' : 'เรียกเจ้าหน้าที่ / ปรึกษาตารางนัด')}
+              </span>
+            </button>
+          </div>
+
           {callStaffStatus === 'sent' && (
-            <p className="mt-2 text-[11px] text-emerald-400">
+            <p className="text-xs text-emerald-700 font-semibold animate-pulse">
               {lang === 'zh-CN' ? '工作人员已收到通知，马上前来协助您。' : lang === 'en-US' ? 'Staff has been notified and will assist you shortly.' : 'เจ้าหน้าที่ได้รับแจ้งแล้ว กำลังมาช่วยเหลือครับ'}
             </p>
           )}
         </div>
 
         {/* Bottom Bar */}
-        <div className="w-full text-center text-xs text-slate-500">
-          ระบบกายภาพบำบัดอัจฉริยะ • Aura Framing Smart PT System
+        <div className="w-full text-center text-xs text-slate-400 py-3">
+          ระบบกายภาพบำบัดอัจฉริยะ • Dr.Tech.Care Clinical Smart Kiosk
         </div>
       </div>
     );
@@ -788,58 +801,63 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   // 2. Final Completion Screen / Completed Today Screen (Prevent repeated exercises)
   if (isSessionCompleted || isCompletedToday) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-between p-8 bg-slate-950 text-white select-none">
+      <div className="w-full min-h-[calc(100vh-64px)] flex flex-col justify-between bg-gradient-to-b from-[#EBF5FA] via-[#F4F9FC] to-[#E6F4F8] text-slate-900 select-none">
         {/* Top Header */}
-        <div className="w-full flex items-center justify-between border-b border-slate-800 pb-4">
+        <div className="w-full bg-white border-b border-blue-100 px-6 py-3.5 shadow-xs flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-emerald-400">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-extrabold text-lg flex items-center justify-center shadow-xs">
               {patient?.first_name?.[0] || (patient as any)?.name?.[0] || 'P'}
             </div>
             <div>
-              <div className="text-base font-bold text-white">
+              <div className="text-base sm:text-lg font-black text-slate-900 leading-tight">
                 คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
               </div>
-              <div className="text-xs text-slate-400">HN: {patient?.hn || patient?.patient_id || '-'}</div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200/80">
+                  HN: {patient?.hn || patient?.patient_id || '-'}
+                </span>
+              </div>
             </div>
           </div>
+
           <div className="flex items-center gap-3">
-            <LanguageSwitcher variant="dark" />
             <button
               onClick={onLogout}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-200 font-bold text-xs sm:text-sm transition cursor-pointer active:scale-95 shadow-xs"
             >
               <LogOut className="w-4 h-4" />
-              <span>{lang === 'zh-CN' ? '退出系统' : lang === 'en-US' ? 'Sign Out' : 'ออกจากระบบ'}</span>
+              <span>{lang === 'zh-CN' ? '退出系统' : lang === 'en-US' ? 'Sign Out' : '🚪 ออกจากระบบ'}</span>
             </button>
           </div>
         </div>
 
-        <div className="my-auto max-w-lg w-full bg-gradient-to-b from-slate-900 to-emerald-950/30 border-2 border-emerald-500/40 rounded-3xl p-8 text-center shadow-2xl flex flex-col items-center">
-          <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-emerald-400 mb-4 shadow-lg shadow-emerald-900/30">
+        <div className="my-auto max-w-xl w-full bg-white border-2 border-emerald-400 rounded-3xl p-8 sm:p-10 text-center shadow-xl flex flex-col items-center mx-auto space-y-5 animate-in fade-in zoom-in-95 duration-300">
+          <div className="w-20 h-20 rounded-3xl bg-emerald-50 border-2 border-emerald-200 flex items-center justify-center text-emerald-600 shadow-sm">
             <Trophy className="w-10 h-10" />
           </div>
 
-          <h2 className="text-2xl font-bold text-white mb-2">
-            {lang === 'zh-CN' ? '今日康复训练已完成 🎉' : lang === 'en-US' ? 'Training Completed Today 🎉' : 'ฝึกเสร็จแล้ววันนี้ 🎉'}
-          </h2>
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2">
+              {lang === 'zh-CN' ? '今日康复训练已完成 🎉' : lang === 'en-US' ? 'Training Completed Today 🎉' : 'ฝึกเสร็จแล้ววันนี้ 🎉'}
+            </h2>
+            <p className="text-slate-600 text-base leading-relaxed">
+              {lang === 'zh-CN'
+                ? '您已顺利完成今日的所有康复动作与评估。为避免过度疲劳与肌肉损伤，今日请充分休息。'
+                : lang === 'en-US'
+                ? 'You have successfully completed all prescribed physical therapy exercises for today. Please rest to prevent overtraining.'
+                : 'คุณทำกายภาพบำบัดและกิจกรรมตามนัดหมายประจำวันนี้เสร็จสิ้นแล้ว เพื่อความปลอดภัยและผลการรักษาที่ดีที่สุด เชิญพักผ่อนได้ครับ'}
+            </p>
+          </div>
 
-          <p className="text-sm text-emerald-200 font-medium mb-4 leading-relaxed">
-            {lang === 'zh-CN'
-              ? '您已顺利完成今日的所有康复动作与评估。为避免过度疲劳与肌肉损伤，今日请充分休息。'
-              : lang === 'en-US'
-              ? 'You have successfully completed all prescribed physical therapy exercises for today. Please rest to prevent overtraining.'
-              : 'คุณทำกายภาพบำบัดและกิจกรรมตามนัดหมายประจำวันนี้เสร็จสิ้นแล้ว เพื่อความปลอดภัยและผลการรักษาที่ดีที่สุด เชิญพักผ่อนได้ครับ'}
-          </p>
-
-          <div className="w-full bg-slate-950/80 border border-emerald-500/30 rounded-2xl p-4 text-center mb-6">
-            <div className="text-xs text-slate-400 mb-1">
-              {lang === 'zh-CN' ? '下次预约时间:' : lang === 'en-US' ? 'Next Appointment:' : 'นัดหมายครั้งต่อไป:'}
+          <div className="w-full bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200 rounded-2xl p-4 text-center">
+            <div className="text-xs font-bold text-teal-800 mb-1">
+              {lang === 'zh-CN' ? '📅 下次预约时间:' : lang === 'en-US' ? '📅 Next Appointment:' : '📅 นัดหมายครั้งต่อไป:'}
             </div>
-            <div className="text-sm font-bold text-emerald-400">
-              📅 {nextApptDateStr}
+            <div className="text-base sm:text-lg font-extrabold text-blue-950">
+              {nextApptDateStr}
             </div>
             {isSessionCompleted && (
-              <div className="text-[11px] text-slate-500 mt-1">
+              <div className="text-xs text-slate-500 mt-1 font-medium">
                 {lang === 'zh-CN'
                   ? `(系统将在 ${autoResetSeconds} 秒后自动返回待机页面)`
                   : lang === 'en-US'
@@ -849,20 +867,20 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 w-full mb-6">
-            <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-center">
-              <div className="text-xs text-slate-400 mb-1">
+          <div className="grid grid-cols-2 gap-3 w-full">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+              <div className="text-xs text-slate-500 font-semibold mb-1">
                 {lang === 'zh-CN' ? '动作项目' : lang === 'en-US' ? 'Exercises' : 'ท่ากายภาพบำบัด'}
               </div>
-              <div className="text-xl font-bold text-emerald-400">
+              <div className="text-2xl font-black text-emerald-600">
                 {exercises.length > 0 ? `${exercises.length}/${exercises.length}` : 'เสร็จสมบูรณ์'}
               </div>
             </div>
-            <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-center">
-              <div className="text-xs text-slate-400 mb-1">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+              <div className="text-xs text-slate-500 font-semibold mb-1">
                 {lang === 'zh-CN' ? '微游戏得分' : lang === 'en-US' ? 'Minigame' : 'คะแนนมินิเกม'}
               </div>
-              <div className="text-xl font-bold text-amber-400">
+              <div className="text-2xl font-black text-blue-600">
                 {includeMinigame ? `${quizScore} คะแนน` : (lang === 'zh-CN' ? '已达标' : lang === 'en-US' ? 'Passed' : 'ผ่านเกณฑ์')}
               </div>
             </div>
@@ -870,16 +888,16 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
           <button
             onClick={onLogout}
-            className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition active:scale-95 shadow-lg shadow-emerald-900/40 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-blue-600 hover:brightness-105 text-white font-extrabold text-base transition active:scale-95 shadow-md flex items-center justify-center gap-2 cursor-pointer"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-5 h-5" />
             <span>{lang === 'zh-CN' ? '完成并立即退出系统' : lang === 'en-US' ? 'Finish & Sign Out' : 'เสร็จสิ้นและออกจากระบบทันที'}</span>
           </button>
         </div>
 
         {/* Bottom Bar */}
-        <div className="w-full text-center text-xs text-slate-500">
-          ระบบกายภาพบำบัดอัจฉริยะ • Aura Framing Smart PT System
+        <div className="w-full text-center text-xs text-slate-400 py-3">
+          ระบบกายภาพบำบัดอัจฉริยะ • Dr.Tech.Care Clinical Smart Kiosk
         </div>
       </div>
     );
@@ -919,28 +937,30 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   const isTargetLeft = targetSide === 'left';
 
   return (
-    <div className="w-full h-full flex flex-col justify-between p-6 sm:p-8 bg-slate-950 text-white select-none overflow-y-auto">
+    <div className="w-full min-h-[calc(100vh-64px)] flex flex-col justify-between p-4 sm:p-6 md:p-8 bg-gradient-to-b from-[#EBF5FA] via-[#F4F9FC] to-[#E6F4F8] text-slate-900 select-none overflow-y-auto">
       {/* Top Header */}
-      <div className="w-full flex items-center justify-between border-b border-slate-800 pb-4 mb-6 flex-wrap gap-4">
+      <div className="w-full bg-white border border-blue-100 rounded-2xl px-6 py-4 shadow-xs flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center font-bold text-emerald-400 text-lg">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-extrabold text-xl flex items-center justify-center shadow-xs shrink-0">
             {patient?.first_name?.[0] || (patient as any)?.name?.[0] || 'P'}
           </div>
           <div>
-            <div className="text-lg font-bold text-white">
+            <div className="text-lg font-black text-slate-900">
               {lang === 'zh-CN' ? '康复训练方案' : lang === 'en-US' ? 'Rehab Program' : 'โปรแกรมกายภาพบำบัด'}: คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
             </div>
-            <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-              <span>HN: {patient?.hn || patient?.patient_id || '-'}</span>
+            <div className="text-xs text-slate-600 flex items-center gap-2 mt-0.5">
+              <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                HN: {patient?.hn || patient?.patient_id || '-'}
+              </span>
               <span>•</span>
-              <span className="text-emerald-400 font-semibold">
+              <span className="text-emerald-700 font-bold">
                 {lang === 'zh-CN' ? `训练进度: ${completedExerciseIds.size}/${exercises.length} 项动作` : lang === 'en-US' ? `Progress: ${completedExerciseIds.size}/${exercises.length} exercises` : `ความคืบหน้า: ${completedExerciseIds.size}/${exercises.length} ท่า`}
               </span>
             </div>
             {/* Visual Progress Bar */}
-            <div className="w-48 bg-slate-800 rounded-full h-2 mt-1.5 overflow-hidden">
+            <div className="w-48 bg-slate-100 rounded-full h-2 mt-1.5 overflow-hidden border border-slate-200">
               <div
-                className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-300"
+                className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full transition-all duration-300 rounded-full"
                 style={{ width: `${exercises.length > 0 ? (completedExerciseIds.size / exercises.length) * 100 : 0}%` }}
               />
             </div>
@@ -952,11 +972,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           <button
             type="button"
             onClick={handlePainEmergency}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-500/50 text-red-200 text-xs font-semibold transition active:scale-95 shadow-md shadow-red-950/40 cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs sm:text-sm font-bold transition active:scale-95 shadow-xs cursor-pointer"
             title="หากรู้สึกเจ็บ กดปุ่มนี้เพื่อหยุดและแจ้งเจ้าหน้าที่"
           >
-            <ShieldAlert className="w-4 h-4 text-red-400 animate-pulse" />
-            <span>{lang === 'zh-CN' ? '感觉疼痛 (呼叫协助)' : lang === 'en-US' ? 'Feel Pain (Alert)' : 'รู้สึกเจ็บ (แจ้งนักกายภาพ)'}</span>
+            <ShieldAlert className="w-4 h-4 text-rose-600 animate-pulse" />
+            <span>{lang === 'zh-CN' ? '感觉疼痛 (呼叫协助)' : lang === 'en-US' ? 'Feel Pain (Alert)' : '🚨 รู้สึกเจ็บ (แจ้งนักกายภาพ)'}</span>
           </button>
 
           {/* Call Staff Button */}
@@ -964,33 +984,32 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             type="button"
             data-testid="plan-call-staff-header-btn"
             onClick={handleCallStaff}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/80 border border-amber-500/40 text-amber-200 text-xs font-medium transition active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs sm:text-sm font-bold transition active:scale-95 cursor-pointer shadow-xs"
           >
-            <PhoneCall className="w-3.5 h-3.5 text-amber-400" />
+            <PhoneCall className="w-4 h-4 text-amber-600" />
             <span>
               {callStaffStatus === 'sent'
                 ? (lang === 'zh-CN' ? '已通知' : lang === 'en-US' ? 'Notified' : 'แจ้งแล้ว')
-                : (lang === 'zh-CN' ? '呼叫人员' : lang === 'en-US' ? 'Staff' : 'เรียกเจ้าหน้าที่')}
+                : (lang === 'zh-CN' ? '呼叫人员' : lang === 'en-US' ? 'Staff' : '🔔 เรียกเจ้าหน้าที่')}
             </span>
           </button>
 
-          <LanguageSwitcher variant="dark" />
-
+          {/* Sign Out Button (NO duplicate LanguageSwitcher) */}
           <button
             onClick={onLogout}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-rose-50 border border-slate-200 text-slate-700 hover:text-rose-700 text-xs sm:text-sm font-bold transition cursor-pointer shadow-xs"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>{lang === 'zh-CN' ? '退出' : lang === 'en-US' ? 'Exit' : 'ออกจากระบบ'}</span>
+            <LogOut className="w-4 h-4" />
+            <span>{lang === 'zh-CN' ? '退出' : lang === 'en-US' ? 'Exit' : '🚪 ออกจากระบบ'}</span>
           </button>
         </div>
       </div>
 
       {/* Pain Alert Banner Notification */}
       {painAlertActive && (
-        <div className="max-w-4xl mx-auto w-full mb-4 p-4 rounded-2xl bg-red-950/90 border-2 border-red-500 text-red-100 flex items-center justify-between gap-4 shadow-xl shadow-red-950/60 animate-bounce">
+        <div className="max-w-5xl mx-auto w-full mb-4 p-4 rounded-2xl bg-rose-50 border-2 border-rose-400 text-rose-900 flex items-center justify-between gap-4 shadow-lg animate-bounce">
           <div className="flex items-center gap-3">
-            <AlertTriangle className="w-6 h-6 text-red-400 shrink-0" />
+            <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0" />
             <div className="text-sm font-bold">
               {lang === 'zh-CN'
                 ? '🚨 已接收到疼痛反馈！工作人员与物理治疗师已收到提醒，请坐下休息。'
@@ -1002,226 +1021,172 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           <button
             type="button"
             onClick={() => setPainAlertActive(false)}
-            className="text-xs px-3 py-1.5 rounded-lg bg-red-900/60 hover:bg-red-800 text-red-200 cursor-pointer"
+            className="text-xs px-3 py-1.5 rounded-lg bg-rose-200 hover:bg-rose-300 text-rose-800 font-bold cursor-pointer"
           >
             {lang === 'zh-CN' ? '关闭提示' : lang === 'en-US' ? 'Dismiss' : 'ปิดการแจ้งเตือน'}
           </button>
         </div>
       )}
 
-      {/* TOUCHLESS GESTURE STARTER HUD (ZERO-TOUCH REHAB KINEMATICS) */}
+      {/* TOUCHLESS GESTURE STARTER HUD (HERO "NEXT EXERCISE READY" CARD) */}
       {isGestureStarterEnabled && nextUncompletedExercise && (
         <div
           data-testid="touchless-starter-banner"
-          className={`max-w-4xl mx-auto w-full mb-6 p-6 rounded-3xl border-2 transition-all duration-300 relative overflow-hidden shadow-2xl ${
-            isTargetLeft
-              ? 'bg-gradient-to-r from-sky-950/90 via-cyan-950/80 to-slate-950 border-cyan-400 shadow-cyan-950/50'
-              : 'bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-950 border-emerald-400 shadow-emerald-950/50'
-          }`}
+          className="max-w-5xl mx-auto w-full mb-6 bg-white rounded-3xl border-2 border-emerald-400 shadow-xl p-6 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center relative overflow-hidden animate-in fade-in duration-300"
         >
-          {/* Subtle Background Glow */}
-          <div
-            className={`absolute -top-12 -right-12 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-40 ${
-              isTargetLeft ? 'bg-cyan-500' : 'bg-emerald-500'
-            }`}
-          />
-
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
-            {/* Left: Huge Touchless Instruction & Hold Progress */}
-            <div className="flex-1 w-full text-center md:text-left">
-              <div className="flex items-center justify-center md:justify-start gap-2 mb-2 flex-wrap">
-                <span
-                  className={`text-xs px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1.5 border shadow-sm ${
-                    isTargetLeft
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/50'
-                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
-                  }`}
-                >
-                  <Hand className="w-3.5 h-3.5 animate-pulse" />
-                  <span>{lang === 'zh-CN' ? '免触控体感启动' : lang === 'en-US' ? 'Touchless Gesture Starter' : 'ระบบเริ่มฝึกด้วยการยกมือ (ไม่ต้องแตะจอ)'}</span>
-                </span>
-
-                <span className="text-xs px-2.5 py-1 rounded-full bg-slate-900/80 border border-slate-700 text-slate-300 font-mono flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-amber-400" />
-                  <span>{secondsLeft}s ({lang === 'zh-CN' ? `第 ${attemptCount + 1}/3 次` : lang === 'en-US' ? `Try ${attemptCount + 1}/3` : `รอบที่ ${attemptCount + 1}/3`})</span>
-                </span>
-
-                {allowedHandSide !== 'both' && (
-                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-purple-950/80 border border-purple-500/40 text-purple-300 font-medium">
-                    {lang === 'zh-CN'
-                      ? `锁定使用: ${allowedHandSide === 'left' ? '左手' : '右手'}`
-                      : lang === 'en-US'
-                      ? `Locked Side: ${allowedHandSide.toUpperCase()}`
-                      : `จำกัดข้าง: มือ${allowedHandSide === 'left' ? 'ซ้าย' : 'ขวา'} (เพื่อความปลอดภัย)`}
-                  </span>
-                )}
-              </div>
-
-              {/* Massive Main Prompt Banner (>= 28px) */}
-              <div
-                className={`text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight leading-tight mb-2 ${
-                  isTargetLeft ? 'text-cyan-100' : 'text-emerald-100'
-                }`}
-              >
-                {isTargetLeft ? (
-                  <span>
-                    ✋{' '}
-                    {lang === 'zh-CN'
-                      ? `举起左手开始: ${targetExerciseTitle}`
-                      : lang === 'en-US'
-                      ? `Raise LEFT Hand to Start: ${targetExerciseTitle}`
-                      : `ยกมือซ้ายเพื่อเริ่ม: ${targetExerciseTitle}`}
-                  </span>
-                ) : (
-                  <span>
-                    ✋{' '}
-                    {lang === 'zh-CN'
-                      ? `举起右手开始: ${targetExerciseTitle}`
-                      : lang === 'en-US'
-                      ? `Raise RIGHT Hand to Start: ${targetExerciseTitle}`
-                      : `ยกมือขวาเพื่อเริ่ม: ${targetExerciseTitle}`}
-                  </span>
-                )}
-              </div>
-
-              {/* Clinical Ergonomic Guideline Notice */}
-              <p className="text-xs sm:text-sm text-slate-300 mb-3 flex items-center justify-center md:justify-start gap-1.5">
-                <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+          {/* Left (8 Cols on LG): Title, Instruction, Progress, and Giant Start Button */}
+          <div className="lg:col-span-8 space-y-4">
+            {/* Status Pills */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-xs flex items-center gap-1.5 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 <span>
                   {lang === 'zh-CN'
-                    ? '只需将手举至胸部/肩部高度并保持静止约 0.6 秒，无需过度伸展手臂。'
+                    ? `即将训练 (第 ${exercises.findIndex((e) => (e.exercise_id || e.id) === (nextUncompletedExercise.exercise_id || nextUncompletedExercise.id)) + 1}/${exercises.length} 项)`
                     : lang === 'en-US'
-                    ? 'Raise hand comfortably to chest/shoulder height and hold steady for 0.6s.'
-                    : 'ยกมือระดับอกหรือไหล่ในท่าที่สบาย ค้างไว้นิ่งๆ 0.6 วินาที (ไม่ต้องเหยียดสุดแขน)'}
+                    ? `Next Exercise (${exercises.findIndex((e) => (e.exercise_id || e.id) === (nextUncompletedExercise.exercise_id || nextUncompletedExercise.id)) + 1}/${exercises.length})`
+                    : `🟢 ท่าที่กำลังจะฝึก (ลำดับที่ ${exercises.findIndex((e) => (e.exercise_id || e.id) === (nextUncompletedExercise.exercise_id || nextUncompletedExercise.id)) + 1}/${exercises.length})`}
                 </span>
-              </p>
+              </span>
 
-              {/* Hold Dwell Progress Bar */}
-              <div className="w-full bg-slate-900/90 border border-slate-700/80 rounded-full h-4 overflow-hidden p-0.5 shadow-inner">
-                <div
-                  className={`h-full rounded-full transition-all duration-75 ${
-                    isTargetLeft
-                      ? 'bg-gradient-to-r from-sky-400 via-cyan-400 to-teal-300 shadow-lg shadow-cyan-400/50'
-                      : 'bg-gradient-to-r from-teal-400 via-emerald-400 to-green-300 shadow-lg shadow-emerald-400/50'
-                  }`}
-                  style={{ width: `${Math.round(holdProgress * 100)}%` }}
-                />
-              </div>
+              <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 font-bold text-xs flex items-center gap-1 shadow-xs">
+                <Clock className="w-3.5 h-3.5 text-blue-600" />
+                <span>
+                  {lang === 'zh-CN'
+                    ? `${secondsLeft} 秒后自动开始`
+                    : lang === 'en-US'
+                    ? `Auto-starts in ${secondsLeft}s`
+                    : `⏱️ เริ่มอัตโนมัติใน ${secondsLeft} วินาที`}
+                </span>
+              </span>
 
-              {/* Real-time Status Caption */}
-              <div className="flex items-center justify-between text-xs mt-2 px-1">
-                <span className="font-medium text-slate-300">
-                  {statusMessage ||
-                    (detectedSide
-                      ? (lang === 'zh-CN' ? `已检测到${detectedSide === 'both' ? '双手' : detectedSide === 'left' ? '左手' : '右手'}` : lang === 'en-US' ? `Detected: ${detectedSide}` : `ตรวจพบ: ${detectedSide === 'both' ? '2 มือ' : detectedSide === 'left' ? 'มือซ้าย' : 'มือขวา'}`)
-                      : (lang === 'zh-CN'
-                        ? `等待举起${isTargetLeft ? '左' : '右'}手...`
-                        : lang === 'en-US'
-                        ? `Waiting for ${targetSide.toUpperCase()} hand...`
-                        : `กำลังรอยกมือ${isTargetLeft ? 'ซ้าย' : 'ขวา'}...`))}
+              {allowedHandSide !== 'both' && (
+                <span className="px-2.5 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-700 font-bold text-xs">
+                  {lang === 'zh-CN'
+                    ? `指定使用: ${allowedHandSide === 'left' ? '左手' : '右手'}`
+                    : lang === 'en-US'
+                    ? `Locked Side: ${allowedHandSide.toUpperCase()}`
+                    : `จำกัดข้าง: มือ${allowedHandSide === 'left' ? 'ซ้าย' : 'ขวา'}`}
                 </span>
-                <span className="font-mono font-bold text-slate-200">
-                  {Math.round(holdProgress * 100)}%
-                </span>
-              </div>
+              )}
             </div>
 
-            {/* Right: Floating PIP Mirrored Camera & Staff Override */}
-            <div className="flex flex-col items-center gap-2 shrink-0">
-              <div className="relative w-36 h-28 sm:w-44 sm:h-32 rounded-2xl overflow-hidden border-2 border-slate-700 bg-slate-900 shadow-xl flex items-center justify-center">
-                <video
-                  ref={videoRef}
-                  playsInline
-                  muted
-                  autoPlay
-                  className="w-full h-full object-cover scale-x-[-1]"
-                />
-                {!isCameraActive && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 text-slate-400 text-[11px] p-2 text-center">
-                    <Video className="w-6 h-6 mb-1 text-slate-500 animate-pulse" />
-                    <span>กำลังเปิดกล้อง...</span>
-                  </div>
-                )}
-                {isCameraActive && (
-                  <div className="absolute top-2 left-2 bg-emerald-500/90 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow">
-                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                    <span>ตรวจจับมือ</span>
-                  </div>
-                )}
-              </div>
+            {/* Full Unclipped Exercise Title */}
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 leading-snug tracking-tight">
+              {targetExerciseTitle}
+            </h1>
 
-              {/* Discrete Staff Override Button (Opens Staff Auth Modal) */}
+            {/* Clear Ergonomic Instruction */}
+            <p className="text-sm sm:text-base text-slate-700 font-medium leading-relaxed flex items-center gap-2">
+              <span className="text-xl">🙌</span>
+              <span>
+                {lang === 'zh-CN'
+                  ? `举起${isTargetLeft ? '左' : '右'}手保持 0.6 秒以开始训练，或轻触下方按钮开始`
+                  : lang === 'en-US'
+                  ? `Raise your ${isTargetLeft ? 'left' : 'right'} hand and hold for 0.6s to start, or tap the button below`
+                  : `ยกมือ${isTargetLeft ? 'ซ้าย' : 'ขวา'}ค้างไว้ 0.6 วินาทีเพื่อเริ่มฝึก หรือแตะปุ่ม "เริ่มฝึกท่านี้ทันที" ด้านล่าง`}
+              </span>
+            </p>
+
+            {/* Smooth Emerald-Blue Progress Bar */}
+            <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden p-0.5 border border-slate-200 shadow-inner">
+              <div
+                className="bg-gradient-to-r from-emerald-500 via-teal-500 to-blue-600 h-full rounded-full transition-all duration-150"
+                style={{ width: `${Math.round(holdProgress * 100)}%` }}
+              />
+            </div>
+
+            {/* Real-time Status Caption */}
+            <div className="flex items-center justify-between text-xs sm:text-sm text-slate-600 px-1 font-semibold">
+              <span>
+                {statusMessage ||
+                  (detectedSide
+                    ? `ตรวจพบ: ${detectedSide === 'both' ? '2 มือ' : detectedSide === 'left' ? 'มือซ้าย' : 'มือขวา'}`
+                    : `กำลังรอยกมือ${isTargetLeft ? 'ซ้าย' : 'ขวา'}...`)}
+              </span>
+              <span className="font-mono font-extrabold text-blue-700">
+                {Math.round(holdProgress * 100)}%
+              </span>
+            </div>
+
+            {/* Giant Senior-Friendly Start Button */}
+            <div className="pt-2 flex flex-wrap items-center gap-3">
               <button
                 type="button"
+                id="kiosk-start-now-btn"
+                data-testid="kiosk-start-now-btn"
+                onClick={() => handleStartExercise(nextUncompletedExercise, 'manual')}
+                className="w-full sm:w-auto px-8 py-4 rounded-2xl font-extrabold text-base sm:text-lg text-white bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:brightness-105 active:scale-98 shadow-md flex items-center justify-center gap-2.5 cursor-pointer transition"
+              >
+                <span>▶️</span>
+                <span>
+                  {lang === 'zh-CN'
+                    ? `立即开始训练 (点击或举起${isTargetLeft ? '左' : '右'}手)`
+                    : lang === 'en-US'
+                    ? `Start Exercise Now (Tap or Raise ${targetSide.toUpperCase()} Hand)`
+                    : `เริ่มฝึกท่านี้ทันที (แตะที่นี่หรือยกมือ${isTargetLeft ? 'ซ้าย' : 'ขวา'})`}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                id="kiosk-staff-override-hud-btn"
                 data-testid="kiosk-staff-override-hud-btn"
                 onClick={() => setIsStaffOverrideModalOpen(true)}
-                className="text-[11px] text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/60 transition flex items-center gap-1.5 cursor-pointer mt-1"
+                className="text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 px-3 py-2.5 rounded-xl border border-slate-200 transition flex items-center gap-1.5 cursor-pointer"
                 title="สำหรับเจ้าหน้าที่: เริ่มแทน (ต้องยืนยันตัวตน)"
               >
-                <KeyRound className="w-3 h-3 text-amber-400" />
+                <KeyRound className="w-3.5 h-3.5 text-amber-500" />
                 <span>{lang === 'zh-CN' ? '工作人员代替开始' : lang === 'en-US' ? 'Staff Override' : 'สำหรับเจ้าหน้าที่: เริ่มแทน'}</span>
               </button>
             </div>
           </div>
 
-          {/* 3-Attempt Failure Help Alert Modal inside Banner */}
-          {showFailureHelp && (
-            <div className="mt-4 pt-4 border-t border-amber-500/40 bg-amber-950/40 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-fadeIn">
-              <div className="flex items-center gap-2.5 text-amber-200 text-xs sm:text-sm">
-                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-                <span>
-                  {lang === 'zh-CN'
-                    ? '无法举手？请呼叫工作人员或由工作人员代为启动'
-                    : lang === 'en-US'
-                    ? 'Cannot raise hand? Call staff or request staff override'
-                    : 'ยกมือไม่ได้? เรียกเจ้าหน้าที่ช่วยเริ่ม'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                <button
-                  type="button"
-                  data-testid="kiosk-call-staff-help-btn"
-                  onClick={handleCallStaff}
-                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow"
-                >
-                  <Bell className="w-3.5 h-3.5" />
-                  <span>{lang === 'zh-CN' ? '呼叫人员' : lang === 'en-US' ? 'Call Staff' : 'เรียกเจ้าหน้าที่'}</span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="kiosk-staff-override-help-btn"
-                  onClick={() => setIsStaffOverrideModalOpen(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 font-semibold text-xs transition cursor-pointer flex items-center gap-1.5"
-                >
-                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{lang === 'zh-CN' ? '医护代启动' : lang === 'en-US' ? 'Staff Override' : 'เจ้าหน้าที่เริ่มแทน'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRetry}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition cursor-pointer flex items-center gap-1"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>{lang === 'zh-CN' ? '重试' : lang === 'en-US' ? 'Retry' : 'ลองใหม่'}</span>
-                </button>
-              </div>
+          {/* Right (4 Cols on LG): Live Hand-Raise Camera Preview */}
+          <div className="lg:col-span-4 flex flex-col items-center gap-2">
+            <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden border-2 border-blue-200 bg-slate-900 shadow-inner flex items-center justify-center">
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                autoPlay
+                className="w-full h-full object-cover scale-x-[-1]"
+              />
+              {!isCameraActive && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 text-slate-300 text-xs p-3 text-center">
+                  <Video className="w-7 h-7 mb-1 text-slate-400 animate-pulse" />
+                  <span>กำลังเปิดกล้องตรวจจับท่าทาง...</span>
+                </div>
+              )}
+              {isCameraActive && (
+                <div className="absolute top-2.5 left-2.5 bg-emerald-500/90 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  <span>ตรวจจับมือ</span>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Target Joint Badge */}
+            <div className="text-xs text-slate-600 font-semibold flex items-center gap-1.5">
+              <span>🎯 ข้อต่อเป้าหมาย:</span>
+              <span className="text-blue-700 font-bold">{targetPreset?.targetJoint || (nextUncompletedExercise as any)?.target_joint || 'ทั่วไป'}</span>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Exercise Cards */}
-      <div className="max-w-4xl mx-auto w-full flex flex-col gap-4 mb-6 flex-1">
+      <div className="max-w-5xl mx-auto w-full flex flex-col gap-4 mb-6 flex-1">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-200 flex items-center gap-2">
-            <Activity className="w-4 h-4 text-emerald-400" />
+          <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+            <Activity className="w-5 h-5 text-emerald-600" />
             <span>{lang === 'zh-CN' ? '今日康复动作清单' : lang === 'en-US' ? "Today's Prescribed Exercises" : 'รายการท่าฝึกประจำวันนี้'}</span>
           </h2>
           <div className="flex items-center gap-2">
             {includeMinigame && (
-              <span className="text-xs px-2.5 py-1 rounded-full bg-purple-950/60 border border-purple-500/30 text-purple-300 font-medium flex items-center gap-1.5">
+              <span className="text-xs px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-bold flex items-center gap-1.5 shadow-xs">
                 <Brain className="w-3.5 h-3.5" />
-                <span>{lang === 'zh-CN' ? '附带认知益智微游戏' : lang === 'en-US' ? 'Cognitive Minigame Included' : 'มีมินิเกมฝึกสมองต่อท้าย'}</span>
+                <span>{lang === 'zh-CN' ? '附带认知益智微游戏' : lang === 'en-US' ? 'Cognitive Minigame Included' : 'มินิเกมฝึกสมองต่อเนื่อง'}</span>
               </span>
             )}
           </div>
@@ -1240,11 +1205,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             : (preset?.nameTh || item.name || item.title);
 
           const framingBadge = preset?.framing === 'full_body'
-            ? (lang === 'zh-CN' ? '📷 全身视野 (后退 2–2.5 米)' : lang === 'en-US' ? '📷 Full Body (Step back 2-2.5m)' : '📷 เต็มตัว (ถอยห่าง 2–2.5 ม.)')
+            ? (lang === 'zh-CN' ? '📷 全身' : lang === 'en-US' ? '📷 Full Body' : '📷 เต็มตัว')
             : preset?.framing === 'lower_body'
-            ? (lang === 'zh-CN' ? '📷 下半身' : lang === 'en-US' ? '📷 Lower Body' : '📷 ช่วงขาและข้อเท้า')
+            ? (lang === 'zh-CN' ? '📷 下半身' : lang === 'en-US' ? '📷 Lower Body' : '📷 ช่วงขา')
             : preset?.framing === 'head_shoulders'
-            ? (lang === 'zh-CN' ? '📷 头部与肩部' : lang === 'en-US' ? '📷 Head & Shoulders' : '📷 ศีรษะและไหล่')
+            ? (lang === 'zh-CN' ? '📷 头部' : lang === 'en-US' ? '📷 Head' : '📷 ศีรษะ')
             : (lang === 'zh-CN' ? '📷 上半身' : lang === 'en-US' ? '📷 Upper Body' : '📷 ครึ่งตัวบน');
 
           return (
@@ -1252,122 +1217,100 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               key={exerciseId}
               className={`p-5 rounded-2xl border transition duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                 isDone
-                  ? 'bg-emerald-950/20 border-emerald-500/40 text-slate-300'
+                  ? 'bg-emerald-50/40 border-emerald-200 text-slate-700 shadow-xs'
                   : isTarget
-                  ? 'bg-slate-900/90 border-2 border-emerald-400 ring-4 ring-emerald-500/30 text-white shadow-xl shadow-emerald-950/50'
-                  : 'bg-slate-900/60 border-slate-800 text-slate-400 opacity-80'
+                  ? 'bg-white border-2 border-emerald-500 ring-4 ring-emerald-500/10 text-slate-900 shadow-md'
+                  : 'bg-white border border-blue-100 text-slate-700 shadow-xs hover:border-blue-200'
               }`}
             >
               <div className="flex items-center gap-4">
                 <div
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center font-extrabold text-lg shrink-0 shadow-xs ${
                     isDone
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                       : isTarget
-                      ? 'bg-emerald-500 text-slate-950 font-extrabold shadow-md'
-                      : 'bg-slate-800 text-slate-400'
+                      ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 border border-slate-200'
                   }`}
                 >
                   {idx + 1}
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2 flex-wrap">
                     <span>{title}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 font-medium">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200/80">
                       {framingBadge}
                     </span>
-                    {isDone && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
-                    {isTarget && (
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/60 text-emerald-300 font-bold flex items-center gap-1 animate-pulse">
-                        <Sparkles className="w-3 h-3" />
-                        <span>{lang === 'zh-CN' ? '当前目标动作' : lang === 'en-US' ? 'Active Target' : 'ท่าเป้าหมายปัจจุบัน'}</span>
+                    {isDone && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
+                    {isTarget && !isDone && (
+                      <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 font-bold flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-emerald-600" />
+                        <span>กำลังจะฝึก</span>
                       </span>
                     )}
                   </h3>
-                  <div className="text-xs text-slate-400 mt-1 flex items-center gap-2">
-                    <span>{lang === 'zh-CN' ? `关节: ${preset?.targetJoint || item.target_joint || '通用'}` : lang === 'en-US' ? `Joint: ${preset?.targetJoint || item.target_joint || 'General'}` : `ข้อต่อ: ${preset?.targetJoint || item.target_joint || 'ทั่วไป'}`}</span>
+                  <div className="text-xs text-slate-500 mt-1 flex items-center gap-2 font-medium">
+                    <span>ข้อต่อ: <b className="text-slate-700">{preset?.targetJoint || item.target_joint || 'ทั่วไป'}</b></span>
                     <span>•</span>
-                    <span className="text-emerald-400 font-medium">
-                      {lang === 'zh-CN' ? `${item.sets || 3} 组 × ${item.reps || 10} 次` : lang === 'en-US' ? `${item.sets || 3} sets × ${item.reps || 10} reps` : `${item.sets || 3} เซ็ต × ${item.reps || 10} ครั้ง`}
+                    <span className="text-emerald-700 font-bold">
+                      {item.sets || 3} เซ็ต × {item.reps || 10} ครั้ง
                     </span>
                   </div>
                 </div>
               </div>
 
+              {/* Streamlined Action Buttons (Max 2 clear buttons) */}
               <div className="flex items-center gap-2.5 flex-wrap">
-                {/* Touchless Initiation Status Badge & Discrete Staff Action */}
-                {isTarget && !isDone && (
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 shadow-sm ${
-                        isTargetLeft
-                          ? 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200'
-                          : 'bg-emerald-500/15 border-emerald-400/50 text-emerald-200'
-                      }`}
-                    >
-                      <Hand className="w-4 h-4 animate-bounce" />
-                      <span>
-                        {lang === 'zh-CN'
-                          ? `举起${isTargetLeft ? '左' : '右'}手以开始`
-                          : lang === 'en-US'
-                          ? `Raise ${targetSide.toUpperCase()} Hand`
-                          : `ยกมือ${isTargetLeft ? 'ซ้าย' : 'ขวา'}เพื่อเริ่ม`}
-                      </span>
-                    </div>
-
-                    {/* Discrete staff override button */}
-                    <button
-                      type="button"
-                      id={`kiosk-start-scan-btn-${idx}`}
-                      data-testid={`kiosk-start-scan-btn-${idx}`}
-                      onClick={() => setIsStaffOverrideModalOpen(true)}
-                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition cursor-pointer flex items-center gap-1"
-                      title="กดเริ่มแทน (สำหรับเจ้าหน้าที่)"
-                    >
-                      <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{lang === 'zh-CN' ? '代开始' : lang === 'en-US' ? 'Override' : 'เริ่มแทน'}</span>
-                    </button>
-                  </div>
+                {!isDone && (
+                  <button
+                    type="button"
+                    id={`kiosk-start-scan-btn-${idx}`}
+                    data-testid={`kiosk-start-scan-btn-${idx}`}
+                    onClick={() => handleStartExercise(item, 'manual')}
+                    className="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition cursor-pointer flex items-center gap-2 shadow-xs"
+                  >
+                    <span>▶️</span>
+                    <span>เริ่มฝึกท่านี้</span>
+                  </button>
                 )}
 
-                {/* Mark Done / Repeat Button (Always Available) */}
                 <button
                   type="button"
                   data-testid={`kiosk-toggle-done-btn-${idx}`}
                   onClick={() => toggleExerciseComplete(exerciseId)}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-4 py-2.5 rounded-xl text-sm font-bold transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
                     isDone
-                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30'
+                      ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                      : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
                   }`}
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>{isDone ? (lang === 'zh-CN' ? '再次训练' : lang === 'en-US' ? 'Repeat' : 'ทำซ้ำอีกครั้ง') : (lang === 'zh-CN' ? '标记为已完成' : lang === 'en-US' ? 'Mark Done' : 'บันทึกว่าทำเสร็จแล้ว')}</span>
+                  <span>{isDone ? 'ทำซ้ำอีกครั้ง' : 'บันทึกว่าทำเสร็จแล้ว'}</span>
                 </button>
               </div>
             </div>
           );
         })}
 
-        {/* Discrete bottom link for staff override (does not clutter senior patient view) */}
+        {/* Discrete bottom link for staff override */}
         <div className="w-full flex items-center justify-end pt-1">
           <button
             type="button"
             data-testid="kiosk-footer-staff-override-btn"
             onClick={() => setIsStaffOverrideModalOpen(true)}
-            className="text-[11px] text-slate-500 hover:text-slate-400 flex items-center gap-1.5 transition cursor-pointer px-2.5 py-1 rounded-lg hover:bg-slate-900"
+            className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1.5 transition cursor-pointer px-3 py-1.5 rounded-xl hover:bg-slate-100 border border-slate-200/80"
             title="สำหรับเจ้าหน้าที่: เริ่มแทน"
           >
-            <KeyRound className="w-3 h-3 text-slate-500" />
+            <KeyRound className="w-3.5 h-3.5 text-slate-500" />
             <span>{lang === 'zh-CN' ? '医护端: 协助开始' : lang === 'en-US' ? 'Staff: Override Start' : 'สำหรับเจ้าหน้าที่: เริ่มแทน'}</span>
           </button>
         </div>
       </div>
 
       {/* Completion Action Bar */}
-      <div className="max-w-4xl mx-auto w-full pt-4 border-t border-slate-800 flex items-center justify-between">
-        <div className="text-xs text-slate-400">
-          {lang === 'zh-CN' ? (includeMinigame ? '完成所有动作后，将自动进入认知微游戏' : '完成所有动作后即可提交今日记录') : lang === 'en-US' ? (includeMinigame ? 'Completing all exercises unlocks the cognitive minigame' : 'Complete all exercises to record session') : (includeMinigame ? 'เมื่อทำครบทุกท่า ระบบจะเปิดมินิเกมฝึกสมองทันที' : 'เมื่อทำครบทุกท่า ระบบจะบันทึกผลสำเร็จ')}
+      <div className="max-w-5xl mx-auto w-full pt-4 border-t border-blue-100 flex flex-wrap items-center justify-between gap-4">
+        <div className="text-xs sm:text-sm text-slate-600 font-medium">
+          {lang === 'zh-CN' ? (includeMinigame ? '完成所有动作后，将自动进入认知微游戏' : '完成所有动作后即可提交今日记录') : lang === 'en-US' ? (includeMinigame ? 'Completing all exercises unlocks the cognitive minigame' : 'Complete all exercises to record session') : (includeMinigame ? 'เมื่อทำครบทุกท่า ระบบจะเปิดมินิเกมฝึกสมองต่อเนื่อง' : 'เมื่อทำครบทุกท่า ระบบจะบันทึกผลสำเร็จ')}
         </div>
 
         <button
@@ -1380,10 +1323,10 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               handleFinalSessionCompletion(100, 0);
             }
           }}
-          className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-emerald-900/40 cursor-pointer"
+          className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:brightness-105 text-white text-base font-extrabold transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2.5 shadow-md cursor-pointer"
         >
           <span>{includeMinigame ? (lang === 'zh-CN' ? '下一步: 认知益智微游戏' : lang === 'en-US' ? 'Next: Cognitive Minigame' : 'ต่อไป: มินิเกมฝึกสมอง') : (lang === 'zh-CN' ? '提交今日训练' : lang === 'en-US' ? 'Complete Session' : 'บันทึกการฝึกเสร็จสิ้น')}</span>
-          <ArrowRight className="w-4 h-4" />
+          <ArrowRight className="w-5 h-5" />
         </button>
       </div>
 
