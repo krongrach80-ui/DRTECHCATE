@@ -1271,7 +1271,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   };
 
   return (
-    <div className="w-full h-full min-h-full flex flex-col justify-center items-center p-3 sm:p-6 lg:p-8 bg-gradient-to-b from-[#EBF5FA] via-[#F2F9FC] to-[#E6F4F8] text-slate-900 select-none overflow-x-hidden overflow-y-auto font-sans relative">
+    <div className="w-full h-full min-h-full flex flex-col justify-center items-center p-3 sm:p-4 md:p-6 bg-gradient-to-b from-[#EBF5FA] via-[#F2F9FC] to-[#E6F4F8] text-slate-900 select-none overflow-hidden font-sans relative">
       <video
         ref={videoRef}
         playsInline
@@ -1295,10 +1295,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       <CornerOrnament position="bottom-right" />
 
       {/* Unified Master Kiosk Shell Card */}
-      <div className="w-full max-w-5xl mx-auto my-auto bg-white/95 backdrop-blur-md rounded-[32px] border border-blue-100 shadow-2xl p-4 sm:p-6 flex flex-col gap-4 relative z-10">
+      <div className="w-full max-w-5xl h-full min-h-[calc(100vh-140px)] sm:min-h-[calc(100vh-160px)] md:min-h-[calc(100vh-180px)] bg-white/95 backdrop-blur-md rounded-[32px] border border-blue-100 shadow-2xl p-4 sm:p-6 flex flex-col justify-between gap-3 sm:gap-4 relative z-10">
         
         {/* Compact Header & Welcome Banner */}
-        <div className="w-full flex items-center justify-between pb-2 border-b border-slate-100/90 text-xs sm:text-sm select-none gap-2">
+        <div className="w-full flex items-center justify-between pb-2 border-b border-slate-100/90 text-xs sm:text-sm select-none gap-2 shrink-0">
           <div className="flex items-center gap-2 font-black text-slate-800 tracking-tight">
             <span className="text-base sm:text-lg">🩺</span>
             <span className="truncate">
@@ -1315,8 +1315,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           </div>
         </div>
 
-        {/* 🎥 Hero Camera Scanning Stage (Full Width & Maximum Immersion) */}
-        <div className="w-full aspect-[16/10] sm:aspect-[16/9] md:aspect-[21/9] min-h-[420px] sm:min-h-[500px] bg-gradient-to-br from-[#07192B] via-[#0B2740] to-[#062826] rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col items-center justify-center cursor-pointer group">
+        {/* 🎥 Hero Camera Scanning Stage (Full Width & Generous Height - Fills Remaining Space) */}
+        <div className="flex-1 w-full min-h-[460px] md:min-h-[540px] bg-gradient-to-br from-[#07192B] via-[#0B2740] to-[#062826] rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col items-center justify-center cursor-pointer group">
           {/* 4 Glowing Cyan/Emerald Corner Viewfinder Brackets */}
           <div className="absolute top-4 left-4 w-8 h-8 sm:w-10 sm:h-10 border-t-4 border-l-4 border-teal-400 rounded-tl-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
           <div className="absolute top-4 right-4 w-8 h-8 sm:w-10 sm:h-10 border-t-4 border-r-4 border-teal-400 rounded-tr-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
@@ -1567,7 +1567,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         </div>
 
         {/* 🧭 Action Dock Below Camera */}
-        <div className="w-full flex flex-col gap-3">
+        <div className="w-full flex flex-col gap-3 shrink-0">
           {/* Giant Primary Button */}
           <button
             type="button"
@@ -1575,7 +1575,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             data-testid="kiosk-scan-face-btn"
             disabled={isScanning || countdownValue !== null}
             onClick={() => executeScanLogin()}
-            className="w-full py-4 sm:py-5 px-6 rounded-2xl text-lg sm:text-xl font-extrabold text-white bg-gradient-to-r from-[#059669] via-[#0D9488] to-[#1D4ED8] hover:brightness-105 active:scale-[0.99] transition shadow-lg shadow-teal-900/15 flex items-center justify-center gap-3 whitespace-nowrap cursor-pointer"
+            className="w-full py-4 sm:py-5 px-6 rounded-2xl text-xl sm:text-2xl font-bold text-white bg-gradient-to-r from-[#059669] via-[#0D9488] to-[#1D4ED8] hover:brightness-105 active:scale-[0.99] transition shadow-lg shadow-teal-900/15 flex items-center justify-center gap-3 whitespace-nowrap cursor-pointer"
           >
             {countdownValue !== null ? (
               <>
@@ -1611,7 +1611,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 setEnteredPin('');
                 setIsPinModalOpen(true);
               }}
-              className="w-full py-3.5 px-4 rounded-2xl bg-slate-50 hover:bg-amber-50 border-2 border-slate-200 hover:border-amber-400 text-slate-800 font-bold text-sm sm:text-base flex items-center justify-center gap-2 whitespace-nowrap transition cursor-pointer active:scale-95 shadow-xs"
+              className="w-full py-3.5 sm:py-4 px-4 rounded-2xl bg-slate-50 hover:bg-amber-50 border-2 border-slate-200 hover:border-amber-400 text-slate-800 font-bold text-base sm:text-lg flex items-center justify-center gap-2.5 whitespace-nowrap transition cursor-pointer active:scale-95 shadow-xs"
             >
               <KeyRound className="w-5 h-5 text-amber-500 shrink-0" />
               <span className="whitespace-nowrap">ใช้รหัส PIN 4 หลัก</span>
@@ -1629,7 +1629,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   onNavigateToEnroll();
                 }
               }}
-              className="w-full py-3.5 px-4 rounded-2xl bg-blue-50/60 hover:bg-blue-50 border-2 border-blue-200 hover:border-blue-500 text-blue-700 font-bold text-sm sm:text-base flex items-center justify-center gap-2 whitespace-nowrap transition cursor-pointer active:scale-95 shadow-xs"
+              className="w-full py-3.5 sm:py-4 px-4 rounded-2xl bg-blue-50/60 hover:bg-blue-50 border-2 border-blue-200 hover:border-blue-500 text-blue-700 font-bold text-base sm:text-lg flex items-center justify-center gap-2.5 whitespace-nowrap transition cursor-pointer active:scale-95 shadow-xs"
             >
               <UserPlus className="w-5 h-5 text-blue-600 shrink-0" />
               <span className="whitespace-nowrap">สมัครคนไข้ใหม่</span>
@@ -1637,7 +1637,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           </div>
 
           {/* Security Footer Line */}
-          <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs text-slate-500 gap-2 select-none">
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs text-slate-500 gap-2 select-none shrink-0">
             <div className="flex items-center gap-1.5 truncate">
               <span>🛡️</span>
               <span className="truncate">มาตรฐานชีวมาตร • เชื่อมต่อ Supabase Cloud สด</span>
