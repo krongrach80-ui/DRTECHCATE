@@ -692,7 +692,33 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
   };
 
   // Active Total Days calculated strictly from the active mode
-  const activeTotalDays = scheduleMode === 'modeA' ? modeAComputedDates.length : modeBScheduledDates.length;
+  const activeTotalDays = scheduleMode === 'modeA' ? (modeAComputedDates || []).length : (modeBScheduledDates || []).length;
+
+  // Active scheduled dates list for current mode (ensuring scheduledDates is always defined & safe)
+  const scheduledDates: string[] = useMemo(() => {
+    return scheduleMode === 'modeA' ? (modeAComputedDates || []) : (modeBScheduledDates || []);
+  }, [scheduleMode, modeAComputedDates, modeBScheduledDates]);
+
+  // Formatted date range display helper
+  const activeDateRangeDisplay = useMemo(() => {
+    const formatP = (s?: string) => {
+      if (!s) return '';
+      const [y, m, d] = s.split('-').map(Number);
+      if (!y || !m || !d) return s;
+      if (lang === 'th') {
+        const thaiShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+        return `${d} ${thaiShort[m - 1]} ${y + 543}`;
+      }
+      return s;
+    };
+    if (scheduleMode === 'modeA') {
+      return `${formatP(modeAStartDate)} ถึง ${formatP(modeAEndDate)}`;
+    }
+    if (modeBScheduledDates && modeBScheduledDates.length > 0) {
+      return `${formatP(modeBScheduledDates[0])} ถึง ${formatP(modeBScheduledDates[modeBScheduledDates.length - 1])}`;
+    }
+    return '-';
+  }, [scheduleMode, modeAStartDate, modeAEndDate, modeBScheduledDates, lang]);
 
   // Add Exercise to Prescription
   const handleAddExercise = (catalogEx: any) => {
@@ -1837,25 +1863,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                   {activeTotalDays} {t.daysUnit}
                 </span>
                 <span className="text-slate-400 text-[11px]">
-                  ({(() => {
-                    const formatP = (s: string) => {
-                      if (!s) return '';
-                      const [y, m, d] = s.split('-').map(Number);
-                      if (!y || !m || !d) return s;
-                      if (lang === 'th') {
-                        const thaiShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-                        return `${d} ${thaiShort[m - 1]} ${y + 543}`;
-                      }
-                      return s;
-                    };
-                    if (scheduleMode === 'modeA') {
-                      return `${formatP(modeAStartDate)} ถึง ${formatP(modeAEndDate)}`;
-                    }
-                    if (modeBScheduledDates.length > 0) {
-                      return `${formatP(modeBScheduledDates[0])} ถึง ${formatP(modeBScheduledDates[modeBScheduledDates.length - 1])}`;
-                    }
-                    return '-';
-                  })()})
+                  ({activeDateRangeDisplay})
                 </span>
               </div>
 
@@ -1953,8 +1961,8 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
               </div>
 
               <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-slate-700">
-                <span>{t.totalDays}: <strong className="text-emerald-700 font-mono text-sm">{scheduledDates.length} วัน</strong></span>
-                <span className="text-slate-500">({scheduledDates[0]} ถึง {scheduledDates[scheduledDates.length - 1]})</span>
+                <span>{t.totalDays}: <strong className="text-emerald-700 font-mono text-sm">{(scheduledDates || []).length} วัน</strong></span>
+                <span className="text-slate-500">({activeDateRangeDisplay})</span>
               </div>
             </div>
 

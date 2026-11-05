@@ -2287,7 +2287,7 @@ export class ApiClient {
         }
         if (options.method === 'DELETE' && id) {
           // Remove from registry
-          for (const [, entry] of RESILIENT_STAFF_REGISTRY.entries()) {
+          for (const [uname, entry] of RESILIENT_STAFF_REGISTRY.entries()) {
             if (entry.user.id === id || uname === id) {
               RESILIENT_STAFF_REGISTRY.delete(uname);
             }
