@@ -1611,27 +1611,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           {/* 🧭 RIGHT: Action & Control Panel (5 Cols on XL) */}
           <div className="xl:col-span-5 w-full flex flex-col justify-center gap-4">
             
-            {/* 1. Quick Instruction Box */}
-            <div className="bg-gradient-to-br from-emerald-50/80 via-teal-50/50 to-blue-50/80 border border-emerald-200/80 rounded-2xl p-4 flex flex-col gap-2.5 shadow-2xs">
-              <div className="text-xs font-bold text-teal-800 uppercase tracking-wider flex items-center gap-1.5 mb-0.5">
-                <span>📋</span>
-                <span>คำแนะนำการใช้งาน (3 ขั้นตอนง่ายๆ)</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-xs sm:text-sm font-bold text-slate-800 bg-white/80 rounded-xl px-3 py-2 border border-emerald-100 shadow-2xs">
-                <span className="text-base sm:text-lg">👀</span>
-                <span className="whitespace-nowrap">1. มองตรงที่กรอบกล้องด้านหน้า</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-xs sm:text-sm font-bold text-slate-800 bg-white/80 rounded-xl px-3 py-2 border border-emerald-100 shadow-2xs">
-                <span className="text-base sm:text-lg">😉</span>
-                <span className="whitespace-nowrap">2. กะพริบตา 1 ครั้งเพื่อยืนยันตัวตนจริง</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-xs sm:text-sm font-bold text-slate-800 bg-white/80 rounded-xl px-3 py-2 border border-emerald-100 shadow-2xs">
-                <span className="text-base sm:text-lg">🏃</span>
-                <span className="whitespace-nowrap">3. เข้าสู่ตารางฝึกกายภาพประจำวันทันที</span>
-              </div>
-            </div>
-
-            {/* 2. Primary Giant CTA Button */}
+            {/* 1. Primary Giant CTA Button */}
             <button
               type="button"
               id="kiosk-scan-face-btn"
