@@ -2046,8 +2046,15 @@ export class ApiClient {
         } as T;
       }
 
-      // 5. Fallback for /staff or /directory/pts
-      if (endpointPath.startsWith('/staff') || endpointPath.includes('/staff') || endpointPath.includes('/directory/pts')) {
+      // 5. Direct Supabase handling for /staff, /therapists, /pts, and /directory/pts
+      if (
+        endpointPath.startsWith('/staff') ||
+        endpointPath.startsWith('/therapists') ||
+        endpointPath.startsWith('/pts') ||
+        endpointPath.includes('/staff') ||
+        endpointPath.includes('/pts') ||
+        endpointPath.includes('/directory/pts')
+      ) {
         const parts = endpointPath.split('?')[0].split('/');
         const id = parts[2];
         const sub = parts[3];
@@ -2155,170 +2162,80 @@ export class ApiClient {
             }
           }
 
-          // 3. Attempt 1: Call Supabase Edge Function (/functions/v1/create-staff-user)
+          // 3. Direct Supabase RPC Call: POST ${DEFAULT_SUPABASE_URL}/rest/v1/rpc/admin_create_staff_account
           const rawToken = this.getAuthToken();
           const isSovereignToken = !rawToken || rawToken.includes('drtechcare') || rawToken.includes('offline');
           const supaBearerToken = isSovereignToken ? DEFAULT_SUPABASE_ANON_KEY : rawToken;
-          let serverCreatedUser: any = null;
-          try {
-            const edgeRes = await fetch(`${DEFAULT_SUPABASE_URL}/functions/v1/create-staff-user`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${supaBearerToken}`,
-              },
-              body: JSON.stringify({
-                username: cleanUsername,
-                password: cleanPassword,
-                role: targetRole,
-                full_name: cleanFullName,
-                phone: body.phone || null,
-                bio: body.bio || null,
-                license_no: cleanLicense || null,
-                license_expiry: cleanLicenseExpiry,
-                specialty: body.specialty || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
-                age: Number(body.age) || 35,
-                sex: body.sex || 'male',
-              }),
-            });
 
-            if (edgeRes.ok) {
-              const edgeData = await edgeRes.json();
-              if (edgeData?.user) {
-                serverCreatedUser = edgeData.user;
-              }
-            } else if (edgeRes.status !== 404 && edgeRes.status !== 401 && edgeRes.status !== 502) {
-              const errBody = await edgeRes.json().catch(() => ({}));
-              throw new Error(errBody.error || `เซิร์ฟเวอร์ส่งข้อผิดพลาด (${edgeRes.status})`);
-            }
-          } catch (edgeErr: any) {
-            if (
-              edgeErr.message &&
-              !edgeErr.message.includes('404') &&
-              !edgeErr.message.includes('401') &&
-              !edgeErr.message.includes('Failed to fetch')
-            ) {
-              throw edgeErr;
-            }
-          }
-
-          // 4. Attempt 2: Call PostgreSQL RPC (/rest/v1/rpc/admin_create_staff_account)
-          if (!serverCreatedUser) {
-            try {
-              const rpcRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/rpc/admin_create_staff_account`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  apikey: DEFAULT_SUPABASE_ANON_KEY,
-                  Authorization: `Bearer ${supaBearerToken}`,
-                },
-                body: JSON.stringify({
-                  p_username: cleanUsername,
-                  p_password: cleanPassword,
-                  p_role: targetRole,
-                  p_full_name: cleanFullName,
-                  p_phone: body.phone || null,
-                  p_bio: body.bio || null,
-                  p_license_no: cleanLicense || null,
-                  p_license_expiry: cleanLicenseExpiry,
-                  p_specialty: body.specialty || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
-                  p_age: Number(body.age) || 35,
-                  p_sex: body.sex || 'male',
-                }),
-              });
-
-              if (rpcRes.ok) {
-                const rpcData = await rpcRes.json();
-                if (rpcData?.user) {
-                  serverCreatedUser = rpcData.user;
-                }
-              } else if (rpcRes.status !== 404 && rpcRes.status !== 401) {
-                const errBody = await rpcRes.json().catch(() => ({}));
-                const errMsg = errBody.message || errBody.details || '';
-                if (errMsg.includes('PGRST202') || errMsg.includes('JWT') || errMsg.includes('schema cache')) {
-                  // Fall through to resilient handler
-                } else if (errMsg.includes('มีอยู่ในระบบแล้ว') || errBody.code === '23505') {
-                  if (errMsg.includes('ใบประกอบวิชาชีพ')) {
-                    throw new Error('เลขที่ใบประกอบวิชาชีพนี้มีอยู่ในระบบแล้ว');
-                  }
-                  throw new Error('ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว');
-                } else {
-                  throw new Error(errMsg || `ไม่สามารถสร้างผู้ใช้ผ่าน RPC ได้ (${rpcRes.status})`);
-                }
-              }
-            } catch (rpcErr: any) {
-              if (
-                rpcErr.message &&
-                !rpcErr.message.includes('404') &&
-                !rpcErr.message.includes('401') &&
-                !rpcErr.message.includes('Failed to fetch')
-              ) {
-                throw rpcErr;
-              }
-            }
-          }
-
-          // 5. Build Result Object & Persist in Registry
-          const createdStaffId = serverCreatedUser?.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `staff-${Date.now()}`);
-          const createdUserRecord: UserProfile = {
-            id: createdStaffId,
-            username: cleanUsername,
-            full_name: cleanFullName,
-            role: targetRole,
-            phone: body.phone || undefined,
-            bio: body.bio || undefined,
-            status: 'active',
-            created_at: new Date().toISOString(),
+          const rpcPayload = {
+            p_username: cleanUsername,
+            p_password: cleanPassword,
+            p_full_name: cleanFullName,
+            p_role: targetRole,
+            p_phone: body.phone || null,
+            p_bio: body.bio || null,
+            p_license_no: targetRole === 'pt' ? (cleanLicense || null) : null,
+            p_license_expiry: targetRole === 'pt' ? cleanLicenseExpiry : null,
+            p_specialty: body.specialty || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+            p_age: body.age ? Number(body.age) : 35,
+            p_sex: body.sex || 'male',
           };
 
+          const rpcRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/rpc/admin_create_staff_account`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${supaBearerToken}`,
+            },
+            body: JSON.stringify(rpcPayload),
+          });
+
+          if (!rpcRes.ok) {
+            const errBody = await rpcRes.json().catch(() => ({}));
+            const errMsg = errBody.message || errBody.details || errBody.hint || `ไม่สามารถสร้างผู้ใช้ผ่าน RPC ได้ (${rpcRes.status})`;
+            if (errBody.code === '23505' || errMsg.includes('มีอยู่ในระบบแล้ว')) {
+              if (errMsg.includes('ใบประกอบวิชาชีพ') || errMsg.includes('license_no') || errMsg.includes('pts_license_no')) {
+                throw new Error('เลขที่ใบประกอบวิชาชีพนี้มีอยู่ในระบบแล้ว');
+              }
+              throw new Error('ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว');
+            }
+            if (errBody.code === '42501' || errMsg.includes('สิทธิ์ไม่เพียงพอ')) {
+              throw new Error('สิทธิ์ไม่เพียงพอ: เฉพาะผู้อำนวยการ (Admin) เท่านั้นที่สามารถสร้างบัญชีเจ้าหน้าที่ได้');
+            }
+            if (errBody.code === '42804' || errMsg.includes('staff_role') || errMsg.includes('user_role')) {
+              throw new Error(`ข้อผิดพลาดสคีมาฐานข้อมูล (${errBody.code}): ${errMsg} - กรุณารัน SQL Migration อัปเดต public.admin_create_staff_account`);
+            }
+            throw new Error(errMsg);
+          }
+
+          const rpcData = await rpcRes.json();
+          const serverCreatedUser = rpcData?.user || rpcData?.data || rpcData;
+
+          // Sync into registry cache for instant responsive lookups
           RESILIENT_STAFF_REGISTRY.set(cleanUsername, {
-            user: createdUserRecord,
+            user: serverCreatedUser,
             password: cleanPassword,
             pt_details: targetRole === 'pt' ? {
               license_no: cleanLicense,
               license_expiry: cleanLicenseExpiry,
               specialty: body.specialty || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
-              age: Number(body.age) || 35,
+              age: body.age ? Number(body.age) : 35,
               sex: body.sex || 'male',
             } : undefined,
           });
 
-          // Insert audit log to Supabase Cloud
-          try {
-            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/audit_logs`, {
-              method: 'POST',
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                user_id: this.getUserProfile()?.id || createdStaffId,
-                action: 'create_staff',
-                entity_type: 'profile',
-                entity_id: createdStaffId,
-                details: {
-                  username: cleanUsername,
-                  role: targetRole,
-                  full_name: cleanFullName,
-                },
-                created_at: new Date().toISOString(),
-              }),
-            });
-          } catch {}
-
           return {
             ok: true,
-            ...createdUserRecord,
-            user: createdUserRecord,
-            data: createdUserRecord,
-            message: `สร้างผู้ใช้ ${cleanUsername} สำเร็จเรียบร้อย`,
+            ...serverCreatedUser,
+            user: serverCreatedUser,
+            data: serverCreatedUser,
+            message: rpcData?.message || `สร้างผู้ใช้ ${cleanUsername} สำเร็จเรียบร้อย`,
           } as T;
         }
         if (options.method === 'DELETE' && id) {
           // Remove from registry
-          for (const [uname, entry] of RESILIENT_STAFF_REGISTRY.entries()) {
+          for (const [, entry] of RESILIENT_STAFF_REGISTRY.entries()) {
             if (entry.user.id === id || uname === id) {
               RESILIENT_STAFF_REGISTRY.delete(uname);
             }
@@ -2356,29 +2273,191 @@ export class ApiClient {
           return { ok: true, message: 'อัปเดตข้อมูลสำเร็จ' } as T;
         }
 
+        // Handle PT listing (/pts or /directory/pts)
+        const isPtListing =
+          endpointPath === '/pts' ||
+          endpointPath.startsWith('/pts?') ||
+          endpointPath.startsWith('/pts/') ||
+          endpointPath.includes('/directory/pts');
+
+        if (isPtListing && (!options.method || options.method.toUpperCase() === 'GET')) {
+          try {
+            const [ptsRes, profRes] = await Promise.all([
+              fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/pts?select=*`, {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }),
+              fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/profiles?select=*`, {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }),
+            ]);
+
+            const ptsRows = ptsRes.ok ? await ptsRes.json() : [];
+            const profRows = profRes.ok ? await profRes.json() : [];
+
+            const profMap = new Map<string, any>();
+            if (Array.isArray(profRows)) {
+              for (const p of profRows) {
+                profMap.set(p.id, p);
+              }
+            }
+
+            const resultList: any[] = [];
+            const seenPtUserIds = new Set<string>();
+
+            if (Array.isArray(ptsRows)) {
+              for (const pt of ptsRows) {
+                const prof = profMap.get(pt.user_id);
+                seenPtUserIds.add(pt.user_id);
+                resultList.push({
+                  user_id: pt.user_id,
+                  license_no: pt.license_no,
+                  license_expiry: pt.license_expiry,
+                  specialty: pt.specialty || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+                  age: pt.age || 35,
+                  sex: pt.sex || 'male',
+                  created_at: pt.created_at,
+                  updated_at: pt.updated_at,
+                  profile: prof || {
+                    id: pt.user_id,
+                    username: `pt_${pt.user_id.slice(0, 6)}`,
+                    full_name: 'นักกายภาพบำบัด',
+                    role: 'pt',
+                    status: 'active',
+                  },
+                  id: pt.user_id,
+                  username: prof?.username || `pt_${pt.user_id.slice(0, 6)}`,
+                  full_name: prof?.full_name || 'นักกายภาพบำบัด',
+                  role: 'pt',
+                  status: prof?.status || 'active',
+                  phone: prof?.phone || null,
+                });
+              }
+            }
+
+            if (Array.isArray(profRows)) {
+              for (const p of profRows) {
+                if (p.role === 'pt' && !seenPtUserIds.has(p.id)) {
+                  seenPtUserIds.add(p.id);
+                  resultList.push({
+                    user_id: p.id,
+                    id: p.id,
+                    license_no: 'กภ.12345',
+                    license_expiry: null,
+                    specialty: 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+                    age: 35,
+                    sex: 'male',
+                    username: p.username,
+                    full_name: p.full_name,
+                    role: 'pt',
+                    status: p.status || 'active',
+                    phone: p.phone,
+                    profile: p,
+                  });
+                }
+              }
+            }
+
+            for (const [, entry] of RESILIENT_STAFF_REGISTRY.entries()) {
+              if (entry.user.role === 'pt' && !seenPtUserIds.has(entry.user.id)) {
+                seenPtUserIds.add(entry.user.id);
+                resultList.push({
+                  user_id: entry.user.id,
+                  id: entry.user.id,
+                  license_no: entry.pt_details?.license_no || 'กภ.12345',
+                  license_expiry: entry.pt_details?.license_expiry || null,
+                  specialty: entry.pt_details?.specialty || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด',
+                  age: entry.pt_details?.age || 35,
+                  sex: entry.pt_details?.sex || 'male',
+                  username: entry.user.username,
+                  full_name: entry.user.full_name,
+                  role: 'pt',
+                  status: entry.user.status || 'active',
+                  phone: entry.user.phone,
+                  profile: entry.user,
+                });
+              }
+            }
+
+            return { ok: true, data: resultList, pts: resultList } as T;
+          } catch {}
+        }
+
+        // Handle Staff listing (/staff or /therapists)
         try {
-          const supaRes = await fetch(
-            `${DEFAULT_SUPABASE_URL}/rest/v1/profiles?select=id,username,full_name,role,status`,
-            {
+          const [profRes, ptsRes] = await Promise.all([
+            fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/profiles?select=id,username,full_name,role,status,phone,bio,avatar_url,created_at,updated_at`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            ),
+            fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/pts?select=*`, {
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
                 Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
               },
-            }
-          );
-          if (supaRes.ok) {
-            const list = await supaRes.json();
-            if (Array.isArray(list)) {
-              const knownIds = new Set(list.map((u: any) => u.id));
-              const knownUsernames = new Set(list.map((u: any) => (u.username || '').toLowerCase()));
-              for (const item of RESILIENT_STAFF_REGISTRY.values()) {
-                if (!knownIds.has(item.user.id) && !knownUsernames.has(item.user.username.toLowerCase())) {
-                  list.push(item.user);
-                }
-              }
-              return { ok: true, data: list, staff: list } as T;
+            }),
+          ]);
+
+          const profList = profRes.ok ? await profRes.json() : [];
+          const ptsList = ptsRes.ok ? await ptsRes.json() : [];
+          const ptsMap = new Map<string, any>();
+          if (Array.isArray(ptsList)) {
+            for (const pt of ptsList) {
+              ptsMap.set(pt.user_id, pt);
             }
           }
+
+          let staffList: any[] = [];
+          const seenStaffIds = new Set<string>();
+
+          if (Array.isArray(profList)) {
+            for (const p of profList) {
+              seenStaffIds.add(p.id);
+              const ptInfo = ptsMap.get(p.id);
+              staffList.push({
+                ...p,
+                license_no: ptInfo?.license_no,
+                license_expiry: ptInfo?.license_expiry,
+                specialty: ptInfo?.specialty,
+                age: ptInfo?.age,
+                sex: ptInfo?.sex,
+                pt_details: ptInfo,
+              });
+            }
+          }
+
+          for (const [, entry] of RESILIENT_STAFF_REGISTRY.entries()) {
+            if (!seenStaffIds.has(entry.user.id)) {
+              seenStaffIds.add(entry.user.id);
+              staffList.push({
+                ...entry.user,
+                ...entry.pt_details,
+                pt_details: entry.pt_details,
+              });
+            }
+          }
+
+          const urlObj = new URL('https://placeholder' + endpointPath);
+          const roleFilter = urlObj.searchParams.get('role');
+          if (roleFilter) {
+            staffList = staffList.filter((s: any) => s.role === roleFilter);
+          }
+          const statusFilter = urlObj.searchParams.get('status');
+          if (statusFilter) {
+            staffList = staffList.filter((s: any) => s.status === statusFilter);
+          }
+
+          return { ok: true, data: staffList, staff: staffList, users: staffList } as T;
         } catch {}
 
         const defaultStaff = [

@@ -1603,28 +1603,52 @@ BEGIN
     v_now
   );
 
-  -- 5. Insert into public.profiles
-  INSERT INTO public.profiles (
-    id,
-    username,
-    full_name,
-    role,
-    phone,
-    bio,
-    status,
-    created_at,
-    updated_at
-  ) VALUES (
-    v_new_user_id,
-    v_clean_username,
-    trim(p_full_name),
-    p_role,
-    NULLIF(trim(p_phone), ''),
-    NULLIF(trim(p_bio), ''),
-    'active',
-    v_now,
-    v_now
-  );
+  -- 5. Insert into public.profiles (Resilient enum cast: staff_role primary, user_role fallback)
+  BEGIN
+    INSERT INTO public.profiles (
+      id,
+      username,
+      full_name,
+      role,
+      phone,
+      bio,
+      status,
+      created_at,
+      updated_at
+    ) VALUES (
+      v_new_user_id,
+      v_clean_username,
+      trim(p_full_name),
+      p_role::public.staff_role,
+      NULLIF(trim(p_phone), ''),
+      NULLIF(trim(p_bio), ''),
+      'active',
+      v_now,
+      v_now
+    );
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO public.profiles (
+      id,
+      username,
+      full_name,
+      role,
+      phone,
+      bio,
+      status,
+      created_at,
+      updated_at
+    ) VALUES (
+      v_new_user_id,
+      v_clean_username,
+      trim(p_full_name),
+      p_role::public.user_role,
+      NULLIF(trim(p_phone), ''),
+      NULLIF(trim(p_bio), ''),
+      'active',
+      v_now,
+      v_now
+    );
+  END;
 
   -- 6. Insert into public.pts if PT role
   IF p_role = 'pt' THEN
