@@ -13,8 +13,16 @@ export function createAuthRouter(controller = new AuthController()): Router {
   // POST /api/auth/refresh (Session refresh using refresh token cookie)
   router.post('/refresh', controller.refresh);
 
-  // POST /api/auth/logout (Authenticated session revocation)
-  router.post('/logout', authenticate, controller.logout);
+  // POST /api/auth/logout (Session revocation: attempts auth for audit, always clears cookies)
+  router.post(
+    '/logout',
+    (req, res, next) => {
+      authenticate(req, res, () => {
+        next();
+      });
+    },
+    controller.logout
+  );
 
   // GET /api/auth/me (Returns active user profile)
   router.get('/me', authenticate, controller.me);

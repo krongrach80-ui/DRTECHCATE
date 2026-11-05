@@ -13876,8 +13876,16 @@ var AuthController = class {
           const clientDeviceId = req.cookies?.staff_device_id;
           await this.authService.logout(req.user.id, clientIp, clientDeviceId);
         }
-        res.clearCookie("access_token", { path: "/" });
-        res.clearCookie("refresh_token", { path: "/api/auth" });
+        const secure = isCookieSecure();
+        const cookieOpts = {
+          httpOnly: true,
+          secure,
+          sameSite: "strict"
+        };
+        res.clearCookie("access_token", { ...cookieOpts, path: "/" });
+        res.clearCookie("refresh_token", { ...cookieOpts, path: "/api/auth" });
+        res.clearCookie("refresh_token", { ...cookieOpts, path: "/" });
+        res.clearCookie("staff_device_id", { ...cookieOpts, path: "/" });
         res.status(200).json({ ok: true, message: "Logged out successfully" });
       } catch (err) {
         next(err);
@@ -14003,7 +14011,15 @@ function createAuthRouter(controller = new AuthController()) {
   const router3 = (0, import_express4.Router)();
   router3.post("/login", validateBody(loginSchema), controller.login);
   router3.post("/refresh", controller.refresh);
-  router3.post("/logout", authenticate, controller.logout);
+  router3.post(
+    "/logout",
+    (req, res, next) => {
+      authenticate(req, res, () => {
+        next();
+      });
+    },
+    controller.logout
+  );
   router3.get("/me", authenticate, controller.me);
   router3.post(["/force-logout", "/force-logout/:userId"], authenticate, controller.forceLogout);
   return router3;

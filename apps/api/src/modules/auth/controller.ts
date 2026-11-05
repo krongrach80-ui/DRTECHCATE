@@ -74,9 +74,18 @@ export class AuthController {
         await this.authService.logout(req.user.id, clientIp, clientDeviceId);
       }
 
-      // Clear all auth cookies
-      res.clearCookie('access_token', { path: '/' });
-      res.clearCookie('refresh_token', { path: '/api/auth' });
+      // Clear all auth cookies with matching security attributes
+      const secure = isCookieSecure();
+      const cookieOpts = {
+        httpOnly: true,
+        secure,
+        sameSite: 'strict' as const,
+      };
+
+      res.clearCookie('access_token', { ...cookieOpts, path: '/' });
+      res.clearCookie('refresh_token', { ...cookieOpts, path: '/api/auth' });
+      res.clearCookie('refresh_token', { ...cookieOpts, path: '/' });
+      res.clearCookie('staff_device_id', { ...cookieOpts, path: '/' });
 
       res.status(200).json({ ok: true, message: 'Logged out successfully' });
     } catch (err) {

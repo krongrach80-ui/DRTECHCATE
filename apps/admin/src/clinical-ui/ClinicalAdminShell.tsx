@@ -35,6 +35,7 @@ interface ClinicalAdminShellProps {
   staffCalls?: StaffCallRecord[];
   onStaffCallHandled?: () => void;
   sseConnected?: boolean;
+  isLoggingOut?: boolean;
 }
 
 export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
@@ -45,6 +46,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   staffCalls: initialStaffCalls,
   onStaffCallHandled,
   sseConnected = false,
+  isLoggingOut = false,
 }) => {
   const [activeTab, setActiveTab] = useState<ClinicalMenuId>('users');
   const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>(initialStaffCalls || []);
@@ -182,6 +184,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
               queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
               onLogout={onLogout}
               onReturnToKiosk={onReturnToKiosk}
+              isLoggingOut={isLoggingOut}
             />
           </div>
         </div>
@@ -195,6 +198,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
           onLogout={onLogout}
           onReturnToKiosk={onReturnToKiosk}
+          isLoggingOut={isLoggingOut}
         />
       </div>
 
@@ -226,6 +230,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           }}
           onLogout={onLogout}
           onReturnToKiosk={onReturnToKiosk}
+          isLoggingOut={isLoggingOut}
           onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />
 

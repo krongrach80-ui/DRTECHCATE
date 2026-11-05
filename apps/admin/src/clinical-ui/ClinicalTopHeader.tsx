@@ -27,6 +27,7 @@ interface ClinicalTopHeaderProps {
   onReturnToKiosk?: () => void;
   isPtMode?: boolean;
   onToggleMobileMenu?: () => void;
+  isLoggingOut?: boolean;
 }
 
 export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
@@ -40,6 +41,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
   onReturnToKiosk,
   isPtMode = false,
   onToggleMobileMenu,
+  isLoggingOut = false,
 }) => {
   return (
     <header className="min-h-20 py-2.5 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs px-4 md:px-8 flex items-center justify-between gap-4 shrink-0 z-20">
@@ -128,10 +130,19 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
           <button
             type="button"
             onClick={onLogout}
-            title="ออกจากระบบ"
-            className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition active:scale-95"
+            disabled={isLoggingOut}
+            title={isLoggingOut ? 'กำลังออกจากระบบ...' : 'ออกจากระบบ'}
+            className={`p-2 rounded-xl transition active:scale-95 ${
+              isLoggingOut
+                ? 'text-rose-400 bg-rose-50 cursor-not-allowed'
+                : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer'
+            }`}
           >
-            <LogOut className="w-4 h-4" />
+            {isLoggingOut ? (
+              <div className="w-4 h-4 border-2 border-rose-400/30 border-t-rose-600 rounded-full animate-spin" />
+            ) : (
+              <LogOut className="w-4 h-4" />
+            )}
           </button>
         </div>
       </div>

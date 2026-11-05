@@ -41,6 +41,7 @@ interface ClinicalSidebarProps {
   onLogout: () => void;
   onReturnToKiosk?: () => void;
   isPtMode?: boolean;
+  isLoggingOut?: boolean;
 }
 
 export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
@@ -50,6 +51,7 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
   onLogout,
   onReturnToKiosk,
   isPtMode = false,
+  isLoggingOut = false,
 }) => {
   // Master Prompt v3 Spec 8.1: Admin 6 Main Windows
   const adminMenus: Array<{ id: ClinicalMenuId; label: string; icon: React.ReactNode; badge?: number }> = [
@@ -227,10 +229,24 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
         <button
           type="button"
           onClick={onLogout}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 hover:bg-rose-500/20 border border-rose-400/30 text-rose-200 hover:text-white text-xs font-bold shadow-sm transition active:scale-95 cursor-pointer"
+          disabled={isLoggingOut}
+          className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold shadow-sm transition active:scale-95 ${
+            isLoggingOut
+              ? 'bg-rose-500/10 border-rose-400/20 text-rose-300/50 cursor-not-allowed'
+              : 'bg-white/5 hover:bg-rose-500/20 border-rose-400/30 text-rose-200 hover:text-white cursor-pointer'
+          }`}
         >
-          <LogOut className="w-4 h-4 text-rose-300" />
-          <span>ออกจากระบบ</span>
+          {isLoggingOut ? (
+            <>
+              <div className="w-3.5 h-3.5 border-2 border-rose-300/30 border-t-rose-300 rounded-full animate-spin" />
+              <span>กำลังออกจากระบบ...</span>
+            </>
+          ) : (
+            <>
+              <LogOut className="w-4 h-4 text-rose-300" />
+              <span>ออกจากระบบ</span>
+            </>
+          )}
         </button>
       </div>
     </aside>

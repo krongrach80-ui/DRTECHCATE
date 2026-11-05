@@ -654,17 +654,49 @@ export class ApiClient {
       // 1.1 Fallback for /auth/me
       if (endpointPath === '/auth/me') {
         const stored = this.getUserProfile();
-        const profile = stored || {
-          id: 'd1000000-0000-0000-0000-000000000001',
-          username: 'director',
-          full_name: 'ผอ. นพ. บริรักษ์ เวชกิจ',
-          role: 'admin',
-          status: 'active',
-        };
+        const token = this.getAuthToken();
+        if (!stored || !token) {
+          throw new Error('401 Unauthorized: ไม่มีเซสชันบุคลากรที่ใช้งานได้');
+        }
         return {
           ok: true,
-          user: profile,
-          data: profile,
+          user: stored,
+          data: stored,
+        } as T;
+      }
+
+      // 1.1.1 Fallback for /auth/logout
+      if (endpointPath === '/auth/logout') {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          throw new Error('ไม่สามารถเชื่อมต่อเครือข่ายขณะออกจากระบบได้ กรุณาตรวจสอบสัญญาณอินเทอร์เน็ต');
+        }
+        const storedProfile = this.getUserProfile();
+        if (storedProfile?.id) {
+          try {
+            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/audit_logs`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                Prefer: 'return=minimal',
+              },
+              body: JSON.stringify({
+                actor_type: 'staff',
+                actor_id: storedProfile.id,
+                action: 'logout',
+                entity: 'auth',
+                entity_id: storedProfile.id,
+                metadata: { role: storedProfile.role, username: storedProfile.username },
+              }),
+            });
+          } catch {
+            // non-blocking audit
+          }
+        }
+        return {
+          ok: true,
+          message: 'Logged out successfully',
         } as T;
       }
 
@@ -3727,16 +3759,9 @@ export class ApiClient {
 
     if (typeof window !== 'undefined') {
       const profile = this.getUserProfile();
-      const pathname = window.location?.pathname ? window.location.pathname.toLowerCase() : '';
-      if (profile) {
+      if (profile && token) {
         staffRole = profile.role || (profile.username === 'director' ? 'admin' : null);
         actorId = profile.id || null;
-      } else if (pathname.includes('/admin')) {
-        staffRole = 'admin';
-        actorId = 'd1000000-0000-0000-0000-000000000001';
-      } else if (pathname.includes('/pt')) {
-        staffRole = 'pt';
-        actorId = 'b1000000-0000-0000-0000-000000000003';
       }
     }
 
@@ -3817,6 +3842,9 @@ export class ApiClient {
       }
 
       // 3. Direct Supabase Cloud REST / Local Resilience Fallback
+      if (cleanEndpoint === '/auth/logout' && fetchError) {
+        throw new Error('ไม่สามารถเชื่อมต่อเครือข่ายขณะออกจากระบบได้ กรุณาตรวจสอบสัญญาณอินเทอร์เน็ต');
+      }
       const fallbackResult = await this.executeDirectSupabaseFallback<T>(cleanEndpoint, options);
       if (fallbackResult !== undefined) {
         return fallbackResult;
@@ -3942,21 +3970,69 @@ export class ApiClient {
     },
 
     logout: async () => {
+      let networkError: Error | null = null;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        networkError = new Error('ไม่สามารถเชื่อมต่อเครือข่ายขณะออกจากระบบได้ กรุณาตรวจสอบสัญญาณอินเทอร์เน็ต');
+      } else {
+        try {
+          await this.request<{ message: string }>('/auth/logout', {
+            method: 'POST',
+          });
+        } catch (err: any) {
+          networkError =
+            err instanceof Error
+              ? err
+              : new Error('ไม่สามารถเชื่อมต่อเครือข่ายขณะออกจากระบบได้ กรุณาตรวจสอบสัญญาณอินเทอร์เน็ต');
+        }
+      }
+
+      // Always clear local staff tokens and session states defensively
       try {
-        return await this.request<{ message: string }>('/auth/logout', {
-          method: 'POST',
-        });
-      } catch {
-        // non-blocking
-        return { message: 'Logged out' };
-      } finally {
         this.setAuthToken(null);
         this.setUserProfile(null);
+        const local = getSafeLocalStorage();
+        const session = getSafeSessionStorage();
+        if (local) {
+          local.removeItem('drtech_auth_token');
+          local.removeItem('drtech_user_profile');
+          local.removeItem('drtech_resilient_patients');
+          local.removeItem('drtech_cached_patients');
+          for (let i = local.length - 1; i >= 0; i--) {
+            const k = local.key(i);
+            if (k && (k.startsWith('sb-') || k.includes('supabase.auth.token'))) {
+              local.removeItem(k);
+            }
+          }
+        }
+        if (session) {
+          session.removeItem('drtech_auth_token');
+          session.removeItem('drtech_user_profile');
+          session.setItem('drtech_admin_logged_out', 'true');
+        }
+        if (typeof document !== 'undefined') {
+          const cookiesToClear = ['access_token', 'refresh_token', 'staff_device_id', 'drtech_access_token'];
+          for (const c of cookiesToClear) {
+            document.cookie = `${c}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict`;
+            document.cookie = `${c}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/api/auth; SameSite=Strict`;
+          }
+        }
+      } catch {
+        // Non-blocking cleanup
       }
+
+      if (networkError) {
+        throw networkError;
+      }
+
+      return { ok: true, message: 'Logged out successfully' };
     },
 
     me: async () => {
       try {
+        const token = this.getAuthToken();
+        if (!token) {
+          return null;
+        }
         const res = await this.request<any>('/auth/me', {
           method: 'GET',
         });
@@ -3975,8 +4051,9 @@ export class ApiClient {
         }
         return profile || (res as UserProfile);
       } catch (err: any) {
+        const token = this.getAuthToken();
         const savedProfile = this.getUserProfile();
-        if (savedProfile) {
+        if (token && savedProfile) {
           return savedProfile;
         }
         throw err;
