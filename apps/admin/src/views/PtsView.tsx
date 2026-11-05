@@ -194,7 +194,7 @@ export const PtsView: React.FC = () => {
       </div>
 
       {/* PT Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-5">
         {loading ? (
           <div className="col-span-full text-center py-12 text-slate-500">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-600" />
@@ -211,12 +211,12 @@ export const PtsView: React.FC = () => {
               <div
                 key={pt.user_id}
                 onClick={() => setSelectedPt(pt)}
-                className="bg-white border border-blue-100 rounded-2xl p-6 hover:border-emerald-300 hover:shadow-md transition cursor-pointer flex flex-col justify-between shadow-xs group"
+                className="bg-white border border-blue-100 rounded-2xl p-6 hover:-translate-y-1 hover:shadow-xl hover:border-emerald-300 transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xs group"
               >
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-blue-600 text-white font-bold text-lg flex items-center justify-center shadow-sm">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-blue-600 text-white font-bold text-lg flex items-center justify-center shadow-sm shrink-0">
                         {pt.profile?.full_name?.charAt(0) || 'P'}
                       </div>
                       <div>
@@ -229,11 +229,11 @@ export const PtsView: React.FC = () => {
                     <div className="flex items-center gap-2">
                       {pt.profile?.status === 'suspended' ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1">
-                          <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
+                          <AlertTriangle className="w-2.5 h-2.5 text-rose-600 shrink-0" />
                           <span>ระงับ</span>
                         </span>
                       ) : (
-                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
                           PT
                         </span>
                       )}
@@ -247,27 +247,31 @@ export const PtsView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <Award className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                      <span>ใบประกอบวิชาชีพ: </span>
-                      <strong className="font-mono text-slate-800">{pt.license_no || '-'}</strong>
+                  <div className="space-y-2.5 pt-2 border-t border-slate-100 text-xs">
+                    <div className="flex items-center justify-between gap-2 whitespace-nowrap bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200/80 text-xs">
+                      <span className="flex items-center gap-1.5 text-slate-600">
+                        <Award className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span>ใบประกอบวิชาชีพ:</span>
+                      </span>
+                      <strong className="font-mono text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-200">{pt.license_no || '-'}</strong>
                     </div>
 
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <FileCheck className="w-4 h-4 text-teal-600 flex-shrink-0" />
-                      <span>ความเชี่ยวชาญ: {pt.specialty || 'กายภาพบำบัดทั่วไป'}</span>
+                    <div className="flex items-center gap-2 text-slate-600 whitespace-nowrap">
+                      <FileCheck className="w-4 h-4 text-teal-600 shrink-0" />
+                      <span className="truncate">ความเชี่ยวชาญ: {pt.specialty || 'กายภาพบำบัดทั่วไป'}</span>
                     </div>
 
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <Users className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                      <span>คนไข้ที่ดูแล: </span>
+                    <div className="flex items-center justify-between gap-2 text-slate-600 whitespace-nowrap bg-blue-50/50 px-3 py-1.5 rounded-xl border border-blue-100">
+                      <span className="flex items-center gap-1.5">
+                        <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>คนไข้ที่ดูแล:</span>
+                      </span>
                       <strong className="text-blue-700 font-bold">{assignedPatients.length} ท่าน</strong>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs text-emerald-700 font-semibold group-hover:text-blue-600 transition">
+                <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs text-emerald-700 font-semibold group-hover:text-blue-600 transition whitespace-nowrap">
                   <span>ดูรายละเอียดและคนไข้</span>
                   <ChevronRight className="w-4 h-4" />
                 </div>

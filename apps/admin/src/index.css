@@ -47,3 +47,19 @@ input, button, select, textarea, optgroup {
 .tracking-tight, .tracking-tighter {
   letter-spacing: 0.015em !important;
 }
+
+/* Smooth interactive button & card animations */
+button, .btn-interactive {
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+button:hover:not(:disabled) {
+  transform: translateY(-1.5px);
+}
+button:active:not(:disabled) {
+  transform: translateY(0px) scale(0.97);
+}
+
+/* Prevent awkward Thai vertical character stacking inside badges & cells */
+th, td, badge, button, .badge-pill, [data-badge] {
+  word-break: keep-all;
+}

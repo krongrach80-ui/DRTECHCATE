@@ -493,24 +493,26 @@ export const LibraryView: React.FC = () => {
 
   return (
     <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
+      {/* Header (2-Row Stack: Row 1 Title, Row 2 Actions Toolbar) */}
+      <div className="flex flex-col gap-4">
+        {/* Row 1: Full-Width Title & Subtitle */}
+        <div className="w-full">
           <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2.5">
-            <span className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 shadow-xs">
+            <span className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 shadow-xs shrink-0">
               <Dumbbell className="w-6 h-6" />
             </span>
-            <span>คลังท่ากายภาพ มินิเกม และชุดท่า (Library)</span>
+            <span className="whitespace-nowrap">คลังท่ากายภาพ มินิเกม และชุดท่า (Library)</span>
           </h2>
           <p className="text-sm text-slate-500 mt-1">
             จัดการท่ากายภาพ อัปโหลดสื่อบันทึก ชุดท่าสำเร็จรูป (Modpack) และโจทย์มินิเกมฝึกสมอง
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+        {/* Row 2: Clean Horizontal Action Bar */}
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full">
           <button
             onClick={fetchData}
-            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
+            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm shrink-0 cursor-pointer"
             title="รีเฟรชข้อมูล"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -518,29 +520,29 @@ export const LibraryView: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsPrescriptionModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
+            className="whitespace-nowrap shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
           >
-            <Calendar className="w-4 h-4" />
+            <Calendar className="w-4 h-4 shrink-0" />
             <span>👨‍⚕️ สั่งจ่ายคอร์สให้ผู้ป่วยรายคน</span>
           </button>
           {activeTab === 'exercises' && (
-            <div className="flex flex-wrap items-center gap-2">
+            <>
               <button
                 onClick={() => {
                   setSelectedExerciseForAi(null);
                   setIsCloneMode(false);
                   setIsExerciseBuilderOpen(true);
                 }}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm transition shadow-md shadow-blue-950/20 active:scale-95"
+                className="whitespace-nowrap shrink-0 flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm transition shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
               >
-                <Video className="w-4 h-4" />
+                <Video className="w-4 h-4 shrink-0" />
                 <span>🎯 AI Pose Studio (Webcam)</span>
               </button>
               <button
                 onClick={() => setIsSmartExerciseModalOpen(true)}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-blue-200 hover:bg-blue-50/80 text-blue-700 font-bold text-sm transition shadow-sm active:scale-95"
+                className="whitespace-nowrap shrink-0 flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-blue-200 hover:bg-blue-50 text-blue-700 font-bold text-sm transition shadow-sm hover:shadow-md active:scale-95 cursor-pointer"
               >
-                <Sparkles className="w-4 h-4 text-blue-600" />
+                <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>Smart Exercise Upload</span>
               </button>
               <button
@@ -548,30 +550,30 @@ export const LibraryView: React.FC = () => {
                   setExerciseModalError(null);
                   setIsExerciseModalOpen(true);
                 }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
+                className="whitespace-nowrap shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-                <span>เพิ่มท่ากายภาพใหม่</span>
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>+ เพิ่มท่ากายภาพใหม่</span>
               </button>
-            </div>
+            </>
           )}
           {activeTab === 'modpacks' && (
-            <div className="flex flex-wrap items-center gap-2">
+            <>
               <button
                 onClick={() => setIsSmartModpackModalOpen(true)}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-blue-200 hover:bg-blue-50/80 text-blue-700 font-bold text-sm transition shadow-sm active:scale-95"
+                className="whitespace-nowrap shrink-0 flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-blue-200 hover:bg-blue-50 text-blue-700 font-bold text-sm transition shadow-sm hover:shadow-md active:scale-95 cursor-pointer"
               >
-                <Sparkles className="w-4 h-4 text-blue-600" />
+                <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>Smart Modpack Builder</span>
               </button>
               <button
                 onClick={() => setIsModpackModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-950/20 active:scale-95"
+                className="whitespace-nowrap shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-                <span>สร้างชุดท่า Modpack ใหม่</span>
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>+ สร้างชุดท่า Modpack ใหม่</span>
               </button>
-            </div>
+            </>
           )}
         </div>
       </div>
@@ -642,7 +644,7 @@ export const LibraryView: React.FC = () => {
       {/* TAB 1: EXERCISES */}
       {activeTab === 'exercises' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
             {loading ? (
               <div className="col-span-full text-center py-12 text-slate-500">
                 กำลังโหลดท่ากายภาพ...
@@ -657,35 +659,28 @@ export const LibraryView: React.FC = () => {
                 return (
                   <div
                     key={ex.id}
-                    className="bg-white rounded-2xl border border-blue-100/90 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all flex flex-col justify-between overflow-hidden p-5 group"
+                    className="bg-white rounded-2xl border border-blue-100/90 shadow-sm hover:shadow-xl hover:-translate-y-1 hover:border-emerald-300 transition-all duration-300 flex flex-col justify-between overflow-hidden p-5 group"
                   >
                     <div className="space-y-3">
-                      {/* Medical Posture Illustration */}
-                      <div className="w-full h-36 bg-gradient-to-br from-slate-900 via-blue-950 to-emerald-950 rounded-xl flex items-center justify-center overflow-hidden border border-blue-900/30 p-2 shadow-inner">
+                      {/* Medical Posture Illustration Stage with Inside Badge */}
+                      <div className="relative w-full h-40 bg-gradient-to-br from-slate-900 via-blue-950 to-emerald-950 rounded-xl flex items-center justify-center overflow-hidden border border-blue-900/30 p-2 shadow-inner">
                         <img
                           src={ex.image_path || `/assets/exercises/${ex.id}.svg`}
                           alt={ex.title}
-                          className="max-h-32 w-auto object-contain opacity-95 group-hover:scale-105 transition duration-200"
+                          className="max-h-36 w-auto object-contain opacity-95 group-hover:scale-105 transition duration-200"
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = 'none';
                           }}
                         />
-                      </div>
 
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200">
-                            <Dumbbell className="w-4 h-4" />
-                          </span>
-                          <h3 className="font-bold text-slate-900 text-base">{ex.title}</h3>
-                        </div>
+                        {/* Top-Right Difficulty Badge inside Stage */}
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                          className={`absolute top-3 right-3 z-10 whitespace-nowrap px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border shadow-sm backdrop-blur-sm ${
                             ex.difficulty === 'easy' || ex.difficulty === 'beginner'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              ? 'bg-emerald-500/90 text-white border-emerald-400'
                               : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-rose-50 text-rose-700 border-rose-200'
+                              ? 'bg-amber-500/90 text-white border-amber-400'
+                              : 'bg-rose-500/90 text-white border-rose-400'
                           }`}
                         >
                           {ex.difficulty === 'easy' || ex.difficulty === 'beginner'
@@ -696,12 +691,22 @@ export const LibraryView: React.FC = () => {
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {/* Full-width Title */}
+                      <div className="flex items-start gap-2.5">
+                        <span className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 shrink-0 mt-0.5">
+                          <Dumbbell className="w-4 h-4 shrink-0" />
+                        </span>
+                        <h3 className="font-extrabold text-slate-900 text-base leading-snug flex-1">
+                          {ex.title}
+                        </h3>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                         <span
-                          className={`px-2.5 py-0.5 rounded-lg border text-[10px] font-bold ${
+                          className={`whitespace-nowrap px-2.5 py-0.5 rounded-lg border text-[11px] font-bold ${
                             isTimer
                               ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : 'bg-teal-50 text-teal-700 border-teal-200'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           }`}
                         >
                           {isTimer
@@ -709,12 +714,12 @@ export const LibraryView: React.FC = () => {
                             : '📹 โหมดกล้อง AI (Camera Mode)'}
                         </span>
                         {ex.default_hold_sec ? (
-                          <span className="px-2 py-0.5 rounded-lg bg-teal-50 font-mono text-teal-700 border border-teal-200 text-[10px] font-semibold">
+                          <span className="whitespace-nowrap px-2 py-0.5 rounded-lg bg-teal-50 font-mono text-teal-700 border border-teal-200 text-[10px] font-semibold">
                             ค้าง {ex.default_hold_sec} วิ
                           </span>
                         ) : null}
                         {ex.default_duration_sec ? (
-                          <span className="px-2 py-0.5 rounded-lg bg-blue-50 font-mono text-blue-700 border border-blue-200 text-[10px] font-semibold">
+                          <span className="whitespace-nowrap px-2 py-0.5 rounded-lg bg-blue-50 font-mono text-blue-700 border border-blue-200 text-[10px] font-semibold">
                             {ex.default_duration_sec} วิ/เซ็ต
                           </span>
                         ) : null}
@@ -724,16 +729,17 @@ export const LibraryView: React.FC = () => {
                         {ex.description || 'ไม่มีคำอธิบาย'}
                       </p>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200/80">
-                        <div>
-                          <span className="text-slate-500">ข้อต่อเป้าหมาย:</span>
-                          <div className="font-semibold text-slate-800">{ex.target_joint || '-'}</div>
+                      {/* Target Joint Box - Single Clean Line (No awkward breaks) */}
+                      <div className="flex items-center justify-between gap-4 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200/80 text-xs whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className="text-slate-500 whitespace-nowrap">ข้อต่อเป้าหมาย:</span>
+                          <span className="font-bold text-slate-800 truncate">{ex.target_joint || '-'}</span>
                         </div>
-                        <div>
-                          <span className="text-slate-500">ค่าเริ่มต้น:</span>
-                          <div className="font-bold text-emerald-700">
+                        <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                          <span className="text-slate-500 whitespace-nowrap">ค่าเริ่มต้น:</span>
+                          <span className="font-bold text-emerald-700 whitespace-nowrap">
                             {ex.default_sets} เซ็ต × {ex.default_reps} ครั้ง
-                          </div>
+                          </span>
                         </div>
                       </div>
 
@@ -744,25 +750,25 @@ export const LibraryView: React.FC = () => {
                             <span className="text-blue-700 font-bold">🏛️ แหล่งอ้างอิง:</span> {ex.clinical_source || ex.source}
                           </div>
                         )}
-                        <div className="text-emerald-700 font-medium text-[10px] flex items-center gap-1">
+                        <div className="text-emerald-700 font-medium text-[10px] flex items-center gap-1 whitespace-nowrap">
                           <span>👩‍⚕️</span>
-                          <span>นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย</span>
+                          <span className="truncate">นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
+                    <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between gap-2 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
                         <button
                           onClick={() => {
                             setSelectedExerciseForAi(ex);
                             setIsCloneMode(false);
                             setIsExerciseBuilderOpen(true);
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center gap-1 transition"
+                          className="whitespace-nowrap shrink-0 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
                           title="ตั้งค่า AI ตรวจจับมุม & Calibrate"
                         >
-                          <Sliders className="w-3 h-3" />
+                          <Sliders className="w-3 h-3 shrink-0" />
                           <span>AI Setup</span>
                         </button>
                         <button
@@ -771,10 +777,10 @@ export const LibraryView: React.FC = () => {
                             setIsCloneMode(true);
                             setIsExerciseBuilderOpen(true);
                           }}
-                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1 transition"
+                          className="whitespace-nowrap shrink-0 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
                           title="โคลนท่านี้เป็นท่าใหม่"
                         >
-                          <Copy className="w-3 h-3" />
+                          <Copy className="w-3 h-3 shrink-0" />
                           <span>โคลน</span>
                         </button>
                       </div>

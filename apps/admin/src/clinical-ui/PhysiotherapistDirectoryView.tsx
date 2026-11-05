@@ -112,10 +112,10 @@ export const PhysiotherapistDirectoryView: React.FC = () => {
         </div>
       )}
 
-      {/* 3-Column Physiotherapist Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Physiotherapist Cards Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-5">
         {filteredPts.map((pt) => (
-          <MedicalCard key={pt.id} className="p-6 flex flex-col justify-between border border-slate-200 shadow-sm hover:shadow-md transition">
+          <MedicalCard key={pt.id} className="p-6 flex flex-col justify-between border border-slate-200 shadow-sm hover:-translate-y-1 hover:shadow-xl hover:border-emerald-300 transition-all duration-300">
             <div>
               {/* Header with Avatar & Badge */}
               <div className="flex items-start justify-between gap-3 mb-4">

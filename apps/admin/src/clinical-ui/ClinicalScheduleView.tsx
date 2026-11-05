@@ -626,15 +626,17 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
               </div>
 
               <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-mono font-bold text-slate-400">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <span className="whitespace-nowrap font-mono font-bold text-xs text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1 rounded-lg">
                     HN: {selectedPatient.hn || selectedPatient.id}
                   </span>
-                  <StatusBadge variant="active" text="กำลังเข้ารับการฟื้นฟู (Active)" />
+                  <div className="whitespace-nowrap shrink-0">
+                    <StatusBadge variant="active" text="กำลังเข้ารับการฟื้นฟู (Active)" />
+                  </div>
                   {activeDossier?.schedule?.include_minigame && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                      <Brain className="w-3 h-3" />
-                      รวมมินิเกม
+                    <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200 shadow-xs">
+                      <Brain className="w-3.5 h-3.5 shrink-0" />
+                      <span>รวมมินิเกม</span>
                     </span>
                   )}
                 </div>
@@ -670,25 +672,28 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
                 type="button"
                 onClick={handleClearAllSchedule}
                 disabled={!activeDossier?.schedule || actionLoading}
-                className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
+                className={`whitespace-nowrap shrink-0 px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
                   activeDossier?.schedule
                     ? 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:border-rose-400 active:scale-95 shadow-sm cursor-pointer'
                     : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'
                 }`}
                 title="ล้างตารางนัดทั้งหมดของคนไข้ที่เลือกอยู่"
               >
-                <Trash2 className="w-4 h-4" />
-                <span>🗑️ ล้างตารางนัดทั้งหมด</span>
+                <Trash2 className="w-4 h-4 shrink-0" />
+                <span className="whitespace-nowrap">🗑️ ล้างตารางนัดทั้งหมด</span>
               </button>
 
-              <SmoothButton
-                variant="primary"
-                size="md"
-                onClick={() => handleOpenWizard(selectedPatient.id)}
-                icon={<Plus className="w-4 h-4" />}
-              >
-                <span>+ สร้างตารางฝึกใหม่</span>
-              </SmoothButton>
+              <div className="whitespace-nowrap shrink-0">
+                <SmoothButton
+                  variant="primary"
+                  size="md"
+                  onClick={() => handleOpenWizard(selectedPatient.id)}
+                  icon={<Plus className="w-4 h-4 shrink-0" />}
+                  className="whitespace-nowrap shrink-0"
+                >
+                  <span className="whitespace-nowrap">+ สร้างตารางฝึกใหม่</span>
+                </SmoothButton>
+              </div>
             </div>
           </div>
         </MedicalCard>

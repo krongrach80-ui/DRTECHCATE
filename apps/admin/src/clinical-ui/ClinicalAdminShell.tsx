@@ -57,6 +57,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | undefined>(undefined);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isPhysicalCardGameOpen, setIsPhysicalCardGameOpen] = useState(false);
   const [schedulePreselectedPatientId, _setSchedulePreselectedPatientId] = useState<string | undefined>(undefined);
   const [autoOpenScheduleWizard, setAutoOpenScheduleWizard] = useState<boolean>(false);
@@ -185,6 +186,10 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
               onLogout={onLogout}
               onReturnToKiosk={onReturnToKiosk}
               isLoggingOut={isLoggingOut}
+              onOpenMinigames={() => {
+                setIsMobileMenuOpen(false);
+                setIsPhysicalCardGameOpen(true);
+              }}
             />
           </div>
         </div>
@@ -199,6 +204,9 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           onLogout={onLogout}
           onReturnToKiosk={onReturnToKiosk}
           isLoggingOut={isLoggingOut}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+          onOpenMinigames={() => setIsPhysicalCardGameOpen(true)}
         />
       </div>
 
@@ -324,18 +332,6 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           }
         }}
       />
-
-      {/* Floating Quick Launcher for Physical Cards Minigame in Admin (Docked neatly at bottom-right) */}
-      <button
-        type="button"
-        id="admin-physical-cards-btn"
-        onClick={() => setIsPhysicalCardGameOpen(true)}
-        className="fixed bottom-3 right-4 z-20 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 border border-white/30 text-white font-bold text-xs shadow-lg flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md opacity-90 hover:opacity-100"
-        title="เปิดแบบฝึกหัดการ์ดกายภาพ (10 ข้อ/รอบ)"
-      >
-        <span className="text-sm">🎮</span>
-        <span>การ์ดกายภาพ (10 ข้อ/รอบ)</span>
-      </button>
 
       {/* Physical Cards Minigame Modal */}
       {isPhysicalCardGameOpen && (

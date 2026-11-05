@@ -216,19 +216,19 @@ export const ScheduleView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
           <button
             onClick={fetchInitialData}
-            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
+            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm shrink-0 cursor-pointer"
             title="รีเฟรชข้อมูล"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={() => setIsSmartWizardOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-emerald-950/40"
+            className="whitespace-nowrap shrink-0 flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
           >
-            <Sparkles className="w-4 h-4" />
+            <Sparkles className="w-4 h-4 shrink-0" />
             <span>Smart Wizard (v4)</span>
           </button>
           <button
@@ -236,10 +236,10 @@ export const ScheduleView: React.FC = () => {
               setIsWizardOpen(true);
               setWizardStep(1);
             }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+            className="whitespace-nowrap shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm transition shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>สร้างตารางนัดใหม่ (Wizard 3 ขั้น)</span>
+            <Plus className="w-4 h-4 shrink-0" />
+            <span>+ สร้างตารางฝึกใหม่ (3 ขั้น)</span>
           </button>
         </div>
       </div>

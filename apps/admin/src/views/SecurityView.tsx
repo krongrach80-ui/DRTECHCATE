@@ -408,65 +408,65 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
         </div>
       )}
 
-      {/* Sub Tabs */}
-      <div className="flex gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
+      {/* Sub Tabs (Flex Wrap & No Stacking) */}
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-200 pb-2">
         <button
           onClick={() => setSubTab('calls')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer ${
+          className={`whitespace-nowrap flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer shadow-xs ${
             subTab === 'calls'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
           }`}
         >
-          <Bell className="w-4 h-4" />
+          <Bell className="w-4 h-4 shrink-0" />
           <span>คำเรียกเจ้าหน้าที่ ({unhandledCalls.length})</span>
         </button>
 
         <button
           onClick={() => setSubTab('audit')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer ${
+          className={`whitespace-nowrap flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer shadow-xs ${
             subTab === 'audit'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
           }`}
         >
-          <History className="w-4 h-4" />
+          <History className="w-4 h-4 shrink-0" />
           <span>บันทึก Audit Logs ({auditLogs.length})</span>
         </button>
 
         <button
           onClick={() => setSubTab('sessions')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer ${
+          className={`whitespace-nowrap flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer shadow-xs ${
             subTab === 'sessions'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
           }`}
         >
-          <UserX className="w-4 h-4" />
+          <UserX className="w-4 h-4 shrink-0" />
           <span>เซสชันและการเตะออก (Force Logout)</span>
         </button>
 
         <button
           onClick={() => setSubTab('bans')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer ${
+          className={`whitespace-nowrap flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer shadow-xs ${
             subTab === 'bans'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
           }`}
         >
-          <Ban className="w-4 h-4" />
+          <Ban className="w-4 h-4 shrink-0" />
           <span>จัดการการแบน (Bans Manager)</span>
         </button>
 
         <button
           onClick={() => setSubTab('kiosks')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer ${
+          className={`whitespace-nowrap flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer shadow-xs ${
             subTab === 'kiosks'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
           }`}
         >
-          <Monitor className="w-4 h-4" />
+          <Monitor className="w-4 h-4 shrink-0" />
           <span>อุปกรณ์ตู้ Kiosk ({kiosks.length})</span>
         </button>
       </div>
@@ -483,17 +483,17 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
             <table className="w-full text-left text-sm text-slate-700">
               <thead className="bg-blue-50/80 text-blue-950 font-semibold text-xs uppercase tracking-wider border-b border-blue-100">
                 <tr>
-                  <th className="px-6 py-4 font-semibold">เวลาแจ้ง</th>
-                  <th className="px-6 py-4 font-semibold">ตู้ Kiosk</th>
-                  <th className="px-6 py-4 font-semibold">สาเหตุ</th>
-                  <th className="px-6 py-4 font-semibold">สถานะ</th>
-                  <th className="px-6 py-4 font-semibold text-right">การจัดการ</th>
+                  <th className="px-6 py-4 font-semibold whitespace-nowrap">เวลาแจ้ง</th>
+                  <th className="px-6 py-4 font-semibold whitespace-nowrap">ตู้ Kiosk</th>
+                  <th className="px-6 py-4 font-semibold whitespace-nowrap">สาเหตุ</th>
+                  <th className="px-6 py-4 font-semibold whitespace-nowrap">สถานะ</th>
+                  <th className="px-6 py-4 font-semibold text-right whitespace-nowrap">การจัดการ</th>
                 </tr>
               </thead>
               <tbody className="bg-white hover:bg-emerald-50/40 divide-y divide-slate-100 text-slate-800">
                 {deduplicatedCalls.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500 whitespace-nowrap">
                       ไม่มีประวัติคำเรียกเจ้าหน้าที่
                     </td>
                   </tr>
@@ -503,33 +503,33 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
                       <td className="px-6 py-4 text-xs font-mono text-slate-600 whitespace-nowrap">
                         {formatSafeThaiDateTime((call as any).created_at || (call as any).timestamp || (call as any).requested_at)}
                       </td>
-                      <td className="px-6 py-4 font-bold text-blue-900">
-                        <span className="bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-lg text-xs font-mono inline-block">
+                      <td className="px-6 py-4 font-bold text-blue-900 whitespace-nowrap">
+                        <span className="bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1 rounded-lg text-xs font-mono font-bold whitespace-nowrap inline-block">
                           {call.kiosk_id || (call as any).device_name || 'Kiosk-01 (จุดคัดกรองหลัก)'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-xs text-rose-700 font-medium">
+                      <td className="px-6 py-4 text-xs text-rose-700 font-medium whitespace-nowrap">
                         {call.reason || (call as any).message || 'ผู้ป่วยขอความช่วยเหลือจากหน้าตู้ Kiosk'}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 whitespace-nowrap">
                         {call.handled_at ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <Check className="w-3 h-3 text-emerald-600" />
+                          <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                             <span>ช่วยเหลือแล้ว</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 animate-pulse">
-                            <Bell className="w-3 h-3 text-blue-600" />
-                            <span>รอดำเนินการ</span>
+                          <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 animate-pulse">
+                            <Bell className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <span>● รอดำเนินการ</span>
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
                         {!call.handled_at && (
                           <button
                             onClick={() => handleResolveStaffCall(call.id)}
                             disabled={actionLoading}
-                            className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer whitespace-nowrap"
+                            className="whitespace-nowrap shrink-0 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
                           >
                             รับเรื่องช่วยเหลือ
                           </button>

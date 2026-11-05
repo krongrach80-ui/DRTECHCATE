@@ -687,10 +687,10 @@ export const StaffView: React.FC = () => {
               setTouchedFields({});
               setWizardErrorMsg(null);
             }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+            className="whitespace-nowrap shrink-0 px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-95"
           >
-            <UserPlus className="w-4 h-4" />
-            <span>เพิ่มเจ้าหน้าที่ใหม่</span>
+            <UserPlus className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">+ เพิ่มเจ้าหน้าที่ใหม่</span>
           </button>
         </div>
       </div>
@@ -762,80 +762,80 @@ export const StaffView: React.FC = () => {
           <table className="w-full text-left text-sm text-slate-700">
             <thead className="bg-blue-50/80 text-blue-950 font-semibold text-xs uppercase tracking-wider border-b border-blue-100">
               <tr>
-                <th className="px-6 py-4 font-semibold">ชื่อ-นามสกุล</th>
-                <th className="px-6 py-4 font-semibold">Username / HN</th>
-                <th className="px-6 py-4 font-semibold">บทบาท</th>
-                <th className="px-6 py-4 font-semibold">สถานะ</th>
-                <th className="px-6 py-4 font-semibold">เข้าสู่ระบบล่าสุด</th>
-                <th className="px-6 py-4 font-semibold text-right">การจัดการ</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">ชื่อ-นามสกุล</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">Username / HN</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">บทบาท</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">สถานะ</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">เข้าสู่ระบบล่าสุด</th>
+                <th className="px-6 py-4 font-semibold text-right whitespace-nowrap">การจัดการ</th>
               </tr>
             </thead>
             <tbody className="bg-white hover:bg-emerald-50/40 divide-y divide-slate-100 text-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500 whitespace-nowrap">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-600" />
                     <span>กำลังโหลดรายชื่อผู้ใช้...</span>
                   </td>
                 </tr>
               ) : filteredStaff.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500 whitespace-nowrap">
                     ไม่พบข้อมูลผู้ใช้ที่ตรงตามเงื่อนไข
                   </td>
                 </tr>
               ) : (
                 filteredStaff.map((user) => (
                   <tr key={user.id} className="hover:bg-emerald-50/40 transition">
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-bold">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-bold shrink-0">
                           {user.full_name?.charAt(0) || 'U'}
                         </div>
                         <div>
-                          <div className="font-semibold text-slate-900">{user.full_name?.replace(/\s*-\s*$/, '').trim() || user.full_name}</div>
-                          {user.phone && <div className="text-xs text-slate-500 font-mono">{user.phone}</div>}
+                          <div className="font-semibold text-slate-900 whitespace-nowrap">{user.full_name?.replace(/\s*-\s*$/, '').trim() || user.full_name}</div>
+                          {user.phone && <div className="text-xs text-slate-500 font-mono whitespace-nowrap">{user.phone}</div>}
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs text-blue-700 font-bold">@{user.username}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 font-mono text-xs text-blue-700 font-bold whitespace-nowrap">@{user.username}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
                       {user.role === 'admin' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-                          <Shield className="w-3 h-3" />
+                        <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                          <Shield className="w-3.5 h-3.5 shrink-0" />
                           <span>ผู้อำนวยการ (Admin)</span>
                         </span>
                       ) : user.role === 'pt' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <UserCheck className="w-3 h-3" />
+                        <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <UserCheck className="w-3.5 h-3.5 shrink-0" />
                           <span>นักกายภาพบำบัด (PT)</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                          <Users className="w-3 h-3" />
+                        <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          <Users className="w-3.5 h-3.5 shrink-0" />
                           <span>คนไข้ (Patient)</span>
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       {user.status === 'active' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>ปกติ</span>
+                        <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>● ปกติ</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                          <AlertTriangle className="w-3 h-3 text-rose-600" />
+                        <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                           <span>ระงับการใช้งาน</span>
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-600">
+                    <td className="px-6 py-4 text-xs text-slate-600 whitespace-nowrap">
                       {user.last_login_at
                         ? new Date(user.last_login_at).toLocaleString('th-TH')
                         : 'ยังไม่เคยเข้าสู่ระบบ'}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-2">
                         {(user.role as string) !== 'patient' && (
                           <button

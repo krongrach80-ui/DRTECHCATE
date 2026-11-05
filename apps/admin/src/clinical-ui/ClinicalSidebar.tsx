@@ -17,6 +17,8 @@ import {
   ClipboardList,
   Dumbbell,
   User,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { hospitalTheme } from '../../../../packages/hospital-ui-kit/src/index.js';
 
@@ -42,6 +44,9 @@ interface ClinicalSidebarProps {
   onReturnToKiosk?: () => void;
   isPtMode?: boolean;
   isLoggingOut?: boolean;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  onOpenMinigames?: () => void;
 }
 
 export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
@@ -52,6 +57,9 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
   onReturnToKiosk,
   isPtMode = false,
   isLoggingOut = false,
+  isCollapsed = false,
+  onToggleCollapse,
+  onOpenMinigames,
 }) => {
   // Master Prompt v3 Spec 8.1: Admin 6 Main Windows
   const adminMenus: Array<{ id: ClinicalMenuId; label: string; icon: React.ReactNode; badge?: number }> = [
@@ -131,27 +139,44 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
       style={{
         background: 'linear-gradient(180deg, #0A2540 0%, #0D3150 50%, #0A2E36 100%)',
       }}
-      className="w-72 h-screen flex flex-col justify-between text-slate-100 shadow-2xl select-none shrink-0 z-30 font-sans border-r border-blue-900/30"
+      className={`${
+        isCollapsed ? 'w-20' : 'w-72'
+      } h-screen flex flex-col justify-between text-slate-100 shadow-2xl select-none shrink-0 z-30 font-sans border-r border-blue-900/30 transition-all duration-300`}
     >
       {/* Brand Logo Header */}
       <div>
-        <div className="p-5 border-b border-blue-900/40 flex items-center gap-3.5 bg-black/15">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-500 to-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-950/60 shrink-0">
-            <HeartPulse className="w-6 h-6 animate-pulse" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold tracking-normal text-white flex items-center gap-1.5 truncate">
-              <span>Dr.Tech.Care</span>
-            </h1>
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 mt-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>{isPtMode ? 'นักกายภาพบำบัด (PT)' : 'ผู้อำนวยการ (Admin)'}</span>
+        <div className={`p-4 border-b border-blue-900/40 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} bg-black/15`}>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-950/60 shrink-0">
+              <HeartPulse className="w-5 h-5 animate-pulse" />
             </div>
+            {!isCollapsed && (
+              <div className="min-w-0">
+                <h1 className="text-base font-bold tracking-normal text-white flex items-center gap-1.5 truncate">
+                  <span>Dr.Tech.Care</span>
+                </h1>
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 mt-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 whitespace-nowrap">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>{isPtMode ? 'นักกายภาพ (PT)' : 'ผู้อำนวยการ (Admin)'}</span>
+                </div>
+              </div>
+            )}
           </div>
+
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className={`p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition active:scale-95 cursor-pointer shrink-0 ${isCollapsed ? 'mt-2' : ''}`}
+              title={isCollapsed ? 'ขยายแถบเมนู (Expand Sidebar)' : 'ย่อแถบเมนู (Collapse Sidebar)'}
+            >
+              {isCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            </button>
+          )}
         </div>
 
         {/* Clinical Navigation Menu Items */}
-        <nav className="p-3.5 space-y-2">
+        <nav className={`p-2.5 ${isCollapsed ? 'space-y-3' : 'space-y-1.5'}`}>
           {visibleMenus.map((menu) => {
             const isActive = activeTab === menu.id;
 
@@ -160,12 +185,13 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
                 key={menu.id}
                 type="button"
                 onClick={() => onSelectTab(menu.id)}
+                title={isCollapsed ? menu.label : undefined}
                 style={{
                   transition: hospitalTheme.animation.springTransition,
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-[13.5px] font-semibold tracking-wide text-left transition-all duration-200 cursor-pointer relative overflow-hidden ${
+                className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0' : 'justify-between px-3.5'} py-2.5 rounded-2xl text-[13px] font-semibold tracking-wide text-left transition-all duration-200 cursor-pointer relative overflow-hidden ${
                   isActive
-                    ? 'bg-gradient-to-r from-emerald-500 to-blue-600 text-white font-semibold shadow-md shadow-emerald-950/30 border border-white/20 translate-x-1'
+                    ? 'bg-gradient-to-r from-emerald-500 to-blue-600 text-white font-semibold shadow-md shadow-emerald-950/30 border border-white/20 translate-x-0.5'
                     : 'text-slate-200 hover:bg-white/10 hover:text-white border border-transparent'
                 }`}
               >
@@ -174,7 +200,7 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
                   <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-white rounded-r-full shadow-sm" />
                 )}
 
-                <div className="flex items-center gap-3 min-w-0">
+                <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} min-w-0`}>
                   <div
                     className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                       isActive
@@ -184,15 +210,20 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
                   >
                     {menu.icon}
                   </div>
-                  <span className={`tracking-normal truncate ${isActive ? 'text-white font-bold' : 'text-slate-200 font-medium'}`}>
-                    {menu.label}
-                  </span>
+                  {!isCollapsed && (
+                    <span className={`tracking-normal truncate whitespace-nowrap ${isActive ? 'text-white font-bold' : 'text-slate-200 font-medium'}`}>
+                      {menu.label}
+                    </span>
+                  )}
                 </div>
 
-                {menu.badge !== undefined && (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-400 text-slate-950 shrink-0 shadow-sm animate-pulse ml-2">
+                {!isCollapsed && menu.badge !== undefined && (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-400 text-slate-950 shrink-0 shadow-sm animate-pulse ml-2 whitespace-nowrap">
                     {menu.badge}
                   </span>
+                )}
+                {isCollapsed && menu.badge !== undefined && (
+                  <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-400 border border-slate-900 animate-pulse" />
                 )}
               </button>
             );
@@ -201,15 +232,31 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
       </div>
 
       {/* Bottom Footer Controls */}
-      <div className="p-4 border-t border-blue-900/40 space-y-2.5 bg-[#0A2540]/60 backdrop-blur-md">
+      <div className={`p-3 border-t border-blue-900/40 space-y-2 bg-[#0A2540]/60 backdrop-blur-md ${isCollapsed ? 'flex flex-col items-center' : ''}`}>
+        {/* Docked Physical Cards Minigame Button */}
+        {onOpenMinigames && (
+          <button
+            type="button"
+            id="sidebar-docked-minigame-btn"
+            onClick={onOpenMinigames}
+            title="เปิดแบบฝึกหัดการ์ดกายภาพ (10 ข้อ/รอบ)"
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2' : 'justify-center gap-2 py-2 px-3'} rounded-xl bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 border border-white/20 text-white font-bold text-xs shadow-md transition active:scale-95 cursor-pointer whitespace-nowrap`}
+          >
+            <span className="text-sm">🎮</span>
+            {!isCollapsed && <span>การ์ดกายภาพ (10 ข้อ)</span>}
+          </button>
+        )}
+
         {/* Cloud DB Status Box */}
-        <div className="px-3.5 py-2.5 rounded-xl bg-blue-950/40 border border-blue-400/20 flex items-center justify-between text-xs shadow-sm">
-          <span className="text-slate-300 font-medium flex items-center gap-1.5">
-            <span>ฐานข้อมูล: Cloud</span>
-          </span>
-          <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold font-mono">
+        <div className={`w-full px-2.5 py-2 rounded-xl bg-blue-950/40 border border-blue-400/20 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} text-xs shadow-sm`}>
+          {!isCollapsed && (
+            <span className="text-slate-300 font-medium flex items-center gap-1.5 whitespace-nowrap">
+              <span>ฐานข้อมูล: Cloud</span>
+            </span>
+          )}
+          <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold font-mono whitespace-nowrap" title="Cloud DB: ปกติ">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>● ปกติ</span>
+            {!isCollapsed && <span>● ปกติ</span>}
           </span>
         </div>
 
@@ -218,19 +265,21 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
           <button
             type="button"
             onClick={onReturnToKiosk}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 hover:text-white text-xs font-semibold shadow-sm transition active:scale-95 cursor-pointer"
+            title="กลับหน้าตู้ Kiosk"
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2' : 'justify-center gap-2 py-2 px-3'} rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 hover:text-white text-xs font-semibold shadow-sm transition active:scale-95 cursor-pointer whitespace-nowrap`}
           >
-            <Monitor className="w-4 h-4 text-emerald-300" />
-            <span>← กลับหน้าตู้ Kiosk</span>
+            <Monitor className="w-4 h-4 text-emerald-300 shrink-0" />
+            {!isCollapsed && <span>← หน้าตู้ Kiosk</span>}
           </button>
         )}
 
-        {/* Logout Button: Clean outlined surface instead of muddy brown */}
+        {/* Logout Button */}
         <button
           type="button"
           onClick={onLogout}
           disabled={isLoggingOut}
-          className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold shadow-sm transition active:scale-95 ${
+          title="ออกจากระบบ"
+          className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2' : 'justify-center gap-2 py-2 px-3'} rounded-xl border text-xs font-bold shadow-sm transition active:scale-95 whitespace-nowrap ${
             isLoggingOut
               ? 'bg-rose-500/10 border-rose-400/20 text-rose-300/50 cursor-not-allowed'
               : 'bg-white/5 hover:bg-rose-500/20 border-rose-400/30 text-rose-200 hover:text-white cursor-pointer'
@@ -238,13 +287,13 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
         >
           {isLoggingOut ? (
             <>
-              <div className="w-3.5 h-3.5 border-2 border-rose-300/30 border-t-rose-300 rounded-full animate-spin" />
-              <span>กำลังออกจากระบบ...</span>
+              <div className="w-3.5 h-3.5 border-2 border-rose-300/30 border-t-rose-300 rounded-full animate-spin shrink-0" />
+              {!isCollapsed && <span>กำลังออก...</span>}
             </>
           ) : (
             <>
-              <LogOut className="w-4 h-4 text-rose-300" />
-              <span>ออกจากระบบ</span>
+              <LogOut className="w-4 h-4 text-rose-300 shrink-0" />
+              {!isCollapsed && <span>ออกจากระบบ</span>}
             </>
           )}
         </button>

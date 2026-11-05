@@ -378,10 +378,10 @@ export const PatientsView: React.FC = () => {
           </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition shadow-lg shadow-teal-950/40"
+            className="whitespace-nowrap shrink-0 px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-95"
           >
-            <UserPlus className="w-4 h-4" />
-            <span>ลงทะเบียนคนไข้ใหม่</span>
+            <UserPlus className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">+ ลงทะเบียนคนไข้ใหม่</span>
           </button>
         </div>
       </div>
@@ -453,25 +453,25 @@ export const PatientsView: React.FC = () => {
           <table className="w-full text-left text-sm text-slate-700">
             <thead className="bg-blue-50/80 text-blue-950 font-semibold text-xs uppercase tracking-wider border-b border-blue-100">
               <tr>
-                <th className="px-6 py-4 font-semibold">รหัส HN</th>
-                <th className="px-6 py-4 font-semibold">ชื่อ - นามสกุล</th>
-                <th className="px-6 py-4 font-semibold">อายุ / เพศ</th>
-                <th className="px-6 py-4 font-semibold">เบอร์โทร</th>
-                <th className="px-6 py-4 font-semibold">สถานะชีวมาตร</th>
-                <th className="px-6 py-4 font-semibold text-right">รายละเอียด</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">รหัส HN</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">ชื่อ - นามสกุล</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">อายุ / เพศ</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">เบอร์โทร</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">สถานะชีวมาตร</th>
+                <th className="px-6 py-4 font-semibold text-right whitespace-nowrap">รายละเอียด</th>
               </tr>
             </thead>
             <tbody className="bg-white hover:bg-emerald-50/40 divide-y divide-slate-100 text-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500 whitespace-nowrap">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-600" />
                     <span>กำลังโหลดรายชื่อคนไข้...</span>
                   </td>
                 </tr>
               ) : filteredPatients.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500 whitespace-nowrap">
                     ไม่พบข้อมูลคนไข้
                   </td>
                 </tr>
@@ -482,51 +482,51 @@ export const PatientsView: React.FC = () => {
                     onClick={() => openPatientDetail(patient)}
                     className="hover:bg-emerald-50/40 cursor-pointer transition"
                   >
-                    <td className="px-6 py-4">
-                      <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-lg font-mono font-bold text-xs inline-block">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="whitespace-nowrap inline-block px-3 py-1 rounded-lg bg-blue-50 text-blue-700 font-mono font-bold text-xs border border-blue-200">
                         {patient.hn}
                       </span>
                     </td>
-                    <td className="px-6 py-4 font-medium text-slate-900">
+                    <td className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">
                       {formatPatientName(patient.first_name, patient.last_name)}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-600">
+                    <td className="px-6 py-4 text-xs text-slate-700 font-medium whitespace-nowrap">
                       {patient.age} ปี / {patient.sex === 'male' ? 'ชาย' : patient.sex === 'female' ? 'หญิง' : 'อื่นๆ'}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-600 font-mono">
+                    <td className="px-6 py-4 text-xs text-slate-600 font-mono whitespace-nowrap">
                       {patient.phone || '-'}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       {patient.registration_status === 'active' || patient.registration_status === 'face_enrolled' ? (
-                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-xs font-semibold">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>ลงทะเบียนหน้าแล้ว</span>
+                        <span className="whitespace-nowrap inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>● ลงทะเบียนหน้าแล้ว</span>
                         </span>
                       ) : patient.registration_status === 'awaiting_face' ? (
-                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full text-xs font-semibold">
-                          <Clock className="w-3 h-3 text-amber-600" />
+                        <span className="whitespace-nowrap inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1 rounded-full text-xs font-bold">
+                          <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                           <span>รอสแกนหน้า 10 เฟรม</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full text-xs font-semibold">
-                          <Archive className="w-3 h-3 text-slate-500" />
+                        <span className="whitespace-nowrap inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 border border-slate-200 px-3 py-1 rounded-full text-xs font-semibold">
+                          <Archive className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                           <span>ปิดแฟ้ม (Archived)</span>
                         </span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => {
                             setPrescriptionPatientId(patient.id);
                             setIsPrescriptionModalOpen(true);
                           }}
-                          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                          className="whitespace-nowrap shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm hover:shadow-md cursor-pointer active:scale-95"
                           title="จัดคอร์สออกกำลังกาย / แก้ไขท่าฝึกเฉพาะบุคคล"
                         >
-                          <Calendar className="w-3.5 h-3.5" />
-                          <span>จัดคอร์ส/สั่งจ่าย</span>
+                          <Calendar className="w-3.5 h-3.5 shrink-0" />
+                          <span className="whitespace-nowrap">จัดคอร์ส/สั่งจ่าย</span>
                         </button>
                         <button
                           type="button"
