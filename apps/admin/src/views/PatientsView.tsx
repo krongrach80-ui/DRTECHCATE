@@ -26,6 +26,7 @@ import {
 import { removePatientFromLocalCache } from '../../../../packages/face-client/src/index.js';
 import { SmartPendingPatientsBanner } from '../smart-portal/index.js';
 import { PatientCoursePrescriptionModal } from '../clinical-ui/PatientCoursePrescriptionModal';
+import { NewPatientRegistrationModal } from '../clinical-ui/NewPatientRegistrationModal';
 
 const DEMO_PATIENTS: PatientRecord[] = [];
 
@@ -55,15 +56,6 @@ export const PatientsView: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState<boolean>(false);
   const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | undefined>(undefined);
-  const [createFormData, setCreateFormData] = useState({
-    first_name: '',
-    last_name: '',
-    age: 30,
-    sex: 'male' as 'male' | 'female' | 'other',
-    phone: '',
-    injury: '',
-    responsible_pt_id: '',
-  });
 
   // Action messages
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -134,10 +126,6 @@ export const PatientsView: React.FC = () => {
       }
       const list = Array.from(combined.values());
       setPtsList(list);
-      setCreateFormData((prev) => ({
-        ...prev,
-        responsible_pt_id: prev.responsible_pt_id || (list.length > 0 ? list[0].id : ''),
-      }));
     } catch {
       // non-blocking
     }
@@ -201,34 +189,7 @@ export const PatientsView: React.FC = () => {
     setErrorMsg(msg || defaultMessage);
   };
 
-  const handleCreatePatient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setActionLoading(true);
-      setErrorMsg(null);
-      const created = await defaultApiClient.patients.create({
-        ...createFormData,
-        responsible_pt_id: createFormData.responsible_pt_id || undefined,
-      });
-      setSuccessMsg(`ลงทะเบียนคนไข้ใหม่สำเร็จ! ได้รับรหัส HN: ${created.hn}`);
-      setIsCreateModalOpen(false);
-      window.dispatchEvent(new CustomEvent('patient-created', { detail: { id: created.id } }));
-      setCreateFormData({
-        first_name: '',
-        last_name: '',
-        age: 30,
-        sex: 'male',
-        phone: '',
-        injury: '',
-        responsible_pt_id: ptsList.length > 0 ? ptsList[0].id : '',
-      });
-      await fetchPatients();
-    } catch (err: unknown) {
-      handlePatientError(err, 'เกิดข้อผิดพลาดในการลงทะเบียนคนไข้');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+
 
   const handleSendToKiosk = async (kioskId = 'kiosk-01') => {
     if (!selectedPatient) return;
@@ -911,150 +872,24 @@ export const PatientsView: React.FC = () => {
         </div>
       )}
 
-      {/* Create Patient Modal */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
-          <div className="bg-white border border-blue-100 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl p-6 space-y-4 text-slate-800">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-emerald-600" />
-                <span>ลงทะเบียนคนไข้ใหม่ (ออกเลข HN จาก Sequence)</span>
-              </h3>
-              <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreatePatient} className="space-y-4">
-              {errorMsg && (
-                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs sm:text-sm flex items-center justify-between">
-                  <span>{errorMsg}</span>
-                  <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-500 hover:text-rose-700 ml-2">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่อจริง *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="เช่น ธนกฤต"
-                    value={createFormData.first_name}
-                    onChange={(e) => setCreateFormData({ ...createFormData, first_name: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">นามสกุล *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="เช่น ใจดี"
-                    value={createFormData.last_name}
-                    onChange={(e) => setCreateFormData({ ...createFormData, last_name: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">อายุ (ปี) *</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={120}
-                    required
-                    value={createFormData.age}
-                    onChange={(e) =>
-                      setCreateFormData({ ...createFormData, age: parseInt(e.target.value, 10) })
-                    }
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">เพศ *</label>
-                  <select
-                    value={createFormData.sex}
-                    onChange={(e) => setCreateFormData({ ...createFormData, sex: e.target.value as 'male' | 'female' | 'other' })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="male">ชาย</option>
-                    <option value="female">หญิง</option>
-                    <option value="other">อื่นๆ</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
-                <input
-                  type="tel"
-                  placeholder="เช่น 0812345678"
-                  value={createFormData.phone}
-                  onChange={(e) => setCreateFormData({ ...createFormData, phone: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  อาการบาดเจ็บ / วินิจฉัยเบื้องต้น
-                </label>
-                <input
-                  type="text"
-                  placeholder="เช่น ปวดหลังส่วนล่างเรื้อรัง (Low back pain)"
-                  value={createFormData.injury}
-                  onChange={(e) => setCreateFormData({ ...createFormData, injury: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  มอบหมายให้นักกายภาพบำบัด (PT)
-                </label>
-                <select
-                  value={createFormData.responsible_pt_id}
-                  onChange={(e) =>
-                    setCreateFormData({ ...createFormData, responsible_pt_id: e.target.value })
-                  }
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">เลือกนักกายภาพบำบัดผู้รับผิดชอบ...</option>
-                  {ptsList.map((pt) => (
-                    <option key={pt.id} value={pt.id}>
-                      {pt.full_name} (@{pt.username})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-medium transition cursor-pointer"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold shadow-sm transition disabled:opacity-50 cursor-pointer"
-                >
-                  บันทึกคนไข้
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* 3-Step New Patient Registration Modal (Reused Staff-Assisted Modal) */}
+      <NewPatientRegistrationModal
+        isOpen={isCreateModalOpen}
+        mode="admin"
+        staffUser={defaultApiClient.getUserProfile() || undefined}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={async (newPatientId, action) => {
+          setIsCreateModalOpen(false);
+          await fetchPatients();
+          window.dispatchEvent(new CustomEvent('patient-created', { detail: { id: newPatientId } }));
+          if (action === 'course') {
+            setPrescriptionPatientId(newPatientId);
+            setIsPrescriptionModalOpen(true);
+          } else {
+            setSuccessMsg('ลงทะเบียนคนไข้ใหม่และบันทึกใบหน้าชีวมิติ 10 เฟรมสำเร็จเรียบร้อย');
+          }
+        }}
+      />
 
       {/* Patient Course Prescription Modal */}
       <PatientCoursePrescriptionModal

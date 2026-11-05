@@ -53,6 +53,7 @@ interface NewPatientRegistrationModalProps {
   onSuccess: (newPatientId: string, action?: 'course' | 'list') => void;
   staffUser?: any;
   initialBiometrics?: any;
+  mode?: 'kiosk' | 'admin';
 }
 
 export interface EnrollmentPoseSpec {
@@ -317,7 +318,9 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   onSuccess,
   staffUser,
   initialBiometrics,
+  mode = 'kiosk',
 }) => {
+  const effectiveStaffUser = staffUser || defaultApiClient.getUserProfile() || undefined;
   const [lang, setLang] = useState<'th' | 'en' | 'cn'>('th');
   const t = I18N[lang];
 
@@ -604,7 +607,18 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   useEffect(() => {
     if (isOpen) {
       const randomHnNum = Math.floor(1000 + Math.random() * 9000);
-      setHn(`P-${randomHnNum}`);
+      const candidateHn = `P-${randomHnNum}`;
+      setHn(candidateHn);
+      // Pre-check duplicate to ensure initial randomized HN is clean
+      defaultApiClient.smartOnboarding
+        .checkDuplicate({ hn: candidateHn })
+        .then((res) => {
+          if (res.duplicate_hn) {
+            setHn(`P-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-4)}`);
+          }
+        })
+        .catch(() => {});
+
       setStep(1);
       setCreatedPatientId(null);
       createdPatientIdRef.current = null;
@@ -926,8 +940,8 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
         emergency_contact_phone: emergencyContactPhone.trim() || undefined,
         pdpa_consent: consentPdpa,
         pdpa_consented_at: new Date().toISOString(),
-        registered_by_staff_id: staffUser?.id || undefined,
-        registered_by_staff_name: staffUser?.full_name || undefined,
+        registered_by_staff_id: effectiveStaffUser?.id || undefined,
+        registered_by_staff_name: effectiveStaffUser?.full_name || effectiveStaffUser?.username || undefined,
         pin: pin || '1234',
         responsible_pt_id: responsiblePtId || undefined,
         frames: sanitizedVectors,
@@ -951,6 +965,11 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       if (regRes.hn) {
         setHn(regRes.hn);
       }
+      window.dispatchEvent(
+        new CustomEvent('patient-created', {
+          detail: { id: targetPatientId, hn: regRes.hn || hn },
+        })
+      );
 
       // Secondary face enrollment sync (zero raw image persistence)
       try {
@@ -1237,9 +1256,18 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                       </label>
                       <button
                         type="button"
-                        onClick={() => {
-                          const newHn = `P-${Math.floor(1000 + Math.random() * 9000)}`;
-                          setHn(newHn);
+                        onClick={async () => {
+                          const candidate = `P-${Math.floor(1000 + Math.random() * 9000)}`;
+                          try {
+                            const res = await defaultApiClient.smartOnboarding.checkDuplicate({ hn: candidate });
+                            if (res.duplicate_hn) {
+                              setHn(`P-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-4)}`);
+                            } else {
+                              setHn(candidate);
+                            }
+                          } catch {
+                            setHn(candidate);
+                          }
                           setErrorMsg(null);
                           setDupCheckStatus((prev) => ({ ...prev, duplicateHn: false }));
                         }}
@@ -1604,11 +1632,11 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                 </div>
 
                 {/* Staff Auditor Display Card */}
-                {staffUser && (
+                {effectiveStaffUser && (
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-center justify-between">
                     <span className="font-semibold text-slate-700">{t.staffAuditLabel}</span>
                     <span className="font-mono text-emerald-700 font-bold">
-                      {staffUser.full_name || staffUser.username} ({staffUser.role?.toUpperCase() || 'STAFF'})
+                      {effectiveStaffUser.full_name || effectiveStaffUser.username} ({effectiveStaffUser.role?.toUpperCase() || 'STAFF'})
                     </span>
                   </div>
                 )}

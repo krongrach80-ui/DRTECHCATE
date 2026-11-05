@@ -291,8 +291,11 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
       {/* 3-Step New Patient Registration Modal */}
       <NewPatientRegistrationModal
         isOpen={isNewPatientModalOpen}
+        mode="admin"
+        staffUser={currentUser}
         onClose={() => setIsNewPatientModalOpen(false)}
         onSuccess={(newPatientId, action) => {
+          setIsNewPatientModalOpen(false);
           if (action === 'course') {
             setPrescriptionPatientId(newPatientId);
             setIsPrescriptionModalOpen(true);
