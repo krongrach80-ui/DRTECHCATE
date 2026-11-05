@@ -33,6 +33,7 @@ import {
   Check,
   User,
   CalendarCheck,
+  Lock,
 } from 'lucide-react';
 import {
   defaultApiClient,
@@ -117,6 +118,18 @@ const I18N = {
     kioskHomeBtn: '🏠 เสร็จสิ้น / กลับหน้าหลัก Kiosk',
     totalDays: 'รวมวันฝึกทั้งหมด',
     daysUnit: 'วัน',
+    modeBLockedByA: 'มีการจัดวันแบบ A อยู่ ต้องยกเลิกการจัดแบบ A ก่อน จึงจะจัดแบบ B ได้',
+    modeALockedByB: 'มีการจัดวันแบบ B อยู่ ต้องยกเลิกการจัดแบบ B ก่อน จึงจะจัดแบบ A ได้',
+    cancelModeABtn: '🗑️ ยกเลิกการจัดวันแบบ A',
+    cancelModeBBtn: '🗑️ ยกเลิกการจัดวันแบบ B',
+    confirmClearModeATitle: 'ยืนยันยกเลิกการจัดวันแบบ A',
+    confirmClearModeBTitle: 'ยืนยันยกเลิกการจัดวันแบบ B',
+    confirmClearModeA: 'ล้างข้อมูลการจัดวันแบบ A ทั้งหมดใช่หรือไม่?',
+    confirmClearModeB: 'ล้างข้อมูลการจัดวันแบบ B ทั้งหมดใช่หรือไม่?',
+    noScheduleDaysError: 'กรุณาจัดวันฝึกอย่างน้อย 1 วัน',
+    clearModePrompt: 'การล้างข้อมูลนี้จะมีผลในแบบฟอร์มทันที และจะปลดล็อกอีกโหมดหนึ่ง (ข้อมูลในฐานข้อมูลจะยังไม่เปลี่ยนแปลงจนกว่าจะกดบันทึก)',
+    btnConfirmClear: 'ยืนยันล้างข้อมูล',
+    btnCancel: 'ยกเลิก',
   },
   en: {
     modalTitle: 'Prescribe Patient-Specific Exercise Course',
@@ -162,6 +175,18 @@ const I18N = {
     kioskHomeBtn: '🏠 Done / Return to Kiosk Home',
     totalDays: 'Total Training Days',
     daysUnit: 'days',
+    modeBLockedByA: 'Mode A schedule is active. Please clear Mode A schedule before switching to Mode B.',
+    modeALockedByB: 'Mode B schedule is active. Please clear Mode B schedule before switching to Mode A.',
+    cancelModeABtn: '🗑️ Clear Mode A Schedule',
+    cancelModeBBtn: '🗑️ Clear Mode B Schedule',
+    confirmClearModeATitle: 'Confirm Clear Mode A',
+    confirmClearModeBTitle: 'Confirm Clear Mode B',
+    confirmClearModeA: 'Are you sure you want to clear all Mode A schedule data?',
+    confirmClearModeB: 'Are you sure you want to clear all Mode B schedule data?',
+    noScheduleDaysError: 'Please schedule at least 1 training day',
+    clearModePrompt: 'This will reset the schedule in this form and unlock the other mode. Database records will not change until you click Save.',
+    btnConfirmClear: 'Confirm Clear',
+    btnCancel: 'Cancel',
   },
   cn: {
     modalTitle: '为患者定制康复训练方案',
@@ -207,6 +232,18 @@ const I18N = {
     kioskHomeBtn: '🏠 完成 / 返回Kiosk主页',
     totalDays: '训练总天数',
     daysUnit: '天',
+    modeBLockedByA: '已配置模式 A 排期。切换至模式 B 前请先取消模式 A。',
+    modeALockedByB: '已配置模式 B 排期。切换至模式 A 前请先取消模式 B。',
+    cancelModeABtn: '🗑️ 取消模式 A 排期',
+    cancelModeBBtn: '🗑️ 取消模式 B 排期',
+    confirmClearModeATitle: '确认取消模式 A',
+    confirmClearModeBTitle: '确认取消模式 B',
+    confirmClearModeA: '确定要清除所有模式 A 的排期数据吗？',
+    confirmClearModeB: '确定要清除所有模式 B 的排期数据吗？',
+    noScheduleDaysError: '请至少安排 1 天训练日',
+    clearModePrompt: '重置仅在当前表单生效并解锁另一模式，直到点击保存前数据库不会变更。',
+    btnConfirmClear: '确认清除',
+    btnCancel: '取消',
   },
 };
 
@@ -392,22 +429,42 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
   const [activeCatalogFilter, setActiveCatalogFilter] = useState<'all' | 'recommended' | 'upper' | 'lower'>('all');
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
 
-  // Scheduling state
-  const [scheduleMode, setScheduleMode] = useState<'modeA' | 'modeB'>('modeA');
-  const [startDate, setStartDate] = useState(() => {
+  // Scheduling state: Mode A and Mode B completely separated
+  const defaultStart = useMemo(() => {
     return preselectedDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
-  });
-  const [endDate, setEndDate] = useState(() => {
+  }, [preselectedDate]);
+  const defaultEnd = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 30);
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(d);
+  }, []);
+
+  const [scheduleMode, setScheduleMode] = useState<'modeA' | 'modeB'>('modeA');
+  const [modeAStartDate, setModeAStartDate] = useState<string>(defaultStart);
+  const [modeAEndDate, setModeAEndDate] = useState<string>(defaultEnd);
+  const [modeASelectedDays, setModeASelectedDays] = useState<string[]>([]);
+  const [modeBScheduledDates, setModeBScheduledDates] = useState<string[]>(() => {
+    return preselectedDate ? [preselectedDate] : [];
   });
-  const [selectedDays, setSelectedDays] = useState<string[]>(['Mon', 'Wed', 'Fri']);
-  const [scheduledDates, setScheduledDates] = useState<string[]>([]);
+
+  const [scheduleLockWarning, setScheduleLockWarning] = useState<string | null>(null);
+  const [confirmClearModal, setConfirmClearModal] = useState<'modeA' | 'modeB' | null>(null);
+
   const [timeSlot, setTimeSlot] = useState('09:00 - 10:00');
   const [assignedKioskId, setAssignedKioskId] = useState('kiosk-01');
   const [includeMinigame, setIncludeMinigame] = useState(true);
   const [allowedStartHand, setAllowedStartHand] = useState<'both' | 'left' | 'right'>('both');
+
+  // Definition of "has schedule data"
+  const hasModeAData = useMemo(() => {
+    const hasDays = modeASelectedDays.length > 0;
+    const hasCustomDates = modeAStartDate !== defaultStart || modeAEndDate !== defaultEnd;
+    return hasDays || hasCustomDates;
+  }, [modeASelectedDays.length, modeAStartDate, modeAEndDate, defaultStart, defaultEnd]);
+
+  const hasModeBData = useMemo(() => {
+    return modeBScheduledDates.length > 0;
+  }, [modeBScheduledDates.length]);
 
   // Interactive Calendar View Month/Year
   const [calendarViewDate, setCalendarViewDate] = useState(() => new Date());
@@ -489,20 +546,41 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
         const sched = res?.data?.schedule || (selectedPatient as any).schedule || (selectedPatient as any).history?.schedule;
 
         if (sched) {
-          if (sched.startDate || sched.start_date) {
-            setStartDate((sched.startDate || sched.start_date).slice(0, 10));
+          const sMode = sched.schedule_mode || sched.scheduleMode;
+          const sDates: string[] = Array.isArray(sched.scheduled_dates || sched.scheduledDates)
+            ? (sched.scheduled_dates || sched.scheduledDates)
+            : [];
+          const sDays: string[] = Array.isArray(sched.days_of_week || sched.daysOfWeek)
+            ? (sched.days_of_week || sched.daysOfWeek)
+            : [];
+          const sStart = (sched.startDate || sched.start_date || '').slice(0, 10);
+          const sEnd = (sched.endDate || sched.end_date || '').slice(0, 10);
+
+          // Decision A3: If start === end or has explicit scheduled_dates, open Mode B; else Mode A
+          const isModeB =
+            sMode === 'modeB' ||
+            (sDates.length > 0 && sDays.length === 0) ||
+            (Boolean(sStart) && Boolean(sEnd) && sStart === sEnd && sDates.length > 0);
+
+          if (isModeB) {
+            setScheduleMode('modeB');
+            setModeBScheduledDates(sDates.length > 0 ? sDates : sStart ? [sStart] : []);
+            setModeASelectedDays([]);
+            setModeAStartDate(defaultStart);
+            setModeAEndDate(defaultEnd);
+          } else {
+            setScheduleMode('modeA');
+            setModeAStartDate(sStart || defaultStart);
+            setModeAEndDate(sEnd || defaultEnd);
+            setModeASelectedDays(sDays.length > 0 ? sDays : ['Mon', 'Wed', 'Fri']);
+            setModeBScheduledDates([]);
           }
-          if (sched.endDate || sched.end_date) {
-            setEndDate((sched.endDate || sched.end_date).slice(0, 10));
-          }
-          if (Array.isArray(sched.daysOfWeek || sched.days_of_week)) {
-            setSelectedDays(sched.daysOfWeek || sched.days_of_week);
-          }
-          if (Array.isArray(sched.scheduled_dates || sched.scheduledDates)) {
-            setScheduledDates(sched.scheduled_dates || sched.scheduledDates);
-          }
+
           if (sched.timeSlot || sched.time_slot) {
             setTimeSlot(sched.timeSlot || sched.time_slot);
+          }
+          if (sched.assigned_kiosk_id || sched.kioskId) {
+            setAssignedKioskId(sched.assigned_kiosk_id || sched.kioskId);
           }
           if (sched.include_minigame !== undefined) {
             setIncludeMinigame(Boolean(sched.include_minigame));
@@ -586,17 +664,25 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
     []
   );
 
-  // Sync scheduledDates whenever startDate, endDate, or selectedDays change in Mode A
-  useEffect(() => {
-    if (scheduleMode === 'modeA') {
-      const computed = computeDatesFromRangeAndDays(startDate, endDate, selectedDays);
-      setScheduledDates(computed);
-    }
-  }, [scheduleMode, startDate, endDate, selectedDays, computeDatesFromRangeAndDays]);
+  // Mode A computed training dates
+  const modeAComputedDates = useMemo(() => {
+    return computeDatesFromRangeAndDays(modeAStartDate, modeAEndDate, modeASelectedDays);
+  }, [modeAStartDate, modeAEndDate, modeASelectedDays, computeDatesFromRangeAndDays]);
 
-  // Toggle date in Mode B
+  // Toggle day in Mode A
+  const toggleModeADay = (dayKey: string) => {
+    setModeASelectedDays((prev) => {
+      if (prev.includes(dayKey)) {
+        return prev.filter((d) => d !== dayKey);
+      } else {
+        return [...prev, dayKey];
+      }
+    });
+  };
+
+  // Toggle date in Mode B (Completely isolated)
   const toggleDateInCalendar = (dateStr: string) => {
-    setScheduledDates((prev) => {
+    setModeBScheduledDates((prev) => {
       if (prev.includes(dateStr)) {
         return prev.filter((d) => d !== dateStr);
       } else {
@@ -604,6 +690,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
       }
     });
   };
+
+  // Active Total Days calculated strictly from the active mode
+  const activeTotalDays = scheduleMode === 'modeA' ? modeAComputedDates.length : modeBScheduledDates.length;
 
   // Add Exercise to Prescription
   const handleAddExercise = (catalogEx: any) => {
@@ -743,9 +832,36 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
       setErrorMsg('กรุณาเลือกท่าฝึกกายภาพอย่างน้อย 1 ท่าสำหรับคอร์สนี้');
       return;
     }
-    if (scheduledDates.length === 0) {
-      setErrorMsg('กรุณาระบุวันนัดฝึกกายภาพอย่างน้อย 1 วัน');
-      return;
+
+    let finalScheduleMode = scheduleMode;
+    let finalStartDate = '';
+    let finalEndDate = '';
+    let finalDaysOfWeek: string[] = [];
+    let finalScheduledDates: string[] = [];
+    let prescriptionScheduledDates: string[] = [];
+
+    if (scheduleMode === 'modeA') {
+      const computed = computeDatesFromRangeAndDays(modeAStartDate, modeAEndDate, modeASelectedDays);
+      if (computed.length === 0 || modeASelectedDays.length === 0) {
+        setErrorMsg(t.noScheduleDaysError);
+        return;
+      }
+      finalStartDate = modeAStartDate;
+      finalEndDate = modeAEndDate;
+      finalDaysOfWeek = modeASelectedDays;
+      finalScheduledDates = []; // Do NOT send Mode B dates
+      prescriptionScheduledDates = computed;
+    } else {
+      const cleanDates = Array.from(new Set(modeBScheduledDates)).sort();
+      if (cleanDates.length === 0) {
+        setErrorMsg(t.noScheduleDaysError);
+        return;
+      }
+      finalStartDate = cleanDates[0];
+      finalEndDate = cleanDates[cleanDates.length - 1];
+      finalDaysOfWeek = []; // Do NOT send Mode A days
+      finalScheduledDates = cleanDates;
+      prescriptionScheduledDates = cleanDates;
     }
 
     setIsSaving(true);
@@ -754,10 +870,6 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
     try {
       const targetPid = selectedPatient.id || selectedPatient.hn;
       const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
-
-      const cleanDates = Array.from(new Set(scheduledDates)).sort();
-      const finalStartDate = cleanDates[0] || startDate;
-      const finalEndDate = cleanDates[cleanDates.length - 1] || endDate;
 
       // 0. Save Authoritative Clinical Prescription Record
       try {
@@ -768,7 +880,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
           contraindications: selectedPatient.contraindications || undefined,
           start_date: finalStartDate,
           end_date: finalEndDate,
-          scheduled_dates: cleanDates,
+          scheduled_dates: prescriptionScheduledDates,
           exercises: prescribedExercises.map((e, idx) => ({
             exercise_id: e.exercise_id,
             exercise_name: e.name || e.name_th || 'ท่าฝึกกายภาพ',
@@ -786,14 +898,15 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
       const schedulePayload = {
         patient_id: targetPid,
+        schedule_mode: finalScheduleMode,
         start_date: finalStartDate,
         end_date: finalEndDate,
         startDate: finalStartDate,
         endDate: finalEndDate,
-        days_of_week: selectedDays,
-        daysOfWeek: selectedDays,
-        scheduled_dates: cleanDates,
-        scheduledDates: cleanDates,
+        days_of_week: finalDaysOfWeek,
+        daysOfWeek: finalDaysOfWeek,
+        scheduled_dates: finalScheduledDates,
+        scheduledDates: finalScheduledDates,
         time_slot: timeSlot,
         timeSlot: timeSlot,
         assigned_kiosk_id: assignedKioskId,
@@ -1380,24 +1493,88 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 <h3 className="text-sm sm:text-base font-bold text-slate-900">{t.scheduleSettingsTitle}</h3>
               </div>
 
-              {/* Mode Switcher */}
+              {/* Mode Switcher with Mutual Exclusivity Lock & Tooltips */}
               <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setScheduleMode('modeA')}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${scheduleMode === 'modeA' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
-                >
-                  {t.modeA}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScheduleMode('modeB')}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${scheduleMode === 'modeB' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
-                >
-                  {t.modeB}
-                </button>
+                {/* Mode A Button */}
+                <div className="relative group">
+                  <button
+                    type="button"
+                    disabled={hasModeBData}
+                    onClick={() => {
+                      if (hasModeBData) {
+                        setScheduleLockWarning(t.modeALockedByB);
+                        return;
+                      }
+                      setScheduleMode('modeA');
+                      setScheduleLockWarning(null);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                      hasModeBData
+                        ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
+                        : scheduleMode === 'modeA'
+                        ? 'bg-blue-600 text-white shadow-xs font-bold cursor-pointer'
+                        : 'text-slate-600 hover:text-slate-900 cursor-pointer'
+                    }`}
+                  >
+                    {hasModeBData && <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                    <span>{t.modeA}</span>
+                  </button>
+                  {hasModeBData && (
+                    <div className="hidden group-hover:block absolute left-0 top-full mt-1.5 z-30 w-72 p-2.5 bg-slate-900 text-white text-[11px] rounded-xl shadow-xl pointer-events-none leading-relaxed">
+                      {t.modeALockedByB}
+                    </div>
+                  )}
+                </div>
+
+                {/* Mode B Button */}
+                <div className="relative group">
+                  <button
+                    type="button"
+                    disabled={hasModeAData}
+                    onClick={() => {
+                      if (hasModeAData) {
+                        setScheduleLockWarning(t.modeBLockedByA);
+                        return;
+                      }
+                      setScheduleMode('modeB');
+                      setScheduleLockWarning(null);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                      hasModeAData
+                        ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
+                        : scheduleMode === 'modeB'
+                        ? 'bg-blue-600 text-white shadow-xs font-bold cursor-pointer'
+                        : 'text-slate-600 hover:text-slate-900 cursor-pointer'
+                    }`}
+                  >
+                    {hasModeAData && <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                    <span>{t.modeB}</span>
+                  </button>
+                  {hasModeAData && (
+                    <div className="hidden group-hover:block absolute right-0 top-full mt-1.5 z-30 w-72 p-2.5 bg-slate-900 text-white text-[11px] rounded-xl shadow-xl pointer-events-none leading-relaxed">
+                      {t.modeBLockedByA}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
+
+            {/* Lock Warning Banner */}
+            {scheduleLockWarning && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-medium flex items-center justify-between gap-2 animate-fade-in shadow-xs">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>{scheduleLockWarning}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScheduleLockWarning(null)}
+                  className="text-amber-700 hover:text-amber-950 text-xs font-bold px-2 py-0.5 rounded cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Mode A: Date Range + Days of Week */}
             {scheduleMode === 'modeA' && (
@@ -1407,8 +1584,11 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                     <label className="text-slate-600 font-medium block mb-1">{t.startDate}</label>
                     <input
                       type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
+                      value={modeAStartDate}
+                      onChange={(e) => {
+                        setModeAStartDate(e.target.value);
+                        setScheduleLockWarning(null);
+                      }}
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 font-mono"
                     />
                   </div>
@@ -1417,8 +1597,11 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                     <label className="text-slate-600 font-medium block mb-1">{t.endDate}</label>
                     <input
                       type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
+                      value={modeAEndDate}
+                      onChange={(e) => {
+                        setModeAEndDate(e.target.value);
+                        setScheduleLockWarning(null);
+                      }}
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 font-mono"
                     />
                   </div>
@@ -1453,20 +1636,22 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
                 {/* Days of Week Capsules */}
                 <div>
-                  <label className="text-slate-600 font-medium block mb-2 text-xs">{t.daysOfWeek}</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-slate-600 font-medium text-xs">{t.daysOfWeek}</label>
+                    {modeASelectedDays.length === 0 && (
+                      <span className="text-[11px] text-amber-600 font-medium">กรุณาเลือกวันอย่างน้อย 1 วัน</span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {DAYS_OF_WEEK.map((day) => {
-                      const isChecked = selectedDays.includes(day.key);
+                      const isChecked = modeASelectedDays.includes(day.key);
                       return (
                         <button
                           key={day.key}
                           type="button"
                           onClick={() => {
-                            if (isChecked) {
-                              setSelectedDays(selectedDays.filter((d) => d !== day.key));
-                            } else {
-                              setSelectedDays([...selectedDays, day.key]);
-                            }
+                            toggleModeADay(day.key);
+                            setScheduleLockWarning(null);
                           }}
                           className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
                             isChecked
@@ -1481,6 +1666,23 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                     })}
                   </div>
                 </div>
+
+                {/* Cancel Mode A Button */}
+                {hasModeAData && (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                    <span className="text-xs text-slate-500">
+                      🔒 มีการจัดวันแบบ A อยู่ (โหมด B ถูกล็อกเพื่อไม่ให้ข้อมูลปนกัน)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClearModal('modeA')}
+                      className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>{t.cancelModeABtn}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1537,11 +1739,14 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                       if (!item.isCurrentMonth) {
                         return <div key={idx} className="h-12 bg-slate-50/60" />;
                       }
-                      const isDateSelected = scheduledDates.includes(item.dateStr);
+                      const isDateSelected = modeBScheduledDates.includes(item.dateStr);
                       return (
                         <div
                           key={item.dateStr}
-                          onClick={() => toggleDateInCalendar(item.dateStr)}
+                          onClick={() => {
+                            toggleDateInCalendar(item.dateStr);
+                            setScheduleLockWarning(null);
+                          }}
                           className={`h-12 p-1.5 flex flex-col justify-between cursor-pointer transition ${
                             isDateSelected
                               ? 'bg-emerald-50 font-bold text-emerald-800 border-2 border-emerald-500'
@@ -1559,6 +1764,23 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                     })}
                   </div>
                 </div>
+
+                {/* Cancel Mode B Button */}
+                {hasModeBData && (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                    <span className="text-xs text-slate-500">
+                      🔒 มีการจัดวันแบบ B อยู่ (โหมด A ถูกล็อกเพื่อไม่ให้ข้อมูลปนกัน)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClearModal('modeB')}
+                      className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>{t.cancelModeBBtn}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1610,9 +1832,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
             {/* Total Days Calculated & Quiz Option */}
             <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2">
-                <span className="text-slate-500">{t.totalDays}:</span>
+                <span className="text-slate-500 font-medium">{t.totalDays}:</span>
                 <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold font-mono text-sm border border-emerald-200">
-                  {scheduledDates.length} {t.daysUnit}
+                  {activeTotalDays} {t.daysUnit}
                 </span>
                 <span className="text-slate-400 text-[11px]">
                   ({(() => {
@@ -1626,7 +1848,13 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                       }
                       return s;
                     };
-                    return `${formatP(scheduledDates[0] || startDate)} ถึง ${formatP(scheduledDates[scheduledDates.length - 1] || endDate)}`;
+                    if (scheduleMode === 'modeA') {
+                      return `${formatP(modeAStartDate)} ถึง ${formatP(modeAEndDate)}`;
+                    }
+                    if (modeBScheduledDates.length > 0) {
+                      return `${formatP(modeBScheduledDates[0])} ถึง ${formatP(modeBScheduledDates[modeBScheduledDates.length - 1])}`;
+                    }
+                    return '-';
                   })()})
                 </span>
               </div>
@@ -1774,6 +2002,57 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Clearing Mode A or Mode B */}
+      {confirmClearModal && (
+        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-scale-up">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-slate-900">
+                  {confirmClearModal === 'modeA' ? t.confirmClearModeATitle : t.confirmClearModeBTitle}
+                </h4>
+                <p className="text-xs text-rose-600 font-semibold mt-0.5">
+                  {confirmClearModal === 'modeA' ? t.confirmClearModeA : t.confirmClearModeB}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-2xl border border-slate-200 leading-relaxed">
+              {t.clearModePrompt}
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmClearModal(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer transition"
+              >
+                {t.btnCancel}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmClearModal === 'modeA') {
+                    setModeASelectedDays([]);
+                    setModeAStartDate(defaultStart);
+                    setModeAEndDate(defaultEnd);
+                    setScheduleLockWarning(null);
+                  } else if (confirmClearModal === 'modeB') {
+                    setModeBScheduledDates([]);
+                    setScheduleLockWarning(null);
+                  }
+                  setConfirmClearModal(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer shadow-xs transition"
+              >
+                {t.btnConfirmClear}
+              </button>
+            </div>
           </div>
         </div>
       )}

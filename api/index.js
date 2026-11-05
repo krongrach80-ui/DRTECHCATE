@@ -6386,14 +6386,22 @@ var init_vault_service = __esm({
         };
         if (record.schedule) {
           const s = record.schedule;
+          const sDates = s.scheduled_dates || s.scheduledDates || [];
+          const isModeB = s.schedule_mode === "modeB" || Array.isArray(sDates) && sDates.length > 0 && (!s.days_of_week || s.days_of_week.length === 0);
+          const defaultDays = isModeB ? [] : ["Mon", "Wed", "Fri"];
+          const rawDays = s.daysOfWeek !== void 0 ? s.daysOfWeek : s.days_of_week;
+          const days = rawDays !== void 0 ? rawDays : defaultDays;
           normalizedRecord.schedule = {
             ...s,
             startDate: s.startDate || s.start_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
             start_date: s.start_date || s.startDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
             endDate: s.endDate || s.end_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
             end_date: s.end_date || s.endDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
-            daysOfWeek: s.daysOfWeek || s.days_of_week || ["Mon", "Wed", "Fri"],
-            days_of_week: s.days_of_week || s.daysOfWeek || ["Mon", "Wed", "Fri"],
+            schedule_mode: isModeB ? "modeB" : s.schedule_mode || "modeA",
+            daysOfWeek: isModeB ? [] : days,
+            days_of_week: isModeB ? [] : days,
+            scheduled_dates: isModeB ? sDates : [],
+            scheduledDates: isModeB ? sDates : [],
             timeSlot: s.timeSlot || s.time_slot || "09:00 - 10:00",
             time_slot: s.time_slot || s.timeSlot || "09:00 - 10:00",
             kioskId: s.kioskId || s.assigned_kiosk_id || "kiosk-01",
@@ -12699,6 +12707,20 @@ var init_service10 = __esm({
             updated_at: (/* @__PURE__ */ new Date()).toISOString()
           };
         }
+        const sDays = schedule.daysOfWeek || schedule.days_of_week || [];
+        const sDates = schedule.scheduledDates || schedule.scheduled_dates || [];
+        const hasDays = Array.isArray(sDays) && sDays.length > 0;
+        const hasDates = Array.isArray(sDates) && sDates.length > 0;
+        if (hasDays && hasDates) {
+          throw new AppError(
+            "\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E15\u0E32\u0E23\u0E32\u0E07\u0E1D\u0E36\u0E01\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E42\u0E2B\u0E21\u0E14\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E01\u0E31\u0E19\u0E44\u0E14\u0E49 (Mutual Exclusivity Violation: Cannot save both Mode A and Mode B schedule simultaneously)",
+            400,
+            "MUTUAL_EXCLUSIVITY_VIOLATION"
+          );
+        }
+        const sMode = schedule.schedule_mode || schedule.scheduleMode;
+        const resolvedMode = sMode || (hasDates ? "modeB" : "modeA");
+        schedule.schedule_mode = resolvedMode;
         const sStart = (schedule.startDate || schedule.start_date || "").slice(0, 10);
         const sEnd = (schedule.endDate || schedule.end_date || "").slice(0, 10);
         if (Array.isArray(schedule.excluded_dates)) {
@@ -12815,12 +12837,14 @@ var init_service10 = __esm({
               }
             } catch {
             }
+            const isModeB = resolvedMode === "modeB";
+            const effectiveWeekdays = isModeB ? [] : weekdays.length > 0 ? weekdays : [1, 3, 5];
             await this.courseRepo.createCourse(
               {
                 patient_id: targetPid,
                 start_date: cStart,
                 end_date: cEnd,
-                weekdays: weekdays.length > 0 ? weekdays : [1, 3, 5],
+                weekdays: effectiveWeekdays,
                 start_time: schedule.timeSlot || schedule.time_slot || "09:00 - 10:00",
                 kiosk_id: effectiveKioskId || void 0,
                 include_minigame: Boolean(schedule.include_minigame)
@@ -13394,7 +13418,9 @@ var init_service10 = __esm({
           Sat: ["Sat", "sat", "Saturday", "\u0E40\u0E2A\u0E32\u0E23\u0E4C", "\u0E2A.", 6, "6"]
         };
         const validAliases = dayAliases[bkkDayShort] || [bkkDayShort, bkkDayNum, String(bkkDayNum)];
-        const isDayScheduled = days.length === 0 || days.some((d) => {
+        const sDates = Array.isArray(effectiveSchedule.scheduled_dates) ? effectiveSchedule.scheduled_dates : Array.isArray(effectiveSchedule.scheduledDates) ? effectiveSchedule.scheduledDates : [];
+        const isExplicitModeB = effectiveSchedule.schedule_mode === "modeB" || sDates.length > 0 && days.length === 0;
+        const isDayScheduled = isExplicitModeB ? sDates.includes(bkkIsoDate) : days.length === 0 || days.some((d) => {
           return validAliases.includes(d) || validAliases.includes(String(d)) || validAliases.includes(Number(d));
         });
         const exercises = effectiveSchedule.assigned_exercises || effectiveSchedule.prescribed_exercises || [];

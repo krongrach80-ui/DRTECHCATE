@@ -435,10 +435,20 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
             dateStr <= endDate &&
             days.some((d: string) => aliases.includes(d));
 
-          hasSession =
-            isExplicitDate ||
-            isRecurringDay ||
-            (startDate === dateStr && endDate === dateStr);
+          const sMode = s.schedule_mode || s.scheduleMode;
+          const isModeB = sMode === 'modeB' || (sDates.length > 0 && days.length === 0) || (startDate === endDate && sDates.length > 0);
+          const isModeA = sMode === 'modeA' || (days.length > 0 && sDates.length === 0);
+
+          if (isModeB) {
+            hasSession = isExplicitDate;
+          } else if (isModeA) {
+            hasSession = isRecurringDay;
+          } else {
+            hasSession =
+              isExplicitDate ||
+              isRecurringDay ||
+              (startDate === dateStr && endDate === dateStr);
+          }
           timeSlot = s.timeSlot || s.time_slot || '09:00 - 10:00';
           kioskId = s.kioskId || s.assigned_kiosk_id || 'kiosk-01';
           exerciseCount =
@@ -491,11 +501,17 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
             dateStr <= endDate &&
             days.some((alias: string) => aliases.includes(alias));
 
-          if (
-            isExplicitDate ||
-            isRecurringDay ||
-            (startDate === dateStr && endDate === dateStr)
-          ) {
+          const sMode = s.schedule_mode || s.scheduleMode;
+          const isModeB = sMode === 'modeB' || (sDates.length > 0 && days.length === 0) || (startDate === endDate && sDates.length > 0);
+          const isModeA = sMode === 'modeA' || (days.length > 0 && sDates.length === 0);
+
+          const hasSession = isModeB
+            ? isExplicitDate
+            : isModeA
+            ? isRecurringDay
+            : (isExplicitDate || isRecurringDay || (startDate === dateStr && endDate === dateStr));
+
+          if (hasSession) {
             matchingSessions.push({
               patientId: d.patient_id,
               patientName: formatCleanName(d.first_name, d.last_name),

@@ -1468,6 +1468,23 @@ export class ApiClient {
           const scheduleData = body.schedule || body;
           const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
 
+          const daysArr: any[] = scheduleData.days_of_week || scheduleData.daysOfWeek || [];
+          const datesArr: any[] = scheduleData.scheduled_dates || scheduleData.scheduledDates || [];
+          const sMode = scheduleData.schedule_mode || scheduleData.scheduleMode;
+
+          // Strict Server-side / API Mutual Exclusivity Guard
+          const hasModeADays = Array.isArray(daysArr) && daysArr.length > 0;
+          const hasModeBDates = Array.isArray(datesArr) && datesArr.length > 0;
+
+          if (hasModeADays && hasModeBDates) {
+            throw new Error(
+              'ไม่สามารถบันทึกข้อมูลตารางฝึกทั้งสองโหมดพร้อมกันได้ (Mutual Exclusivity Violation: Cannot save both Mode A and Mode B schedule simultaneously)'
+            );
+          }
+
+          const resolvedMode = sMode || (hasModeBDates ? 'modeB' : 'modeA');
+          scheduleData.schedule_mode = resolvedMode;
+
           // Write schedule to local resilient patients cache
           if (typeof window !== 'undefined' && targetPid) {
             try {
@@ -1486,10 +1503,13 @@ export class ApiClient {
           // Direct live Supabase Cloud courses sync with valid schema
           try {
             const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-            const daysArr = scheduleData.days_of_week || scheduleData.daysOfWeek || [];
-            const weekdaysNum = Array.isArray(daysArr)
-              ? daysArr.map((d: string) => weekdayMap[d] ?? 1).filter((n: number) => !isNaN(n))
-              : [1, 3, 5];
+            const isModeB = resolvedMode === 'modeB';
+            const weekdaysNum = isModeB
+              ? [] // Mode B: empty weekdays so recurring day logic does not trigger
+              : (Array.isArray(daysArr) && daysArr.length > 0 ? daysArr.map((d: string) => weekdayMap[d] ?? 1).filter((n: number) => !isNaN(n)) : [1, 3, 5]);
+
+            const finalStartDate = scheduleData.startDate || scheduleData.start_date || (isModeB && datesArr[0] ? datesArr[0] : todayBkk);
+            const finalEndDate = scheduleData.endDate || scheduleData.end_date || (isModeB && datesArr[datesArr.length - 1] ? datesArr[datesArr.length - 1] : todayBkk);
 
             await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/courses`, {
               method: 'POST',
@@ -1501,9 +1521,9 @@ export class ApiClient {
               body: JSON.stringify({
                 patient_id: targetPid,
                 pt_id: body.pt_id || 'b1000000-0000-0000-0000-000000000003',
-                start_date: scheduleData.startDate || scheduleData.start_date || todayBkk,
-                end_date: scheduleData.endDate || scheduleData.end_date || todayBkk,
-                weekdays: weekdaysNum.length > 0 ? weekdaysNum : [1, 3, 5],
+                start_date: finalStartDate,
+                end_date: finalEndDate,
+                weekdays: weekdaysNum,
                 start_time: (scheduleData.timeSlot || scheduleData.time_slot || '09:00').slice(0, 5),
                 include_minigame: Boolean(scheduleData.include_minigame),
                 status: 'active',

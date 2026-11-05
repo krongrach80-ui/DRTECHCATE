@@ -1741,6 +1741,24 @@ export class SmartOnboardingService {
       };
     }
 
+    // Strict Server-side Mutual Exclusivity Guard
+    const sDays = schedule.daysOfWeek || schedule.days_of_week || [];
+    const sDates = schedule.scheduledDates || schedule.scheduled_dates || [];
+    const hasDays = Array.isArray(sDays) && sDays.length > 0;
+    const hasDates = Array.isArray(sDates) && sDates.length > 0;
+
+    if (hasDays && hasDates) {
+      throw new AppError(
+        'ไม่สามารถบันทึกข้อมูลตารางฝึกทั้งสองโหมดพร้อมกันได้ (Mutual Exclusivity Violation: Cannot save both Mode A and Mode B schedule simultaneously)',
+        400,
+        'MUTUAL_EXCLUSIVITY_VIOLATION'
+      );
+    }
+
+    const sMode = schedule.schedule_mode || schedule.scheduleMode;
+    const resolvedMode = sMode || (hasDates ? 'modeB' : 'modeA');
+    schedule.schedule_mode = resolvedMode;
+
     const sStart = (schedule.startDate || schedule.start_date || '').slice(0, 10);
     const sEnd = (schedule.endDate || schedule.end_date || '').slice(0, 10);
     if (Array.isArray(schedule.excluded_dates)) {
@@ -1881,12 +1899,17 @@ export class SmartOnboardingService {
           }
         } catch {}
 
+        const isModeB = resolvedMode === 'modeB';
+        const effectiveWeekdays = isModeB
+          ? []
+          : (weekdays.length > 0 ? weekdays : [1, 3, 5]);
+
         await this.courseRepo.createCourse(
           {
             patient_id: targetPid,
             start_date: cStart,
             end_date: cEnd,
-            weekdays: weekdays.length > 0 ? weekdays : [1, 3, 5],
+            weekdays: effectiveWeekdays,
             start_time: schedule.timeSlot || schedule.time_slot || '09:00 - 10:00',
             kiosk_id: effectiveKioskId || undefined,
             include_minigame: Boolean(schedule.include_minigame),
@@ -2692,13 +2715,20 @@ export class SmartOnboardingService {
       Sat: ['Sat', 'sat', 'Saturday', 'เสาร์', 'ส.', 6, '6'],
     };
     const validAliases = dayAliases[bkkDayShort] || [bkkDayShort, bkkDayNum, String(bkkDayNum)];
-    const isDayScheduled = days.length === 0 || days.some((d) => {
-      return (
-        validAliases.includes(d) ||
-        validAliases.includes(String(d)) ||
-        validAliases.includes(Number(d))
-      );
-    });
+    const sDates: string[] = Array.isArray(effectiveSchedule.scheduled_dates)
+      ? effectiveSchedule.scheduled_dates
+      : (Array.isArray(effectiveSchedule.scheduledDates) ? effectiveSchedule.scheduledDates : []);
+    const isExplicitModeB = effectiveSchedule.schedule_mode === 'modeB' || (sDates.length > 0 && days.length === 0);
+
+    const isDayScheduled = isExplicitModeB
+      ? sDates.includes(bkkIsoDate)
+      : (days.length === 0 || days.some((d) => {
+          return (
+            validAliases.includes(d) ||
+            validAliases.includes(String(d)) ||
+            validAliases.includes(Number(d))
+          );
+        }));
 
     const exercises: PrescribedExercise[] = effectiveSchedule.assigned_exercises || effectiveSchedule.prescribed_exercises || [];
     const includeMinigame = Boolean(effectiveSchedule.include_minigame);

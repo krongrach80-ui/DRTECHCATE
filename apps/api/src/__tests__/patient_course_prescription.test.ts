@@ -77,7 +77,7 @@ describe('Patient Course Prescription & Clinical Schedule Sync Test Suite', () =
           schedule: {
             start_date: todayBkk,
             end_date: todayBkk,
-            scheduled_dates: [todayBkk],
+            schedule_mode: 'modeA',
             days_of_week: [todayDayOfWeek],
             time_slot: '10:00 - 11:00',
             prescribed_exercises: [
@@ -107,8 +107,8 @@ describe('Patient Course Prescription & Clinical Schedule Sync Test Suite', () =
       const customSchedule = {
         start_date: todayBkk,
         end_date: todayBkk,
+        schedule_mode: 'modeB',
         scheduled_dates: [todayBkk],
-        days_of_week: [todayDayOfWeek],
         time_slot: '09:00 - 10:00',
         include_minigame: true,
         prescribed_exercises: [
@@ -237,8 +237,8 @@ describe('Patient Course Prescription & Clinical Schedule Sync Test Suite', () =
       const updatedSchedule = {
         start_date: todayBkk,
         end_date: '2026-12-31',
+        schedule_mode: 'modeB',
         scheduled_dates: [pastDate, todayBkk, '2026-12-31'],
-        days_of_week: [todayDayOfWeek],
         preserve_past_dates: true,
         prescribed_exercises: [
           {
@@ -267,6 +267,101 @@ describe('Patient Course Prescription & Clinical Schedule Sync Test Suite', () =
         .set('X-Requested-With', 'XMLHttpRequest');
 
       expect(checkPlan.body.is_scheduled_today).toBe(true);
+    });
+  });
+
+  describe('7. Mode A vs. Mode B Mutual Exclusivity Enforcement', () => {
+    it('rejects schedule payload containing both days_of_week and scheduled_dates with 400', async () => {
+      const invalidSchedule = {
+        start_date: todayBkk,
+        end_date: '2026-12-31',
+        schedule_mode: 'modeA',
+        days_of_week: ['Mon', 'Wed'],
+        scheduled_dates: [todayBkk],
+        prescribed_exercises: [
+          {
+            exercise_id: 'ex-01',
+            name: 'Knee Extension',
+            sets: 3,
+            reps: 10,
+          },
+        ],
+      };
+
+      const res = await request(app)
+        .post('/api/smart-onboarding/schedule')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .set('x-staff-role', 'admin')
+        .send({
+          patient_id: patientA_Id,
+          schedule: invalidSchedule,
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('MUTUAL_EXCLUSIVITY_VIOLATION');
+    });
+
+    it('successfully accepts pure Mode A payload and sets days_of_week', async () => {
+      const modeASchedule = {
+        start_date: todayBkk,
+        end_date: '2026-12-31',
+        schedule_mode: 'modeA',
+        days_of_week: [todayDayOfWeek],
+        prescribed_exercises: [
+          {
+            exercise_id: 'ex-01',
+            name: 'Knee Extension',
+            sets: 3,
+            reps: 10,
+          },
+        ],
+      };
+
+      const res = await request(app)
+        .post('/api/smart-onboarding/schedule')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .set('x-staff-role', 'admin')
+        .send({
+          patient_id: patientA_Id,
+          schedule: modeASchedule,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data?.schedule?.days_of_week).toEqual([todayDayOfWeek]);
+      expect(res.body.data?.schedule?.schedule_mode).toBe('modeA');
+    });
+
+    it('successfully accepts pure Mode B payload and retains scheduled_dates without weekdays', async () => {
+      const modeBSchedule = {
+        start_date: todayBkk,
+        end_date: todayBkk,
+        schedule_mode: 'modeB',
+        scheduled_dates: [todayBkk],
+        prescribed_exercises: [
+          {
+            exercise_id: 'ex-01',
+            name: 'Knee Extension',
+            sets: 3,
+            reps: 10,
+          },
+        ],
+      };
+
+      const res = await request(app)
+        .post('/api/smart-onboarding/schedule')
+        .set('X-Requested-With', 'XMLHttpRequest')
+        .set('x-staff-role', 'admin')
+        .send({
+          patient_id: patientA_Id,
+          schedule: modeBSchedule,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data?.schedule?.scheduled_dates).toEqual([todayBkk]);
+      expect(res.body.data?.schedule?.days_of_week).toBeUndefined();
+      expect(res.body.data?.schedule?.schedule_mode).toBe('modeB');
     });
   });
 

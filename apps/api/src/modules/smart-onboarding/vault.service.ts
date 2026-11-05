@@ -97,14 +97,24 @@ export class PatientVaultService {
     // Harmonize therapy schedule if present (Both camelCase & snake_case support)
     if (record.schedule) {
       const s: any = record.schedule;
+      const sDates = s.scheduled_dates || s.scheduledDates || [];
+      const isModeB = s.schedule_mode === 'modeB' ||
+        (Array.isArray(sDates) && sDates.length > 0 && (!s.days_of_week || s.days_of_week.length === 0));
+      const defaultDays = isModeB ? [] : ['Mon', 'Wed', 'Fri'];
+      const rawDays = s.daysOfWeek !== undefined ? s.daysOfWeek : s.days_of_week;
+      const days = rawDays !== undefined ? rawDays : defaultDays;
+
       normalizedRecord.schedule = {
         ...s,
         startDate: s.startDate || s.start_date || new Date().toISOString().slice(0, 10),
         start_date: s.start_date || s.startDate || new Date().toISOString().slice(0, 10),
         endDate: s.endDate || s.end_date || new Date().toISOString().slice(0, 10),
         end_date: s.end_date || s.endDate || new Date().toISOString().slice(0, 10),
-        daysOfWeek: s.daysOfWeek || s.days_of_week || ['Mon', 'Wed', 'Fri'],
-        days_of_week: s.days_of_week || s.daysOfWeek || ['Mon', 'Wed', 'Fri'],
+        schedule_mode: isModeB ? 'modeB' : (s.schedule_mode || 'modeA'),
+        daysOfWeek: isModeB ? [] : days,
+        days_of_week: isModeB ? [] : days,
+        scheduled_dates: isModeB ? sDates : [],
+        scheduledDates: isModeB ? sDates : [],
         timeSlot: s.timeSlot || s.time_slot || '09:00 - 10:00',
         time_slot: s.time_slot || s.timeSlot || '09:00 - 10:00',
         kioskId: s.kioskId || s.assigned_kiosk_id || 'kiosk-01',
