@@ -1271,7 +1271,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   };
 
   return (
-    <div className="w-full min-h-screen relative flex flex-col items-center justify-center p-4 bg-gradient-to-b from-[#EBF5FA] via-[#F2F9FC] to-[#E6F4F8] text-slate-900 select-none overflow-x-hidden font-sans">
+    <div className="w-full h-full min-h-full flex flex-col justify-between p-3 sm:p-5 lg:p-6 bg-gradient-to-b from-[#EBF5FA] via-[#F2F9FC] to-[#E6F4F8] text-slate-900 select-none overflow-x-hidden font-sans relative">
       <video
         ref={videoRef}
         playsInline
@@ -1294,404 +1294,441 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       <CornerOrnament position="bottom-left" />
       <CornerOrnament position="bottom-right" />
 
-      {/* Vertical Centered Kiosk Body Stack */}
-      <div className="w-full max-w-xl mx-auto flex flex-col items-center py-4 px-2 sm:px-4 gap-4 sm:gap-5 relative z-10">
+      {/* Full-Viewport Responsive Bento Container (Zero Dead Space) */}
+      <div className="w-full max-w-[1440px] mx-auto flex-1 flex flex-col justify-between gap-4 sm:gap-5 relative z-10">
         
-        {/* Section A: Top Brand Viewfinder Emblem */}
-        <div
-          onClick={() => executeScanLogin()}
-          className="relative w-36 h-36 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center p-3 cursor-pointer group hover:shadow-md transition active:scale-95"
-          title="แตะเพื่อเริ่มสแกนใบหน้าเข้าใช้งาน"
-        >
-          {/* 4 Viewfinder Cyan Brackets */}
-          <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-sky-400 rounded-tl-sm pointer-events-none group-hover:scale-110 transition-transform" />
-          <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-sky-400 rounded-tr-sm pointer-events-none group-hover:scale-110 transition-transform" />
-          <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-sky-400 rounded-bl-sm pointer-events-none group-hover:scale-110 transition-transform" />
-          <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-sky-400 rounded-br-sm pointer-events-none group-hover:scale-110 transition-transform" />
-
-          {/* Circular Ring with Logo */}
-          <div className="w-28 h-28 rounded-full border-2 border-teal-400 flex flex-col items-center justify-center p-1 text-center bg-white shadow-xs group-hover:scale-105 transition-transform">
-            <svg className="w-9 h-9 mb-0.5" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M48 20 C30 20 18 34 18 52 C18 69 31 82 48 82 C44 76 40 68 40 52 C40 38 43 27 48 20 Z" fill="#0284C7" />
-              <path d="M52 80 C70 80 82 66 82 48 C82 31 69 18 52 18 C56 24 60 32 60 48 C60 62 57 73 52 80 Z" fill="#10B981" />
-              <path d="M44 38 H56 V44 H62 V56 H56 V62 H44 V56 H38 V44 H44 Z" fill="#10B981" />
-              <path d="M47 41 H53 V47 H59 V53 H53 V59 H47 V53 H41 V47 H47 Z" fill="#0284C7" />
-              <circle cx="50" cy="50" r="4" fill="#FFFFFF" />
-            </svg>
-            <div className="text-[9px] font-extrabold text-[#0369A1] tracking-wider leading-tight">
-              DR TECH CARE
-            </div>
-            <div className="text-[6px] font-semibold text-slate-400 tracking-wider uppercase mt-0.5">
-              Health Technology
-            </div>
-          </div>
-        </div>
-
-        {/* Section B: Interactive Greeting & Two-Hand Prompt Banner */}
-        <div
-          onClick={() => executeScanLogin()}
-          className="w-full bg-white/95 border-2 border-emerald-300/90 rounded-3xl px-5 sm:px-6 py-3.5 sm:py-4 shadow-sm hover:shadow-md transition cursor-pointer flex items-center gap-3.5 sm:gap-4 active:scale-[0.99]"
-          title="แตะเพื่อเริ่มสแกน"
-        >
-          <span className="text-2xl sm:text-3xl leading-none shrink-0 animate-bounce">🙌</span>
-          <div className="flex-1 text-left">
-            <div className="font-extrabold text-sm sm:text-base text-[#064E3B] leading-snug">
-              {lang === 'zh-CN' ? '您准备好进行康复训练了吗？请举起双手或点击此处' : lang === 'en-US' ? 'Ready for rehab? Raise both hands or tap here' : 'คุณพร้อมจะกายภาพรึยัง? ยก 2 มือขึ้น หรือแตะที่นี่'}
-            </div>
-            <div className="text-xs text-[#059669] leading-snug mt-0.5 font-medium">
-              {lang === 'zh-CN' ? '人脸即时自动识别，或点击下方按钮登录' : lang === 'en-US' ? 'Instant auto-face scan or tap below to login' : 'สแกนใบหน้าอัตโนมัติทันที หรือแตะปุ่มด้านล่างเพื่อเข้าสู่ระบบ'}
-            </div>
-          </div>
-        </div>
-
-        {/* Section C: Central Square Camera Viewport */}
-        <div className="w-full max-w-[380px] aspect-square bg-[#EEF6FA] rounded-3xl border-2 border-white shadow-inner relative overflow-hidden flex items-center justify-center">
-          {!cameraReady || userDisabledCamera || isScanningPaused ? (
-            /* Idle Viewport: Centered Black Outline Camera SVG matching Mockup */
-            <div
-              onClick={() => {
-                handleRetryCamera();
-                executeScanLogin();
-              }}
-              className="w-full h-full flex flex-col items-center justify-center cursor-pointer group"
-              title="แตะเพื่อเปิดกล้องและเริ่มสแกนใบหน้า"
-            >
-              <svg
-                className="w-20 h-20 text-slate-800 transition-transform group-hover:scale-110"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-                <circle cx="12" cy="13" r="4" />
-              </svg>
-            </div>
-          ) : (
-            /* Active Live Camera Stream */
+        {/* Main 12-Column Clinical Bento Grid */}
+        <div className="w-full flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-stretch my-auto">
+          
+          {/* 🎥 LEFT / MAIN COLUMN: LARGE AI BIOMETRIC CAMERA STAGE (7 Cols) */}
+          <div className="lg:col-span-7 flex flex-col gap-3 sm:gap-4 justify-between h-full">
+            
+            {/* 1. Top Interactive Prompt Banner */}
             <div
               onClick={() => executeScanLogin()}
-              className="w-full h-full relative flex items-center justify-center cursor-pointer group"
-              title="แตะที่นี่เพื่อสแกนใบหน้าทันที"
+              className="bg-white border-2 border-emerald-400/90 rounded-2xl px-4 sm:px-5 py-3 shadow-sm flex items-center justify-between gap-3 sm:gap-4 cursor-pointer hover:shadow-md transition active:scale-[0.99] select-none"
+              title="แตะเพื่อเริ่มสแกน"
             >
-              <canvas ref={previewCanvasRef} className="w-full h-full object-cover" />
-
-              {/* Real-time Liveness Telemetry Badge */}
-              <div className="absolute top-2 inset-x-0 flex justify-center z-20 pointer-events-none">
-                <LivenessTelemetryBadge
-                  state={livenessResult?.state || 'checking'}
-                  statusMessageThai={livenessResult?.statusMessageThai}
-                  depthScore={livenessResult?.depthScore}
-                  ear={livenessResult?.ear}
-                  isBlinking={livenessResult?.blinkVerified}
-                />
+              <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
+                <span className="text-2xl sm:text-3xl shrink-0 animate-bounce">🙌</span>
+                <div className="text-left min-w-0">
+                  <div className="font-extrabold text-sm sm:text-base text-[#064E3B] leading-snug truncate">
+                    {lang === 'zh-CN' ? '您准备好进行康复训练了吗？请举起双手或点击此处' : lang === 'en-US' ? 'Ready for rehab? Raise both hands or tap to scan' : 'คุณพร้อมจะกายภาพรึยัง? ยก 2 มือขึ้น หรือแตะปุ่มสแกน'}
+                  </div>
+                  <div className="text-xs text-[#059669] leading-snug mt-0.5 font-medium truncate">
+                    {lang === 'zh-CN' ? '请正视下方摄像头，系统将自动识别人脸' : lang === 'en-US' ? 'Look directly at camera below for auto-face scan' : 'มองตรงที่กล้องด้านล่าง ระบบจะสแกนใบหน้าอัตโนมัติ'}
+                  </div>
+                </div>
               </div>
 
-              {/* Reticle Circle / Face scan guide with 3s Countdown & Live Score % */}
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+              {/* Live camera status pill */}
+              <div className="shrink-0">
+                {cameraReady && !userDisabledCamera && !isScanningPaused ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 font-bold text-xs shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>กล้องพร้อมทำงาน</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-bold text-xs shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-slate-400" />
+                    <span>รอเปิดกล้อง</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Hero Camera Viewport */}
+            <div className="flex-1 min-h-[380px] sm:min-h-[460px] bg-gradient-to-b from-slate-900 via-[#0B253C] to-[#071C2E] rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col items-center justify-center">
+              {/* 4 Glowing Cyan/Emerald Corner Viewfinder Brackets */}
+              <div className="absolute top-4 left-4 w-8 h-8 sm:w-10 sm:h-10 border-t-4 border-l-4 border-teal-400 rounded-tl-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
+              <div className="absolute top-4 right-4 w-8 h-8 sm:w-10 sm:h-10 border-t-4 border-r-4 border-teal-400 rounded-tr-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
+              <div className="absolute bottom-4 left-4 w-8 h-8 sm:w-10 sm:h-10 border-b-4 border-l-4 border-teal-400 rounded-bl-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
+              <div className="absolute bottom-4 right-4 w-8 h-8 sm:w-10 sm:h-10 border-b-4 border-r-4 border-teal-400 rounded-br-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
+
+              {!cameraReady || userDisabledCamera || isScanningPaused ? (
+                /* Standby / Idle State: Center Glowing Scanner Ring */
                 <div
-                  className={`w-36 h-44 rounded-full transition-all duration-300 relative flex items-center justify-center ${
-                    countdownValue !== null
-                      ? 'border-4 border-emerald-400 shadow-[0_0_35px_rgba(16,185,129,0.95)] ring-4 ring-emerald-500/40 animate-pulse'
-                      : !faceInCircle
-                      ? 'border-2 border-dashed border-amber-400/90 shadow-[0_0_20px_rgba(245,158,11,0.45)]'
-                      : livenessResult?.state === 'live_verified'
-                      ? 'border-2 border-emerald-400 shadow-[0_0_22px_rgba(16,185,129,0.55)]'
-                      : livenessResult?.state === 'spoof_blocked'
-                      ? 'border-2 border-rose-400 shadow-[0_0_22px_rgba(244,63,94,0.55)]'
-                      : 'border-2 border-dashed border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.35)]'
-                  }`}
+                  onClick={() => {
+                    handleRetryCamera();
+                    executeScanLogin();
+                  }}
+                  className="w-full h-full flex flex-col items-center justify-center cursor-pointer group relative p-6 text-center select-none"
+                  title="แตะเพื่อเปิดกล้องและเริ่มสแกนใบหน้า"
                 >
-                  {/* Floating Clean Countdown & Percentage Indicators that do not obscure the face */}
-                  {countdownValue !== null ? (
-                    <>
-                      {/* Top Timer Pill */}
-                      <div className="absolute -top-7 px-3 py-1 rounded-full bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-500/50 flex items-center gap-1.5 animate-bounce z-30">
-                        <span>⏱️</span>
-                        <span>{countdownValue}s</span>
+                  {/* Subtle ambient lighting & grid */}
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(16,185,129,0.15)_0%,rgba(14,165,233,0.08)_40%,transparent_70%)] pointer-events-none" />
+                  <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none" />
+
+                  {/* Center Glowing Scanner Ring */}
+                  <div className="w-44 h-44 sm:w-52 sm:h-52 rounded-full bg-gradient-to-br from-emerald-500/20 via-teal-500/10 to-blue-500/20 border-2 border-teal-400/60 flex flex-col items-center justify-center gap-3 shadow-[0_0_40px_rgba(20,184,166,0.25)] group-hover:scale-105 group-hover:border-teal-300 transition-all duration-300 relative z-10">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-teal-500/20 border border-teal-300/40 flex items-center justify-center shadow-inner group-hover:bg-teal-500/30 transition">
+                      <Camera className="w-8 h-8 sm:w-10 sm:h-10 text-teal-300 group-hover:text-white transition-colors" />
+                    </div>
+                    <span className="text-white font-extrabold text-xs sm:text-sm tracking-wide bg-teal-950/90 px-3.5 py-1 rounded-full border border-teal-400/50 shadow-sm">
+                      แตะเพื่อเปิดกล้องสแกนใบหน้า
+                    </span>
+                  </div>
+
+                  <div className="mt-4 text-teal-200/80 text-xs sm:text-sm font-medium z-10 flex items-center gap-1.5">
+                    <span>🙌</span>
+                    <span>หรือยกมือทั้งสองข้างขึ้นเพื่อเริ่มสแกนอัตโนมัติ</span>
+                  </div>
+                </div>
+              ) : (
+                /* Active Live Camera Stream */
+                <div
+                  onClick={() => executeScanLogin()}
+                  className="w-full h-full relative flex items-center justify-center cursor-pointer group"
+                  title="แตะที่นี่เพื่อสแกนใบหน้าทันที"
+                >
+                  <canvas ref={previewCanvasRef} className="w-full h-full object-cover" />
+
+                  {/* Real-time Liveness Telemetry Badge */}
+                  <div className="absolute top-3 inset-x-0 flex justify-center z-20 pointer-events-none">
+                    <LivenessTelemetryBadge
+                      state={livenessResult?.state || 'checking'}
+                      statusMessageThai={livenessResult?.statusMessageThai}
+                      depthScore={livenessResult?.depthScore}
+                      ear={livenessResult?.ear}
+                      isBlinking={livenessResult?.blinkVerified}
+                    />
+                  </div>
+
+                  {/* Reticle Circle / Face scan guide with 3s Countdown & Live Score % */}
+                  <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+                    <div
+                      className={`w-44 h-56 sm:w-52 sm:h-64 rounded-full transition-all duration-300 relative flex items-center justify-center ${
+                        countdownValue !== null
+                          ? 'border-4 border-emerald-400 shadow-[0_0_35px_rgba(16,185,129,0.95)] ring-4 ring-emerald-500/40 animate-pulse'
+                          : !faceInCircle
+                          ? 'border-2 border-dashed border-amber-400/90 shadow-[0_0_20px_rgba(245,158,11,0.45)]'
+                          : livenessResult?.state === 'live_verified'
+                          ? 'border-2 border-emerald-400 shadow-[0_0_22px_rgba(16,185,129,0.55)]'
+                          : livenessResult?.state === 'spoof_blocked'
+                          ? 'border-2 border-rose-400 shadow-[0_0_22px_rgba(244,63,94,0.55)]'
+                          : 'border-2 border-dashed border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.35)]'
+                      }`}
+                    >
+                      {/* Floating Clean Countdown & Percentage Indicators that do not obscure the face */}
+                      {countdownValue !== null ? (
+                        <>
+                          {/* Top Timer Pill */}
+                          <div className="absolute -top-8 px-3.5 py-1.5 rounded-full bg-emerald-500 text-white font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/50 flex items-center gap-1.5 animate-bounce z-30">
+                            <span>⏱️</span>
+                            <span>{countdownValue}s</span>
+                          </div>
+                          {/* Bottom Live Score Badge */}
+                          {realtimeScore !== null && (
+                            <div className="absolute -bottom-7 px-3 py-1 rounded-full bg-slate-950/90 border border-emerald-400 text-emerald-300 font-extrabold text-xs shadow-lg flex items-center gap-1.5 z-30">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                              <span>{realtimeScore}%</span>
+                            </div>
+                          )}
+                          {/* Gentle central scanning line */}
+                          <div className="w-[85%] h-0.5 bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent animate-pulse" />
+                        </>
+                      ) : (
+                        <div
+                          className={`absolute left-[10%] w-[80%] h-0.5 ${
+                            !faceInCircle
+                              ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent'
+                              : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-bounce'
+                          } top-1/2`}
+                        />
+                      )}
+                    </div>
+
+                    {/* Status Pill Badge at bottom of camera box */}
+                    <div className="absolute bottom-3 px-4 py-1.5 rounded-full bg-[#042924]/90 backdrop-blur-md border border-emerald-500/40 text-xs font-bold text-emerald-300 flex items-center gap-2 shadow-lg max-w-[90%] truncate">
+                      {countdownValue !== null ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-300 shrink-0" />
+                          <span className="text-emerald-300 truncate">
+                            {lang === 'zh-CN' ? `正在识别倒计时 ${countdownValue}...` : lang === 'en-US' ? `Counting down ${countdownValue}...` : `กำลังนับถอยหลัง ${countdownValue} วินาที...`}
+                          </span>
+                        </>
+                      ) : isScanning ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-300 shrink-0" />
+                          <span className="truncate">{statusText || t('kiosk_verifying_identity')}</span>
+                        </>
+                      ) : matchedPatient ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span className="truncate">{t('kiosk_identity_verified')}: คุณ {matchedPatient.first_name}</span>
+                        </>
+                      ) : rateLimitCooldownSec > 0 ? (
+                        <>
+                          <span className="text-amber-300 font-bold shrink-0">⏳ คูลดาวน์ {rateLimitCooldownSec}s</span>
+                        </>
+                      ) : !presenceDetected || !faceInCircle ? (
+                        <>
+                          <span className="text-amber-300 font-semibold truncate">🟡 {statusText || t('kiosk_align_face')}</span>
+                        </>
+                      ) : livenessResult?.state === 'spoof_blocked' ? (
+                        <>
+                          <span className="text-rose-300 font-semibold truncate">{t('kiosk_spoof_blocked')}</span>
+                        </>
+                      ) : livenessResult?.state === 'live_verified' ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-300 shrink-0" />
+                          <span className="text-emerald-300 font-semibold truncate">พร้อมเริ่มนับถอยหลัง</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-cyan-300 font-medium truncate">🟡 {t('kiosk_checking_liveness')}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Calibration Mode HUD Overlay */}
+                  {isCalibrationOpen && (
+                    <div
+                      className="absolute top-10 left-3 right-3 bg-slate-950/95 backdrop-blur-md border border-cyan-400/50 rounded-xl p-3 text-xs font-mono text-cyan-200 z-30 shadow-2xl space-y-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between border-b border-cyan-500/30 pb-1">
+                        <span className="font-bold text-white flex items-center gap-1.5">
+                          🎯 Staff Biometric HUD (Supabase Live)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsCalibrationOpen(false)}
+                          className="text-slate-400 hover:text-white px-1.5 py-0.5 rounded cursor-pointer"
+                        >
+                          ✕
+                        </button>
                       </div>
-                      {/* Bottom Live Score Badge */}
-                      {realtimeScore !== null && (
-                        <div className="absolute -bottom-6 px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-emerald-400 text-emerald-300 font-extrabold text-[11px] shadow-lg flex items-center gap-1 z-30">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                          <span>{realtimeScore}%</span>
+                      <div className="text-[10px] text-cyan-300 pb-0.5 border-b border-slate-800">
+                        Host: <b className="text-white">mctegvnrvmglbibuuczi.supabase.co</b> | Cache: <b className="text-emerald-400">0 records (Sovereign)</b>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                        <div>cos(θ): <b className="text-white">{calibrationStats?.currentCos.toFixed(3) ?? '0.000'}</b></div>
+                        <div>Euclid: <b className="text-white">{calibrationStats?.currentDist.toFixed(3) ?? '2.000'}</b></div>
+                        <div>Score: <b className="text-emerald-400">{calibrationStats?.currentPercent ?? 0}%</b></div>
+                        <div>3D Depth: <b className="text-white">{livenessResult?.depthScore.toFixed(3) ?? '0.000'}</b></div>
+                        <div>EAR: <b className="text-white">{livenessResult?.ear?.toFixed(2) ?? '0.00'}</b></div>
+                        <div>Liveness: <b className={livenessResult?.isLive ? 'text-emerald-400' : 'text-amber-400'}>{livenessResult?.state ?? 'idle'}</b></div>
+                      </div>
+                      <div className="text-[10px] text-slate-300 pt-0.5 border-t border-slate-800">
+                        Samples: <b className="text-white">{calibrationStats?.samplesCount ?? 0}</b> | Median: <b className="text-emerald-300">{calibrationStats?.medianPercent ?? 0}%</b> (Min: {calibrationStats?.minPercent ?? 0}% / Max: {calibrationStats?.maxPercent ?? 0}%)
+                      </div>
+                      {calibrationStats?.top1 && (
+                        <div className="text-[11px] text-emerald-300 truncate">
+                          Top 1: {calibrationStats.top1.name} ({calibrationStats.top1.hn}) - {calibrationStats.top1.score}%
                         </div>
                       )}
-                      {/* Gentle central scanning line */}
-                      <div className="w-[85%] h-0.5 bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent animate-pulse" />
-                    </>
-                  ) : (
-                    <div
-                      className={`absolute left-[10%] w-[80%] h-0.5 ${
-                        !faceInCircle
-                          ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent'
-                          : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-bounce'
-                      } top-1/2`}
-                    />
+                      {calibrationStats?.top2 && (
+                        <div className="text-[11px] text-slate-400 truncate">
+                          Top 2: {calibrationStats.top2.name} ({calibrationStats.top2.hn}) - {calibrationStats.top2.score}%
+                        </div>
+                      )}
+                    </div>
                   )}
-                </div>
 
-                {/* Status Pill Badge at bottom of camera box */}
-                <div className="absolute bottom-2 px-3 py-1 rounded-full bg-[#042924]/85 backdrop-blur-md border border-emerald-500/40 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5 shadow-md max-w-[90%] truncate">
-                  {countdownValue !== null ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-emerald-300 shrink-0" />
-                      <span className="text-emerald-300 truncate">
-                        {lang === 'zh-CN' ? `正在识别倒计时 ${countdownValue}...` : lang === 'en-US' ? `Counting down ${countdownValue}...` : `กำลังนับถอยหลัง ${countdownValue} วินาที...`}
-                      </span>
-                    </>
-                  ) : isScanning ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-cyan-300 shrink-0" />
-                      <span className="truncate">{statusText || t('kiosk_verifying_identity')}</span>
-                    </>
-                  ) : matchedPatient ? (
-                    <>
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                      <span className="truncate">{t('kiosk_identity_verified')}: คุณ {matchedPatient.first_name}</span>
-                    </>
-                  ) : rateLimitCooldownSec > 0 ? (
-                    <>
-                      <span className="text-amber-300 font-bold shrink-0">⏳ คูลดาวน์ {rateLimitCooldownSec}s</span>
-                    </>
-                  ) : !presenceDetected || !faceInCircle ? (
-                    <>
-                      <span className="text-amber-300 font-semibold truncate">🟡 {statusText || t('kiosk_align_face')}</span>
-                    </>
-                  ) : livenessResult?.state === 'spoof_blocked' ? (
-                    <>
-                      <span className="text-rose-300 font-semibold truncate">{t('kiosk_spoof_blocked')}</span>
-                    </>
-                  ) : livenessResult?.state === 'live_verified' ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-emerald-300 shrink-0" />
-                      <span className="text-emerald-300 font-semibold truncate">พร้อมเริ่มนับถอยหลัง</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-cyan-300 font-medium truncate">🟡 {t('kiosk_checking_liveness')}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Calibration Mode HUD Overlay */}
-              {isCalibrationOpen && (
-                <div
-                  className="absolute top-9 left-2 right-2 bg-slate-950/90 backdrop-blur-md border border-cyan-400/50 rounded-xl p-2.5 text-[10px] font-mono text-cyan-200 z-30 shadow-2xl space-y-1"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex items-center justify-between border-b border-cyan-500/30 pb-1">
-                    <span className="font-bold text-white flex items-center gap-1">
-                      🎯 Staff Biometric HUD (Supabase Live)
-                    </span>
+                  {/* Camera Orientation Controls & Calibration Button */}
+                  <div className="absolute top-3 left-3 flex items-center gap-1.5 z-20" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
-                      onClick={() => setIsCalibrationOpen(false)}
-                      className="text-slate-400 hover:text-white px-1 cursor-pointer"
+                      onClick={() => {
+                        const rotations: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
+                        const next = rotations[(rotations.indexOf(cameraRotation) + 1) % rotations.length];
+                        setCameraRotation(next);
+                        const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+                        services.camera.setRotation(next);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer"
+                      title="หมุนกล้อง 90 องศา"
                     >
-                      ✕
+                      <RotateCw className="w-3.5 h-3.5 text-cyan-300" />
+                      <span>{cameraRotation}°</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMirrored((prev) => !prev);
+                        const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+                        services.camera.setMirrorPreview(!isMirrored);
+                      }}
+                      className={`p-1.5 rounded-lg text-white text-[11px] font-semibold flex items-center backdrop-blur-sm transition border border-white/20 cursor-pointer ${
+                        isMirrored ? 'bg-emerald-600/70' : 'bg-black/60'
+                      }`}
+                      title="สลับกลับหัว / กระจก"
+                    >
+                      <FlipHorizontal className="w-3.5 h-3.5 text-emerald-300" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsCalibrationOpen((prev) => !prev)}
+                      className={`px-2.5 py-1 rounded-lg text-white text-[11px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer ${
+                        isCalibrationOpen ? 'bg-cyan-600/80 border-cyan-400' : 'bg-black/60 hover:bg-black/80'
+                      }`}
+                      title="เปิด/ปิดโหมดสอบเทียบ (Calibration Mode)"
+                    >
+                      <Activity className="w-3.5 h-3.5 text-cyan-300" />
+                      <span>Calib</span>
                     </button>
                   </div>
-                  <div className="text-[9px] text-cyan-300 pb-0.5 border-b border-slate-800">
-                    Host: <b className="text-white">mctegvnrvmglbibuuczi.supabase.co</b> | Cache: <b className="text-emerald-400">0 records (Sovereign)</b>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 pt-0.5">
-                    <div>cos(θ): <b className="text-white">{calibrationStats?.currentCos.toFixed(3) ?? '0.000'}</b></div>
-                    <div>Euclid: <b className="text-white">{calibrationStats?.currentDist.toFixed(3) ?? '2.000'}</b></div>
-                    <div>Score: <b className="text-emerald-400">{calibrationStats?.currentPercent ?? 0}%</b></div>
-                    <div>3D Depth: <b className="text-white">{livenessResult?.depthScore.toFixed(3) ?? '0.000'}</b></div>
-                    <div>EAR: <b className="text-white">{livenessResult?.ear?.toFixed(2) ?? '0.00'}</b></div>
-                    <div>Liveness: <b className={livenessResult?.isLive ? 'text-emerald-400' : 'text-amber-400'}>{livenessResult?.state ?? 'idle'}</b></div>
-                  </div>
-                  <div className="text-[10px] text-slate-300 pt-0.5 border-t border-slate-800">
-                    Samples: <b className="text-white">{calibrationStats?.samplesCount ?? 0}</b> | Median: <b className="text-emerald-300">{calibrationStats?.medianPercent ?? 0}%</b> (Min: {calibrationStats?.minPercent ?? 0}% / Max: {calibrationStats?.maxPercent ?? 0}%)
-                  </div>
-                  {calibrationStats?.top1 && (
-                    <div className="text-[10px] text-emerald-300 truncate">
-                      Top 1: {calibrationStats.top1.name} ({calibrationStats.top1.hn}) - {calibrationStats.top1.score}%
-                    </div>
-                  )}
-                  {calibrationStats?.top2 && (
-                    <div className="text-[10px] text-slate-400 truncate">
-                      Top 2: {calibrationStats.top2.name} ({calibrationStats.top2.hn}) - {calibrationStats.top2.score}%
-                    </div>
-                  )}
+
+                  {/* Close/Toggle Camera button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUserDisabledCamera(true);
+                      stopCamera();
+                    }}
+                    className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/60 text-white text-xs flex items-center justify-center hover:bg-rose-600 transition cursor-pointer z-20"
+                    title="หยุดสแกน / พักกล้อง"
+                  >
+                    ✕
+                  </button>
                 </div>
               )}
+            </div>
 
-              {/* Camera Orientation Controls & Calibration Button */}
-              <div className="absolute top-2 left-2 flex items-center gap-1.5 z-20" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const rotations: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
-                    const next = rotations[(rotations.indexOf(cameraRotation) + 1) % rotations.length];
-                    setCameraRotation(next);
-                    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
-                    services.camera.setRotation(next);
-                  }}
-                  className="px-2 py-1 rounded-lg bg-black/60 hover:bg-black/80 text-white text-[10px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer"
-                  title="หมุนกล้อง 90 องศา"
-                >
-                  <RotateCw className="w-3 h-3 text-cyan-300" />
-                  <span>{cameraRotation}°</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMirrored((prev) => !prev);
-                    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
-                    services.camera.setMirrorPreview(!isMirrored);
-                  }}
-                  className={`p-1.5 rounded-lg text-white text-[10px] font-semibold flex items-center backdrop-blur-sm transition border border-white/20 cursor-pointer ${
-                    isMirrored ? 'bg-emerald-600/70' : 'bg-black/60'
-                  }`}
-                  title="สลับกลับหัว / กระจก"
-                >
-                  <FlipHorizontal className="w-3 h-3 text-emerald-300" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsCalibrationOpen((prev) => !prev)}
-                  className={`px-2 py-1 rounded-lg text-white text-[10px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer ${
-                    isCalibrationOpen ? 'bg-cyan-600/80 border-cyan-400' : 'bg-black/60 hover:bg-black/80'
-                  }`}
-                  title="เปิด/ปิดโหมดสอบเทียบ (Calibration Mode)"
-                >
-                  <Activity className="w-3 h-3 text-cyan-300" />
-                  <span>Calib</span>
-                </button>
+          </div>
+
+          {/* 🧭 RIGHT / CONTROL COLUMN: BRAND CARD, QUICK GUIDE & GIANT ACTION DOCK (5 Cols) */}
+          <div className="lg:col-span-5 flex flex-col justify-between gap-4 h-full">
+            
+            {/* 1. Brand & Clinical Welcome Card */}
+            <div className="bg-white rounded-3xl border border-blue-100 p-5 sm:p-6 shadow-sm flex flex-col gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50 to-blue-50 border border-teal-300/80 flex items-center justify-center shrink-0 shadow-xs">
+                  <svg className="w-9 h-9 sm:w-10 sm:h-10" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M48 20 C30 20 18 34 18 52 C18 69 31 82 48 82 C44 76 40 68 40 52 C40 38 43 27 48 20 Z" fill="#0284C7" />
+                    <path d="M52 80 C70 80 82 66 82 48 C82 31 69 18 52 18 C56 24 60 32 60 48 C60 62 57 73 52 80 Z" fill="#10B981" />
+                    <path d="M44 38 H56 V44 H62 V56 H56 V62 H44 V56 H38 V44 H44 Z" fill="#10B981" />
+                    <path d="M47 41 H53 V47 H59 V53 H53 V59 H47 V53 H41 V47 H47 Z" fill="#0284C7" />
+                    <circle cx="50" cy="50" r="4" fill="#FFFFFF" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+                    ระบบยืนยันตัวตนอัจฉริยะ (Smart Biometric Check-in)
+                  </h2>
+                  <p className="text-xs sm:text-sm text-teal-700 font-semibold mt-1 leading-snug">
+                    ปลอดภัย รวดเร็ว สำหรับผู้ป่วยคลินิกกายภาพบำบัด
+                  </p>
+                </div>
               </div>
 
-              {/* Close/Toggle Camera button */}
+              {/* 3-Step Senior Visual Guide */}
+              <div className="grid grid-cols-3 gap-2 sm:gap-2.5 pt-1">
+                <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-2.5 sm:p-3 text-center flex flex-col items-center justify-center">
+                  <span className="text-xl sm:text-2xl mb-1">👀</span>
+                  <div className="text-xs sm:text-sm font-bold text-emerald-900 leading-tight">1. มองกล้อง</div>
+                  <div className="text-[10px] sm:text-[11px] text-emerald-700 font-medium mt-0.5">อยู่ในกรอบสแกน</div>
+                </div>
+                <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-2.5 sm:p-3 text-center flex flex-col items-center justify-center">
+                  <span className="text-xl sm:text-2xl mb-1">😉</span>
+                  <div className="text-xs sm:text-sm font-bold text-blue-900 leading-tight">2. กะพริบตา</div>
+                  <div className="text-[10px] sm:text-[11px] text-blue-700 font-medium mt-0.5">ยืนยันบุคคลจริง</div>
+                </div>
+                <div className="bg-teal-50/80 border border-teal-200 rounded-2xl p-2.5 sm:p-3 text-center flex flex-col items-center justify-center">
+                  <span className="text-xl sm:text-2xl mb-1">🏃</span>
+                  <div className="text-xs sm:text-sm font-bold text-teal-900 leading-tight">3. เริ่มฝึกได้ทันที</div>
+                  <div className="text-[10px] sm:text-[11px] text-teal-700 font-medium mt-0.5">ดึงตารางนัดอัตโนมัติ</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Primary Action Dock (Clean Single High-Impact Set) */}
+            <div className="bg-white rounded-3xl border border-blue-100 p-5 sm:p-6 shadow-sm flex flex-col gap-3.5">
+              {/* Single Giant Primary Face Scan Button */}
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setUserDisabledCamera(true);
-                  stopCamera();
-                }}
-                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 text-white text-xs flex items-center justify-center hover:bg-rose-600 transition cursor-pointer z-20"
-                title="หยุดสแกน / ปิดกล้อง"
+                id="kiosk-scan-face-btn"
+                data-testid="kiosk-scan-face-btn"
+                disabled={isScanning || countdownValue !== null}
+                onClick={() => executeScanLogin()}
+                className="w-full py-4 sm:py-5 px-6 rounded-2xl text-lg sm:text-2xl font-extrabold text-white bg-gradient-to-r from-[#059E69] via-[#0D9488] to-[#1D4ED8] hover:brightness-105 active:scale-[0.99] transition shadow-lg shadow-emerald-900/15 flex items-center justify-center gap-3 cursor-pointer"
               >
-                ✕
+                {countdownValue !== null ? (
+                  <>
+                    <RefreshCw className="w-6 h-6 animate-spin text-white" />
+                    <span>กำลังนับถอยหลัง {countdownValue}...</span>
+                  </>
+                ) : isScanning ? (
+                  <>
+                    <RefreshCw className="w-6 h-6 animate-spin text-white" />
+                    <span>{t('kiosk_verifying_identity')}</span>
+                  </>
+                ) : cameraReady && !userDisabledCamera && !isScanningPaused ? (
+                  <>
+                    <RefreshCw className="w-6 h-6 text-emerald-100" />
+                    <span>เริ่มสแกนใบหน้าใหม่อีกครั้ง</span>
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-100" />
+                    <span>สแกนใบหน้าเข้าใช้งานทันที</span>
+                  </>
+                )}
+              </button>
+
+              {/* 2 Large Secondary Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                <button
+                  type="button"
+                  id="kiosk-pin-login-btn"
+                  data-testid="kiosk-pin-login-btn"
+                  onClick={() => {
+                    stopCamera();
+                    setEnteredPin('');
+                    setIsPinModalOpen(true);
+                  }}
+                  className="w-full py-3.5 sm:py-4 px-4 rounded-2xl bg-slate-50 hover:bg-amber-50/60 border-2 border-slate-200 hover:border-amber-400 text-slate-900 font-extrabold text-base sm:text-lg shadow-xs flex items-center justify-center gap-2.5 transition cursor-pointer active:scale-95"
+                >
+                  <KeyRound className="w-5 h-5 text-amber-500" />
+                  <span>ใช้รหัส PIN 4 หลัก</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="kiosk-enroll-new-btn"
+                  data-testid="kiosk-enroll-new-btn"
+                  onClick={() => {
+                    stopCamera();
+                    if (onOpenNewPatientModal) {
+                      onOpenNewPatientModal();
+                    } else {
+                      onNavigateToEnroll();
+                    }
+                  }}
+                  className="w-full py-3.5 sm:py-4 px-4 rounded-2xl bg-blue-50/50 hover:bg-blue-50 border-2 border-blue-200 hover:border-blue-500 text-blue-700 font-extrabold text-base sm:text-lg shadow-xs flex items-center justify-center gap-2.5 transition cursor-pointer active:scale-95"
+                >
+                  <UserPlus className="w-5 h-5 text-blue-600" />
+                  <span>สมัครคนไข้ใหม่</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Compact System Status Footer Card */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-slate-200/80 px-4 py-3 flex items-center justify-between text-xs sm:text-sm text-slate-600 gap-2">
+              <div className="flex items-center gap-2 truncate">
+                <span>🛡️</span>
+                <span className="truncate">มาตรฐานความปลอดภัยชีวมาตร • เชื่อมต่อฐานข้อมูล Supabase Cloud สด</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  stopCamera();
+                  setIsAboutModalOpen(true);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+              >
+                <Info className="w-3.5 h-3.5 text-slate-500" />
+                <span>เกี่ยวกับระบบ</span>
               </button>
             </div>
-          )}
-        </div>
 
-        {/* Section D: Immediate Camera Control Buttons */}
-        <div className="w-full max-w-[360px] flex flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              handleRetryCamera();
-              executeScanLogin();
-            }}
-            className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-[#00B074] via-[#009688] to-[#1D63DC] hover:opacity-95 active:scale-[0.98] shadow-md flex items-center justify-center gap-2 cursor-pointer transition text-sm"
-          >
-            <RefreshCw className="w-4 h-4 text-white" />
-            <span>เปิดกล้องเริ่มสแกนใหม่</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              stopCamera();
-              setEnteredPin('');
-              setIsPinModalOpen(true);
-            }}
-            className="w-full py-2.5 rounded-xl font-bold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.98] shadow-xs flex items-center justify-center gap-2 cursor-pointer transition text-xs sm:text-sm"
-          >
-            <KeyRound className="w-4 h-4 text-amber-600" />
-            <span>ใช้รหัส PIN แทน</span>
-          </button>
-        </div>
-
-        {/* Section E: Bottom Main Action Dock */}
-        <div className="w-full max-w-xl flex flex-col gap-3 mt-1">
-          {/* Giant Primary Face Scan Button */}
-          <button
-            type="button"
-            id="kiosk-scan-face-btn"
-            data-testid="kiosk-scan-face-btn"
-            disabled={isScanning || countdownValue !== null}
-            onClick={() => executeScanLogin()}
-            className="w-full py-4 rounded-2xl text-lg sm:text-xl font-extrabold text-white bg-gradient-to-r from-[#059E69] via-[#0891B2] to-[#0284C7] hover:brightness-105 active:scale-[0.99] shadow-lg flex items-center justify-center gap-3 cursor-pointer transition border border-emerald-400/30"
-          >
-            {countdownValue !== null ? (
-              <>
-                <RefreshCw className="w-5 h-5 animate-spin text-white" />
-                <span>กำลังนับถอยหลัง {countdownValue}...</span>
-              </>
-            ) : isScanning ? (
-              <>
-                <RefreshCw className="w-5 h-5 animate-spin text-white" />
-                <span>{t('kiosk_verifying_identity')}</span>
-              </>
-            ) : (
-              <>
-                <Camera className="w-6 h-6 text-emerald-100" />
-                <span>สแกนใบหน้าเข้าใช้งานทันที</span>
-              </>
-            )}
-          </button>
-
-          {/* 2-Column Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-            <button
-              type="button"
-              id="kiosk-pin-login-btn"
-              data-testid="kiosk-pin-login-btn"
-              onClick={() => {
-                stopCamera();
-                setEnteredPin('');
-                setIsPinModalOpen(true);
-              }}
-              className="py-3.5 px-4 rounded-2xl bg-white border-2 border-slate-200 hover:border-amber-400 text-slate-900 font-extrabold text-base sm:text-lg shadow-xs flex items-center justify-center gap-2.5 cursor-pointer active:scale-95 transition"
-            >
-              <KeyRound className="w-5 h-5 text-amber-500" />
-              <span>ใช้รหัส PIN 4 หลัก</span>
-            </button>
-
-            <button
-              type="button"
-              id="kiosk-enroll-new-btn"
-              data-testid="kiosk-enroll-new-btn"
-              onClick={() => {
-                stopCamera();
-                if (onOpenNewPatientModal) {
-                  onOpenNewPatientModal();
-                } else {
-                  onNavigateToEnroll();
-                }
-              }}
-              className="py-3.5 px-4 rounded-2xl bg-white border-2 border-blue-200 hover:border-blue-500 text-blue-700 font-extrabold text-base sm:text-lg shadow-xs flex items-center justify-center gap-2.5 cursor-pointer active:scale-95 transition"
-            >
-              <UserPlus className="w-5 h-5 text-blue-600" />
-              <span>สมัครคนไข้ใหม่</span>
-            </button>
           </div>
+
         </div>
 
-      </div>
-
-      {/* Section F: Floating Bottom-Right System Info Pill */}
-      <div className="fixed bottom-3 right-3 z-30">
-        <button
-          type="button"
-          onClick={() => {
-            stopCamera();
-            setIsAboutModalOpen(true);
-          }}
-          className="px-3.5 py-1.5 rounded-full bg-white/90 hover:bg-white border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold shadow-xs hover:shadow-sm active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
-        >
-          <Info className="w-3.5 h-3.5 text-slate-500" />
-          <span>เกี่ยวกับระบบ</span>
-        </button>
       </div>
 
       {/* Modal: Virtual PIN Pad */}
