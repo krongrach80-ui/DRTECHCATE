@@ -81,7 +81,9 @@ export interface DynamicExerciseSessionViewProps {
 export const POSE_CONNECTIONS: [number, number][] = [
   [11, 12], // Shoulders
   [11, 13], [13, 15], // Left arm
+  [15, 17], [15, 19], [15, 21], [17, 19], // Left hand (wrist-pinky, wrist-index, wrist-thumb, palm)
   [12, 14], [14, 16], // Right arm
+  [16, 18], [16, 20], [16, 22], [18, 20], // Right hand (wrist-pinky, wrist-index, wrist-thumb, palm)
   [11, 23], [12, 24], // Torso
   [23, 24], // Hips
   [23, 25], [25, 27], // Left leg
@@ -90,7 +92,10 @@ export const POSE_CONNECTIONS: [number, number][] = [
   [28, 30], [28, 32], [30, 32], // Right foot
 ];
 
-export const BODY_JOINT_INDICES = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
+export const BODY_JOINT_INDICES = [
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+  23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+];
 export const ANATOMICAL_BODY_JOINTS = BODY_JOINT_INDICES;
 
 export function getRequiredKeypointsForExercise(config?: ExerciseDetectionConfig): number[] {
@@ -121,6 +126,12 @@ export const KEYPOINT_NAME_MAP: Record<number, { th: string; en: string; cn: str
   14: { th: 'ศอกขวา', en: 'R Elbow', cn: '右肘' },
   15: { th: 'ข้อมือซ้าย', en: 'L Wrist', cn: '左腕' },
   16: { th: 'ข้อมือขวา', en: 'R Wrist', cn: '右腕' },
+  17: { th: 'นิ้วก้อยซ้าย', en: 'L Pinky', cn: '左小指' },
+  18: { th: 'นิ้วก้อยขวา', en: 'R Pinky', cn: '右小指' },
+  19: { th: 'นิ้วชี้ซ้าย', en: 'L Index', cn: '左食指' },
+  20: { th: 'นิ้วชี้ขวา', en: 'R Index', cn: '右食指' },
+  21: { th: 'นิ้วโป้งซ้าย', en: 'L Thumb', cn: '左大拇指' },
+  22: { th: 'นิ้วโป้งขวา', en: 'R Thumb', cn: '右大拇指' },
   23: { th: 'สะโพกซ้าย', en: 'L Hip', cn: '左髋' },
   24: { th: 'สะโพกขวา', en: 'R Hip', cn: '右髋' },
   25: { th: 'เข่าซ้าย', en: 'L Knee', cn: '左膝' },
@@ -381,12 +392,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     };
   }, [exerciseConfig, resolvedConfig]);
 
-  // 2. State สำหรับปุ่ม "แสดงเส้นลำตัว" (ค่าเริ่มต้น = false คือปิดไว้เสมอเมื่อเข้าหน้าใหม่)
-  const [showSkeletonOverlay, setShowSkeletonOverlay] = useState<boolean>(false);
-  const showSkeletonRef = useRef<boolean>(false);
+  // 2. State สำหรับปุ่ม "แสดงเส้นลำตัว" (ค่าเริ่มต้น = true คือเปิดแสดงเส้นโครงร่างทันทีเมื่อเข้าหน้าฝึก)
+  const [showSkeletonOverlay, setShowSkeletonOverlay] = useState<boolean>(true);
+  const showSkeletonRef = useRef<boolean>(true);
   useEffect(() => {
     showSkeletonRef.current = showSkeletonOverlay;
   }, [showSkeletonOverlay]);
+
+  // Sub-pixel EMA lerp smoothing buffer strictly for canvas rendering (prevents jitter without touching evaluation)
+  const canvasSmoothedPointsRef = useRef<{ [idx: number]: { x: number; y: number } }>({});
 
   // Audio Mute State with localStorage persistence (100% silent view)
   const [isAudioMuted, _setIsAudioMuted] = useState<boolean>(() => {
@@ -463,7 +477,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       videoRef.current.srcObject = null;
     }
     if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current.close().catch(() => { });
       audioCtxRef.current = null;
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
@@ -756,6 +770,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           const isTimerExercise = (resolvedConfigRef.current as any).mode === 'timer' || resolvedConfigRef.current.evaluationMode === 'timer';
 
           if (!hasPose) {
+            canvasSmoothedPointsRef.current = {};
             if (isTimerExercise) {
               const evalRes = stateMachineRef.current.evaluate([], monotonicTs);
               if (evalRes.completedReps > lastCompletedRepsRef.current) {
@@ -831,6 +846,29 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             projectLandmarkToCanvas(lm, vEl, cEl, true, currentFitMode)
           );
 
+          // Exponential Moving Average (EMA) / Lerp smoothing strictly for canvas rendering
+          // Keeps motion silky smooth without touching raw coordinates or state machine evaluations
+          const alpha = 0.65;
+          const renderPoints = projectedPoints.map((pt: any, idx: number) => {
+            if (!pt || !pt.inFrame || (pt.visibility ?? 0) < 0.40) {
+              delete canvasSmoothedPointsRef.current[idx];
+              return pt;
+            }
+            const prev = canvasSmoothedPointsRef.current[idx];
+            if (!prev) {
+              canvasSmoothedPointsRef.current[idx] = { x: pt.x, y: pt.y };
+              return pt;
+            }
+            const smoothX = prev.x + alpha * (pt.x - prev.x);
+            const smoothY = prev.y + alpha * (pt.y - prev.y);
+            canvasSmoothedPointsRef.current[idx] = { x: smoothX, y: smoothY };
+            return {
+              ...pt,
+              x: smoothX,
+              y: smoothY,
+            };
+          });
+
           // Shoulder width & distance estimation from clinical evaluation
           const shoulderWidthPct = Math.round((evalRes.shoulderWidthRatio ?? 0.28) * 100);
           const distanceStatus = evalRes.distanceStatus || 'ระยะเหมาะสม';
@@ -840,8 +878,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             evalRes.formRating === 'error'
               ? '#fbbf24'
               : evalRes.formRating === 'warning'
-              ? '#00f5d4'
-              : '#10b981';
+                ? '#00f5d4'
+                : '#10b981';
 
           // 3. ในลูป requestAnimationFrame:
           // - การตรวจจับ (detector.detectForVideo) และการคำนวณนับครั้ง (stateMachineRef.current.evaluateFrame)
@@ -850,27 +888,65 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           ctx.clearRect(0, 0, cEl.width, cEl.height);
 
           if (showSkeletonRef.current) {
-            const isUpperBodyMode =
-              resolvedConfig.framing !== 'full_body' && resolvedConfig.framing !== 'lower_body';
-            const activeConnections = isUpperBodyMode
-              ? [
-                  [11, 12], [11, 23], [12, 24], [23, 24], // กรอบลำตัวส่วนบน
-                  [11, 13], [13, 15],                     // แขนซ้าย
-                  [12, 14], [14, 16],                     // แขนขวา
-                ]
-              : POSE_CONNECTIONS;
+            const currentActiveSide = activeSideRef.current || resolvedConfig.side || 'right';
+            const isBilateral =
+              currentActiveSide === 'bilateral' ||
+              resolvedConfig.side === 'bilateral' ||
+              Boolean((resolvedConfig as any).bilateral);
 
-            const activeJointIndices = isUpperBodyMode
-              ? [11, 12, 13, 14, 15, 16, 23, 24] // เฉพาะหัวไหล่ถึงสะโพก (ไม่วาดจุดใบหน้า 0-10 และไม่วาดขา 25-32)
-              : BODY_JOINT_INDICES;
+            // Active side dynamic stroke color from form rating
+            const activeColor = strokeColor;
 
-            // วาดเส้นเชื่อมด้วยสีสว่างชัดเจน (#22d3ee / #10b981 / #f59e0b)
-            ctx.lineWidth = 4;
-            ctx.strokeStyle = strokeColor;
-            for (const [idxA, idxB] of activeConnections) {
-              const ptA = projectedPoints[idxA];
-              const ptB = projectedPoints[idxB];
-              if (ptA && ptB && ptA.inFrame && ptB.inFrame && ptA.visibility >= 0.35 && ptB.visibility >= 0.35) {
+            const inactiveColor = 'rgba(148, 163, 184, 0.65)'; // slate-400 with high contrast against camera feed
+            const torsoBridgeColor = 'rgba(56, 189, 248, 0.75)'; // sky-400
+
+            // Helper to determine connection style (Active side vs Inactive side vs Torso bridge)
+            const getConnectionStyle = (idxA: number, idxB: number) => {
+              if (isBilateral) {
+                return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
+              }
+              // Torso bridges connecting left and right
+              if ((idxA === 11 && idxB === 12) || (idxA === 23 && idxB === 24)) {
+                return { lineWidth: 4, strokeStyle: torsoBridgeColor, isActive: false };
+              }
+              const isAOdd = idxA % 2 === 1;
+              const isBOdd = idxB % 2 === 1;
+              const isLeftConn = isAOdd && isBOdd;
+              const isRightConn = !isAOdd && !isBOdd;
+
+              if (currentActiveSide === 'left' && isLeftConn) {
+                return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
+              }
+              if (currentActiveSide === 'right' && isRightConn) {
+                return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
+              }
+              return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
+            };
+
+            const isJointActive = (idx: number) => {
+              if (isBilateral) return true;
+              if (currentActiveSide === 'left') return idx % 2 === 1;
+              if (currentActiveSide === 'right') return idx % 2 === 0;
+              return true;
+            };
+
+            // 1. Draw Skeleton Lines (Torso, Arms, Hands, Legs)
+            for (const [idxA, idxB] of POSE_CONNECTIONS) {
+              const ptA = renderPoints[idxA];
+              const ptB = renderPoints[idxB];
+              // Strictly draw ONLY when both joints are in-frame with sufficient visibility
+              // Hides legs automatically when sitting / half-body mode without extrapolating outside
+              if (
+                ptA &&
+                ptB &&
+                ptA.inFrame &&
+                ptB.inFrame &&
+                (ptA.visibility ?? 0) >= 0.40 &&
+                (ptB.visibility ?? 0) >= 0.40
+              ) {
+                const style = getConnectionStyle(idxA, idxB);
+                ctx.lineWidth = style.lineWidth;
+                ctx.strokeStyle = style.strokeStyle;
                 ctx.beginPath();
                 ctx.moveTo(ptA.x, ptA.y);
                 ctx.lineTo(ptB.x, ptB.y);
@@ -878,19 +954,28 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               }
             }
 
-            // วาดจุดข้อต่อเฉพาะส่วนที่กำหนด (ไม่วาดป้ายชื่อทับใบหน้า 0-10 เด็ดขาด)
-            for (const idx of activeJointIndices) {
-              const pt = projectedPoints[idx];
-              if (!pt || !pt.inFrame || pt.visibility < 0.35) continue;
+            // 2. Draw Joint Circular Dots (Shoulders, Elbows, Wrists, Hips, Knees, Ankles, Fingers)
+            // Never draw facial landmarks (0-10)
+            const fingerJointIndices = [17, 18, 19, 20, 21, 22];
+
+            for (const idx of BODY_JOINT_INDICES) {
+              const pt = renderPoints[idx];
+              if (!pt || !pt.inFrame || (pt.visibility ?? 0) < 0.40) continue;
+
+              const active = isJointActive(idx);
+              const isFinger = fingerJointIndices.includes(idx);
+              const radius = isFinger ? (active ? 4 : 2.5) : active ? 7.5 : 4.5;
+              const fillColor = active ? activeColor : '#94a3b8';
+
               ctx.beginPath();
-              ctx.arc(pt.x, pt.y, 7, 0, Math.PI * 2);
-              ctx.fillStyle = strokeColor;
+              ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
+              ctx.fillStyle = fillColor;
               ctx.fill();
-              ctx.lineWidth = 2;
+              ctx.lineWidth = active ? 2 : 1.5;
               ctx.strokeStyle = '#ffffff';
               ctx.stroke();
 
-              // วาดป้ายเลขจุดเฉพาะเมื่อเปิดทั้ง "แสดงเส้นลำตัว" และ "Debug" พร้อมกัน และเฉพาะจุดลำตัว 11..24 เท่านั้น
+              // Draw debug label if staff debug is enabled
               if (showDebugRef.current && idx >= 11) {
                 ctx.font = 'bold 11px sans-serif';
                 ctx.fillStyle = '#38bdf8';
@@ -955,16 +1040,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               evalRes.readinessStatus === 'ready'
                 ? 'พร้อมเริ่มฝึก (ready)'
                 : evalRes.readinessStatus === 'partial_upper_body'
-                ? 'ตรวจพบครึ่งตัวบน (partial_upper_body)'
-                : evalRes.readinessStatus === 'missing_shoulder'
-                ? 'ไม่พบจุดหัวไหล่ในภาพ'
-                : evalRes.readinessStatus === 'missing_arm_landmarks'
-                ? 'ไม่พบจุดแขนหรือข้อมือ'
-                : evalRes.readinessStatus === 'missing_lower_body'
-                ? 'ไม่พบจุดช่วงขาหรือข้อเท้า'
-                : evalRes.readinessStatus === 'missing_head_shoulders'
-                ? 'ไม่พบจุดศีรษะและไหล่'
-                : 'รอจัดท่าให้อยู่ในกรอบ';
+                  ? 'ตรวจพบครึ่งตัวบน (partial_upper_body)'
+                  : evalRes.readinessStatus === 'missing_shoulder'
+                    ? 'ไม่พบจุดหัวไหล่ในภาพ'
+                    : evalRes.readinessStatus === 'missing_arm_landmarks'
+                      ? 'ไม่พบจุดแขนหรือข้อมือ'
+                      : evalRes.readinessStatus === 'missing_lower_body'
+                        ? 'ไม่พบจุดช่วงขาหรือข้อเท้า'
+                        : evalRes.readinessStatus === 'missing_head_shoulders'
+                          ? 'ไม่พบจุดศีรษะและไหล่'
+                          : 'รอจัดท่าให้อยู่ในกรอบ';
 
             setHudState({
               fps: Math.round(smoothedFpsRef.current),
@@ -1064,13 +1149,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       averageHoldDurationSec: resolvedConfig.angleMechanics?.holdDurationSec || 2.0,
       consistencyScorePercent: evalResult?.completedReps
         ? Math.min(
-            100,
-            Math.round(
-              (evalResult.completedReps /
-                (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
-                100
-            )
+          100,
+          Math.round(
+            (evalResult.completedReps /
+              (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
+            100
           )
+        )
         : 100,
       compensationEventsCount: evalResult?.activeWarnings?.length || 0,
       scapularHikingRate: evalResult?.scapularHikingRatio || 0,
@@ -1129,7 +1214,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
     voiceFeedbackRef.current.cancel();
     if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current.close().catch(() => { });
       audioCtxRef.current = null;
     }
     speakThai('หยุดการฝึกแล้วค่ะ ระบบกำลังแจ้งนักกายภาพบำบัด', 'emergency_pain_stop', 0);
@@ -1208,8 +1293,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     (lang === 'zh-CN'
       ? resolvedConfig.nameCn || resolvedConfig.nameTh
       : lang === 'en-US'
-      ? resolvedConfig.nameEn || resolvedConfig.nameTh
-      : resolvedConfig.nameTh);
+        ? resolvedConfig.nameEn || resolvedConfig.nameTh
+        : resolvedConfig.nameTh);
 
   // Calculate smooth motion progress towards target (0.0 to 1.0) for SVG Progress Ring
   let ringProgress = 0;
@@ -1253,8 +1338,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lang === 'zh-CN'
             ? `太棒了！已完成第 ${celebratingRep} 次`
             : lang === 'en-US'
-            ? `Great job! Rep #${celebratingRep} completed`
-            : `ยอดเยี่ยมมาก! ครั้งที่ ${celebratingRep} สำเร็จ`,
+              ? `Great job! Rep #${celebratingRep} completed`
+              : `ยอดเยี่ยมมาก! ครั้งที่ ${celebratingRep} สำเร็จ`,
         tone: 'emerald',
       };
     }
@@ -1267,8 +1352,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lang === 'zh-CN'
             ? '训练已暂停 点击下方按钮继续'
             : lang === 'en-US'
-            ? 'Session paused. Tap Resume below to continue'
-            : 'พักชั่วคราว — กดปุ่มฝึกต่อเพื่อทำต่อ',
+              ? 'Session paused. Tap Resume below to continue'
+              : 'พักชั่วคราว — กดปุ่มฝึกต่อเพื่อทำต่อ',
         tone: 'amber',
       };
     }
@@ -1281,8 +1366,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lang === 'zh-CN'
             ? '请站在摄像头前 1.5–2 米处'
             : lang === 'en-US'
-            ? 'Please stand in front of camera (1.5–2 m)'
-            : 'กรุณายืนหน้ากล้องในระยะ 1.5–2 เมตร ให้กล้องเห็นตัว',
+              ? 'Please stand in front of camera (1.5–2 m)'
+              : 'กรุณายืนหน้ากล้องในระยะ 1.5–2 เมตร ให้กล้องเห็นตัว',
         tone: 'amber',
       };
     }
@@ -1294,8 +1379,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lang === 'zh-CN'
             ? '请后退一些，确保看到手臂到手肘'
             : lang === 'en-US'
-            ? 'Step back slightly so your arms and elbows are visible'
-            : 'ถอยหลังอีกนิด ให้เห็นแขนถึงข้อศอก',
+              ? 'Step back slightly so your arms and elbows are visible'
+              : 'ถอยหลังอีกนิด ให้เห็นแขนถึงข้อศอก',
         tone: 'amber',
       };
     }
@@ -1307,8 +1392,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lang === 'zh-CN'
             ? '请向前走近一些'
             : lang === 'en-US'
-            ? 'Step slightly closer to screen'
-            : 'ขยับเข้าใกล้กล้องอีกเล็กน้อย',
+              ? 'Step slightly closer to screen'
+              : 'ขยับเข้าใกล้กล้องอีกเล็กน้อย',
         tone: 'amber',
       };
     }
@@ -1320,8 +1405,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lang === 'zh-CN'
             ? '请站直并进入检测区域以开始训练'
             : lang === 'en-US'
-            ? 'Stand upright in frame to begin'
-            : 'กรุณายืนตรงให้เห็นช่วงบนชัดเจนเพื่อเริ่มท่า',
+              ? 'Stand upright in frame to begin'
+              : 'กรุณายืนตรงให้เห็นช่วงบนชัดเจนเพื่อเริ่มท่า',
         tone: 'amber',
       };
     }
@@ -1334,8 +1419,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lang === 'zh-CN'
             ? '光线较暗，请开启前方照明'
             : lang === 'en-US'
-            ? 'Dim lighting. Turn on front lights'
-            : 'เปิดไฟด้านหน้าให้สว่างขึ้น หลีกเลี่ยงแสงย้อน',
+              ? 'Dim lighting. Turn on front lights'
+              : 'เปิดไฟด้านหน้าให้สว่างขึ้น หลีกเลี่ยงแสงย้อน',
         tone: 'amber',
       };
     }
@@ -1349,8 +1434,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           (lang === 'zh-CN'
             ? '动作幅度过大，请放慢'
             : lang === 'en-US'
-            ? 'Move slowly and protect your joints'
-            : 'ระวังอย่าฝืนข้อต่อ ขยับช้าๆ อย่างนุ่มนวล'),
+              ? 'Move slowly and protect your joints'
+              : 'ระวังอย่าฝืนข้อต่อ ขยับช้าๆ อย่างนุ่มนวล'),
         tone: 'amber',
       };
     }
@@ -1363,8 +1448,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           (lang === 'zh-CN'
             ? '请保持躯干挺直'
             : lang === 'en-US'
-            ? 'Keep your back upright'
-            : 'รักษาลำตัวให้ตรง ยืนหลังตรง'),
+              ? 'Keep your back upright'
+              : 'รักษาลำตัวให้ตรง ยืนหลังตรง'),
         tone: 'amber',
       };
     }
@@ -1383,8 +1468,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lang === 'zh-CN'
             ? '身体向前微倾，顺畅做圆周摆动'
             : lang === 'en-US'
-            ? 'Lean forward slightly, relax arm and swing in circles'
-            : 'แกว่งแขนช้า ๆ เป็นวงกลม ปล่อยแขนตามสบาย',
+              ? 'Lean forward slightly, relax arm and swing in circles'
+              : 'แกว่งแขนช้า ๆ เป็นวงกลม ปล่อยแขนตามสบาย',
         tone: 'teal',
       };
     }
@@ -1396,8 +1481,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lang === 'zh-CN'
             ? '很好！请在目标位置保持稳定...'
             : lang === 'en-US'
-            ? 'Great! Hold steady at target...'
-            : 'ค้างไว้นิ่งๆ อีกนิด ดีมากครับ',
+              ? 'Great! Hold steady at target...'
+              : 'ค้างไว้นิ่งๆ อีกนิด ดีมากครับ',
         tone: 'emerald',
       };
     }
@@ -1429,8 +1514,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         lang === 'zh-CN'
           ? '动作标准，请继续保持'
           : lang === 'en-US'
-          ? 'Good form, keep going smoothly'
-          : 'ดีมาก ทำต่อเนื่องอย่างผ่อนคลายเลยครับ',
+            ? 'Good form, keep going smoothly'
+            : 'ดีมาก ทำต่อเนื่องอย่างผ่อนคลายเลยครับ',
       tone: 'emerald',
     };
   };
@@ -1495,11 +1580,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                       setLanguage(opt.code);
                       setShowLangMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
-                      lang === opt.code
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${lang === opt.code
                         ? 'bg-blue-50 text-blue-700 border border-blue-200'
                         : 'text-slate-700 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <span>{opt.flag} {opt.label}</span>
                     {lang === opt.code && <Check className="w-3.5 h-3.5 text-blue-600" />}
@@ -1531,7 +1615,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
       {/* 2. Main Workout Bento Stage */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 flex-1 items-stretch overflow-hidden min-h-0">
-        
+
         {/* Left/Main Camera Stage (8/9 Cols on LG/XL) */}
         <div className="lg:col-span-8 xl:col-span-9 bg-slate-950 rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[480px]">
           {/* Webcam Video with horizontal selfie mirror */}
@@ -1539,11 +1623,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             ref={videoRef}
             playsInline
             muted
-            className={`w-full h-full ${
-              fitMode === 'contain' ? 'object-contain' : 'object-cover'
-            } -scale-x-100 z-0 transition-all duration-200 ${
-              boostLighting || hudState.hasLightingWarning ? 'brightness-110 contrast-125' : ''
-            }`}
+            className={`w-full h-full ${fitMode === 'contain' ? 'object-contain' : 'object-cover'
+              } -scale-x-100 z-0 transition-all duration-200 ${boostLighting || hudState.hasLightingWarning ? 'brightness-110 contrast-125' : ''
+              }`}
           />
 
           {/* 1:1 Canvas overlay directly on top of video */}
@@ -1552,16 +1634,40 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             className="absolute inset-0 w-full h-full pointer-events-none z-10"
           />
 
+          {/* Patient-accessible Quick Skeleton Toggle Button (Glassmorphism) */}
+          <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+            <button
+              type="button"
+              id="kiosk-quick-toggle-skeleton-btn"
+              data-testid="kiosk-quick-toggle-skeleton-btn"
+              onClick={() => setShowSkeletonOverlay((prev) => !prev)}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold backdrop-blur-md border transition-all duration-200 cursor-pointer shadow-lg active:scale-95 ${
+                showSkeletonOverlay
+                  ? 'bg-teal-500/90 text-slate-950 border-teal-300 shadow-teal-500/20'
+                  : 'bg-slate-900/80 text-slate-300 border-slate-700/80 hover:bg-slate-800/90 hover:text-white'
+              }`}
+              title="เปิด/ปิดเส้นโครงร่างร่างกาย"
+            >
+              <span className="text-base leading-none">🦴</span>
+              <span className="font-semibold">
+                {lang === 'zh-CN'
+                  ? (showSkeletonOverlay ? '隐藏骨骼线' : '显示骨骼线')
+                  : lang === 'en-US'
+                  ? (showSkeletonOverlay ? 'Hide Skeleton' : 'Show Skeleton')
+                  : (showSkeletonOverlay ? 'ซ่อนเส้นโครงร่าง' : 'แสดงเส้นโครงร่าง')}
+              </span>
+            </button>
+          </div>
+
           {/* Half-body Silhouette Guide Overlay */}
           {(showGuideSilhouette || hudState.repPhase === 'WAITING_FOR_FRAMING') && (
             <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center opacity-30">
               <svg
                 viewBox="0 0 400 400"
-                className={`w-80 h-80 sm:w-96 sm:h-96 transition-colors duration-300 ${
-                  hudState.repPhase === 'WAITING_FOR_FRAMING' || hudState.shoulderWidthPct > 52
+                className={`w-80 h-80 sm:w-96 sm:h-96 transition-colors duration-300 ${hudState.repPhase === 'WAITING_FOR_FRAMING' || hudState.shoulderWidthPct > 52
                     ? 'text-amber-400 stroke-amber-400 animate-pulse'
                     : 'text-teal-400 stroke-teal-400'
-                }`}
+                  }`}
                 fill="none"
                 strokeWidth="2.5"
                 strokeDasharray="6 4"
@@ -1682,11 +1788,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <div
             id="kiosk-giant-rep-counter"
             data-testid="kiosk-giant-rep-counter"
-            className={`bg-white rounded-3xl border p-5 shadow-sm text-center flex flex-col items-center justify-center transition-all duration-300 ${
-              celebratingRep !== null
+            className={`bg-white rounded-3xl border p-5 shadow-sm text-center flex flex-col items-center justify-center transition-all duration-300 ${celebratingRep !== null
                 ? 'border-emerald-400 ring-4 ring-emerald-400/30 scale-102 bg-emerald-50/20'
                 : 'border-blue-100'
-            }`}
+              }`}
           >
             {/* Circular Progress Ring */}
             <div className="relative w-36 h-36 sm:w-40 sm:h-40 flex items-center justify-center">
@@ -1805,8 +1910,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               {lang === 'zh-CN'
                 ? `已完成第 ${hudState.currentSet} 组，请放松肌肉稍作休息`
                 : lang === 'en-US'
-                ? `Set ${hudState.currentSet} completed. Relax your muscles before the next set.`
-                : `ทำครบเซ็ตที่ ${hudState.currentSet} แล้ว พักผ่อนกล้ามเนื้อสักครู่ก่อนเริ่มเซ็ตถัดไป`}
+                  ? `Set ${hudState.currentSet} completed. Relax your muscles before the next set.`
+                  : `ทำครบเซ็ตที่ ${hudState.currentSet} แล้ว พักผ่อนกล้ามเนื้อสักครู่ก่อนเริ่มเซ็ตถัดไป`}
             </p>
 
             <div className="my-6">
@@ -1843,8 +1948,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               {lang === 'zh-CN'
                 ? '请舒适坐下休息，物理治疗师马上前来为您检查协助。'
                 : lang === 'en-US'
-                ? 'Please take a seat and rest comfortably. The physical therapist has been alerted and will assist you shortly.'
-                : 'ขอให้ผู้ป่วยนั่งพักผ่อนอย่างสบายๆ ไม่ต้องกังวล เจ้าหน้าที่กายภาพบำบัดกำลังเดินทางมาดูแลท่านครับ'}
+                  ? 'Please take a seat and rest comfortably. The physical therapist has been alerted and will assist you shortly.'
+                  : 'ขอให้ผู้ป่วยนั่งพักผ่อนอย่างสบายๆ ไม่ต้องกังวล เจ้าหน้าที่กายภาพบำบัดกำลังเดินทางมาดูแลท่านครับ'}
             </p>
 
             <div className="mt-8 flex flex-col gap-3">
@@ -1893,22 +1998,22 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   {isTimerMode
                     ? (lang === 'zh-CN' ? '计时 / 节拍' : lang === 'en-US' ? 'Timer / Pacing' : 'จังหวะนับเวลา')
                     : isPendulum
-                    ? (lang === 'zh-CN' ? '360° 全环轨迹' : lang === 'en-US' ? '360° Circular Orbit' : 'วิถีวงกลม (360°)')
-                    : (lang === 'zh-CN' ? '最高达标角度' : lang === 'en-US' ? 'Max Angle Achieved' : 'มุมสูงสุดที่ทำได้')}
+                      ? (lang === 'zh-CN' ? '360° 全环轨迹' : lang === 'en-US' ? '360° Circular Orbit' : 'วิถีวงกลม (360°)')
+                      : (lang === 'zh-CN' ? '最高达标角度' : lang === 'en-US' ? 'Max Angle Achieved' : 'มุมสูงสุดที่ทำได้')}
                 </div>
                 <div className="text-2xl sm:text-3xl font-black text-blue-700 mt-1 font-mono">
                   {isTimerMode
                     ? `${Math.round((evalResult?.holdProgressRatio || 0) * 100)}%`
                     : isPendulum
-                    ? '100%'
-                    : `${evalResult?.currentAngleDeg || hudState.currentAngle || 0}°`}
+                      ? '100%'
+                      : `${evalResult?.currentAngleDeg || hudState.currentAngle || 0}°`}
                 </div>
                 <div className="text-xs text-slate-500 mt-1 font-semibold">
                   {isTimerMode
                     ? (lang === 'zh-CN' ? '跟随节拍呼吸与保持' : lang === 'en-US' ? 'Hold and pace rhythm' : 'เกร็งค้างและผ่อนตามจังหวะ')
                     : isPendulum
-                    ? (lang === 'zh-CN' ? '速度与半径达标' : lang === 'en-US' ? 'Steady radius & pace' : 'ความเร็วและรัศมีอยู่ในเกณฑ์')
-                    : `${resolvedConfig.angleMechanics?.targetMinDeg || 80}° - ${resolvedConfig.angleMechanics?.targetMaxDeg || 100}°`}
+                      ? (lang === 'zh-CN' ? '速度与半径达标' : lang === 'en-US' ? 'Steady radius & pace' : 'ความเร็วและรัศมีอยู่ในเกณฑ์')
+                      : `${resolvedConfig.angleMechanics?.targetMinDeg || 80}° - ${resolvedConfig.angleMechanics?.targetMaxDeg || 100}°`}
                 </div>
               </div>
 
@@ -1919,13 +2024,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 <div className="text-2xl sm:text-3xl font-black text-blue-600 mt-1 font-mono">
                   {evalResult?.completedReps
                     ? Math.min(
-                        100,
-                        Math.round(
-                          (evalResult.completedReps /
-                            (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
-                            100
-                        )
+                      100,
+                      Math.round(
+                        (evalResult.completedReps /
+                          (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
+                        100
                       )
+                    )
                     : 100}%
                 </div>
                 <div className="text-xs text-emerald-600 mt-1 font-semibold">
@@ -2056,11 +2161,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   id="kiosk-toggle-skeleton-btn"
                   data-testid="kiosk-toggle-skeleton-btn"
                   onClick={() => setShowSkeletonOverlay((prev) => !prev)}
-                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${
-                    showSkeletonOverlay
+                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${showSkeletonOverlay
                       ? 'bg-teal-500 text-slate-950 shadow-md'
                       : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   {showSkeletonOverlay ? 'เปิด (ON)' : 'ปิด (OFF)'}
                 </button>
@@ -2090,11 +2194,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 <button
                   type="button"
                   onClick={() => setBoostLighting((prev) => !prev)}
-                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${
-                    boostLighting
+                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${boostLighting
                       ? 'bg-amber-500 text-slate-950 shadow-md'
                       : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   {boostLighting ? 'เปิด (ON)' : 'อัตโนมัติ'}
                 </button>
@@ -2109,11 +2212,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 <button
                   type="button"
                   onClick={() => setShowGuideSilhouette((prev) => !prev)}
-                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${
-                    showGuideSilhouette
+                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${showGuideSilhouette
                       ? 'bg-cyan-500 text-slate-950 shadow-md'
                       : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   {showGuideSilhouette ? 'เปิด (ON)' : 'ปิด (OFF)'}
                 </button>
@@ -2130,11 +2232,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   id="kiosk-toggle-debug-btn"
                   data-testid="kiosk-toggle-debug-btn"
                   onClick={() => setShowDebugHud((prev) => !prev)}
-                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${
-                    showDebugHud
+                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${showDebugHud
                       ? 'bg-emerald-500 text-slate-950 shadow-md'
                       : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   {showDebugHud ? 'เปิด (ON)' : 'ปิด (OFF)'}
                 </button>
@@ -2151,22 +2252,20 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                     <button
                       type="button"
                       onClick={() => handleToggleSide('right')}
-                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${
-                        activeSide === 'right'
+                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'right'
                           ? 'bg-teal-500 text-slate-950 shadow-sm'
                           : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
+                        }`}
                     >
                       ขวา
                     </button>
                     <button
                       type="button"
                       onClick={() => handleToggleSide('left')}
-                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${
-                        activeSide === 'left'
+                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'left'
                           ? 'bg-teal-500 text-slate-950 shadow-sm'
                           : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
+                        }`}
                     >
                       ซ้าย
                     </button>

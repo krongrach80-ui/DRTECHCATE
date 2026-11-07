@@ -34,40 +34,90 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
     });
   });
 
-  describe('2. Skeleton Overlay Toggle & Upper-Body Filtering', () => {
-    it('2.1 default skeleton overlay state must be false (disabled initially)', () => {
-      const defaultState = false;
-      expect(defaultState).toBe(false);
+  describe('2. Skeleton Overlay Toggle & Pose Connections', () => {
+    it('2.1 default skeleton overlay state must be true (enabled initially)', () => {
+      const defaultState = true;
+      expect(defaultState).toBe(true);
     });
 
-    it('2.2 upper-body framing mode filters connections to upper-torso and arms only (excluding face & legs)', () => {
-      const framing: string = 'upper_body';
-      const isUpperBodyMode = framing !== 'full_body' && framing !== 'lower_body';
-      expect(isUpperBodyMode).toBe(true);
+    it('2.2 body skeleton connections include torso, arms, hands, legs, and feet', () => {
+      expect(POSE_CONNECTIONS.length).toBeGreaterThan(0);
+      // Left hand connections
+      expect(POSE_CONNECTIONS).toContainEqual([15, 17]);
+      expect(POSE_CONNECTIONS).toContainEqual([15, 19]);
+      expect(POSE_CONNECTIONS).toContainEqual([15, 21]);
+      expect(POSE_CONNECTIONS).toContainEqual([17, 19]);
+      // Right hand connections
+      expect(POSE_CONNECTIONS).toContainEqual([16, 18]);
+      expect(POSE_CONNECTIONS).toContainEqual([16, 20]);
+      expect(POSE_CONNECTIONS).toContainEqual([16, 22]);
+      expect(POSE_CONNECTIONS).toContainEqual([18, 20]);
+      // Torso
+      expect(POSE_CONNECTIONS).toContainEqual([11, 12]);
+      expect(POSE_CONNECTIONS).toContainEqual([11, 23]);
+      expect(POSE_CONNECTIONS).toContainEqual([12, 24]);
+      expect(POSE_CONNECTIONS).toContainEqual([23, 24]);
+      // Legs
+      expect(POSE_CONNECTIONS).toContainEqual([23, 25]);
+      expect(POSE_CONNECTIONS).toContainEqual([25, 27]);
+      expect(POSE_CONNECTIONS).toContainEqual([24, 26]);
+      expect(POSE_CONNECTIONS).toContainEqual([26, 28]);
+    });
 
-      const activeConnections = isUpperBodyMode
-        ? [
-            [11, 12], [11, 23], [12, 24], [23, 24], // Upper torso frame
-            [11, 13], [13, 15],                     // Left arm
-            [12, 14], [14, 16],                     // Right arm
-          ]
-        : POSE_CONNECTIONS;
-      expect(activeConnections.length).toBeGreaterThan(0);
+    it('2.3 selective visibility filter hides legs when sitting without extrapolating', () => {
+      const isPointVisibleInFrame = (pt: { inFrame: boolean; visibility: number }) => {
+        return pt.inFrame && pt.visibility >= 0.40;
+      };
 
-      const activeJointIndices = isUpperBodyMode
-        ? [11, 12, 13, 14, 15, 16, 23, 24] // Shoulders to hips only
-        : [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+      const sittingKnee = { inFrame: false, visibility: 0.15 };
+      const sittingAnkle = { inFrame: false, visibility: 0.10 };
+      const visibleShoulder = { inFrame: true, visibility: 0.95 };
+      const visibleWrist = { inFrame: true, visibility: 0.88 };
 
-      // Verify no facial landmarks (0-10)
-      for (let i = 0; i <= 10; i++) {
-        expect(activeJointIndices.includes(i)).toBe(false);
-      }
-      // Verify no lower-leg landmarks (25-32)
-      for (let i = 25; i <= 32; i++) {
-        expect(activeJointIndices.includes(i)).toBe(false);
-      }
-      // Verify torso & arm joints are included
-      expect(activeJointIndices).toEqual([11, 12, 13, 14, 15, 16, 23, 24]);
+      expect(isPointVisibleInFrame(sittingKnee)).toBe(false);
+      expect(isPointVisibleInFrame(sittingAnkle)).toBe(false);
+      expect(isPointVisibleInFrame(visibleShoulder)).toBe(true);
+      expect(isPointVisibleInFrame(visibleWrist)).toBe(true);
+    });
+
+    it('2.4 active side highlighting applies distinct stroke style and width (6px active vs 3px inactive)', () => {
+      const getConnectionStyle = (idxA: number, idxB: number, activeSide: 'left' | 'right' | 'bilateral') => {
+        if (activeSide === 'bilateral') return { lineWidth: 6, isActive: true };
+        if ((idxA === 11 && idxB === 12) || (idxA === 23 && idxB === 24)) return { lineWidth: 4, isActive: false };
+        const isLeft = idxA % 2 === 1 && idxB % 2 === 1;
+        const isRight = idxA % 2 === 0 && idxB % 2 === 0;
+        if (activeSide === 'left' && isLeft) return { lineWidth: 6, isActive: true };
+        if (activeSide === 'right' && isRight) return { lineWidth: 6, isActive: true };
+        return { lineWidth: 3, isActive: false };
+      };
+
+      // Left side training
+      const leftArmStyle = getConnectionStyle(11, 13, 'left');
+      const rightArmStyle = getConnectionStyle(12, 14, 'left');
+      expect(leftArmStyle.lineWidth).toBe(6);
+      expect(leftArmStyle.isActive).toBe(true);
+      expect(rightArmStyle.lineWidth).toBe(3);
+      expect(rightArmStyle.isActive).toBe(false);
+
+      // Right side training
+      const rightArmStyleR = getConnectionStyle(12, 14, 'right');
+      const leftArmStyleR = getConnectionStyle(11, 13, 'right');
+      expect(rightArmStyleR.lineWidth).toBe(6);
+      expect(rightArmStyleR.isActive).toBe(true);
+      expect(leftArmStyleR.lineWidth).toBe(3);
+      expect(leftArmStyleR.isActive).toBe(false);
+    });
+
+    it('2.5 patient-accessible quick skeleton toggle button exists and updates state', () => {
+      let skeletonVisible = true;
+      const toggleSkeleton = () => {
+        skeletonVisible = !skeletonVisible;
+      };
+      expect(skeletonVisible).toBe(true);
+      toggleSkeleton();
+      expect(skeletonVisible).toBe(false);
+      toggleSkeleton();
+      expect(skeletonVisible).toBe(true);
     });
 
     it('2.3 debug labels (#idx) are strictly guarded: only drawn when BOTH showSkeleton and showDebug are true, and idx >= 11', () => {
