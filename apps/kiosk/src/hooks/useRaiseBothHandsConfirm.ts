@@ -36,6 +36,12 @@ export interface UseRaiseBothHandsConfirmReturn {
   isSeated: boolean;
   handleManualConfirm: () => void;
   resetConfirmation: () => void;
+  progressRef: React.MutableRefObject<number>;
+  topProgressBarRef: React.RefObject<HTMLDivElement | null>;
+  bottomProgressBarRef: React.RefObject<HTMLDivElement | null>;
+  spinnerPathRef: React.RefObject<SVGPathElement | null>;
+  spinnerContainerRef: React.RefObject<HTMLSpanElement | null>;
+  buttonTextRef: React.RefObject<HTMLSpanElement | null>;
 }
 
 // Global cached MediaPipe PoseLandmarker singleton to avoid redundant WASM reloads
@@ -187,6 +193,21 @@ export function useRaiseBothHandsConfirm({
   const [isModelReady, setIsModelReady] = useState<boolean>(Boolean(cachedPoseLandmarker));
   const [isSeated, setIsSeated] = useState<boolean>(false);
 
+  // Direct DOM Refs for 60 FPS interpolation without React re-renders
+  const topProgressBarRef = useRef<HTMLDivElement | null>(null);
+  const bottomProgressBarRef = useRef<HTMLDivElement | null>(null);
+  const spinnerPathRef = useRef<SVGPathElement | null>(null);
+  const spinnerContainerRef = useRef<HTMLSpanElement | null>(null);
+  const buttonTextRef = useRef<HTMLSpanElement | null>(null);
+
+  const progressRef = useRef<number>(0.0);
+  const currentProgressRef = useRef<number>(0.0);
+  const isHoldingRef = useRef<boolean>(false);
+  const lastValidHoldingTimeRef = useRef<number>(0);
+  const holdStartTimeRef = useRef<number | null>(null);
+  const lastEmittedStatusRef = useRef<RaiseBothHandsStatus>('searching');
+  const lastEmittedFallbackRef = useRef<boolean>(false);
+
   const detectorStateRef = useRef<RaiseBothHandsState>(createInitialRaiseBothHandsState());
   const hasTriggeredRef = useRef<boolean>(false);
   const onConfirmRef = useRef(onConfirm);
@@ -202,19 +223,63 @@ export function useRaiseBothHandsConfirm({
   // Full reset function
   const resetConfirmation = useCallback(() => {
     hasTriggeredRef.current = false;
+    isHoldingRef.current = false;
+    lastValidHoldingTimeRef.current = 0;
+    holdStartTimeRef.current = null;
+    currentProgressRef.current = 0.0;
+    progressRef.current = 0.0;
     detectorStateRef.current = createInitialRaiseBothHandsState();
+
+    if (topProgressBarRef.current) {
+      topProgressBarRef.current.style.transform = 'scaleX(0)';
+    }
+    if (bottomProgressBarRef.current) {
+      bottomProgressBarRef.current.style.transform = 'scaleX(0)';
+    }
+    if (spinnerPathRef.current) {
+      spinnerPathRef.current.setAttribute('stroke-dasharray', '0, 100');
+    }
+    if (spinnerContainerRef.current) {
+      spinnerContainerRef.current.style.display = 'none';
+    }
+    if (buttonTextRef.current) {
+      buttonTextRef.current.textContent = '👐 ยก 2 มือขึ้น หรือ กดที่นี่เพื่อเริ่มฝึก ➔';
+    }
+
     setProgress(0.0);
     setStatus('searching');
+    lastEmittedStatusRef.current = 'searching';
     setThaiMessage('👀 กำลังมองหามือของคุณ... ยก 2 มือชูขึ้นเหนือไหล่เพื่อเริ่ม');
     setShowAccessibilityFallbackHint(false);
+    lastEmittedFallbackRef.current = false;
   }, []);
 
   // Manual button click alternative
   const handleManualConfirm = useCallback(() => {
     if (hasTriggeredRef.current) return;
     hasTriggeredRef.current = true;
+    currentProgressRef.current = 1.0;
+    progressRef.current = 1.0;
+
+    if (topProgressBarRef.current) {
+      topProgressBarRef.current.style.transform = 'scaleX(1)';
+    }
+    if (bottomProgressBarRef.current) {
+      bottomProgressBarRef.current.style.transform = 'scaleX(1)';
+    }
+    if (spinnerContainerRef.current) {
+      spinnerContainerRef.current.style.display = 'inline-flex';
+    }
+    if (spinnerPathRef.current) {
+      spinnerPathRef.current.setAttribute('stroke-dasharray', '100, 100');
+    }
+    if (buttonTextRef.current) {
+      buttonTextRef.current.textContent = '✅ ยืนยันสำเร็จ!';
+    }
+
     setProgress(1.0);
     setStatus('confirmed');
+    lastEmittedStatusRef.current = 'confirmed';
     setThaiMessage('✅ ยืนยันสำเร็จ! กำลังเข้าสู่หน้าฝึก...');
     playConfirmationChime();
     speakThaiConfirmation();
@@ -244,15 +309,94 @@ export function useRaiseBothHandsConfirm({
     let isCancelled = false;
     let animFrameId: number;
     let lastInferenceTime = 0;
+    let lastVisualTickTime = performance.now();
+    const holdDurationMs = config?.holdDurationMs ?? 1200;
+    const decayRate = config?.decayRatePerSecond ?? 2.2;
+    const MICRO_GRACE_MS = 90; // Micro-grace period (~80-100ms) to prevent flickering on 1-2 dropped frames
+
     detectorStateRef.current = createInitialRaiseBothHandsState();
 
     const loop = (currentTime: number) => {
       if (isCancelled || hasTriggeredRef.current) return;
 
+      const now = performance.now();
+      const dt = lastVisualTickTime ? Math.max(1, Math.min(100, now - lastVisualTickTime)) : 16.67;
+      lastVisualTickTime = now;
+
+      // -------------------------------------------------------------
+      // 1. Continuous 60 FPS Visual Interpolation & Direct DOM Update
+      // -------------------------------------------------------------
+      const isHolding = isHoldingRef.current || (now - lastValidHoldingTimeRef.current < MICRO_GRACE_MS);
+
+      if (isHolding) {
+        if (holdStartTimeRef.current === null) {
+          holdStartTimeRef.current = now - (currentProgressRef.current * holdDurationMs);
+        }
+        const elapsed = now - holdStartTimeRef.current;
+        currentProgressRef.current = Math.min(1.0, elapsed / holdDurationMs);
+      } else {
+        holdStartTimeRef.current = null;
+        const decayAmount = (decayRate * dt) / 1000.0;
+        currentProgressRef.current = Math.max(0.0, currentProgressRef.current - decayAmount);
+      }
+
+      const curProg = currentProgressRef.current;
+      progressRef.current = curProg;
+      const pct = Math.round(curProg * 100);
+
+      // Direct DOM mutation on top progress bar (scaleX)
+      if (topProgressBarRef.current) {
+        topProgressBarRef.current.style.transform = `scaleX(${curProg})`;
+      }
+
+      // Direct DOM mutation on bottom progress bar (scaleX)
+      if (bottomProgressBarRef.current) {
+        bottomProgressBarRef.current.style.transform = `scaleX(${curProg})`;
+      }
+
+      // Direct DOM mutation on spinner path & container
+      if (spinnerPathRef.current) {
+        spinnerPathRef.current.setAttribute('stroke-dasharray', `${pct}, 100`);
+      }
+      if (spinnerContainerRef.current) {
+        spinnerContainerRef.current.style.display = curProg > 0 ? 'inline-flex' : 'none';
+      }
+
+      // Direct DOM mutation on button text
+      if (buttonTextRef.current) {
+        if (curProg > 0) {
+          buttonTextRef.current.textContent = `ค้างไว้อีกนิด... (${pct}%)`;
+        } else {
+          buttonTextRef.current.textContent = '👐 ยก 2 มือขึ้น หรือ กดที่นี่เพื่อเริ่มฝึก ➔';
+        }
+      }
+
+      // Check completion
+      if (curProg >= 1.0 && !hasTriggeredRef.current) {
+        hasTriggeredRef.current = true;
+        if (topProgressBarRef.current) topProgressBarRef.current.style.transform = 'scaleX(1)';
+        if (bottomProgressBarRef.current) bottomProgressBarRef.current.style.transform = 'scaleX(1)';
+        if (spinnerPathRef.current) spinnerPathRef.current.setAttribute('stroke-dasharray', '100, 100');
+        if (buttonTextRef.current) buttonTextRef.current.textContent = '✅ ยืนยันสำเร็จ!';
+        setStatus('confirmed');
+        lastEmittedStatusRef.current = 'confirmed';
+        setThaiMessage('✅ ยืนยันสำเร็จ! กำลังเข้าสู่หน้าฝึก...');
+        playConfirmationChime();
+        speakThaiConfirmation();
+        setTimeout(() => {
+          if (!isCancelled) {
+            onConfirmRef.current();
+          }
+        }, 250);
+        return;
+      }
+
+      // -------------------------------------------------------------
+      // 2. Throttled AI PoseLandmarker Inference (~30ms)
+      // -------------------------------------------------------------
       const video = videoRef.current;
       const landmarker = cachedPoseLandmarker;
 
-      // Throttle detection to ~30 FPS (33ms) to save CPU/GPU overhead
       if (video && landmarker && currentTime - lastInferenceTime >= 30) {
         if (video.readyState >= 2 && video.videoWidth > 0 && !video.paused) {
           lastInferenceTime = currentTime;
@@ -260,7 +404,6 @@ export function useRaiseBothHandsConfirm({
             const timestampMs = Math.round(performance.now());
             const result = landmarker.detectForVideo(video, timestampMs);
 
-            // Pass multi-pose or empty
             const poses = (result?.landmarks && result.landmarks.length > 0)
               ? result.landmarks
               : null;
@@ -274,24 +417,34 @@ export function useRaiseBothHandsConfirm({
             );
 
             detectorStateRef.current = detectionResult.nextState;
-            setProgress(detectionResult.progress);
-            setStatus(detectionResult.status);
-            setThaiMessage(detectionResult.thaiMessage);
-            setShowAccessibilityFallbackHint(detectionResult.showAccessibilityFallbackHint);
-            setIsSeated(detectionResult.isSeated);
 
-            if (detectionResult.detected && !hasTriggeredRef.current) {
-              hasTriggeredRef.current = true;
-              playConfirmationChime();
-              speakThaiConfirmation();
-              // Short delay to let user see 100% green state
-              setTimeout(() => {
-                if (!isCancelled) {
-                  onConfirmRef.current();
-                }
-              }, 250);
-              return;
+            const isHoldingNow =
+              (detectionResult.status === 'holding' || (detectionResult.status as string) === 'confirmed') &&
+              detectionResult.leftWristAboveShoulder &&
+              detectionResult.rightWristAboveShoulder;
+
+            if (isHoldingNow) {
+              lastValidHoldingTimeRef.current = performance.now();
+              isHoldingRef.current = true;
+            } else {
+              if (performance.now() - lastValidHoldingTimeRef.current >= MICRO_GRACE_MS) {
+                isHoldingRef.current = false;
+              }
             }
+
+            // Only update React status & message when status actually changes
+            if (detectionResult.status !== lastEmittedStatusRef.current) {
+              lastEmittedStatusRef.current = detectionResult.status;
+              setStatus(detectionResult.status);
+              setThaiMessage(detectionResult.thaiMessage);
+            }
+
+            if (detectionResult.showAccessibilityFallbackHint !== lastEmittedFallbackRef.current) {
+              lastEmittedFallbackRef.current = detectionResult.showAccessibilityFallbackHint;
+              setShowAccessibilityFallbackHint(detectionResult.showAccessibilityFallbackHint);
+            }
+
+            setIsSeated(detectionResult.isSeated);
           } catch (detectionErr) {
             console.warn('Pose landmark evaluation warning:', detectionErr);
           }
@@ -310,7 +463,7 @@ export function useRaiseBothHandsConfirm({
   }, [isOpen, videoRef, config, resetConfirmation]);
 
   return {
-    progress,
+    progress: progressRef.current,
     status,
     thaiMessage,
     showAccessibilityFallbackHint,
@@ -318,5 +471,11 @@ export function useRaiseBothHandsConfirm({
     isSeated,
     handleManualConfirm,
     resetConfirmation,
+    progressRef,
+    topProgressBarRef,
+    bottomProgressBarRef,
+    spinnerPathRef,
+    spinnerContainerRef,
+    buttonTextRef,
   };
 }

@@ -205,6 +205,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     showAccessibilityFallbackHint,
     handleManualConfirm,
     resetConfirmation,
+    topProgressBarRef,
+    bottomProgressBarRef,
+    spinnerPathRef,
+    spinnerContainerRef,
+    buttonTextRef,
   } = useRaiseBothHandsConfirm({
     videoRef,
     isOpen: Boolean(matchedPatient),
@@ -1001,6 +1006,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
     const renderLoop = () => {
       if (!isMountedRef.current || isScanningPaused) return;
+      // Freeze preview canvas rendering while matchedPatient modal is active to save GPU backdrop-blur
+      if (matchedPatient) {
+        animId = requestAnimationFrame(renderLoop);
+        return;
+      }
       if (previewCanvasRef.current && videoRef.current && videoRef.current.readyState >= 2) {
         camera.setRotation(cameraRotationRef.current);
         camera.setMirrorPreview(isMirroredRef.current);
@@ -1013,7 +1023,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     return () => {
       cancelAnimationFrame(animId);
     };
-  }, [cameraReady, isScanningPaused]);
+  }, [cameraReady, isScanningPaused, matchedPatient]);
 
   // DETECTION & PRESENCE LOOP (160ms throttled)
   const prevFaceInCircleRef = useRef<boolean>(false);
@@ -1045,7 +1055,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     });
 
     const presenceInterval = setInterval(async () => {
-      if (!isMountedRef.current || isScanningPaused || isScanning) return;
+      if (!isMountedRef.current || isScanningPaused || isScanning || Boolean(matchedPatient)) return;
       if (videoRef.current && videoRef.current.readyState >= 2) {
         try {
           const vw = videoRef.current.videoWidth || 640;
@@ -1753,7 +1763,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             {/* Gesture Prompt & Real-time Thai Feedback */}
             <div
               className={`my-4 p-3.5 rounded-2xl border transition-all duration-200 relative overflow-hidden ${
-                gestureProgress > 0
+                gestureStatus === 'holding' || gestureStatus === 'confirmed'
                   ? 'bg-emerald-50/90 border-emerald-400 shadow-sm'
                   : gestureStatus === 'single_hand_detected'
                     ? 'bg-amber-50 border-amber-300 text-amber-900'
@@ -1762,15 +1772,18 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                       : 'bg-emerald-50 border-emerald-200 text-emerald-800'
               }`}
             >
-              {gestureProgress > 0 && (
-                <div
-                  className="absolute inset-y-0 left-0 bg-emerald-200/50 transition-all duration-75 pointer-events-none"
-                  style={{ width: `${Math.round(gestureProgress * 100)}%` }}
-                />
-              )}
+              <div
+                ref={topProgressBarRef}
+                className="absolute inset-y-0 left-0 bg-emerald-200/50 pointer-events-none origin-left"
+                style={{
+                  transform: 'scaleX(0)',
+                  willChange: 'transform',
+                  width: '100%',
+                }}
+              />
 
               <div className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold">
-                <span className={`text-xl ${gestureProgress > 0 ? 'animate-pulse' : ''}`}>
+                <span className={`text-xl ${gestureStatus === 'holding' ? 'animate-pulse' : ''}`}>
                   {gestureStatus === 'holding'
                     ? '⏳'
                     : gestureStatus === 'single_hand_detected'
@@ -1804,12 +1817,20 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 className="touch-btn relative overflow-hidden w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-base shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.99] transition select-none"
               >
                 <div
-                  className="absolute inset-y-0 left-0 bg-emerald-400/40 backdrop-brightness-110 pointer-events-none transition-all duration-100 ease-out"
-                  style={{ width: `${Math.round(gestureProgress * 100)}%` }}
+                  ref={bottomProgressBarRef}
+                  className="absolute inset-y-0 left-0 bg-emerald-400/40 backdrop-brightness-110 pointer-events-none origin-left"
+                  style={{
+                    transform: 'scaleX(0)',
+                    willChange: 'transform',
+                    width: '100%',
+                  }}
                 />
 
-                {gestureProgress > 0 ? (
-                  <div className="relative z-10 flex items-center gap-2">
+                <div className="relative z-10 flex items-center gap-2">
+                  <span
+                    ref={spinnerContainerRef}
+                    style={{ display: 'none' }}
+                  >
                     <svg className="w-5 h-5 -rotate-90" viewBox="0 0 36 36">
                       <path
                         className="text-emerald-800/40"
@@ -1819,22 +1840,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                       />
                       <path
-                        className="text-white transition-all duration-75"
-                        strokeDasharray={`${Math.round(gestureProgress * 100)}, 100`}
+                        ref={spinnerPathRef}
+                        className="text-white"
+                        strokeDasharray="0, 100"
                         strokeWidth="4"
                         strokeLinecap="round"
                         stroke="currentColor"
                         fill="none"
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        style={{ willChange: 'stroke-dasharray' }}
                       />
                     </svg>
-                    <span>ค้างไว้อีกนิด... ({Math.round(gestureProgress * 100)}%)</span>
-                  </div>
-                ) : (
-                  <span className="relative z-10 flex items-center gap-2">
-                    <span>👐 ยก 2 มือขึ้น หรือ กดที่นี่เพื่อเริ่มฝึก ➔</span>
                   </span>
-                )}
+                  <span ref={buttonTextRef}>
+                    👐 ยก 2 มือขึ้น หรือ กดที่นี่เพื่อเริ่มฝึก ➔
+                  </span>
+                </div>
               </button>
 
               <button

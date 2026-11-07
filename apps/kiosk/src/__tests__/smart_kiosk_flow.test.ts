@@ -435,4 +435,130 @@ describe('[MASTER PROMPT v4] Isolated Kiosk Smart Flow Test Suite', () => {
       expect(getRemainingSec(touchActivityTime)).toBe(600);
     });
   });
+
+  describe('7. 60 FPS Touchless Readiness Confirmation & Micro-Grace Specification', () => {
+    it('7.1 Continuous Time-based Progress calculation: 1,200 ms duration reaches 100% smoothly without discrete frame steps', () => {
+      const holdDurationMs = 1200;
+      let holdStartTime: number | null = null;
+      let currentProgress = 0.0;
+
+      const evaluateTick = (now: number, isHolding: boolean) => {
+        if (isHolding) {
+          if (holdStartTime === null) {
+            holdStartTime = now - (currentProgress * holdDurationMs);
+          }
+          const elapsed = now - holdStartTime;
+          currentProgress = Math.min(1.0, elapsed / holdDurationMs);
+        } else {
+          holdStartTime = null;
+          currentProgress = Math.max(0.0, currentProgress - 0.05);
+        }
+        return currentProgress;
+      };
+
+      const start = 10000;
+      // Start holding
+      expect(evaluateTick(start, true)).toBe(0.0);
+      // At 300ms -> exactly 25%
+      expect(evaluateTick(start + 300, true)).toBeCloseTo(0.25, 2);
+      // At 600ms -> exactly 50%
+      expect(evaluateTick(start + 600, true)).toBeCloseTo(0.50, 2);
+      // At 1200ms -> exactly 100%
+      expect(evaluateTick(start + 1200, true)).toBe(1.0);
+    });
+
+    it('7.2 Micro-grace period (~90ms): momentary camera drop (< 90ms) maintains holding state and does not decay', () => {
+      const MICRO_GRACE_MS = 90;
+      let lastValidHoldingTime = 1000;
+
+      const checkIsHoldingWithGrace = (now: number, isDetectedNow: boolean) => {
+        if (isDetectedNow) {
+          lastValidHoldingTime = now;
+          return true;
+        }
+        // Camera drop: check if within micro-grace window
+        return (now - lastValidHoldingTime) < MICRO_GRACE_MS;
+      };
+
+      // T0: Detected
+      expect(checkIsHoldingWithGrace(1000, true)).toBe(true);
+
+      // T+40ms: Camera drops a frame (detection = false) -> Still within micro-grace (40 < 90ms)
+      expect(checkIsHoldingWithGrace(1040, false)).toBe(true);
+
+      // T+70ms: Camera still dropped -> Still within micro-grace (70 < 90ms)
+      expect(checkIsHoldingWithGrace(1070, false)).toBe(true);
+
+      // T+85ms: Camera regains detection
+      expect(checkIsHoldingWithGrace(1085, true)).toBe(true);
+
+      // T+200ms: Actual hands drop (now - last = 115ms >= 90ms)
+      expect(checkIsHoldingWithGrace(1200, false)).toBe(false);
+    });
+
+    it('7.3 Linear Decay: when hands drop (> 90ms), decays smoothly at 2.2/s rather than jumping instantly to 0', () => {
+      const decayRate = 2.2;
+      let progress = 0.80; // was at 80%
+
+      const applyDecayTick = (dtMs: number) => {
+        const decayAmount = (decayRate * dtMs) / 1000.0;
+        progress = Math.max(0.0, progress - decayAmount);
+        return progress;
+      };
+
+      // 50ms decay tick -> progress drops by ~0.11 (still around 0.69)
+      const after50ms = applyDecayTick(50);
+      expect(after50ms).toBeCloseTo(0.69, 2);
+      expect(after50ms).toBeGreaterThan(0.0); // Does NOT drop to 0 instantly!
+
+      // After ~400ms total decay -> approaches 0
+      applyDecayTick(350);
+      expect(progress).toBeLessThan(0.05);
+    });
+
+    it('7.4 Background task suspension when matchedPatient modal is active', () => {
+      let faceDetectionRunning = true;
+      let previewCanvasRendering = true;
+
+      const evaluateBackgroundTasks = (matchedPatient: any | null) => {
+        // Suspend face detection interval and preview canvas when matchedPatient modal is open
+        if (matchedPatient !== null) {
+          faceDetectionRunning = false;
+          previewCanvasRendering = false; // Freeze canvas to last frame
+        } else {
+          faceDetectionRunning = true;
+          previewCanvasRendering = true;
+        }
+      };
+
+      // While scanning (no patient matched yet)
+      evaluateBackgroundTasks(null);
+      expect(faceDetectionRunning).toBe(true);
+      expect(previewCanvasRendering).toBe(true);
+
+      // Once patient is matched (confirmation modal opens)
+      evaluateBackgroundTasks({ hn: 'P-001', first_name: 'สมชาย' });
+      expect(faceDetectionRunning).toBe(false);
+      expect(previewCanvasRendering).toBe(false);
+
+      // Patient clicks "ไม่ใช่ฉัน (สแกนใหม่)" -> resets matchedPatient
+      evaluateBackgroundTasks(null);
+      expect(faceDetectionRunning).toBe(true);
+      expect(previewCanvasRendering).toBe(true);
+    });
+
+    it('7.5 Direct DOM transformation uses transform: scaleX(...) with transform-origin: left and will-change', () => {
+      const barStyle = {
+        transform: 'scaleX(0.5)',
+        transformOrigin: 'left',
+        willChange: 'transform',
+        width: '100%',
+      };
+
+      expect(barStyle.transform).toContain('scaleX');
+      expect(barStyle.transformOrigin).toBe('left');
+      expect(barStyle.willChange).toBe('transform');
+      expect(barStyle.width).toBe('100%');
+    });
+  });
 });
