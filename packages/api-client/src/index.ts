@@ -1345,6 +1345,26 @@ export class ApiClient {
 
         const checklists = patientRec.daily_checklists || patientRec.history?.daily_checklists || {};
         const isCompleted = Boolean(checklists[bkkIsoDate]);
+        let completedExerciseIds: string[] = [];
+        if (isCompleted) {
+          completedExerciseIds = resolvedExercises.map((e: any) => e.exercise_id || e.id).filter(Boolean);
+        } else {
+          try {
+            const patUuid = patientRec.id || patientRec.patient_id;
+            if (patUuid) {
+              const logsRes = await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/exercise_session_logs?patient_id=eq.${encodeURIComponent(patUuid)}&created_at=gte.${encodeURIComponent(bkkIsoDate + 'T00:00:00')}&select=exercise_id`,
+                { headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}` } }
+              );
+              if (logsRes.ok) {
+                const logsData = await logsRes.json();
+                if (Array.isArray(logsData)) {
+                  completedExerciseIds = Array.from(new Set(logsData.map((l: any) => l.exercise_id).filter(Boolean)));
+                }
+              }
+            }
+          } catch {}
+        }
         const includeMinigame = matchedCourse?.include_minigame ?? schedule?.include_minigame ?? true;
         const timeSlot = matchedCourse?.start_time || schedule?.timeSlot || schedule?.time_slot || '09:00 - 10:00';
         const allowedHand = matchedCourse?.allowed_start_hand || schedule?.allowed_start_hand || 'both';
@@ -1353,7 +1373,8 @@ export class ApiClient {
           ok: true,
           is_scheduled_today: isScheduled,
           is_completed_today: isCompleted,
-          reason: restReason,
+          completed_exercise_ids: completedExerciseIds,
+          reason: isCompleted ? 'วันนี้คุณได้ทำการฝึกกายภาพบำบัดครบถ้วนตามนัดแล้ว' : restReason,
           next_appointment_date: nextAppointmentDate,
           time_slot: timeSlot,
           schedule: schedule || (matchedCourse ? { ...matchedCourse, time_slot: timeSlot } : null),
@@ -1370,6 +1391,47 @@ export class ApiClient {
         const now = new Date();
         const bkkIsoDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(now);
 
+        // Check Supabase patients table for existing completion today
+        try {
+          const patCheck = await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(patientId)},hn.eq.${encodeURIComponent(patientId)})&select=id,history&limit=1`,
+            { headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}` } }
+          );
+          if (patCheck.ok) {
+            const patArr = await patCheck.json();
+            if (Array.isArray(patArr) && patArr[0]) {
+              const currentChecklists = patArr[0].history?.daily_checklists || {};
+              if (currentChecklists[bkkIsoDate]) {
+                const conflictErr: any = new Error('วันนี้คุณทำกายภาพไปแล้ว (ทำได้วันละครั้ง)');
+                conflictErr.status = 409;
+                conflictErr.statusCode = 409;
+                conflictErr.code = 'ALREADY_COMPLETED_TODAY';
+                throw conflictErr;
+              }
+              // Mark checklist in Supabase
+              const nextChecklists = { ...currentChecklists, [bkkIsoDate]: true };
+              const nextHistory = { ...(patArr[0].history || {}), daily_checklists: nextChecklists };
+              await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(patArr[0].id)}`,
+                {
+                  method: 'PATCH',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    Prefer: 'return=minimal',
+                  },
+                  body: JSON.stringify({ history: nextHistory }),
+                }
+              );
+            }
+          }
+        } catch (err: any) {
+          if (err.status === 409 || err.statusCode === 409 || err.code === 'ALREADY_COMPLETED_TODAY') {
+            throw err;
+          }
+        }
+
         if (typeof window !== 'undefined') {
           try {
             const rawStored = localStorage.getItem('drtech_resilient_patients');
@@ -1377,11 +1439,20 @@ export class ApiClient {
               const stored = JSON.parse(rawStored);
               const found = stored.find((p: any) => p.id === patientId || p.patient_id === patientId || p.hn === patientId);
               if (found) {
+                if (found.daily_checklists?.[bkkIsoDate]) {
+                  const conflictErr: any = new Error('วันนี้คุณทำกายภาพไปแล้ว (ทำได้วันละครั้ง)');
+                  conflictErr.status = 409;
+                  conflictErr.statusCode = 409;
+                  conflictErr.code = 'ALREADY_COMPLETED_TODAY';
+                  throw conflictErr;
+                }
                 found.daily_checklists = { ...(found.daily_checklists || {}), [bkkIsoDate]: true };
                 localStorage.setItem('drtech_resilient_patients', JSON.stringify(stored));
               }
             }
-          } catch {}
+          } catch (storageErr: any) {
+            if (storageErr.status === 409 || storageErr.statusCode === 409) throw storageErr;
+          }
         }
         return { ok: true, message: 'บันทึกคะแนนสำเร็จ' } as T;
       }
@@ -4868,7 +4939,19 @@ export class ApiClient {
           method: 'POST',
           body: JSON.stringify(data),
         });
-      } catch {
+      } catch (err: any) {
+        // If rejected due to already completed today or forbidden, rethrow immediately!
+        if (
+          err?.status === 409 ||
+          err?.statusCode === 409 ||
+          err?.code === 'ALREADY_COMPLETED_TODAY' ||
+          err?.status === 403 ||
+          err?.statusCode === 403 ||
+          (err?.message && String(err.message).includes('วันนี้คุณทำกายภาพไปแล้ว'))
+        ) {
+          throw err;
+        }
+
         // Resilient fallback for Edge / serverless environments (HTTP 404 / 405)
         const fallbackRes = await this.courses.submitSessionLog({
           patient_id: data.patient_id,

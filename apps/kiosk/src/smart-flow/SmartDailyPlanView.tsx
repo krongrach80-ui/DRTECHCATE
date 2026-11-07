@@ -94,7 +94,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   // Final session completed state
   const [isSessionCompleted, setIsSessionCompleted] = useState(false);
-  const [autoResetSeconds, setAutoResetSeconds] = useState(8);
+  const [autoResetSeconds, setAutoResetSeconds] = useState(15);
 
   const isMountedRef = useRef(true);
 
@@ -155,6 +155,15 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       const completed = Boolean(res.is_completed_today);
       setIsScheduledToday(scheduled);
       setIsCompletedToday(completed);
+
+      // Hydrate completed exercise IDs from server response
+      if (Array.isArray((res as any)?.completed_exercise_ids) && (res as any).completed_exercise_ids.length > 0) {
+        setCompletedExerciseIds((prev) => {
+          const merged = new Set(prev);
+          (res as any).completed_exercise_ids.forEach((id: string) => merged.add(id));
+          return merged;
+        });
+      }
 
       if (!scheduled) {
         setExercises([]);
@@ -391,7 +400,17 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         staff_user: metadata.staff_user,
         kiosk_id: 'kiosk-01',
       });
-    } catch (err) {
+    } catch (err: any) {
+      if (
+        err?.status === 409 ||
+        err?.statusCode === 409 ||
+        err?.code === 'ALREADY_COMPLETED_TODAY' ||
+        (err?.message && String(err.message).includes('วันนี้คุณทำกายภาพไปแล้ว'))
+      ) {
+        alert(err.message || 'วันนี้ผู้ป่วยทำกายภาพไปแล้ว (ทำได้วันละครั้ง)');
+        setIsStaffOverrideModalOpen(false);
+        return;
+      }
       console.warn('Server staff override notice (handled with resilient fallback):', err);
     }
 
@@ -531,9 +550,9 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     }
   };
 
-  // Auto-reset timer when session completes
+  // Auto-reset timer when session completes or already completed today
   useEffect(() => {
-    if (!isSessionCompleted) return;
+    if (!isSessionCompleted && !isCompletedToday) return;
     const timer = setInterval(() => {
       setAutoResetSeconds((prev) => {
         if (prev <= 1) {
@@ -545,7 +564,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [isSessionCompleted, onLogout]);
+  }, [isSessionCompleted, isCompletedToday, onLogout]);
 
   // Helper for localized rest reason description
   const getLocalizedRestReason = (reason: string, currentLang: string) => {
@@ -800,27 +819,26 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
 
   // 2. Final Completion Screen / Completed Today Screen (Prevent repeated exercises)
   if (isSessionCompleted || isCompletedToday) {
+    const patientDisplayName = patient?.first_name || (patient as any)?.name || 'ผู้ป่วย';
+    const patientFullName = `${patientDisplayName}${patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}`;
+
     return (
       <div className="w-full min-h-[calc(100vh-64px)] flex flex-col justify-between bg-gradient-to-b from-[#EBF5FA] via-[#F4F9FC] to-[#E6F4F8] text-slate-900 select-none">
-        {/* Top Header */}
+        {/* Top Header - Strictly without HN */}
         <div className="w-full bg-white border-b border-blue-100 px-6 py-3.5 shadow-xs flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-extrabold text-lg flex items-center justify-center shadow-xs">
-              {patient?.first_name?.[0] || (patient as any)?.name?.[0] || 'P'}
+              {patientDisplayName[0] || 'P'}
             </div>
             <div>
               <div className="text-base sm:text-lg font-black text-slate-900 leading-tight">
-                คุณ {patient?.first_name || (patient as any)?.name || 'ผู้ป่วย'}{patient?.last_name && patient.last_name !== '-' ? ` ${patient.last_name}` : ''}
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200/80">
-                  HN: {patient?.hn || patient?.patient_id || '-'}
-                </span>
+                คุณ {patientFullName}
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            <LanguageSwitcher />
             <button
               onClick={onLogout}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-200 font-bold text-xs sm:text-sm transition cursor-pointer active:scale-95 shadow-xs"
@@ -831,68 +849,85 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           </div>
         </div>
 
-        <div className="my-auto max-w-xl w-full bg-white border-2 border-emerald-400 rounded-3xl p-8 sm:p-10 text-center shadow-xl flex flex-col items-center mx-auto space-y-5 animate-in fade-in zoom-in-95 duration-300">
-          <div className="w-20 h-20 rounded-3xl bg-emerald-50 border-2 border-emerald-200 flex items-center justify-center text-emerald-600 shadow-sm">
-            <Trophy className="w-10 h-10" />
+        {/* Central Completion Notification Card */}
+        <div className="my-auto max-w-2xl w-full bg-white border-2 border-emerald-400 rounded-3xl p-8 sm:p-12 text-center shadow-xl flex flex-col items-center mx-auto space-y-6 animate-in fade-in zoom-in-95 duration-300">
+          {/* Big Emerald Green Checkmark */}
+          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-emerald-50 border-4 border-emerald-400 flex items-center justify-center text-emerald-600 shadow-md">
+            <CheckCircle2 className="w-14 h-14 sm:w-16 sm:h-16 stroke-[2.5]" />
           </div>
 
-          <div>
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2">
-              {lang === 'zh-CN' ? '今日康复训练已完成 🎉' : lang === 'en-US' ? 'Training Completed Today 🎉' : 'ฝึกเสร็จแล้ววันนี้ 🎉'}
-            </h2>
-            <p className="text-slate-600 text-base leading-relaxed">
+          <div className="space-y-3">
+            {/* Primary Heading >= 28px */}
+            <h1 className="text-[28px] sm:text-3xl md:text-4xl font-black text-slate-900 leading-snug tracking-tight text-center">
               {lang === 'zh-CN'
-                ? '您已顺利完成今日的所有康复动作与评估。为避免过度疲劳与肌肉损伤，今日请充分休息。'
+                ? `${patientDisplayName} 您已完成本次物理治疗。`
                 : lang === 'en-US'
-                ? 'You have successfully completed all prescribed physical therapy exercises for today. Please rest to prevent overtraining.'
-                : 'คุณทำกายภาพบำบัดและกิจกรรมตามนัดหมายประจำวันนี้เสร็จสิ้นแล้ว เพื่อความปลอดภัยและผลการรักษาที่ดีที่สุด เชิญพักผ่อนได้ครับ'}
+                ? `${patientDisplayName}, you have already completed today's physical therapy session.`
+                : `คุณ ${patientDisplayName} ได้ทำการกายภาพในครั้งนี้ไปแล้ว`}
+            </h1>
+
+            {/* Approved Secondary Subtitle */}
+            <p className="text-lg sm:text-xl text-slate-600 font-semibold text-center">
+              {lang === 'zh-CN'
+                ? '请您好好休息。'
+                : lang === 'en-US'
+                ? 'Please feel free to rest and relax.'
+                : 'พักผ่อนตามอัธยาศัยได้เลยครับ'}
             </p>
           </div>
 
-          <div className="w-full bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200 rounded-2xl p-4 text-center">
-            <div className="text-xs font-bold text-teal-800 mb-1">
-              {lang === 'zh-CN' ? '📅 下次预约时间:' : lang === 'en-US' ? '📅 Next Appointment:' : '📅 นัดหมายครั้งต่อไป:'}
-            </div>
-            <div className="text-base sm:text-lg font-extrabold text-blue-950">
-              {nextApptDateStr}
-            </div>
-            {isSessionCompleted && (
-              <div className="text-xs text-slate-500 mt-1 font-medium">
-                {lang === 'zh-CN'
-                  ? `(系统将在 ${autoResetSeconds} 秒后自动返回待机页面)`
-                  : lang === 'en-US'
-                  ? `(System will return to standby in ${autoResetSeconds} seconds)`
-                  : `(ระบบจะรีเซ็ตกลับสู่หน้าสแตนด์บายอัตโนมัติใน ${autoResetSeconds} วินาที)`}
+          {/* Next Appointment Card (Clean & Helpful) */}
+          {nextApptDateStr && (
+            <div className="w-full bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200 rounded-2xl p-4 text-center">
+              <div className="text-xs font-bold text-teal-800 mb-1">
+                {lang === 'zh-CN' ? '📅 下次预约时间:' : lang === 'en-US' ? '📅 Next Appointment:' : '📅 นัดหมายครั้งต่อไป:'}
               </div>
-            )}
+              <div className="text-base sm:text-lg font-extrabold text-blue-950">
+                {nextApptDateStr}
+              </div>
+            </div>
+          )}
+
+          {/* Standby Return Timer */}
+          <div className="text-xs sm:text-sm text-slate-400 font-medium">
+            {lang === 'zh-CN'
+              ? `(系统将在 ${autoResetSeconds} 秒后自动返回待机页面)`
+              : lang === 'en-US'
+              ? `(System will return to standby in ${autoResetSeconds} seconds)`
+              : `(ระบบจะกลับสู่หน้าหลักอัตโนมัติใน ${autoResetSeconds} วินาที)`}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 w-full">
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
-              <div className="text-xs text-slate-500 font-semibold mb-1">
-                {lang === 'zh-CN' ? '动作项目' : lang === 'en-US' ? 'Exercises' : 'ท่ากายภาพบำบัด'}
-              </div>
-              <div className="text-2xl font-black text-emerald-600">
-                {exercises.length > 0 ? `${exercises.length}/${exercises.length}` : 'เสร็จสมบูรณ์'}
-              </div>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
-              <div className="text-xs text-slate-500 font-semibold mb-1">
-                {lang === 'zh-CN' ? '微游戏得分' : lang === 'en-US' ? 'Minigame' : 'คะแนนมินิเกม'}
-              </div>
-              <div className="text-2xl font-black text-blue-600">
-                {includeMinigame ? `${quizScore} คะแนน` : (lang === 'zh-CN' ? '已达标' : lang === 'en-US' ? 'Passed' : 'ผ่านเกณฑ์')}
-              </div>
-            </div>
-          </div>
+          {/* Senior Ergonomic Action Buttons */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full pt-2">
+            <button
+              type="button"
+              onClick={handleCallStaff}
+              disabled={callStaffStatus === 'sending' || callStaffStatus === 'sent'}
+              className="w-full py-4 px-6 rounded-2xl font-extrabold text-base sm:text-lg text-blue-800 bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 active:scale-98 transition flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60 shadow-xs"
+            >
+              {callStaffStatus === 'sent' ? (
+                <Check className="w-5 h-5 text-emerald-600" />
+              ) : (
+                <Bell className="w-5 h-5 text-amber-500" />
+              )}
+              <span>
+                {callStaffStatus === 'sending'
+                  ? (lang === 'zh-CN' ? '正在呼叫工作人员...' : lang === 'en-US' ? 'Calling staff...' : 'กำลังเรียกเจ้าหน้าที่...')
+                  : callStaffStatus === 'sent'
+                  ? (lang === 'zh-CN' ? '✓ 已通知工作人员' : lang === 'en-US' ? '✓ Staff Notified' : '✓ แจ้งเจ้าหน้าที่แล้ว')
+                  : (lang === 'zh-CN' ? '🔔 呼叫医护人员' : lang === 'en-US' ? '🔔 Call Staff' : '🔔 เรียกเจ้าหน้าที่')}
+              </span>
+            </button>
 
-          <button
-            onClick={onLogout}
-            className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-blue-600 hover:brightness-105 text-white font-extrabold text-base transition active:scale-95 shadow-md flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <LogOut className="w-5 h-5" />
-            <span>{lang === 'zh-CN' ? '完成并立即退出系统' : lang === 'en-US' ? 'Finish & Sign Out' : 'เสร็จสิ้นและออกจากระบบทันที'}</span>
-          </button>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:brightness-105 active:scale-98 text-white font-extrabold text-base sm:text-lg transition shadow-md flex items-center justify-center gap-2.5 cursor-pointer"
+            >
+              <LogOut className="w-5 h-5" />
+              <span>{lang === 'zh-CN' ? '🚪 退出系统' : lang === 'en-US' ? '🚪 Sign Out' : '🚪 ออกจากระบบ'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Bottom Bar */}

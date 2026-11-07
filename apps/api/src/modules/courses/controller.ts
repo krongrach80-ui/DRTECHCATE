@@ -180,6 +180,14 @@ export class CourseController {
       const { defaultSmartOnboardingService } = await import('../smart-onboarding/service');
       const plan = await defaultSmartOnboardingService.getDailyPlan(input.patient_id);
 
+      if (plan.is_completed_today) {
+        throw new AppError(
+          'วันนี้คุณทำกายภาพไปแล้ว (ทำได้วันละครั้ง)',
+          409,
+          'ALREADY_COMPLETED_TODAY'
+        );
+      }
+
       if (!plan.is_scheduled_today || !plan.exercises || plan.exercises.length === 0) {
         throw new AppError(
           'ผู้ป่วยไม่มีตารางฝึกกายภาพสำหรับวันนี้ ไม่สามารถเริ่มท่าแทนได้',

@@ -2464,6 +2464,7 @@ export class SmartOnboardingService {
   ): Promise<{
     is_scheduled_today: boolean;
     is_completed_today?: boolean;
+    completed_exercise_ids?: string[];
     reason?: string;
     schedule?: any;
     allowed_start_hand?: 'both' | 'left' | 'right';
@@ -2752,9 +2753,31 @@ export class SmartOnboardingService {
           }))
       );
 
+      let completedExerciseIds: string[] = [];
+      if (isCompletedToday) {
+        completedExerciseIds = exercises.map((e: any) => e.exercise_id || e.id).filter(Boolean);
+      } else {
+        try {
+          if (resolvedPatientUuid) {
+            const logs = await this.courseRepo.listSessionLogs({
+              patient_id: resolvedPatientUuid,
+              limit: 50,
+            });
+            const todayLogs = (logs || []).filter((l: any) => {
+              const lDate = l.created_at ? l.created_at.slice(0, 10) : '';
+              return lDate === bkkIsoDate;
+            });
+            completedExerciseIds = Array.from(new Set(todayLogs.map((l: any) => l.exercise_id).filter(Boolean)));
+          }
+        } catch {
+          // resilient fallback
+        }
+      }
+
       return {
         is_scheduled_today: true,
         is_completed_today: isCompletedToday,
+        completed_exercise_ids: completedExerciseIds,
         reason: isCompletedToday ? 'วันนี้คุณได้ทำการฝึกกายภาพบำบัดครบถ้วนตามนัดแล้ว' : undefined,
         schedule: effectiveSchedule,
         allowed_start_hand: (effectiveSchedule as any).allowed_start_hand || 'both',
@@ -2929,6 +2952,13 @@ export class SmartOnboardingService {
       );
       err.statusCode = 403;
       err.code = 'NO_SCHEDULED_APPOINTMENT_TODAY';
+      throw err;
+    }
+
+    if (plan.is_completed_today) {
+      const err: any = new Error('วันนี้คุณทำกายภาพไปแล้ว (ทำได้วันละครั้ง)');
+      err.statusCode = 409;
+      err.code = 'ALREADY_COMPLETED_TODAY';
       throw err;
     }
 

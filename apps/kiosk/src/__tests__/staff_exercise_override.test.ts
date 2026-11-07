@@ -214,6 +214,54 @@ describe('Staff Exercise Override System (Clinical Backup Flow)', () => {
         })
       );
     });
+
+    it('2.3 Rejects start if patient has already completed training for today (409)', async () => {
+      vi.spyOn(defaultSmartOnboardingService, 'getDailyPlan').mockResolvedValueOnce({
+        is_scheduled_today: true,
+        is_completed_today: true,
+        reason: 'วันนี้คุณได้ทำการฝึกกายภาพบำบัดครบถ้วนตามนัดแล้ว',
+        exercises: [
+          {
+            exercise_id: 'ex-01',
+            name: 'Pendulum',
+            target_joint: 'shoulder',
+            sets: 3,
+            reps: 10,
+          },
+        ],
+        include_minigame: false,
+      });
+
+      const mockReq = {
+        body: {
+          patient_id: 'P-1234',
+          exercise_id: 'ex-01',
+          override_reason: 'arm_injured_cannot_raise',
+          staff_user: {
+            id: 'pt-01',
+            username: 'pt_somchai',
+            role: 'pt',
+          },
+        },
+        ip: '127.0.0.1',
+      } as any;
+
+      const mockRes = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      } as any;
+
+      const mockNext = vi.fn();
+
+      await defaultCourseController.staffOverrideStart(mockReq, mockRes, mockNext);
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 409,
+          code: 'ALREADY_COMPLETED_TODAY',
+          message: expect.stringContaining('วันนี้คุณทำกายภาพไปแล้ว (ทำได้วันละครั้ง)'),
+        })
+      );
+    });
   });
 
   describe('3. API Client Resilient Fallback Handling', () => {

@@ -13448,9 +13448,29 @@ var init_service10 = __esm({
               return itemDate === bkkIsoDate;
             })
           );
+          let completedExerciseIds = [];
+          if (isCompletedToday) {
+            completedExerciseIds = exercises.map((e) => e.exercise_id || e.id).filter(Boolean);
+          } else {
+            try {
+              if (resolvedPatientUuid) {
+                const logs = await this.courseRepo.listSessionLogs({
+                  patient_id: resolvedPatientUuid,
+                  limit: 50
+                });
+                const todayLogs = (logs || []).filter((l) => {
+                  const lDate = l.created_at ? l.created_at.slice(0, 10) : "";
+                  return lDate === bkkIsoDate;
+                });
+                completedExerciseIds = Array.from(new Set(todayLogs.map((l) => l.exercise_id).filter(Boolean)));
+              }
+            } catch {
+            }
+          }
           return {
             is_scheduled_today: true,
             is_completed_today: isCompletedToday,
+            completed_exercise_ids: completedExerciseIds,
             reason: isCompletedToday ? "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E04\u0E38\u0E13\u0E44\u0E14\u0E49\u0E17\u0E33\u0E01\u0E32\u0E23\u0E1D\u0E36\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E15\u0E32\u0E21\u0E19\u0E31\u0E14\u0E41\u0E25\u0E49\u0E27" : void 0,
             schedule: effectiveSchedule,
             allowed_start_hand: effectiveSchedule.allowed_start_hand || "both",
@@ -13596,6 +13616,12 @@ var init_service10 = __esm({
           );
           err.statusCode = 403;
           err.code = "NO_SCHEDULED_APPOINTMENT_TODAY";
+          throw err;
+        }
+        if (plan.is_completed_today) {
+          const err = new Error("\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E04\u0E38\u0E13\u0E17\u0E33\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E44\u0E1B\u0E41\u0E25\u0E49\u0E27 (\u0E17\u0E33\u0E44\u0E14\u0E49\u0E27\u0E31\u0E19\u0E25\u0E30\u0E04\u0E23\u0E31\u0E49\u0E07)");
+          err.statusCode = 409;
+          err.code = "ALREADY_COMPLETED_TODAY";
           throw err;
         }
         const dailyChecklists = { ...existing.daily_checklists || {}, [targetDate]: true };
@@ -16455,6 +16481,13 @@ var CourseController = class {
         }
         const { defaultSmartOnboardingService: defaultSmartOnboardingService2 } = await Promise.resolve().then(() => (init_service10(), service_exports));
         const plan = await defaultSmartOnboardingService2.getDailyPlan(input.patient_id);
+        if (plan.is_completed_today) {
+          throw new AppError(
+            "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E04\u0E38\u0E13\u0E17\u0E33\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E44\u0E1B\u0E41\u0E25\u0E49\u0E27 (\u0E17\u0E33\u0E44\u0E14\u0E49\u0E27\u0E31\u0E19\u0E25\u0E30\u0E04\u0E23\u0E31\u0E49\u0E07)",
+            409,
+            "ALREADY_COMPLETED_TODAY"
+          );
+        }
         if (!plan.is_scheduled_today || !plan.exercises || plan.exercises.length === 0) {
           throw new AppError(
             "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E44\u0E21\u0E48\u0E21\u0E35\u0E15\u0E32\u0E23\u0E32\u0E07\u0E1D\u0E36\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 \u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E40\u0E23\u0E34\u0E48\u0E21\u0E17\u0E48\u0E32\u0E41\u0E17\u0E19\u0E44\u0E14\u0E49",
