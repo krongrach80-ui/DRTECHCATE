@@ -116,14 +116,20 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
   useEffect(() => {
     fetchData();
 
-    const handleScheduleUpdated = () => {
+    const handleRefresh = () => {
       void fetchData();
     };
-    window.addEventListener('schedule-updated', handleScheduleUpdated);
-    window.addEventListener('focus', handleScheduleUpdated);
+    window.addEventListener('schedule-updated', handleRefresh);
+    window.addEventListener('patient-updated', handleRefresh);
+    window.addEventListener('patients-updated', handleRefresh);
+    window.addEventListener('drtech:patients_reconciled', handleRefresh);
+    window.addEventListener('focus', handleRefresh);
     return () => {
-      window.removeEventListener('schedule-updated', handleScheduleUpdated);
-      window.removeEventListener('focus', handleScheduleUpdated);
+      window.removeEventListener('schedule-updated', handleRefresh);
+      window.removeEventListener('patient-updated', handleRefresh);
+      window.removeEventListener('patients-updated', handleRefresh);
+      window.removeEventListener('drtech:patients_reconciled', handleRefresh);
+      window.removeEventListener('focus', handleRefresh);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
@@ -390,8 +396,8 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                         <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-teal-400 border border-slate-700">
                           {p.hn}
                         </span>
-                        {!(p.registration_status === 'active' || p.registration_status === 'face_enrolled') && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 whitespace-nowrap">
+                        {!(p.registration_status === 'active' || p.registration_status === 'face_enrolled') && p.registration_status !== 'archived' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-50 text-amber-800 border border-amber-300 font-bold whitespace-nowrap shadow-xs">
                             รอลงทะเบียนหน้า
                           </span>
                         )}
