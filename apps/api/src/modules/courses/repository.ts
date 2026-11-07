@@ -570,26 +570,39 @@ export class CourseRepository implements ICourseRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      const filtered = (data || []).filter((c: Record<string, unknown>) => Array.isArray(c.weekdays) && (c.weekdays as number[]).includes(dayOfWeek));
+      const filtered = (data || []).filter((c: Record<string, unknown>) => {
+        const isSingleDay = c.start_date === dateStr && c.end_date === dateStr;
+        const isWeekday = Array.isArray(c.weekdays) && (c.weekdays as number[]).includes(dayOfWeek);
+        return isSingleDay || isWeekday;
+      });
 
-      return Promise.all(
-        filtered.map(async (c: Record<string, unknown>) => {
-          const patient = await this.patientRepo.getPatientById(c.patient_id as string);
-          return {
-            ...c,
-            items: (c.items as CourseItemRecord[]) || [],
-            patient: patient
-              ? {
-                  id: patient.id,
-                  hn: patient.hn,
-                  first_name: patient.first_name,
-                  last_name: patient.last_name,
-                  phone: patient.phone,
-                }
-              : null,
-          } as unknown as CourseRecord;
-        })
-      );
+      const results: CourseRecord[] = [];
+      const seenPatientIds = new Set<string>();
+
+      for (const c of filtered) {
+        const pId = c.patient_id as string;
+        if (seenPatientIds.has(pId)) continue;
+        const patient = await this.patientRepo.getPatientById(pId);
+        if (!patient || (patient as any).registration_status === 'archived') continue;
+
+        const cancelledDates = (patient as any).history?.schedule?.cancelled_dates;
+        if (Array.isArray(cancelledDates) && cancelledDates.includes(dateStr)) continue;
+
+        seenPatientIds.add(pId);
+        results.push({
+          ...c,
+          items: (c.items as CourseItemRecord[]) || [],
+          patient: {
+            id: patient.id,
+            hn: patient.hn,
+            first_name: patient.first_name,
+            last_name: patient.last_name,
+            phone: patient.phone,
+          },
+        } as unknown as CourseRecord);
+      }
+
+      return results;
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, dateStr }, 'Unexpected error in getTodayAppointments');

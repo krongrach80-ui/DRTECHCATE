@@ -98,18 +98,16 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
         defaultApiClient.courses.getToday().catch(() => []),
         defaultApiClient.kiosk.listDevices().catch(() => []),
       ]);
-      const safePts = Array.isArray(pts) && pts.length > 0 ? pts : (search.trim() ? [] : DEMO_PATIENTS);
-      const safeToday = Array.isArray(today) && today.length > 0 ? today : DEMO_TODAY_QUEUE;
+      const safePts = Array.isArray(pts) ? pts : [];
+      const safeToday = Array.isArray(today) ? today : [];
       const safeKiosks = Array.isArray(kList) && kList.length > 0 ? kList : DEMO_KIOSKS;
       setPatients(safePts);
       setTodayQueue(safeToday);
       setKiosks(safeKiosks);
     } catch {
-      if (!search.trim()) {
-        setPatients(DEMO_PATIENTS);
-        setTodayQueue(DEMO_TODAY_QUEUE);
-        setKiosks(DEMO_KIOSKS);
-      }
+      setPatients([]);
+      setTodayQueue([]);
+      setKiosks(DEMO_KIOSKS);
     } finally {
       setLoading(false);
     }
@@ -117,6 +115,16 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
 
   useEffect(() => {
     fetchData();
+
+    const handleScheduleUpdated = () => {
+      void fetchData();
+    };
+    window.addEventListener('schedule-updated', handleScheduleUpdated);
+    window.addEventListener('focus', handleScheduleUpdated);
+    return () => {
+      window.removeEventListener('schedule-updated', handleScheduleUpdated);
+      window.removeEventListener('focus', handleScheduleUpdated);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
@@ -382,15 +390,11 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                         <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-teal-400 border border-slate-700">
                           {p.hn}
                         </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            p.registration_status === 'active'
-                              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
-                              : 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
-                          }`}
-                        >
-                          {p.registration_status === 'active' ? 'ใบหน้าพร้อม' : 'รอลงทะเบียนหน้า'}
-                        </span>
+                        {!(p.registration_status === 'active' || p.registration_status === 'face_enrolled') && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 whitespace-nowrap">
+                            รอลงทะเบียนหน้า
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-400 mt-1">
                         อายุ {p.age} ปี • {p.phone || 'ไม่ระบุเบอร์'} • {p.injury || 'กายภาพทั่วไป'}
@@ -443,20 +447,20 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
             <div className="space-y-2.5 max-h-[500px] overflow-y-auto">
               {todayQueue.length === 0 ? (
                 <div className="p-8 text-center text-slate-500 text-sm">
-                  ไม่มีนัดหมายกายภาพในวันนี้
+                  วันนี้ยังไม่มีนัดหมายกายภาพบำบัด
                 </div>
               ) : (
                 todayQueue.map((item, idx) => (
                   <div
-                    key={idx}
+                    key={item.id || idx}
                     className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center justify-between gap-3"
                   >
                     <div>
                       <div className="font-semibold text-slate-200 text-sm">
-                        {item.patient?.first_name} {item.patient?.last_name}
+                        {item.patient?.first_name ? `${item.patient.first_name} ${item.patient.last_name || ''}`.trim() : 'ผู้ป่วยไม่ระบุชื่อ'}
                       </div>
                       <div className="text-xs text-slate-400 mt-0.5">
-                        HN: {item.patient?.hn} • เวลา {item.start_time || 'ตามกำหนด'}
+                        {item.patient?.hn ? `HN: ${item.patient.hn}` : 'HN: -'} • เวลา {item.start_time || 'ตามกำหนด'}
                       </div>
                       <div className="text-[11px] text-slate-500 mt-1">
                         {item.kiosk_name ? `ตู้: ${item.kiosk_name}` : 'ทุกตู้'} • {item.modpack_title || 'ชุดท่าเฉพาะบุคคล'}

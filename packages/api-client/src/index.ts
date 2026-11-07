@@ -3698,6 +3698,135 @@ export class ApiClient {
         }
       }
 
+      // 8.9 Fallback for /courses/today (Asia/Bangkok timezone & Single Source of Truth sync)
+      if (endpointPath.startsWith('/courses/today')) {
+        try {
+          const urlParts = endpointPath.split('?');
+          const qsParams = new URLSearchParams(urlParts[1] || '');
+          const filterKioskId = qsParams.get('kiosk_id');
+
+          const nowBkk = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+          const y = nowBkk.getFullYear();
+          const m = String(nowBkk.getMonth() + 1).padStart(2, '0');
+          const d = String(nowBkk.getDate()).padStart(2, '0');
+          const todayBkkStr = `${y}-${m}-${d}`;
+          const dayOfWeek = nowBkk.getDay();
+
+          const [coursesRes, patientsRes] = await Promise.all([
+            fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/courses?status=eq.active&select=*&order=created_at.desc`, {
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              },
+            }),
+            fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=id,hn,first_name,last_name,age,sex,phone,registration_status,history,injury`, {
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              },
+            }),
+          ]);
+
+          const rawCourses = coursesRes.ok ? await coursesRes.json() : [];
+          const rawPatients = patientsRes.ok ? await patientsRes.json() : [];
+
+          const coursesList = Array.isArray(rawCourses) ? rawCourses : [];
+          const patientsList = Array.isArray(rawPatients) ? rawPatients : [];
+
+          const patientMap = new Map<string, any>();
+          patientsList.forEach((p) => {
+            if (p.registration_status !== 'archived') {
+              patientMap.set(p.id, p);
+            }
+          });
+
+          const queueMap = new Map<string, any>();
+
+          patientMap.forEach((p) => {
+            const sched = p.history?.schedule;
+            let hasPlanToday = false;
+            let timeSlot = '09:00:00';
+            let kioskId: string | null = null;
+            let includeMinigame = true;
+
+            if (sched) {
+              const sStart = (sched.startDate || sched.start_date || '').slice(0, 10);
+              const sEnd = (sched.endDate || sched.end_date || '2099-12-31').slice(0, 10);
+              const days = Array.isArray(sched.daysOfWeek) ? sched.daysOfWeek : (sched.days_of_week || []);
+              const sDates = Array.isArray(sched.scheduled_dates)
+                ? sched.scheduled_dates
+                : Array.isArray(sched.scheduledDates)
+                ? sched.scheduledDates
+                : [];
+              const isExplicitDate = sDates.includes(todayBkkStr);
+              const isRecurringDay =
+                todayBkkStr >= sStart &&
+                todayBkkStr <= sEnd &&
+                days.includes(dayOfWeek);
+              const excluded = Array.isArray(sched.excluded_dates)
+                ? sched.excluded_dates
+                : (sched.cancelled_dates || []);
+
+              hasPlanToday = (isExplicitDate || isRecurringDay) && !excluded.includes(todayBkkStr);
+              if (sched.timeSlot || sched.time_slot) {
+                timeSlot = (sched.timeSlot || sched.time_slot).split('-')[0].trim();
+              }
+              if (sched.assigned_kiosk_id || sched.kioskId) {
+                kioskId = sched.assigned_kiosk_id || sched.kioskId;
+              }
+              if (sched.include_minigame !== undefined) {
+                includeMinigame = sched.include_minigame;
+              }
+            }
+
+            // Also check active courses table for explicit date match
+            if (!hasPlanToday) {
+              const courseForToday = coursesList.find((c: any) => {
+                if (c.patient_id !== p.id) return false;
+                const cStart = (c.start_date || '').slice(0, 10);
+                const cEnd = (c.end_date || '').slice(0, 10);
+                const isSingleDay = cStart === todayBkkStr && cEnd === todayBkkStr;
+                const inRange = cStart <= todayBkkStr && cEnd >= todayBkkStr;
+                const isDOW = Array.isArray(c.weekdays) && c.weekdays.includes(dayOfWeek);
+                const excluded = Array.isArray(p.history?.schedule?.cancelled_dates) ? p.history.schedule.cancelled_dates : [];
+                return (isSingleDay || (inRange && isDOW)) && !excluded.includes(todayBkkStr);
+              });
+              if (courseForToday) {
+                hasPlanToday = true;
+                if (courseForToday.start_time) timeSlot = courseForToday.start_time;
+                if (courseForToday.kiosk_id) kioskId = courseForToday.kiosk_id;
+                if (courseForToday.include_minigame !== undefined) includeMinigame = courseForToday.include_minigame;
+              }
+            }
+
+            if (hasPlanToday) {
+              if (filterKioskId && kioskId && kioskId !== filterKioskId) {
+                return;
+              }
+              const matchedCourse = coursesList.find((c: any) => c.patient_id === p.id && c.status === 'active');
+              queueMap.set(p.id, {
+                id: matchedCourse?.id || `today-${p.id}`,
+                course_id: matchedCourse?.id,
+                patient_id: p.id,
+                patient: normalizePatientRecord(p),
+                start_time: matchedCourse?.start_time || timeSlot || '09:00:00',
+                kiosk_id: matchedCourse?.kiosk_id || kioskId || null,
+                kiosk_name: kioskId || (matchedCourse?.kiosk_id ? 'ตู้ฝึกกายภาพ' : null),
+                modpack_id: matchedCourse?.modpack_id || null,
+                modpack_title: 'ชุดท่าเฉพาะบุคคล',
+                include_minigame: matchedCourse?.include_minigame ?? includeMinigame,
+                mission_status: 'not_started',
+              });
+            }
+          });
+
+          const todayQueue = Array.from(queueMap.values());
+          return { ok: true, data: todayQueue, courses: todayQueue } as T;
+        } catch {
+          return { ok: true, data: [], courses: [] } as T;
+        }
+      }
+
       // 9. Fallback for /courses
       if (endpointPath.startsWith('/courses')) {
         const supaRes = await fetch(

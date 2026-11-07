@@ -5462,23 +5462,34 @@ var init_repository8 = __esm({
             logger.error({ error, dateStr }, "Database error querying today appointments");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
           }
-          const filtered = (data || []).filter((c) => Array.isArray(c.weekdays) && c.weekdays.includes(dayOfWeek));
-          return Promise.all(
-            filtered.map(async (c) => {
-              const patient = await this.patientRepo.getPatientById(c.patient_id);
-              return {
-                ...c,
-                items: c.items || [],
-                patient: patient ? {
-                  id: patient.id,
-                  hn: patient.hn,
-                  first_name: patient.first_name,
-                  last_name: patient.last_name,
-                  phone: patient.phone
-                } : null
-              };
-            })
-          );
+          const filtered = (data || []).filter((c) => {
+            const isSingleDay = c.start_date === dateStr && c.end_date === dateStr;
+            const isWeekday = Array.isArray(c.weekdays) && c.weekdays.includes(dayOfWeek);
+            return isSingleDay || isWeekday;
+          });
+          const results = [];
+          const seenPatientIds = /* @__PURE__ */ new Set();
+          for (const c of filtered) {
+            const pId = c.patient_id;
+            if (seenPatientIds.has(pId)) continue;
+            const patient = await this.patientRepo.getPatientById(pId);
+            if (!patient || patient.registration_status === "archived") continue;
+            const cancelledDates = patient.history?.schedule?.cancelled_dates;
+            if (Array.isArray(cancelledDates) && cancelledDates.includes(dateStr)) continue;
+            seenPatientIds.add(pId);
+            results.push({
+              ...c,
+              items: c.items || [],
+              patient: {
+                id: patient.id,
+                hn: patient.hn,
+                first_name: patient.first_name,
+                last_name: patient.last_name,
+                phone: patient.phone
+              }
+            });
+          }
+          return results;
         } catch (err) {
           if (err instanceof AppError) throw err;
           logger.error({ err, dateStr }, "Unexpected error in getTodayAppointments");
