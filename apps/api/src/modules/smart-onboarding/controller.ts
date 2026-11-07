@@ -137,6 +137,33 @@ export class SmartOnboardingController {
     }
   };
 
+  continuousFaceVerify = async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
+    try {
+      const { patient_id, probe, session_id, exercise_id } = req.body;
+      if (!patient_id || typeof patient_id !== 'string') {
+        res.status(400).json({ ok: false, error: { code: 'BAD_REQUEST', message: 'patient_id is required' } });
+        return;
+      }
+      if (!probe || !Array.isArray(probe) || probe.length !== 512) {
+        res.status(400).json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Valid 512-dim probe vector is required' } });
+        return;
+      }
+      const result = await this.service.continuousFaceVerify({
+        patient_id,
+        probe,
+        session_id,
+        exercise_id,
+      });
+      res.status(200).json({
+        ok: true,
+        ...result,
+      });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ ok: false, error: { code: 'INTERNAL_ERROR', message: errMsg } });
+    }
+  };
+
   createPending = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { frames, model_version } = req.body;

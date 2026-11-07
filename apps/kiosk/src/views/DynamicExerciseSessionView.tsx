@@ -29,7 +29,12 @@ import { projectLandmarkToCanvas } from '../../../../packages/pose-engine/src/ma
 import { VoiceFeedbackController } from '../../../../packages/hospital-ui-kit/src/VoiceFeedbackController';
 import { BacklightCompensator } from '../../../../packages/pose-engine/src/backlightCompensator';
 import { ClinicalOneEuroLandmarkFilter } from '../../../../packages/pose-engine/src/math/oneEuroFilter';
-import { selectPrimarySubjectPose } from '../../../../packages/pose-engine/src/subjectLock';
+import {
+  selectPrimarySubjectPose,
+  selectSubjectPoseWithIdentity,
+  NormalizedBox,
+} from '../../../../packages/pose-engine/src/subjectLock';
+import { getFaceClientServices } from '../services/faceClientService';
 import { PainStopEmergencyBar } from '../components/PainStopEmergencyBar';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
@@ -39,12 +44,15 @@ import {
   ArrowRight,
   ArrowLeft,
   ShieldAlert,
+  ShieldCheck,
   AlertTriangle,
   KeyRound,
   Settings,
   Globe,
   Check,
   X,
+  PhoneCall,
+  RefreshCw,
 } from 'lucide-react';
 import { useClinicalI18n, LANGUAGE_OPTIONS } from '../../../../packages/clinical-i18n/src/index';
 
@@ -401,6 +409,181 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
   // Sub-pixel EMA lerp smoothing buffer strictly for canvas rendering (prevents jitter without touching evaluation)
   const canvasSmoothedPointsRef = useRef<{ [idx: number]: { x: number; y: number } }>({});
+
+  // --- Continuous Identity Verification State & Refs ---
+  const patientId = patient?.patient_id || patient?.hn || '';
+  const sessionIdRef = useRef<string>(
+    `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+  );
+
+  const isPendulumExercise = Boolean(
+    resolvedConfig.id?.includes('pendulum') ||
+    exercise?.id?.includes('pendulum') ||
+    exercise?.name?.includes('แกว่ง')
+  );
+  // Grace Period: 15s for pendulum (as approved in Step 0), 6s for standard exercises
+  const gracePeriodMs = isPendulumExercise ? 15000 : 6000;
+
+  const [verificationStatus, setVerificationStatus] = useState<
+    'verified' | 'checking' | 'mismatch' | 'no_face' | 'multiple_faces' | 'network_error' | 'no_template'
+  >('checking');
+  const verificationStatusRef = useRef(verificationStatus);
+  useEffect(() => {
+    verificationStatusRef.current = verificationStatus;
+  }, [verificationStatus]);
+
+  const isIdentityVerifiedRef = useRef<boolean>(true); // starts true for initial grace
+  const lastVerifiedTimeRef = useRef<number>(Date.now());
+  const verifiedFaceBoxRef = useRef<NormalizedBox | null>(null);
+  const isFaceCheckInProgressRef = useRef<boolean>(false);
+  const lastFaceCheckTimeRef = useRef<number>(0);
+  const identityFailureStartTimeRef = useRef<number | null>(null);
+  const rejectedRepsCountRef = useRef<number>(0);
+  const validCompletedRepsRef = useRef<number>(0);
+
+  // Auto-pause modal when verification fails > 20s
+  const [showIdentityFailureModal, setShowIdentityFailureModal] = useState<boolean>(false);
+  // Blocking modal when patient has no enrolled face template in system (Choice A)
+  const [showNoTemplateModal, setShowNoTemplateModal] = useState<boolean>(false);
+
+  // Pre-session check: Ensure patient has face template enrolled (Choice A)
+  useEffect(() => {
+    let isCancelled = false;
+    async function verifyPatientEnrollment() {
+      if (!patientId) return;
+      try {
+        const dummyProbe = new Array(512).fill(0.01);
+        const res = await defaultApiClient.smartOnboarding.continuousFaceVerify({
+          patient_id: patientId,
+          probe: dummyProbe,
+          session_id: sessionIdRef.current,
+          exercise_id: resolvedConfig.id,
+        });
+        if (!isCancelled && res && res.has_template === false) {
+          setShowNoTemplateModal(true);
+          setVerificationStatus('no_template');
+          isIdentityVerifiedRef.current = false;
+        }
+      } catch (err) {
+        console.warn('[IdentityGate] Initial template enrollment check warning:', err);
+      }
+    }
+    verifyPatientEnrollment();
+    return () => {
+      isCancelled = true;
+    };
+  }, [patientId, resolvedConfig.id]);
+
+  // Periodic 1:1 Face Verification Callback
+  const triggerFaceVerification = useCallback(
+    async (videoEl: HTMLVideoElement) => {
+      if (!patientId || isFaceCheckInProgressRef.current || isPausedRef.current) return;
+      isFaceCheckInProgressRef.current = true;
+      try {
+        const services = getFaceClientServices();
+        const detection = await services.detector.detect(videoEl);
+        const now = Date.now();
+        const vw = videoEl.videoWidth || 640;
+        const vh = videoEl.videoHeight || 480;
+
+        if (!detection || !detection.hasFace || !detection.box) {
+          const timeSinceVerified = now - lastVerifiedTimeRef.current;
+          if (timeSinceVerified > gracePeriodMs) {
+            isIdentityVerifiedRef.current = false;
+            setVerificationStatus('no_face');
+            if (!identityFailureStartTimeRef.current) {
+              identityFailureStartTimeRef.current = now;
+            }
+          }
+          return;
+        }
+
+        if (detection.faceCount > 1) {
+          setVerificationStatus('multiple_faces');
+        }
+
+        let vector: number[] | null = null;
+        if (detection.landmarks) {
+          const aligned = services.aligner.align(videoEl, detection.landmarks);
+          vector = await services.embeddingModel.embed(aligned);
+          const actx = aligned.getContext?.('2d');
+          if (actx) actx.clearRect(0, 0, aligned.width, aligned.height);
+        } else if (detection.box && detection.box.width > 20) {
+          const faceCrop = document.createElement('canvas');
+          faceCrop.width = 112;
+          faceCrop.height = 112;
+          const fcCtx = faceCrop.getContext('2d');
+          if (fcCtx) {
+            const pad = detection.box.width * 0.15;
+            const sx = Math.max(0, detection.box.x - pad);
+            const sy = Math.max(0, detection.box.y - pad);
+            const sw = Math.min(vw - sx, detection.box.width + pad * 2);
+            const sh = Math.min(vh - sy, detection.box.height + pad * 2);
+            fcCtx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, 112, 112);
+            vector = await services.embeddingModel.embed(faceCrop);
+          }
+        }
+
+        if (!vector || vector.length !== 512) {
+          return;
+        }
+
+        const verifyRes = await defaultApiClient.smartOnboarding.continuousFaceVerify({
+          patient_id: patientId,
+          probe: vector,
+          session_id: sessionIdRef.current,
+          exercise_id: resolvedConfig.id,
+        });
+
+        if (verifyRes.has_template === false) {
+          setShowNoTemplateModal(true);
+          isIdentityVerifiedRef.current = false;
+          setVerificationStatus('no_template');
+          return;
+        }
+
+        if (verifyRes.verified) {
+          lastVerifiedTimeRef.current = now;
+          isIdentityVerifiedRef.current = true;
+          setVerificationStatus('verified');
+          identityFailureStartTimeRef.current = null;
+
+          // Normalized coordinates [0, 1] relative to video frame
+          const normBox: NormalizedBox = {
+            x: Math.max(0, Math.min(1, detection.box.x / vw)),
+            y: Math.max(0, Math.min(1, detection.box.y / vh)),
+            width: Math.max(0.01, Math.min(1, detection.box.width / vw)),
+            height: Math.max(0.01, Math.min(1, detection.box.height / vh)),
+          };
+          verifiedFaceBoxRef.current = normBox;
+        } else {
+          verifiedFaceBoxRef.current = null;
+          const timeSinceVerified = now - lastVerifiedTimeRef.current;
+          if (timeSinceVerified > gracePeriodMs) {
+            isIdentityVerifiedRef.current = false;
+            setVerificationStatus('mismatch');
+            if (!identityFailureStartTimeRef.current) {
+              identityFailureStartTimeRef.current = now;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[IdentityGate] Face verification retry warning:', err);
+        const now = Date.now();
+        const timeSinceVerified = now - lastVerifiedTimeRef.current;
+        if (timeSinceVerified > gracePeriodMs) {
+          isIdentityVerifiedRef.current = false;
+          setVerificationStatus('network_error');
+          if (!identityFailureStartTimeRef.current) {
+            identityFailureStartTimeRef.current = now;
+          }
+        }
+      } finally {
+        isFaceCheckInProgressRef.current = false;
+      }
+    },
+    [patientId, gracePeriodMs, resolvedConfig.id]
+  );
 
   // Audio Mute State with localStorage persistence (100% silent view)
   const [isAudioMuted, _setIsAudioMuted] = useState<boolean>(() => {

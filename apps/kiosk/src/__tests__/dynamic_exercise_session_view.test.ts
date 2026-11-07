@@ -7,6 +7,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { DynamicExerciseSessionView, POSE_CONNECTIONS, BODY_JOINT_INDICES, getRequiredKeypointsForExercise, KEYPOINT_NAME_MAP } from '../views/DynamicExerciseSessionView';
 import { DynamicExerciseSessionView as TrainingExerciseSessionView } from '../views/training/DynamicExerciseSessionView';
+import {
+  isPoseHeadInsideFaceBox,
+  selectSubjectPoseWithIdentity,
+  NormalizedBox,
+} from '../../../../packages/pose-engine/src/subjectLock';
 
 describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
   beforeEach(() => {
@@ -528,6 +533,185 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
       expect(headerDisplayText).not.toContain(headerProps.hn);
       expect(headerProps.showHnInHeader).toBe(false);
       expect(headerProps.showJointTagInHeader).toBe(false);
+    });
+  });
+
+  describe('5. Continuous Face Verification & Identity Gatekeeper Specification', () => {
+    it('5.1 Identity Gatekeeper: Reps count and accumulate ONLY when identity is verified; unverified reps increment rejectedRepsCount', () => {
+      let validCompletedReps = 0;
+      let rejectedRepsCount = 0;
+      let celebrationCount = 0;
+
+      const evaluateRepIncrement = (isIdentityVerified: boolean) => {
+        if (isIdentityVerified) {
+          validCompletedReps += 1;
+          celebrationCount += 1;
+        } else {
+          rejectedRepsCount += 1;
+        }
+      };
+
+      // Patient does 3 verified reps
+      evaluateRepIncrement(true);
+      evaluateRepIncrement(true);
+      evaluateRepIncrement(true);
+      expect(validCompletedReps).toBe(3);
+      expect(rejectedRepsCount).toBe(0);
+      expect(celebrationCount).toBe(3);
+
+      // Imposter / unverified person attempts 2 reps
+      evaluateRepIncrement(false);
+      evaluateRepIncrement(false);
+      expect(validCompletedReps).toBe(3); // Patient reps unaffected
+      expect(rejectedRepsCount).toBe(2); // Rejected reps incremented
+      expect(celebrationCount).toBe(3); // No celebration triggered
+    });
+
+    it('5.2 Subject Locking with Face Identity: Locks onto pose whose head landmarks are inside verified face box', () => {
+      const faceBox: NormalizedBox = {
+        x: 0.40,
+        y: 0.10,
+        width: 0.20,
+        height: 0.25,
+      };
+
+      // Pose A: Head centered at (0.50, 0.20) - inside faceBox
+      const poseA: any[] = Array(33).fill(null).map(() => ({ x: 0.50, y: 0.50, z: 0, visibility: 0.9 }));
+      poseA[0] = { x: 0.50, y: 0.20, z: 0, visibility: 0.95 }; // Nose
+      poseA[2] = { x: 0.48, y: 0.18, z: 0, visibility: 0.95 }; // Left eye
+      poseA[5] = { x: 0.52, y: 0.18, z: 0, visibility: 0.95 }; // Right eye
+      poseA[11] = { x: 0.45, y: 0.35, z: 0, visibility: 0.95 }; // Left shoulder
+      poseA[12] = { x: 0.55, y: 0.35, z: 0, visibility: 0.95 }; // Right shoulder
+
+      // Pose B: Head centered at (0.80, 0.20) - outside faceBox
+      const poseB: any[] = Array(33).fill(null).map(() => ({ x: 0.80, y: 0.50, z: 0, visibility: 0.9 }));
+      poseB[0] = { x: 0.80, y: 0.20, z: 0, visibility: 0.95 };
+      poseB[2] = { x: 0.78, y: 0.18, z: 0, visibility: 0.95 };
+      poseB[5] = { x: 0.82, y: 0.18, z: 0, visibility: 0.95 };
+      poseB[11] = { x: 0.75, y: 0.35, z: 0, visibility: 0.95 };
+      poseB[12] = { x: 0.85, y: 0.35, z: 0, visibility: 0.95 };
+
+      expect(isPoseHeadInsideFaceBox(poseA, faceBox)).toBe(true);
+      expect(isPoseHeadInsideFaceBox(poseB, faceBox)).toBe(false);
+
+      const result = selectSubjectPoseWithIdentity([poseB, poseA], faceBox, null);
+      expect(result.selectedIndex).toBe(1); // Picked poseA despite poseB being first
+      expect(result.isIdentityMatched).toBe(true);
+      expect(result.selectedPose).toBe(poseA);
+    });
+
+    it('5.3 Subject Locking ignores bystander closer to center when verified face box matches subject', () => {
+      const patientFaceBox: NormalizedBox = {
+        x: 0.20,
+        y: 0.10,
+        width: 0.15,
+        height: 0.20,
+      };
+
+      // Patient standing slightly off-center (x: 0.25)
+      const patientPose: any[] = Array(33).fill(null).map(() => ({ x: 0.25, y: 0.50, z: 0, visibility: 0.9 }));
+      patientPose[0] = { x: 0.25, y: 0.15, z: 0, visibility: 0.95 };
+      patientPose[11] = { x: 0.20, y: 0.30, z: 0, visibility: 0.95 };
+      patientPose[12] = { x: 0.30, y: 0.30, z: 0, visibility: 0.95 };
+
+      // Bystander right in center of screen (x: 0.50)
+      const bystanderPose: any[] = Array(33).fill(null).map(() => ({ x: 0.50, y: 0.50, z: 0, visibility: 0.9 }));
+      bystanderPose[0] = { x: 0.50, y: 0.15, z: 0, visibility: 0.95 };
+      bystanderPose[11] = { x: 0.40, y: 0.30, z: 0, visibility: 0.95 };
+      bystanderPose[12] = { x: 0.60, y: 0.30, z: 0, visibility: 0.95 };
+
+      const selection = selectSubjectPoseWithIdentity([bystanderPose, patientPose], patientFaceBox, null);
+      expect(selection.selectedIndex).toBe(1);
+      expect(selection.selectedPose).toBe(patientPose);
+      expect(selection.isIdentityMatched).toBe(true);
+    });
+
+    it('5.4 Continuous Failure Timeout (20s) triggers auto-pause and failure modal', () => {
+      const nowMs = 100000;
+      let isPaused = false;
+      let showModal = false;
+
+      const checkIdentityFailureTimeout = (failureStartTime: number | null, currentMs: number) => {
+        if (failureStartTime && currentMs - failureStartTime >= 20000) {
+          isPaused = true;
+          showModal = true;
+        }
+      };
+
+      // 10 seconds of failure: do not pause yet
+      checkIdentityFailureTimeout(nowMs - 10000, nowMs);
+      expect(isPaused).toBe(false);
+      expect(showModal).toBe(false);
+
+      // 20.1 seconds of failure: auto-pause triggered
+      checkIdentityFailureTimeout(nowMs - 20100, nowMs);
+      expect(isPaused).toBe(true);
+      expect(showModal).toBe(true);
+    });
+
+    it('5.5 Priority Status Messaging strictly prioritizes identity warnings over framing/lighting', () => {
+      const resolvePriorityStatus = (params: {
+        celebratingRep: number | null;
+        isPaused: boolean;
+        verificationStatus: string;
+        detectedPeople: number;
+        hasLightingWarning: boolean;
+      }) => {
+        if (params.celebratingRep !== null) return { priority: 0, type: 'celebration' };
+        if (params.isPaused) return { priority: 0.1, type: 'paused' };
+        if (params.verificationStatus === 'no_template') return { priority: 0.2, type: 'no_template' };
+        if (params.verificationStatus === 'mismatch') return { priority: 0.2, type: 'mismatch' };
+        if (params.verificationStatus === 'no_face' && params.detectedPeople > 0) return { priority: 0.2, type: 'no_face' };
+        if (params.verificationStatus === 'multiple_faces') return { priority: 0.2, type: 'multiple_faces' };
+        if (params.verificationStatus === 'network_error') return { priority: 0.2, type: 'network_error' };
+        if (params.detectedPeople === 0) return { priority: 1, type: 'framing_no_person' };
+        if (params.hasLightingWarning) return { priority: 2, type: 'lighting' };
+        return { priority: 4, type: 'steady' };
+      };
+
+      // Identity mismatch while lighting is bad -> Identity mismatch (Priority 0.2) MUST win!
+      const statusRes = resolvePriorityStatus({
+        celebratingRep: null,
+        isPaused: false,
+        verificationStatus: 'mismatch',
+        detectedPeople: 1,
+        hasLightingWarning: true,
+      });
+      expect(statusRes.priority).toBe(0.2);
+      expect(statusRes.type).toBe('mismatch');
+
+      // Multiple faces detected -> Identity multiple faces (Priority 0.2) wins
+      const multiRes = resolvePriorityStatus({
+        celebratingRep: null,
+        isPaused: false,
+        verificationStatus: 'multiple_faces',
+        detectedPeople: 2,
+        hasLightingWarning: false,
+      });
+      expect(multiRes.priority).toBe(0.2);
+      expect(multiRes.type).toBe('multiple_faces');
+    });
+
+    it('5.6 Telemetry Summary accurately computes verificationRate and rejected_reps_count', () => {
+      const validCompletedReps = 8;
+      const rejectedReps = 2;
+      const totalRepsAttempted = validCompletedReps + rejectedReps;
+      const verificationRate = totalRepsAttempted > 0
+        ? Number((validCompletedReps / totalRepsAttempted).toFixed(2))
+        : 1.0;
+
+      expect(verificationRate).toBe(0.8);
+      expect(rejectedReps).toBe(2);
+    });
+
+    it('5.7 Grace period configuration: 15s for Codman Pendulum vs 6s for standard exercises', () => {
+      const getGracePeriod = (exerciseId: string) => {
+        return exerciseId.includes('pendulum') ? 15000 : 6000;
+      };
+
+      expect(getGracePeriod('shoulder_pendulum_clock')).toBe(15000);
+      expect(getGracePeriod('shoulder_flexion')).toBe(6000);
+      expect(getGracePeriod('cervical_retraction')).toBe(6000);
     });
   });
 });

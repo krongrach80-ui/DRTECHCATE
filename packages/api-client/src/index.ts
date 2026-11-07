@@ -2099,6 +2099,123 @@ export class ApiClient {
         } as T;
       }
 
+      // 4.05 Fallback for /smart-onboarding/continuous-face-verify (1:1 during exercise)
+      if (endpointPath === '/smart-onboarding/continuous-face-verify') {
+        const body = parseSafeBody(options.body);
+        const patientId = String(body.patient_id || body.patientId || '').trim();
+        const probe: number[] = body.probe || [];
+
+        if (!patientId || probe.length !== 512) {
+          return {
+            ok: false,
+            verified: false,
+            has_template: false,
+            score: 0,
+            error: 'Invalid patient_id or 512-dim probe vector',
+          } as T;
+        }
+
+        let bestRawSim = -1;
+        let hasTemplate = false;
+
+        // 1. Try querying Supabase RPC match_face_candidates directly
+        try {
+          const rpcRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/rpc/match_face_candidates`, {
+            method: 'POST',
+            headers: {
+              'apikey': DEFAULT_SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              probe,
+              candidate_ids: [patientId],
+              k: 1,
+            }),
+          });
+          if (rpcRes.ok) {
+            const matches = await rpcRes.json();
+            if (Array.isArray(matches) && matches.length > 0) {
+              hasTemplate = true;
+              bestRawSim = Number(matches[0].score || 0);
+            }
+          }
+        } catch {
+          // ignore network failure on RPC, fallback to local cache
+        }
+
+        // 2. Query Supabase patients history/vectors if RPC returned no match
+        if (bestRawSim < 0) {
+          try {
+            const patRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(id.eq.${encodeURIComponent(patientId)},hn.eq.${encodeURIComponent(patientId)})&select=id,history&limit=1`,
+              {
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                },
+              }
+            );
+            if (patRes.ok) {
+              const rows = await patRes.json();
+              if (Array.isArray(rows) && rows.length > 0) {
+                const patient = rows[0]?.history || {};
+                const candidateVectors: number[][] = [];
+                if (Array.isArray(patient.biometrics?.face_vector) && patient.biometrics.face_vector.length === 512) {
+                  candidateVectors.push(patient.biometrics.face_vector);
+                }
+                if (Array.isArray(patient.face_vector) && patient.face_vector.length === 512) {
+                  candidateVectors.push(patient.face_vector);
+                }
+                if (Array.isArray(patient.frontal_centroid) && patient.frontal_centroid.length === 512) {
+                  candidateVectors.push(patient.frontal_centroid);
+                }
+                const frames = patient.enrolled_frames || patient.frames || [];
+                for (const f of frames) {
+                  const vec = f?.embedding || f?.vector;
+                  if (Array.isArray(vec) && vec.length === 512) candidateVectors.push(vec);
+                }
+
+                if (candidateVectors.length > 0) {
+                  hasTemplate = true;
+                  const normProbe = l2Normalize(probe);
+                  for (const v of candidateVectors) {
+                    const normV = l2Normalize(v);
+                    const sim = cosineSimilarity(normProbe, normV);
+                    if (sim > bestRawSim) bestRawSim = sim;
+                  }
+                }
+              }
+            }
+          } catch {
+            // ignore network failure
+          }
+        }
+
+        if (!hasTemplate) {
+          return {
+            ok: true,
+            verified: false,
+            has_template: false,
+            score: 0,
+            reason: 'no_face_enrolled',
+            message: 'ผู้ป่วยยังไม่มีข้อมูลใบหน้าในระบบ',
+          } as T;
+        }
+
+        // Confirmed threshold: Cosine Similarity >= 0.50
+        const isVerified = bestRawSim >= 0.50;
+        return {
+          ok: true,
+          verified: isVerified,
+          has_template: true,
+          score: Math.max(0, Number(bestRawSim.toFixed(4))),
+          similarity_percent: Math.round(Math.max(0, bestRawSim) * 100),
+          reason: isVerified ? 'verified' : 'face_mismatch',
+          message: isVerified ? 'ยืนยันตัวตนสำเร็จ' : 'ใบหน้าไม่ตรงกับผู้ป่วย',
+        } as T;
+      }
+
       // 4.1 Fallback for /smart-onboarding/pin-login
       if (endpointPath === '/smart-onboarding/pin-login') {
         const body = parseSafeBody(options.body);
@@ -5603,6 +5720,26 @@ export class ApiClient {
         similarityPercentage?: number;
         message?: string;
       }>('/smart-onboarding/scan-login', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    continuousFaceVerify: async (payload: {
+      patient_id: string;
+      probe: number[];
+      session_id?: string;
+      exercise_id?: string;
+    }) => {
+      return this.request<{
+        ok: boolean;
+        verified: boolean;
+        has_template: boolean;
+        score: number;
+        similarity_percent?: number;
+        reason?: string;
+        message?: string;
+      }>('/smart-onboarding/continuous-face-verify', {
         method: 'POST',
         body: JSON.stringify(payload),
       });

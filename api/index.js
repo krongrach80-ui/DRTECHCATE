@@ -12384,6 +12384,107 @@ var init_service10 = __esm({
         };
       }
       /**
+       * Continuous 1:1 Face Verification during Active Exercise Session
+       * Verifies the probe embedding against the specific patient's enrolled templates
+       * Threshold confirmed: Cosine Similarity >= 0.50 (~72-75% calibrated)
+       */
+      async continuousFaceVerify(params) {
+        const { patient_id, probe, session_id, exercise_id } = params;
+        if (!probe || !Array.isArray(probe) || probe.length !== 512) {
+          return {
+            verified: false,
+            has_template: false,
+            score: 0,
+            reason: "invalid_probe",
+            message: "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E27\u0E01\u0E40\u0E15\u0E2D\u0E23\u0E4C\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07"
+          };
+        }
+        let bestSim = -1;
+        let hasTemplate = false;
+        try {
+          const supabase = getAdminClient();
+          const { data: matches, error } = await supabase.rpc("match_face_candidates", {
+            probe,
+            candidate_ids: [patient_id],
+            k: 1
+          });
+          if (!error && Array.isArray(matches) && matches.length > 0) {
+            hasTemplate = true;
+            bestSim = Number(matches[0].score || 0);
+          }
+        } catch (dbErr) {
+          logger.warn({ dbErr }, "Supabase match_face_candidates in continuousFaceVerify failed");
+        }
+        if (!hasTemplate) {
+          try {
+            const record = this.vaultService.getPatientRecord(patient_id);
+            if (record) {
+              const candidateVectors = [];
+              if (record.biometrics?.face_vector && record.biometrics.face_vector.length === 512) {
+                candidateVectors.push(record.biometrics.face_vector);
+              }
+              const frontal = record.frontal_centroid;
+              if (Array.isArray(frontal) && frontal.length === 512) {
+                candidateVectors.push(frontal);
+              }
+              const frames = record.enrolled_frames || record.frames;
+              if (Array.isArray(frames)) {
+                for (const f of frames) {
+                  const vec = f?.embedding || f?.vector;
+                  if (Array.isArray(vec) && vec.length === 512) candidateVectors.push(vec);
+                }
+              }
+              if (candidateVectors.length > 0) {
+                hasTemplate = true;
+                for (const vec of candidateVectors) {
+                  const matchRes = evaluateBiometricMatch(probe, vec, { isSingleUserInDb: true });
+                  if (matchRes.cosineSimilarity > bestSim) {
+                    bestSim = matchRes.cosineSimilarity;
+                  }
+                }
+              }
+            }
+          } catch {
+          }
+        }
+        if (!hasTemplate) {
+          return {
+            verified: false,
+            has_template: false,
+            score: 0,
+            reason: "no_face_enrolled",
+            message: "\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A"
+          };
+        }
+        const isVerified = bestSim >= 0.5;
+        const similarityPercent = Math.round(Math.max(0, bestSim) * 100);
+        try {
+          const supabase = getAdminClient();
+          supabase.from("audit_logs").insert({
+            action: "continuous_exercise_face_verify",
+            patient_id,
+            user_id: patient_id,
+            status: isVerified ? "success" : "failed",
+            details: {
+              session_id,
+              exercise_id,
+              score: Number(bestSim.toFixed(4)),
+              verified: isVerified,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          });
+        } catch {
+        }
+        return {
+          verified: isVerified,
+          has_template: true,
+          score: Number(bestSim.toFixed(4)),
+          similarity_percent: similarityPercent,
+          reason: isVerified ? "verified" : "face_mismatch",
+          message: isVerified ? "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08" : "\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E44\u0E21\u0E48\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22"
+        };
+      }
+      /**
        * 2. Instant Face-First Account Creation (Master Prompt v4 Section 2 Step 2.1 & 2.2)
        */
       async createPendingAccount(payload) {
@@ -16827,6 +16928,32 @@ var SmartOnboardingController = class {
         res.status(500).json({ ok: false, error: { code: "INTERNAL_ERROR", message: errMsg } });
       }
     };
+    this.continuousFaceVerify = async (req, res, _next) => {
+      try {
+        const { patient_id, probe, session_id, exercise_id } = req.body;
+        if (!patient_id || typeof patient_id !== "string") {
+          res.status(400).json({ ok: false, error: { code: "BAD_REQUEST", message: "patient_id is required" } });
+          return;
+        }
+        if (!probe || !Array.isArray(probe) || probe.length !== 512) {
+          res.status(400).json({ ok: false, error: { code: "BAD_REQUEST", message: "Valid 512-dim probe vector is required" } });
+          return;
+        }
+        const result = await this.service.continuousFaceVerify({
+          patient_id,
+          probe,
+          session_id,
+          exercise_id
+        });
+        res.status(200).json({
+          ok: true,
+          ...result
+        });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ ok: false, error: { code: "INTERNAL_ERROR", message: errMsg } });
+      }
+    };
     this.createPending = async (req, res, next) => {
       try {
         const { frames, model_version } = req.body;
@@ -17080,6 +17207,7 @@ function createSmartOnboardingRouter(controller = defaultSmartOnboardingControll
   router3.get("/check-duplicate", controller.checkDuplicate);
   router3.post("/pin-login", controller.pinLogin);
   router3.post("/scan-login", controller.scanLogin);
+  router3.post("/continuous-face-verify", controller.continuousFaceVerify);
   router3.post("/create-pending", controller.createPending);
   router3.post("/complete-info", controller.completeInfo);
   router3.get("/pending-patients", controller.listPending);

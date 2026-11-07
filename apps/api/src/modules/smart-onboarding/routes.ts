@@ -26,6 +26,7 @@ export function createSmartOnboardingRouter(
 
   // 1. Biometric Presence Scan & Login
   router.post('/scan-login', controller.scanLogin);
+  router.post('/continuous-face-verify', controller.continuousFaceVerify);
 
   // 2. Face-First Account Creation (Pending Info)
   router.post('/create-pending', controller.createPending);

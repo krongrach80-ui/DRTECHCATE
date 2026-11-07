@@ -1335,6 +1335,136 @@ export class SmartOnboardingService {
   }
 
   /**
+   * Continuous 1:1 Face Verification during Active Exercise Session
+   * Verifies the probe embedding against the specific patient's enrolled templates
+   * Threshold confirmed: Cosine Similarity >= 0.50 (~72-75% calibrated)
+   */
+  public async continuousFaceVerify(params: {
+    patient_id: string;
+    probe: number[];
+    session_id?: string;
+    exercise_id?: string;
+  }): Promise<{
+    verified: boolean;
+    has_template: boolean;
+    score: number;
+    similarity_percent?: number;
+    reason?: string;
+    message?: string;
+  }> {
+    const { patient_id, probe, session_id, exercise_id } = params;
+
+    if (!probe || !Array.isArray(probe) || probe.length !== 512) {
+      return {
+        verified: false,
+        has_template: false,
+        score: 0,
+        reason: 'invalid_probe',
+        message: 'ข้อมูลเวกเตอร์ใบหน้าไม่ถูกต้อง',
+      };
+    }
+
+    let bestSim = -1;
+    let hasTemplate = false;
+
+    // 1. Try Supabase server-side RPC match_face_candidates
+    try {
+      const supabase = getAdminClient();
+      const { data: matches, error } = await supabase.rpc('match_face_candidates', {
+        probe,
+        candidate_ids: [patient_id],
+        k: 1,
+      });
+
+      if (!error && Array.isArray(matches) && matches.length > 0) {
+        hasTemplate = true;
+        bestSim = Number(matches[0].score || 0);
+      }
+    } catch (dbErr) {
+      logger.warn({ dbErr }, 'Supabase match_face_candidates in continuousFaceVerify failed');
+    }
+
+    // 2. Fallback to vault patient dossier or local records if DB returned no template
+    if (!hasTemplate) {
+      try {
+        const record = this.vaultService.getPatientRecord(patient_id);
+        if (record) {
+          const candidateVectors: number[][] = [];
+          if (record.biometrics?.face_vector && record.biometrics.face_vector.length === 512) {
+            candidateVectors.push(record.biometrics.face_vector);
+          }
+          const frontal = (record as any).frontal_centroid;
+          if (Array.isArray(frontal) && frontal.length === 512) {
+            candidateVectors.push(frontal);
+          }
+          const frames = (record as any).enrolled_frames || (record as any).frames;
+          if (Array.isArray(frames)) {
+            for (const f of frames) {
+              const vec = f?.embedding || f?.vector;
+              if (Array.isArray(vec) && vec.length === 512) candidateVectors.push(vec);
+            }
+          }
+
+          if (candidateVectors.length > 0) {
+            hasTemplate = true;
+            for (const vec of candidateVectors) {
+              const matchRes = evaluateBiometricMatch(probe, vec, { isSingleUserInDb: true });
+              if (matchRes.cosineSimilarity > bestSim) {
+                bestSim = matchRes.cosineSimilarity;
+              }
+            }
+          }
+        }
+      } catch {
+        // vault lookup fallback
+      }
+    }
+
+    if (!hasTemplate) {
+      return {
+        verified: false,
+        has_template: false,
+        score: 0,
+        reason: 'no_face_enrolled',
+        message: 'ผู้ป่วยยังไม่ได้ลงทะเบียนใบหน้าในระบบ',
+      };
+    }
+
+    // Confirmed threshold: Cosine Similarity >= 0.50
+    const isVerified = bestSim >= 0.50;
+    const similarityPercent = Math.round(Math.max(0, bestSim) * 100);
+
+    // Asynchronously log audit entry (zero images, zero vectors, PDPA compliant)
+    try {
+      const supabase = getAdminClient();
+      supabase.from('audit_logs').insert({
+        action: 'continuous_exercise_face_verify',
+        patient_id,
+        user_id: patient_id,
+        status: isVerified ? 'success' : 'failed',
+        details: {
+          session_id,
+          exercise_id,
+          score: Number(bestSim.toFixed(4)),
+          verified: isVerified,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch {
+      // non-blocking audit log
+    }
+
+    return {
+      verified: isVerified,
+      has_template: true,
+      score: Number(bestSim.toFixed(4)),
+      similarity_percent: similarityPercent,
+      reason: isVerified ? 'verified' : 'face_mismatch',
+      message: isVerified ? 'ยืนยันตัวตนสำเร็จ' : 'ใบหน้าไม่ตรงกับผู้ป่วย',
+    };
+  }
+
+  /**
    * 2. Instant Face-First Account Creation (Master Prompt v4 Section 2 Step 2.1 & 2.2)
    */
   public async createPendingAccount(payload: {

@@ -370,3 +370,117 @@ export function selectPrimarySubjectPose(
 
   return { selectedPose: chosenPose, selectedIndex: bestIdx, newLockedCoM };
 }
+
+export interface NormalizedBox {
+  x: number;      // minX [0, 1]
+  y: number;      // minY [0, 1]
+  width: number;  // [0, 1]
+  height: number; // [0, 1]
+}
+
+/**
+ * Checks whether a Pose's head landmarks (Nose, Eyes, or Upper Collar)
+ * lie within or closely align with a verified Face Bounding Box.
+ */
+export function isPoseHeadInsideFaceBox(
+  pose: PoseEngineLandmark[],
+  faceBox: NormalizedBox,
+  margin: number = 0.08
+): boolean {
+  if (!pose || pose.length === 0 || !faceBox) return false;
+  const nose = pose[0];
+  const leftEye = pose[2];
+  const rightEye = pose[5];
+
+  const minX = faceBox.x - margin;
+  const maxX = faceBox.x + faceBox.width + margin;
+  const minY = faceBox.y - margin;
+  const maxY = faceBox.y + faceBox.height + margin;
+
+  // 1. Check nose landmark
+  if (nose && (nose.visibility ?? 0) >= 0.20) {
+    if (nose.x >= minX && nose.x <= maxX && nose.y >= minY && nose.y <= maxY) {
+      return true;
+    }
+  }
+
+  // 2. Check eye midpoint
+  if (leftEye && rightEye && ((leftEye.visibility ?? 0) >= 0.20 || (rightEye.visibility ?? 0) >= 0.20)) {
+    const eyeMidX = (leftEye.x + rightEye.x) / 2;
+    const eyeMidY = (leftEye.y + rightEye.y) / 2;
+    if (eyeMidX >= minX && eyeMidX <= maxX && eyeMidY >= minY && eyeMidY <= maxY) {
+      return true;
+    }
+  }
+
+  // 3. Check upper neck / shoulders midpoint
+  const ls = pose[11];
+  const rs = pose[12];
+  if (ls && rs && ((ls.visibility ?? 0) >= 0.25 || (rs.visibility ?? 0) >= 0.25)) {
+    const neckX = (ls.x + rs.x) / 2;
+    const neckY = Math.min(ls.y, rs.y);
+    const faceMidX = faceBox.x + faceBox.width / 2;
+    const faceBottom = faceBox.y + faceBox.height;
+    if (Math.abs(neckX - faceMidX) < Math.max(0.12, faceBox.width * 0.9) &&
+        Math.abs(neckY - faceBottom) < Math.max(0.15, faceBox.height * 0.8)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Identity-Aware Subject Pose Selector:
+ * Locks onto the specific pose whose head corresponds to the verified patient's face box.
+ * Even if bystanders or relatives are closer or larger, they are completely ignored.
+ * Falls back to spatial continuity scoring if no verified face box is provided.
+ */
+export function selectSubjectPoseWithIdentity(
+  allPoses: PoseEngineLandmark[][],
+  verifiedFaceBox?: NormalizedBox | null,
+  prevLockedCoM?: { x: number; y: number } | null
+): {
+  selectedPose: PoseEngineLandmark[];
+  selectedIndex: number;
+  newLockedCoM: { x: number; y: number };
+  isIdentityMatched: boolean;
+} {
+  if (!allPoses || allPoses.length === 0) {
+    return {
+      selectedPose: [],
+      selectedIndex: -1,
+      newLockedCoM: prevLockedCoM || { x: 0.5, y: 0.5 },
+      isIdentityMatched: false,
+    };
+  }
+
+  // If a verified face box exists, find the pose matching it
+  if (verifiedFaceBox) {
+    for (let i = 0; i < allPoses.length; i++) {
+      if (isPoseHeadInsideFaceBox(allPoses[i], verifiedFaceBox)) {
+        const chosenPose = allPoses[i];
+        const chosenCoM = calculateCenterOfMass(chosenPose);
+        const newLockedCoM = prevLockedCoM
+          ? {
+              x: 0.80 * prevLockedCoM.x + 0.20 * chosenCoM.x,
+              y: 0.80 * prevLockedCoM.y + 0.20 * chosenCoM.y,
+            }
+          : { x: chosenCoM.x, y: chosenCoM.y };
+        return {
+          selectedPose: chosenPose,
+          selectedIndex: i,
+          newLockedCoM,
+          isIdentityMatched: true,
+        };
+      }
+    }
+  }
+
+  // If no pose matched verified face box, or verified face box is not available:
+  const standardSelection = selectPrimarySubjectPose(allPoses, prevLockedCoM);
+  return {
+    ...standardSelection,
+    isIdentityMatched: false,
+  };
+}
