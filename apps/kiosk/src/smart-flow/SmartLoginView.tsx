@@ -361,6 +361,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       if (videoRef.current) {
         await camera.start(videoRef.current);
+        // Ensure hardware exposure compensation is applied (+1.2 EV)
+        try {
+          if (typeof (camera as any).applyHardwareExposure === 'function') {
+            await (camera as any).applyHardwareExposure();
+          }
+        } catch {
+          // non-blocking
+        }
         isCameraStartedRef.current = true;
         if (isMountedRef.current) {
           setCameraReady(true);
@@ -1341,7 +1349,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               className="w-full h-full relative flex items-center justify-center cursor-pointer group"
               title="แตะที่นี่เพื่อสแกนใบหน้าทันที"
             >
-              <canvas ref={previewCanvasRef} className="w-full h-full object-cover" />
+              <canvas
+                ref={previewCanvasRef}
+                className="w-full h-full object-cover filter brightness-[1.18] contrast-[1.05] transition-all duration-300"
+              />
 
               {/* Real-time Liveness Telemetry Badge */}
               <div className="absolute top-3 inset-x-0 flex justify-center z-20 pointer-events-none">

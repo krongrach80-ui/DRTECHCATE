@@ -65,6 +65,13 @@ export class CameraManager {
       throw new Error(`Failed to initialize camera: ${error.message}`);
     }
 
+    // Hardware exposure and backlight compensation for kiosks facing windows
+    try {
+      await this.applyHardwareExposure(this.stream);
+    } catch {
+      // non-blocking
+    }
+
     if (videoElement) {
       this.video = videoElement;
       this.video.srcObject = this.stream;
@@ -83,6 +90,51 @@ export class CameraManager {
       this.video.srcObject = null;
       this.video = null;
     }
+  }
+
+  /**
+   * Attempts hardware MediaStreamTrack exposure and backlight compensation (+1.2 EV).
+   * Automatically adapts to device capabilities and clamps within safe bounds.
+   */
+  public async applyHardwareExposure(mediaStream?: MediaStream | null): Promise<boolean> {
+    const stream = mediaStream || this.stream;
+    if (!stream) return false;
+    try {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) return false;
+
+      const capabilities: any = typeof videoTrack.getCapabilities === 'function' ? videoTrack.getCapabilities() : {};
+      const advancedConstraint: any = {};
+      let hasAdvanced = false;
+
+      if (capabilities.exposureMode && Array.isArray(capabilities.exposureMode) && capabilities.exposureMode.includes('continuous')) {
+        advancedConstraint.exposureMode = 'continuous';
+        hasAdvanced = true;
+      }
+
+      if (capabilities.whiteBalanceMode && Array.isArray(capabilities.whiteBalanceMode) && capabilities.whiteBalanceMode.includes('continuous')) {
+        advancedConstraint.whiteBalanceMode = 'continuous';
+        hasAdvanced = true;
+      }
+
+      if (capabilities.exposureCompensation) {
+        const minComp = typeof capabilities.exposureCompensation.min === 'number' ? capabilities.exposureCompensation.min : -2.0;
+        const maxComp = typeof capabilities.exposureCompensation.max === 'number' ? capabilities.exposureCompensation.max : 2.0;
+        const targetComp = 1.2;
+        advancedConstraint.exposureCompensation = Math.max(minComp, Math.min(targetComp, maxComp));
+        hasAdvanced = true;
+      }
+
+      if (hasAdvanced && typeof videoTrack.applyConstraints === 'function') {
+        await videoTrack.applyConstraints({
+          advanced: [advancedConstraint],
+        } as any);
+        return true;
+      }
+    } catch {
+      // Hardware constraints not supported by browser/device; fallback gracefully
+    }
+    return false;
   }
 
   /**

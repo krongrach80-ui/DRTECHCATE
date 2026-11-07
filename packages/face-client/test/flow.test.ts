@@ -227,4 +227,55 @@ describe('[FACE-CLIENT] flow.ts - Enrollment 10-Frames & Verification Probe', ()
       ]);
     });
   });
+
+  describe('4. CameraManager Hardware Exposure & Backlight Compensation', () => {
+    it('4.1 applyHardwareExposure safely adjusts exposureCompensation and modes when supported', async () => {
+      const { CameraManager } = await import('../src/camera');
+      const camera = new CameraManager();
+
+      let appliedConstraints: any = null;
+      const mockTrack = {
+        getCapabilities: () => ({
+          exposureMode: ['continuous', 'manual'],
+          whiteBalanceMode: ['continuous'],
+          exposureCompensation: { min: -2.0, max: 2.0, step: 0.1 },
+        }),
+        applyConstraints: async (c: any) => {
+          appliedConstraints = c;
+        },
+      };
+
+      const mockStream = {
+        getVideoTracks: () => [mockTrack],
+      } as any;
+
+      const result = await camera.applyHardwareExposure(mockStream);
+      expect(result).toBe(true);
+      expect(appliedConstraints).toBeDefined();
+      expect(appliedConstraints.advanced[0].exposureMode).toBe('continuous');
+      expect(appliedConstraints.advanced[0].whiteBalanceMode).toBe('continuous');
+      expect(appliedConstraints.advanced[0].exposureCompensation).toBe(1.2);
+    });
+
+    it('4.2 applyHardwareExposure handles unsupported camera hardware gracefully without throwing', async () => {
+      const { CameraManager } = await import('../src/camera');
+      const camera = new CameraManager();
+
+      const mockTrack = {
+        getCapabilities: () => ({}),
+        applyConstraints: async () => {},
+      };
+
+      const mockStream = {
+        getVideoTracks: () => [mockTrack],
+      } as any;
+
+      const result = await camera.applyHardwareExposure(mockStream);
+      expect(result).toBe(false);
+
+      // When stream is null
+      const nullResult = await camera.applyHardwareExposure(null);
+      expect(nullResult).toBe(false);
+    });
+  });
 });
