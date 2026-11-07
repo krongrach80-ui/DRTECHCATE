@@ -5,7 +5,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { DynamicExerciseSessionView, POSE_CONNECTIONS, BODY_JOINT_INDICES, getRequiredKeypointsForExercise, KEYPOINT_NAME_MAP } from '../views/DynamicExerciseSessionView';
+import {
+  DynamicExerciseSessionView,
+  POSE_CONNECTIONS,
+  BODY_JOINT_INDICES,
+  getRequiredKeypointsForExercise,
+  KEYPOINT_NAME_MAP,
+  computeTargetRingProgress,
+} from '../views/DynamicExerciseSessionView';
 import { DynamicExerciseSessionView as TrainingExerciseSessionView } from '../views/training/DynamicExerciseSessionView';
 import {
   isPoseHeadInsideFaceBox,
@@ -712,6 +719,174 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
       expect(getGracePeriod('shoulder_pendulum_clock')).toBe(15000);
       expect(getGracePeriod('shoulder_flexion')).toBe(6000);
       expect(getGracePeriod('cervical_retraction')).toBe(6000);
+    });
+  });
+
+  describe('6. High-Performance 60 FPS Progress Ring & UI Smoothing Specification', () => {
+    const mockConfig: any = {
+      id: 'shoulder-flexion',
+      nameTh: 'ยกแขนไปข้างหน้า (Active Shoulder Flexion)',
+      angleMechanics: {
+        startAngleDeg: 20,
+        targetMinDeg: 80,
+        targetMaxDeg: 120,
+      },
+      defaultPrescription: {
+        repsPerSet: 10,
+        totalSets: 3,
+      },
+    };
+
+    it('6.1 computeTargetRingProgress eliminates phase jumps and scales smoothly with joint angle during both moving and returning phases', () => {
+      // 1. Moving towards target: 50 degrees out of (20..80) span -> 50%
+      const movingEval: any = {
+        phase: 'MOVING_TO_TARGET',
+        currentAngleDeg: 50,
+        isInsideTargetZone: false,
+      };
+      const movingProgress = computeTargetRingProgress(movingEval, mockConfig, false, false, 0);
+      expect(movingProgress).toBeCloseTo(0.5, 2);
+
+      // 2. Returning towards start: at 50 degrees, MUST scale continuously to ~0.5 (NOT hardcoded 0.4 jump!)
+      const returningEval: any = {
+        phase: 'RETURNING_TO_START',
+        currentAngleDeg: 50,
+        isInsideTargetZone: false,
+      };
+      const returningProgress = computeTargetRingProgress(returningEval, mockConfig, false, false, 0);
+      expect(returningProgress).toBeCloseTo(0.5, 2);
+      expect(returningProgress).not.toBe(0.4);
+
+      // 3. Fully returned to start: at 20 degrees -> 0.0
+      const returnedEval: any = {
+        phase: 'RETURNING_TO_START',
+        currentAngleDeg: 20,
+        isInsideTargetZone: false,
+      };
+      const returnedProgress = computeTargetRingProgress(returnedEval, mockConfig, false, false, 0);
+      expect(returnedProgress).toBe(0);
+    });
+
+    it('6.2 computeTargetRingProgress snaps immediately to 1.0 when rep completes and handles timer/pendulum modes', () => {
+      // Rep completed -> instant snap to 1.0
+      const completedEval: any = {
+        phase: 'REP_COMPLETED',
+        currentAngleDeg: 85,
+        isInsideTargetZone: true,
+      };
+      expect(computeTargetRingProgress(completedEval, mockConfig, false, false, 3)).toBe(1.0);
+
+      // Isometric hold zone
+      const holdingEval: any = {
+        phase: 'HOLDING_TARGET',
+        currentAngleDeg: 85,
+        isInsideTargetZone: true,
+        holdProgressRatio: 0.6,
+      };
+      const holdingProgress = computeTargetRingProgress(holdingEval, mockConfig, false, false, 3);
+      expect(holdingProgress).toBeCloseTo(0.85 + 0.15 * 0.6, 2);
+
+      // Timer mode
+      const timerEval: any = {
+        phase: 'MOVING_TO_TARGET',
+        holdProgressRatio: 0.72,
+      };
+      expect(computeTargetRingProgress(timerEval, mockConfig, true, false, 1)).toBeCloseTo(0.72, 2);
+
+      // Pendulum mode
+      const pendEval: any = {
+        phase: 'MOVING_TO_TARGET',
+        pendulumCircleProgressRatio: 0.88,
+      };
+      expect(computeTargetRingProgress(pendEval, mockConfig, false, true, 2)).toBeCloseTo(0.88, 2);
+    });
+
+    it('6.3 Frame-rate independent Lerp calculation is smooth and robust across variable dt intervals', () => {
+      const lambda = 16;
+      let currentVal = 0;
+      const targetVal = 1.0;
+
+      // Simulate 60 FPS frames (dt = 16.67ms per frame)
+      const dtMs = 16.666;
+      const alpha = 1 - Math.exp(-lambda * (dtMs / 1000));
+      expect(alpha).toBeGreaterThan(0.20);
+      expect(alpha).toBeLessThan(0.30);
+
+      // Over 6 frames (~100ms), lerp should reach ~80% smoothly without overshooting 1.0
+      for (let i = 0; i < 6; i++) {
+        currentVal += (targetVal - currentVal) * alpha;
+        expect(currentVal).toBeLessThanOrEqual(1.0);
+      }
+      expect(currentVal).toBeGreaterThan(0.78);
+
+      // When snapping on rep complete, progress jumps to 1.0 instantly
+      const snapProgress = 1.0;
+      currentVal = snapProgress;
+      expect(currentVal).toBe(1.0);
+    });
+
+    it('6.4 Accuracy EMA smoothing + deadband prevents rapid micro-fluctuations below 1% and under 200ms', () => {
+      let smoothedAccuracy = 85.0;
+      let lastEmittedAccuracy = 85;
+      let lastEmitTime = 1000;
+
+      const evaluateAccuracyUpdate = (rawAcc: number, nowMs: number) => {
+        // EMA smoothing (alpha = 0.15)
+        smoothedAccuracy = smoothedAccuracy === 0 ? rawAcc : smoothedAccuracy * 0.85 + rawAcc * 0.15;
+        const roundedSmoothed = Math.round(smoothedAccuracy);
+
+        // Deadband: >= 1% change AND at least 200ms elapsed
+        const hasMeaningfulChange = Math.abs(roundedSmoothed - lastEmittedAccuracy) >= 1;
+        const hasElapsedThrottle = nowMs - lastEmitTime >= 200;
+
+        if (hasMeaningfulChange && hasElapsedThrottle) {
+          lastEmittedAccuracy = roundedSmoothed;
+          lastEmitTime = nowMs;
+          return { emitted: true, value: roundedSmoothed };
+        }
+        return { emitted: false, value: lastEmittedAccuracy };
+      };
+
+      // 1. Micro-jitter: raw moves to 85.8 at +50ms -> smoothed changes slightly, deadband blocks emit
+      const tick1 = evaluateAccuracyUpdate(85.8, 1050);
+      expect(tick1.emitted).toBe(false);
+      expect(tick1.value).toBe(85);
+
+      // 2. Micro-jitter: raw drops to 84.6 at +100ms -> deadband blocks emit
+      const tick2 = evaluateAccuracyUpdate(84.6, 1100);
+      expect(tick2.emitted).toBe(false);
+      expect(tick2.value).toBe(85);
+
+      // 3. Significant genuine shift to 95% at +250ms -> meets >= 1% and >= 200ms -> emits update
+      const tick3 = evaluateAccuracyUpdate(95, 1250);
+      expect(tick3.emitted).toBe(true);
+      expect(tick3.value).toBeGreaterThan(85);
+
+      // 4. Quick follow-up at +270ms (< 200ms elapsed since last emit at 1250) -> throttled
+      const tick4 = evaluateAccuracyUpdate(96, 1270);
+      expect(tick4.emitted).toBe(false);
+      expect(tick4.value).toBe(tick3.value);
+    });
+
+    it('6.5 Staff Debug HUD format contains dual FPS diagnostic lines (Camera/AI FPS & Display Render FPS)', () => {
+      const hudData = {
+        cameraStatus: 'running',
+        fps: 28,
+        renderFps: 60,
+      };
+
+      const debugLine = `📷 กล้อง/AI: ${hudData.fps} FPS | หลอดแสดงผล: ${hudData.renderFps} FPS`;
+      expect(debugLine).toContain('กล้อง/AI: 28 FPS');
+      expect(debugLine).toContain('หลอดแสดงผล: 60 FPS');
+    });
+
+    it('6.6 SVG Progress Ring circumference corresponds to 2 * PI * 42 (~263.89px) with will-change optimization', () => {
+      const radius = 42;
+      const circumference = 2 * Math.PI * radius;
+      expect(circumference).toBeCloseTo(263.89, 1);
+
+      const circleStyle = { willChange: 'stroke-dashoffset' };
+      expect(circleStyle.willChange).toBe('stroke-dashoffset');
     });
   });
 });

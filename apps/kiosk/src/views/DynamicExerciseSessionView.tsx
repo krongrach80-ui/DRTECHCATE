@@ -168,6 +168,99 @@ const _LANDMARK_NAMES: Record<number, string> = {
   32: 'R.FootIndex',
 };
 
+/**
+ * Computes smooth target progress ratio (0.0 to 1.0) for the circular rep progress ring.
+ * Eliminates phase jumps (such as RETURNING_TO_START jumping to 0.4) by continuously
+ * scaling with actual joint angle back towards the starting baseline.
+ */
+export const computeTargetRingProgress = (
+  evalRes: RepEvaluationResult | null,
+  config: ExerciseDetectionConfig,
+  isTimer: boolean,
+  isPend: boolean,
+  completedReps: number
+): number => {
+  if (!evalRes) return 0;
+
+  if (isTimer) {
+    return Math.max(0, Math.min(1.0, evalRes.holdProgressRatio || evalRes.pendulumCircleProgressRatio || 0));
+  }
+  if (isPend) {
+    return Math.max(0, Math.min(1.0, evalRes.pendulumCircleProgressRatio || 0));
+  }
+
+  const phase = evalRes.phase;
+  const startAngle = config.angleMechanics?.startAngleDeg ?? 20;
+  const targetMin = config.angleMechanics?.targetMinDeg ?? 80;
+  const curAngle = evalRes.currentAngleDeg ?? 0;
+  const angleSpan = Math.max(1, targetMin - startAngle);
+
+  if (phase === 'REP_COMPLETED') {
+    return 1.0;
+  }
+
+  if (phase === 'HOLDING_TARGET' || evalRes.isInsideTargetZone) {
+    if (typeof evalRes.holdProgressRatio === 'number' && evalRes.holdProgressRatio > 0) {
+      return 0.85 + 0.15 * Math.min(1.0, evalRes.holdProgressRatio);
+    }
+    return 1.0;
+  }
+
+  // Smooth continuous angle tracking during both MOVING_TO_TARGET and RETURNING_TO_START
+  if (phase === 'MOVING_TO_TARGET' || phase === 'RETURNING_TO_START') {
+    const rawProgress = (curAngle - startAngle) / angleSpan;
+    return Math.max(0, Math.min(0.95, rawProgress));
+  }
+
+  const targetReps = config.defaultPrescription?.repsPerSet || 10;
+  return targetReps > 0 ? (completedReps % targetReps) / targetReps : 0;
+};
+
+interface ExercisePostureGuideCardProps {
+  exerciseId: string;
+  titleString: string;
+  instructionTextTh?: string;
+  descriptionTh?: string;
+}
+
+const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
+  ({ exerciseId, titleString, instructionTextTh, descriptionTh }) => {
+    return (
+      <div className="bg-white rounded-3xl border border-blue-100 p-4 sm:p-5 shadow-sm flex-1 flex flex-col justify-between gap-3">
+        <div>
+          <div className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <span>📐</span>
+            <span>ภาพตัวอย่างท่ากายภาพบำบัด</span>
+          </div>
+          <div className="w-full aspect-[16/10] bg-slate-50 border border-slate-100 rounded-2xl p-2 flex items-center justify-center overflow-hidden">
+            <img
+              src={`/assets/exercises/${exerciseId}.svg`}
+              alt={titleString}
+              className="max-h-full max-w-full object-contain"
+              onError={(e) => {
+                (e.currentTarget as HTMLElement).style.display = 'none';
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+          <div className="font-bold text-slate-800 flex items-center gap-1">
+            <span>💡</span>
+            <span>คำแนะนำท่านี้:</span>
+          </div>
+          <ul className="list-disc list-inside text-slate-600 space-y-1 leading-relaxed">
+            <li>{instructionTextTh || 'จัดระยะยืนให้อยู่ในกรอบภาพและมองตรงที่กล้อง'}</li>
+            <li>{descriptionTh || 'ขยับแขน/ข้อต่อตามจังหวะช้าๆ อย่างสม่ำเสมอ'}</li>
+            <li>หากรู้สึกเจ็บแปลบ ให้แตะปุ่มหยุดพักและแจ้งเจ้าหน้าที่ทันที</li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
+);
+ExercisePostureGuideCard.displayName = 'ExercisePostureGuideCard';
+
 export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProps> = (props) => {
   const {
     patient = { first_name: 'ผู้ฝึก' },
@@ -297,6 +390,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   // Diagnostic HUD live state
   const [hudState, setHudState] = useState({
     fps: 0,
+    renderFps: 60,
     landmarkCount: 0,
     avgVisibility: 0,
     currentAngle: 0,
@@ -314,6 +408,31 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     hasLightingWarning: false,
     requiredKeypointsStatus: [] as Array<{ idx: number; name: string; visibility: number; isPresent: boolean }>,
     readinessReason: 'กำลังเตรียมระบบตรวจจับ...',
+  });
+
+  // 60 FPS Visual Ring Animation & Direct DOM Ref
+  const progressCircleRef = useRef<SVGCircleElement | null>(null);
+  const targetProgressRef = useRef<number>(0);
+  const currentAnimatedProgressRef = useRef<number>(0);
+  const lastRenderTimeRef = useRef<number>(performance.now());
+  const smoothedRenderFpsRef = useRef<number>(60);
+
+  // Accuracy Percentage EMA Smoothing & Deadband
+  const smoothedAccuracyRef = useRef<number>(0);
+  const lastAccuracyEmitTimeRef = useRef<number>(0);
+  const lastEmittedAccuracyRef = useRef<number>(0);
+
+  // Latest evaluation result ref for non-reactive reads
+  const latestEvalResultRef = useRef<RepEvaluationResult | null>(null);
+  const lastRenderedUiValuesRef = useRef({
+    completedReps: 0,
+    currentSet: 1,
+    repPhase: '',
+    hasLightingWarning: false,
+    accuracyPct: 0,
+    distanceStatus: '',
+    coachingMessage: '',
+    readinessStatus: '',
   });
 
   // State mirror refs for loop access without re-binding
@@ -504,7 +623,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
         let vector: number[] | null = null;
         if (detection.landmarks) {
-          const aligned = services.aligner.align(videoEl, detection.landmarks);
+          const aligned = services.aligner.align(videoEl as any, detection.landmarks);
           vector = await services.embeddingModel.embed(aligned);
           const actx = aligned.getContext?.('2d');
           if (actx) actx.clearRect(0, 0, aligned.width, aligned.height);
@@ -903,6 +1022,54 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
 
           const nowMs = performance.now();
+
+          // 1. Measure 60 FPS Display / Render Frame Time
+          const renderDtMs = Math.max(nowMs - lastRenderTimeRef.current, 1);
+          lastRenderTimeRef.current = nowMs;
+          smoothedRenderFpsRef.current = 0.9 * smoothedRenderFpsRef.current + 0.1 * (1000 / renderDtMs);
+
+          // 2. Continuous 60 FPS Ring Lerp Interpolation & Direct DOM Update
+          const targetProgress = targetProgressRef.current;
+          const currentProgress = currentAnimatedProgressRef.current;
+          const dtSec = Math.min(renderDtMs / 1000, 0.05);
+          // Lambda = 16 gives ~60-80ms smooth response time without perceptible lag
+          const lerpFactor = 1 - Math.exp(-16 * dtSec);
+          const nextProgress = Math.abs(targetProgress - currentProgress) < 0.0005
+            ? targetProgress
+            : currentProgress + (targetProgress - currentProgress) * lerpFactor;
+          currentAnimatedProgressRef.current = nextProgress;
+
+          if (progressCircleRef.current) {
+            const circ = 2 * Math.PI * 42;
+            const offset = circ * (1 - Math.max(0, Math.min(1, nextProgress)));
+            progressCircleRef.current.style.strokeDashoffset = `${offset}px`;
+          }
+
+          // Continuous Face Verification Trigger (Every ~2.5s)
+          if (
+            nowMs - lastFaceCheckTimeRef.current >= 2500 &&
+            !isFaceCheckInProgressRef.current &&
+            !isPausedRef.current &&
+            vEl.readyState >= 2 &&
+            patientId
+          ) {
+            lastFaceCheckTimeRef.current = nowMs;
+            triggerFaceVerification(vEl);
+          }
+
+          // Continuous Identity Failure Auto-Pause (>= 20s)
+          if (
+            identityFailureStartTimeRef.current &&
+            nowMs - identityFailureStartTimeRef.current >= 20000 &&
+            !isPausedRef.current
+          ) {
+            setIsPaused(true);
+            isPausedRef.current = true;
+            setShowIdentityFailureModal(true);
+            speakThai('หยุดการฝึกชั่วคราวเนื่องจากไม่สามารถยืนยันตัวตนได้', 'identity_timeout', 0);
+          }
+
+          // 3. AI Inference Interval Throttle (50 FPS standard / 15 FPS low power)
           const minIntervalMs = lowPowerRef.current ? 66 : 20; // 15 FPS in low-power, 50 FPS standard
           if (nowMs - lastInferenceTimeRef.current < minIntervalMs) {
             return;
@@ -951,35 +1118,64 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           const hasPose = Boolean(result && result.landmarks && result.landmarks.length > 0);
           const isTimerExercise = (resolvedConfigRef.current as any).mode === 'timer' || resolvedConfigRef.current.evaluationMode === 'timer';
+          const isPendulumExercise = resolvedConfigRef.current.evaluationMode === 'pendulum_circular' || Boolean((resolvedConfigRef.current as any).isPendulum);
 
           if (!hasPose) {
             canvasSmoothedPointsRef.current = {};
             if (isTimerExercise) {
               const evalRes = stateMachineRef.current.evaluate([], monotonicTs);
+              latestEvalResultRef.current = evalRes;
+              targetProgressRef.current = computeTargetRingProgress(
+                evalRes,
+                resolvedConfigRef.current,
+                true,
+                isPendulumExercise,
+                validCompletedRepsRef.current
+              );
+
               if (evalRes.completedReps > lastCompletedRepsRef.current) {
                 lastCompletedRepsRef.current = evalRes.completedReps;
-                setCelebratingRep(evalRes.completedReps);
-                setTimeout(() => setCelebratingRep(null), 2000);
-                playRepChime();
-                speakThai(`ครั้งที่ ${evalRes.completedReps}`, 'rep_count', 1200);
+                if (isIdentityVerifiedRef.current) {
+                  validCompletedRepsRef.current += 1;
+                  targetProgressRef.current = 1.0;
+                  currentAnimatedProgressRef.current = 1.0;
+                  if (progressCircleRef.current) {
+                    progressCircleRef.current.style.strokeDashoffset = '0px';
+                  }
+                  setCelebratingRep(validCompletedRepsRef.current);
+                  setTimeout(() => setCelebratingRep(null), 2000);
+                  playRepChime();
+                  speakThai(`ครั้งที่ ${validCompletedRepsRef.current}`, 'rep_count', 1200);
+                } else {
+                  rejectedRepsCountRef.current += 1;
+                  console.warn('[IdentityGate] Timer rep rejected: unverified patient identity');
+                }
               }
-              if (evalRes.isSetCompleted && !evalRes.isExerciseCompleted && !isRestingRef.current) {
+
+              const targetReps = resolvedConfigRef.current.defaultPrescription?.repsPerSet || 10;
+              const totalSets = resolvedConfigRef.current.defaultPrescription?.totalSets || 3;
+              const isSetDone = validCompletedRepsRef.current >= targetReps;
+              const isExerciseDone = isSetDone && evalRes.currentSet >= totalSets;
+
+              if (isSetDone && !isExerciseDone && !isRestingRef.current) {
                 setIsResting(true);
                 isRestingRef.current = true;
                 speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`, 'set_complete', 2500);
-              } else if (evalRes.isExerciseCompleted && !isSummaryOpenRef.current) {
+              } else if (isExerciseDone && !isSummaryOpenRef.current) {
                 setIsSummaryOpen(true);
                 isSummaryOpenRef.current = true;
                 speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว', 'exercise_complete', 2500);
               }
-              if (nowMs - lastUiUpdateMsRef.current > 100) {
+
+              if (nowMs - lastUiUpdateMsRef.current > 150) {
                 lastUiUpdateMsRef.current = nowMs;
                 setHudState((prev) => ({
                   ...prev,
                   fps: Math.round(smoothedFpsRef.current),
+                  renderFps: Math.round(smoothedRenderFpsRef.current),
                   landmarkCount: 0,
                   currentAngle: 0,
-                  completedReps: evalRes.completedReps,
+                  completedReps: validCompletedRepsRef.current,
                   repPhase: evalRes.phase,
                   accuracyScore: Math.round(evalRes.accuracyPercent ?? 100),
                   coachingMessage: evalRes.coachingMessageTh || 'กำลังจับเวลาตามจังหวะกายภาพ...',
@@ -995,6 +1191,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               setHudState((prev) => ({
                 ...prev,
                 fps: Math.round(smoothedFpsRef.current),
+                renderFps: Math.round(smoothedRenderFpsRef.current),
                 landmarkCount: 0,
                 avgVisibility: 0,
                 shoulderWidthPct: 0,
@@ -1008,11 +1205,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             return;
           }
 
-          // 1. Multi-Pose Subject Locking (Center-weighted + IoU/Centroid continuity)
+          // 1. Multi-Pose Subject Locking with Verified Face Identity Binding
           const allPoses = result.landmarks;
           const detectedPeopleCount = allPoses.length;
           const { selectedPose: chosenPose, selectedIndex: bestIdx, newLockedCoM } =
-            selectPrimarySubjectPose(allPoses, lockedSubjectCoMRef.current);
+            selectSubjectPoseWithIdentity(allPoses, verifiedFaceBoxRef.current, lockedSubjectCoMRef.current);
           lockedSubjectCoMRef.current = newLockedCoM;
 
           // 2. Clinical One Euro Filter (1€ Filter - low tremor at rest, low latency in motion)
@@ -1022,6 +1219,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           // Hardware Watchdog & Clinical State Machine Update
           const wdStatus = watchdogRef.current.update(smoothedPose, monotonicTs);
           const evalRes = stateMachineRef.current.evaluate(smoothedPose, monotonicTs);
+          latestEvalResultRef.current = evalRes;
+          targetProgressRef.current = computeTargetRingProgress(
+            evalRes,
+            resolvedConfigRef.current,
+            false,
+            isPendulumExercise,
+            validCompletedRepsRef.current
+          );
 
           // Project landmarks into 1:1 canvas pixels with mirror support and fitMode
           const currentFitMode = fitModeRef.current;
@@ -1170,10 +1375,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           // Rep completion audio chime, TTS & senior celebration pulse
           if (evalRes.completedReps > lastCompletedRepsRef.current) {
             lastCompletedRepsRef.current = evalRes.completedReps;
-            setCelebratingRep(evalRes.completedReps);
-            setTimeout(() => setCelebratingRep(null), 2000);
-            playRepChime();
-            speakThai(`ครั้งที่ ${evalRes.completedReps}`, 'rep_count', 1200);
+            if (isIdentityVerifiedRef.current) {
+              validCompletedRepsRef.current += 1;
+              targetProgressRef.current = 1.0;
+              currentAnimatedProgressRef.current = 1.0;
+              if (progressCircleRef.current) {
+                progressCircleRef.current.style.strokeDashoffset = '0px';
+              }
+              setCelebratingRep(validCompletedRepsRef.current);
+              setTimeout(() => setCelebratingRep(null), 2000);
+              playRepChime();
+              speakThai(`ครั้งที่ ${validCompletedRepsRef.current}`, 'rep_count', 1200);
+            } else {
+              rejectedRepsCountRef.current += 1;
+              console.warn('[IdentityGate] Rep rejected: unverified patient identity');
+            }
           }
 
           // Guidance speech announcements with cooldown guards
@@ -1183,28 +1399,84 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             speakThai(evalRes.coachingMessageTh, 'coaching_warning', 4000);
           }
 
-          // Set & Exercise Completion Transitions
-          if (evalRes.isSetCompleted && !evalRes.isExerciseCompleted && !isRestingRef.current) {
+          // Set & Exercise Completion Transitions (Gated by valid verified reps)
+          const targetReps = resolvedConfig.defaultPrescription?.repsPerSet || 10;
+          const totalSets = resolvedConfig.defaultPrescription?.totalSets || 3;
+          const isSetDone = validCompletedRepsRef.current >= targetReps;
+          const isExerciseDone = isSetDone && evalRes.currentSet >= totalSets;
+
+          if (isSetDone && !isExerciseDone && !isRestingRef.current) {
             setIsResting(true);
             isRestingRef.current = true;
             speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`, 'set_complete', 2500);
-          } else if (evalRes.isExerciseCompleted && !isSummaryOpenRef.current) {
+          } else if (isExerciseDone && !isSummaryOpenRef.current) {
             setIsSummaryOpen(true);
             isSummaryOpenRef.current = true;
             speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว', 'exercise_complete', 2500);
           }
 
-          // Throttle React State Updates to ~100ms for 60 FPS performance
-          if (nowMs - lastUiUpdateMsRef.current > 100) {
+          // Accuracy Percentage EMA Smoothing (0.80 previous + 0.20 raw)
+          const rawAcc = Math.round(evalRes.accuracyPercent ?? evalRes.accuracyPct ?? 0);
+          if (smoothedAccuracyRef.current === 0) {
+            smoothedAccuracyRef.current = rawAcc;
+          } else if (rawAcc > 0) {
+            smoothedAccuracyRef.current = 0.80 * smoothedAccuracyRef.current + 0.20 * rawAcc;
+          }
+          const smoothedAcc = Math.round(smoothedAccuracyRef.current);
+
+          const isAccuracyChanged =
+            Math.abs(smoothedAcc - lastEmittedAccuracyRef.current) >= 1 &&
+            nowMs - lastAccuracyEmitTimeRef.current >= 200;
+
+          if (isAccuracyChanged) {
+            lastEmittedAccuracyRef.current = smoothedAcc;
+            lastAccuracyEmitTimeRef.current = nowMs;
+          }
+
+          // Meaningful Change Detection Guard:
+          // Update React State ONLY when visible UI properties actually change or periodic debug refresh
+          const prevUi = lastRenderedUiValuesRef.current;
+          const isRepsChanged = validCompletedRepsRef.current !== prevUi.completedReps;
+          const isSetChanged = evalRes.currentSet !== prevUi.currentSet;
+          const isPhaseChanged = evalRes.phase !== prevUi.repPhase;
+          const isLightingChanged = (backlightRes.isBacklightDetected || backlightRes.isSubjectDark) !== prevUi.hasLightingWarning;
+          const isDistanceStatusChanged = (evalRes.distanceStatus || 'ระยะเหมาะสม') !== prevUi.distanceStatus;
+          const isCoachingChanged = (evalRes.coachingMessageTh || '') !== prevUi.coachingMessage;
+          const isReadinessChanged = (evalRes.readinessStatus || '') !== prevUi.readinessStatus;
+          const isDebugIntervalPassed = showDebugRef.current && (nowMs - lastUiUpdateMsRef.current >= 250);
+          const isFallbackIntervalPassed = nowMs - lastUiUpdateMsRef.current >= 400;
+
+          const shouldUpdateUi =
+            isRepsChanged ||
+            isSetChanged ||
+            isPhaseChanged ||
+            isAccuracyChanged ||
+            isLightingChanged ||
+            isDistanceStatusChanged ||
+            isCoachingChanged ||
+            isReadinessChanged ||
+            isDebugIntervalPassed ||
+            isFallbackIntervalPassed;
+
+          if (shouldUpdateUi) {
             lastUiUpdateMsRef.current = nowMs;
+            lastRenderedUiValuesRef.current = {
+              completedReps: validCompletedRepsRef.current,
+              currentSet: evalRes.currentSet,
+              repPhase: evalRes.phase,
+              hasLightingWarning: backlightRes.isBacklightDetected || backlightRes.isSubjectDark,
+              accuracyPct: lastEmittedAccuracyRef.current,
+              distanceStatus: evalRes.distanceStatus || 'ระยะเหมาะสม',
+              coachingMessage: evalRes.coachingMessageTh || '',
+              readinessStatus: evalRes.readinessStatus || '',
+            };
+
             const requiredJoints = getRequiredKeypointsForExercise(resolvedConfig);
             const avgVis =
               requiredJoints.reduce(
                 (acc, idx) => acc + (smoothedPose[idx]?.visibility ?? 0),
                 0
               ) / (requiredJoints.length || 1);
-
-            const isLightingLow = avgVis < 0.40 && detectedPeopleCount >= 1;
 
             const requiredKeypointsStatus = requiredJoints.map((idx) => {
               const lm = smoothedPose[idx];
@@ -1219,29 +1491,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               };
             });
 
-            const readinessReason =
-              evalRes.readinessStatus === 'ready'
-                ? 'พร้อมเริ่มฝึก (ready)'
-                : evalRes.readinessStatus === 'partial_upper_body'
-                  ? 'ตรวจพบครึ่งตัวบน (partial_upper_body)'
-                  : evalRes.readinessStatus === 'missing_shoulder'
-                    ? 'ไม่พบจุดหัวไหล่ในภาพ'
-                    : evalRes.readinessStatus === 'missing_arm_landmarks'
-                      ? 'ไม่พบจุดแขนหรือข้อมือ'
-                      : evalRes.readinessStatus === 'missing_lower_body'
-                        ? 'ไม่พบจุดช่วงขาหรือข้อเท้า'
-                        : evalRes.readinessStatus === 'missing_head_shoulders'
-                          ? 'ไม่พบจุดศีรษะและไหล่'
-                          : 'รอจัดท่าให้อยู่ในกรอบ';
-
             setHudState({
               fps: Math.round(smoothedFpsRef.current),
+              renderFps: Math.round(smoothedRenderFpsRef.current),
               landmarkCount: smoothedPose.length,
               avgVisibility: Number(avgVis.toFixed(2)),
               currentAngle: Math.round(evalRes.currentAngleDeg || 0),
-              accuracyPct: Math.round(evalRes.accuracyPercent ?? evalRes.accuracyPct ?? 0),
+              accuracyPct: lastEmittedAccuracyRef.current,
               repPhase: evalRes.phase,
-              completedReps: evalRes.completedReps,
+              completedReps: validCompletedRepsRef.current,
               currentSet: evalRes.currentSet,
               coachingMessage: evalRes.coachingMessageTh,
               statusColor: strokeColor,
@@ -1285,6 +1543,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     setIsResting(false);
     isRestingRef.current = false;
     stateMachineRef.current.nextSet();
+    targetProgressRef.current = 0;
+    currentAnimatedProgressRef.current = 0;
+    if (progressCircleRef.current) {
+      progressCircleRef.current.style.strokeDashoffset = `${2 * Math.PI * 42}px`;
+    }
     setRestCountdown(resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30);
   }, [resolvedConfig.defaultPrescription?.restBetweenSetsSec]);
 
@@ -1479,26 +1742,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         ? resolvedConfig.nameEn || resolvedConfig.nameTh
         : resolvedConfig.nameTh);
 
-  // Calculate smooth motion progress towards target (0.0 to 1.0) for SVG Progress Ring
-  let ringProgress = 0;
-  if (isTimerMode) {
-    ringProgress = evalResult?.holdProgressRatio || evalResult?.pendulumCircleProgressRatio || 0;
-  } else if (isPendulum) {
-    ringProgress = evalResult?.pendulumCircleProgressRatio || 0;
-  } else if (evalResult?.phase === 'HOLDING_TARGET' || evalResult?.isInsideTargetZone) {
-    ringProgress = evalResult?.holdProgressRatio ? Math.max(0.85, evalResult.holdProgressRatio) : 1.0;
-  } else if (evalResult?.phase === 'MOVING_TO_TARGET') {
-    const startAngle = resolvedConfig.angleMechanics?.startAngleDeg || 20;
-    const targetMin = resolvedConfig.angleMechanics?.targetMinDeg || 80;
-    const curAngle = evalResult?.currentAngleDeg ?? hudState.currentAngle ?? 0;
-    ringProgress = Math.max(0, Math.min(0.95, (curAngle - startAngle) / Math.max(1, targetMin - startAngle)));
-  } else if (evalResult?.phase === 'RETURNING_TO_START') {
-    ringProgress = 0.4;
-  } else {
-    const targetReps = resolvedConfig.defaultPrescription?.repsPerSet || 10;
-    ringProgress = targetReps > 0 ? (hudState.completedReps % targetReps) / targetReps : 0;
-  }
-
+  // SVG Progress Ring is updated directly via progressCircleRef at 60 FPS (zero React re-renders)
   const isWaitingPose = !isTimerMode && Boolean(
     evalResult?.readinessStatus &&
     evalResult.readinessStatus !== 'ready' &&
@@ -1764,8 +2008,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                       setShowLangMenu(false);
                     }}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${lang === opt.code
-                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                        : 'text-slate-700 hover:bg-slate-50'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'text-slate-700 hover:bg-slate-50'
                       }`}
                   >
                     <span>{opt.flag} {opt.label}</span>
@@ -1824,11 +2068,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               id="kiosk-quick-toggle-skeleton-btn"
               data-testid="kiosk-quick-toggle-skeleton-btn"
               onClick={() => setShowSkeletonOverlay((prev) => !prev)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold backdrop-blur-md border transition-all duration-200 cursor-pointer shadow-lg active:scale-95 ${
-                showSkeletonOverlay
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold backdrop-blur-md border transition-all duration-200 cursor-pointer shadow-lg active:scale-95 ${showSkeletonOverlay
                   ? 'bg-teal-500/90 text-slate-950 border-teal-300 shadow-teal-500/20'
                   : 'bg-slate-900/80 text-slate-300 border-slate-700/80 hover:bg-slate-800/90 hover:text-white'
-              }`}
+                }`}
               title="เปิด/ปิดเส้นโครงร่างร่างกาย"
             >
               <span className="text-base leading-none">🦴</span>
@@ -1836,8 +2079,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 {lang === 'zh-CN'
                   ? (showSkeletonOverlay ? '隐藏骨骼线' : '显示骨骼线')
                   : lang === 'en-US'
-                  ? (showSkeletonOverlay ? 'Hide Skeleton' : 'Show Skeleton')
-                  : (showSkeletonOverlay ? 'ซ่อนเส้นโครงร่าง' : 'แสดงเส้นโครงร่าง')}
+                    ? (showSkeletonOverlay ? 'Hide Skeleton' : 'Show Skeleton')
+                    : (showSkeletonOverlay ? 'ซ่อนเส้นโครงร่าง' : 'แสดงเส้นโครงร่าง')}
               </span>
             </button>
           </div>
@@ -1848,8 +2091,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               <svg
                 viewBox="0 0 400 400"
                 className={`w-80 h-80 sm:w-96 sm:h-96 transition-colors duration-300 ${hudState.repPhase === 'WAITING_FOR_FRAMING' || hudState.shoulderWidthPct > 52
-                    ? 'text-amber-400 stroke-amber-400 animate-pulse'
-                    : 'text-teal-400 stroke-teal-400'
+                  ? 'text-amber-400 stroke-amber-400 animate-pulse'
+                  : 'text-teal-400 stroke-teal-400'
                   }`}
                 fill="none"
                 strokeWidth="2.5"
@@ -1909,7 +2152,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   {lowPowerMode ? '⚡ ประหยัดไฟ' : '⚡ ความเร็วสูง'}
                 </button>
               </div>
-              <div>📷 กล้อง: {cameraStatus} | FPS: {hudState.fps}</div>
+              <div>📷 กล้อง/AI: {hudState.fps} FPS | หลอดแสดงผล: {hudState.renderFps ?? 60} FPS</div>
               <div>🧠 โมเดล: {modelStatus} | พบ: {hudState.detectedPeople} คน</div>
               <div>📐 มุม: {hudState.currentAngle}° | แม่นยำ: {hudState.accuracyPct}%</div>
               <div>🔄 เฟส: {hudState.repPhase} | นับ: {hudState.completedReps} ครั้ง</div>
@@ -1972,8 +2215,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             id="kiosk-giant-rep-counter"
             data-testid="kiosk-giant-rep-counter"
             className={`bg-white rounded-3xl border p-5 shadow-sm text-center flex flex-col items-center justify-center transition-all duration-300 ${celebratingRep !== null
-                ? 'border-emerald-400 ring-4 ring-emerald-400/30 scale-102 bg-emerald-50/20'
-                : 'border-blue-100'
+              ? 'border-emerald-400 ring-4 ring-emerald-400/30 scale-102 bg-emerald-50/20'
+              : 'border-blue-100'
               }`}
           >
             {/* Circular Progress Ring */}
@@ -1988,6 +2231,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   strokeWidth="8"
                 />
                 <circle
+                  ref={progressCircleRef}
                   cx="50"
                   cy="50"
                   r="42"
@@ -1996,8 +2240,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   strokeWidth="8"
                   strokeLinecap="round"
                   strokeDasharray={2 * Math.PI * 42}
-                  strokeDashoffset={2 * Math.PI * 42 * (1 - Math.max(0, Math.min(1, ringProgress)))}
-                  className="transition-all duration-150"
+                  strokeDashoffset={2 * Math.PI * 42}
+                  style={{ willChange: 'stroke-dashoffset' }}
                 />
               </svg>
 
@@ -2037,37 +2281,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           </div>
 
-          {/* Card 2: Exercise Vector Demonstration & Posture Guide */}
-          <div className="bg-white rounded-3xl border border-blue-100 p-4 sm:p-5 shadow-sm flex-1 flex flex-col justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <span>📐</span>
-                <span>ภาพตัวอย่างท่ากายภาพบำบัด</span>
-              </div>
-              <div className="w-full aspect-[16/10] bg-slate-50 border border-slate-100 rounded-2xl p-2 flex items-center justify-center overflow-hidden">
-                <img
-                  src={`/assets/exercises/${resolvedConfig.id || (exercise as any).id || (exercise as any).exercise_id || 'shoulder-er-band'}.svg`}
-                  alt={titleString}
-                  className="max-h-full max-w-full object-contain"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLElement).style.display = 'none';
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
-              <div className="font-bold text-slate-800 flex items-center gap-1">
-                <span>💡</span>
-                <span>คำแนะนำท่านี้:</span>
-              </div>
-              <ul className="list-disc list-inside text-slate-600 space-y-1 leading-relaxed">
-                <li>{resolvedConfig.cameraGuide?.instructionTextTh || 'จัดระยะยืนให้อยู่ในกรอบภาพและมองตรงที่กล้อง'}</li>
-                <li>{resolvedConfig.descriptionTh || 'ขยับแขน/ข้อต่อตามจังหวะช้าๆ อย่างสม่ำเสมอ'}</li>
-                <li>หากรู้สึกเจ็บแปลบ ให้แตะปุ่มหยุดพักและแจ้งเจ้าหน้าที่ทันที</li>
-              </ul>
-            </div>
-          </div>
+          {/* Card 2: Exercise Vector Demonstration & Posture Guide (Memoized) */}
+          <ExercisePostureGuideCard
+            exerciseId={resolvedConfig.id || (exercise as any).id || (exercise as any).exercise_id || 'shoulder-er-band'}
+            titleString={titleString}
+            instructionTextTh={resolvedConfig.cameraGuide?.instructionTextTh}
+            descriptionTh={resolvedConfig.descriptionTh}
+          />
         </div>
       </div>
 
@@ -2345,8 +2565,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   data-testid="kiosk-toggle-skeleton-btn"
                   onClick={() => setShowSkeletonOverlay((prev) => !prev)}
                   className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${showSkeletonOverlay
-                      ? 'bg-teal-500 text-slate-950 shadow-md'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                    ? 'bg-teal-500 text-slate-950 shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                 >
                   {showSkeletonOverlay ? 'เปิด (ON)' : 'ปิด (OFF)'}
@@ -2378,8 +2598,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   type="button"
                   onClick={() => setBoostLighting((prev) => !prev)}
                   className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${boostLighting
-                      ? 'bg-amber-500 text-slate-950 shadow-md'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                    ? 'bg-amber-500 text-slate-950 shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                 >
                   {boostLighting ? 'เปิด (ON)' : 'อัตโนมัติ'}
@@ -2396,8 +2616,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   type="button"
                   onClick={() => setShowGuideSilhouette((prev) => !prev)}
                   className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${showGuideSilhouette
-                      ? 'bg-cyan-500 text-slate-950 shadow-md'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                    ? 'bg-cyan-500 text-slate-950 shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                 >
                   {showGuideSilhouette ? 'เปิด (ON)' : 'ปิด (OFF)'}
@@ -2416,8 +2636,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   data-testid="kiosk-toggle-debug-btn"
                   onClick={() => setShowDebugHud((prev) => !prev)}
                   className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${showDebugHud
-                      ? 'bg-emerald-500 text-slate-950 shadow-md'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                 >
                   {showDebugHud ? 'เปิด (ON)' : 'ปิด (OFF)'}
@@ -2436,8 +2656,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                       type="button"
                       onClick={() => handleToggleSide('right')}
                       className={`px-3.5 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'right'
-                          ? 'bg-teal-500 text-slate-950 shadow-sm'
-                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                        ? 'bg-teal-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
                         }`}
                     >
                       ขวา
@@ -2446,8 +2666,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                       type="button"
                       onClick={() => handleToggleSide('left')}
                       className={`px-3.5 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'left'
-                          ? 'bg-teal-500 text-slate-950 shadow-sm'
-                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                        ? 'bg-teal-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
                         }`}
                     >
                       ซ้าย
