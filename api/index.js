@@ -8346,6 +8346,8 @@ var init_repository10 = __esm({
       async callEnrollFaceAtomic(params) {
         try {
           const adminClient = getAdminClient();
+          await adminClient.from("face_templates").delete().eq("patient_id", params.patientId);
+          await adminClient.from("face_enrollments").delete().eq("patient_id", params.patientId);
           const vectorStrings = params.embeddings.map((vec) => `[${vec.join(",")}]`);
           const { data, error } = await adminClient.rpc("enroll_face_atomic", {
             p_patient_id: params.patientId,

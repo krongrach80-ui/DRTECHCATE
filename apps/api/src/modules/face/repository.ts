@@ -315,6 +315,11 @@ export class FaceEnrollmentRepository implements IFaceEnrollmentRepository {
   }): Promise<string> {
     try {
       const adminClient = getAdminClient();
+
+      // Ensure 100% clean vector slate by purging any stale templates or enrollments for this patient
+      await adminClient.from('face_templates').delete().eq('patient_id', params.patientId);
+      await adminClient.from('face_enrollments').delete().eq('patient_id', params.patientId);
+
       const vectorStrings = params.embeddings.map((vec) => `[${vec.join(',')}]`);
 
       const { data, error } = await adminClient.rpc('enroll_face_atomic', {

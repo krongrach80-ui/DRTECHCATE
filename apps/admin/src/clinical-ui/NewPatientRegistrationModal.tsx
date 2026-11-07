@@ -54,6 +54,7 @@ interface NewPatientRegistrationModalProps {
   staffUser?: any;
   initialBiometrics?: any;
   mode?: 'kiosk' | 'admin';
+  existingPatient?: { id: string; hn: string; name: string } | null;
 }
 
 export interface EnrollmentPoseSpec {
@@ -319,6 +320,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   staffUser,
   initialBiometrics,
   mode = 'kiosk',
+  existingPatient,
 }) => {
   const effectiveStaffUser = staffUser || defaultApiClient.getUserProfile() || undefined;
   const [lang, setLang] = useState<'th' | 'en' | 'cn'>('th');
@@ -606,6 +608,25 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   // Generate automatic HN & seed initial biometrics on modal open
   useEffect(() => {
     if (isOpen) {
+      if (existingPatient) {
+        setStep(2);
+        setCreatedPatientId(existingPatient.id);
+        createdPatientIdRef.current = existingPatient.id;
+        setHn(existingPatient.hn);
+        setName(existingPatient.name);
+        isSubmittingRef.current = false;
+        setErrorMsg(null);
+        setCameraError(null);
+        setNameError(false);
+        setCapturedFrames([]);
+        setCurrentFrameIdx(0);
+        setIsAutoScanning(false);
+        setConsentPdpa(true);
+        setCountdown(null);
+        hasNavigatedRef.current = false;
+        return;
+      }
+
       const randomHnNum = Math.floor(1000 + Math.random() * 9000);
       const candidateHn = `P-${randomHnNum}`;
       setHn(candidateHn);
@@ -721,15 +742,15 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
   const handleModalClose = useCallback(async () => {
     stopCamera();
-    if (createdPatientId && step < 3) {
+    if (!existingPatient && createdPatientId && step < 3) {
       try {
         await defaultApiClient.smartOnboarding.cancelDraft(createdPatientId);
       } catch {}
     }
     onClose();
-  }, [createdPatientId, step, onClose]);
+  }, [existingPatient, createdPatientId, step, onClose]);
 
-  // Step 3 5-second countdown timer effect
+  // Step 3 countdown timer effect
   useEffect(() => {
     if (step !== 3 || countdown === null) return;
     hasNavigatedRef.current = false;
@@ -738,14 +759,14 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
         if (prev === null) return null;
         if (prev <= 1) {
           clearInterval(timer);
-          handleImmediateNavigate('course');
+          handleImmediateNavigate(existingPatient ? 'list' : 'course');
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [step, countdown, handleImmediateNavigate]);
+  }, [existingPatient, step, countdown, handleImmediateNavigate]);
 
   const handleCancelCountdown = () => {
     setCountdown(null);
@@ -917,6 +938,30 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
         pose: f.pose,
         embedding: f.embedding,
       }));
+
+      // Re-enrollment mode for existing patient (PDPA Biometric Renewal)
+      if (existingPatient) {
+        const targetPatientId = existingPatient.id;
+        createdPatientIdRef.current = targetPatientId;
+        setCreatedPatientId(targetPatientId);
+        setHn(existingPatient.hn);
+
+        const enrollRes = await defaultApiClient.face.enroll({
+          patient_id: targetPatientId,
+          frames: sanitizedVectors,
+          model_version: 'w600k_r50',
+        });
+
+        if (enrollRes && (enrollRes as any).success === false) {
+          throw new Error((enrollRes as any).message || 'ไม่สามารถลงทะเบียนใบหน้าใหม่ได้');
+        }
+
+        playFaceIdBeep(1200, 0.2);
+        stopCamera();
+        setStep(3);
+        setCountdown(4);
+        return;
+      }
 
       const activePatientId = createdPatientIdRef.current || createdPatientId || undefined;
       const regRes = await defaultApiClient.smartOnboarding.register({
@@ -1142,14 +1187,18 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
         {/* Header */}
         <div className="p-5 sm:px-8 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-100 text-teal-700 flex items-center justify-center shadow-sm shrink-0">
-              <UserCheck className="w-5 h-5" />
+            <div className={`w-10 h-10 rounded-2xl ${existingPatient ? 'bg-blue-50 border border-blue-100 text-blue-700' : 'bg-teal-50 border border-teal-100 text-teal-700'} flex items-center justify-center shadow-sm shrink-0`}>
+              {existingPatient ? <Camera className="w-5 h-5" /> : <UserCheck className="w-5 h-5" />}
             </div>
             <div>
               <h2 id="modal-patient-title" className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                {t.modalTitle}
+                {existingPatient ? `สแกนใบหน้าใหม่: ${existingPatient.name} (HN: ${existingPatient.hn})` : t.modalTitle}
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">{t.subtitle}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {existingPatient
+                  ? 'ระบบบันทึกชีวมาตรใบหน้าชุดใหม่ 10 เฟรม เพื่อเปิดการใช้งานตู้ Kiosk หลังการรีเซ็ตตามสิทธิ PDPA'
+                  : t.subtitle}
+              </p>
             </div>
           </div>
 
@@ -1192,14 +1241,26 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
         {/* Stepper Indicator */}
         <div className="px-6 sm:px-8 py-2.5 bg-slate-50/70 border-b border-slate-100 shrink-0">
-          <SmoothStepper
-            steps={[
-              { number: 1, label: t.step1Title },
-              { number: 2, label: t.step2Title },
-              { number: 3, label: t.step3Title },
-            ]}
-            currentStep={step}
-          />
+          {existingPatient ? (
+            <div className="flex items-center justify-between text-xs font-semibold text-blue-700">
+              <span className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-blue-600" />
+                <span>ขั้นตอน: บันทึกข้อมูลใบหน้าใหม่ 10 เฟรม (Face ID Re-enrollment)</span>
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[11px] font-mono font-bold">
+                HN: {existingPatient.hn}
+              </span>
+            </div>
+          ) : (
+            <SmoothStepper
+              steps={[
+                { number: 1, label: t.step1Title },
+                { number: 2, label: t.step2Title },
+                { number: 3, label: t.step3Title },
+              ]}
+              currentStep={step}
+            />
+          )}
         </div>
 
         {/* Duplicate HN / General Error Alert */}
@@ -1940,6 +2001,31 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
                   )}
                 </div>
               )}
+
+              {/* Bottom Navigation / Cancel Controls */}
+              <div className="flex items-center justify-between gap-3 pt-2">
+                {existingPatient ? (
+                  <button
+                    type="button"
+                    onClick={handleModalClose}
+                    className="w-full py-2.5 px-4 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Clock className="w-4 h-4 text-slate-500" />
+                    <span>ไว้ทีหลัง (ปิดเพื่อกลับหน้ารายการ)</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopCamera();
+                      setStep(1);
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>ย้อนกลับไปแก้ไขข้อมูลคนไข้</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1983,10 +2069,12 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
 
             <div>
               <h3 className="text-xl font-bold text-slate-800 leading-snug">
-                {t.successTitle}
+                {existingPatient ? 'บันทึกใบหน้าชีวมิติชุดใหม่สำเร็จ!' : t.successTitle}
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 mt-1 leading-relaxed">
-                {t.successSub}
+                {existingPatient
+                  ? 'สถานะผู้ป่วยอัปเดตเป็น "ลงทะเบียนหน้าแล้ว" สามารถสแกนใบหน้าที่ตู้ Kiosk เพื่อเริ่มฝึกได้ทันที'
+                  : t.successSub}
               </p>
             </div>
 
@@ -1995,7 +2083,9 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
               <div className="w-full max-w-md p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center justify-center gap-2">
                 <Clock className="w-4 h-4 text-emerald-600 animate-spin" />
                 <span>
-                  {t.autoRedirectMsg} <strong className="font-mono font-bold text-sm text-emerald-700">{countdown}</strong> {t.seconds}
+                  {existingPatient ? 'ระบบกำลังกลับหน้ารายการอัตโนมัติใน' : t.autoRedirectMsg}{' '}
+                  <strong className="font-mono font-bold text-sm text-emerald-700">{countdown}</strong>{' '}
+                  {t.seconds}
                 </span>
               </div>
             )}
@@ -2008,16 +2098,25 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500">ชื่อ-นามสกุล:</span>
-                <span className="font-semibold text-slate-800">{name || 'ผู้ป่วยใหม่'}</span>
+                <span className="font-semibold text-slate-800">{name || 'ผู้ป่วย'}</span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">ข้อต่อเป้าหมาย:</span>
-                <span className="font-semibold text-emerald-700">{targetJoint}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">การวินิจฉัย:</span>
-                <span className="font-semibold text-slate-800">{diagnosis || 'กายภาพบำบัดฟื้นฟู'}</span>
-              </div>
+              {existingPatient ? (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">ประเภทบริการ:</span>
+                  <span className="font-semibold text-blue-700">สแกนใบหน้าใหม่ (PDPA Biometric Renewal)</span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">ข้อต่อเป้าหมาย:</span>
+                    <span className="font-semibold text-emerald-700">{targetJoint}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">การวินิจฉัย:</span>
+                    <span className="font-semibold text-slate-800">{diagnosis || 'กายภาพบำบัดฟื้นฟู'}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between items-center">
                 <span className="text-slate-500">สถานะ Face ID:</span>
                 <span className="font-bold text-emerald-700">
@@ -2038,25 +2137,40 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
             </div>
 
             {/* Step 3 Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md pt-2">
-              <SmoothButton
-                type="button"
-                variant="primary"
-                size="lg"
-                onClick={() => handleImmediateNavigate('course')}
-                className="flex-1 shadow-lg shadow-emerald-600/25 text-sm sm:text-base font-bold py-3"
-                icon={<ArrowRight className="w-5 h-5" />}
-              >
-                <span>{t.btnGoCourseNow}</span>
-              </SmoothButton>
-              <button
-                type="button"
-                onClick={handleCancelCountdown}
-                className="px-4 py-3 rounded-2xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold transition active:scale-95 cursor-pointer"
-              >
-                <span>{t.btnStopAndReturn}</span>
-              </button>
-            </div>
+            {existingPatient ? (
+              <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md pt-2">
+                <SmoothButton
+                  type="button"
+                  variant="primary"
+                  size="lg"
+                  onClick={() => handleImmediateNavigate('list')}
+                  className="flex-1 shadow-lg shadow-emerald-600/25 text-sm sm:text-base font-bold py-3"
+                  icon={<Check className="w-5 h-5" />}
+                >
+                  <span>กลับหน้ารายชื่อคนไข้</span>
+                </SmoothButton>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md pt-2">
+                <SmoothButton
+                  type="button"
+                  variant="primary"
+                  size="lg"
+                  onClick={() => handleImmediateNavigate('course')}
+                  className="flex-1 shadow-lg shadow-emerald-600/25 text-sm sm:text-base font-bold py-3"
+                  icon={<ArrowRight className="w-5 h-5" />}
+                >
+                  <span>{t.btnGoCourseNow}</span>
+                </SmoothButton>
+                <button
+                  type="button"
+                  onClick={handleCancelCountdown}
+                  className="px-4 py-3 rounded-2xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold transition active:scale-95 cursor-pointer"
+                >
+                  <span>{t.btnStopAndReturn}</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

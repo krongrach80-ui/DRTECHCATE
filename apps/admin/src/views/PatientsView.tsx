@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Trash2,
   Calendar,
+  Camera,
 } from 'lucide-react';
 import {
   PatientRecord,
@@ -56,6 +57,7 @@ export const PatientsView: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState<boolean>(false);
   const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | undefined>(undefined);
+  const [reEnrollPatient, setReEnrollPatient] = useState<PatientRecord | null>(null);
 
   // Action messages
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -281,13 +283,14 @@ export const PatientsView: React.FC = () => {
       removePatientFromLocalCache(selectedPatient.id);
       if (selectedPatient.hn) removePatientFromLocalCache(selectedPatient.hn);
       setSuccessMsg('ลบข้อมูลชีวมาตรใบหน้าและเวกเตอร์ตามกฎหมาย PDPA สำเร็จ (สถานะเปลี่ยนเป็นรอสแกนหน้า)');
-      if (selectedPatient) {
-        setSelectedPatient({
-          ...selectedPatient,
-          registration_status: 'awaiting_face',
-        });
-      }
+      const updatedPatient: PatientRecord = {
+        ...selectedPatient,
+        registration_status: 'awaiting_face',
+      };
+      setSelectedPatient(updatedPatient);
       await fetchPatients();
+      // Auto-trigger 10-frame re-scan modal immediately!
+      setReEnrollPatient(updatedPatient);
     } catch (err: unknown) {
       handlePatientError(err, 'ไม่สามารถลบข้อมูลชีวมาตรได้');
     } finally {
@@ -516,6 +519,17 @@ export const PatientsView: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        {patient.registration_status === 'awaiting_face' && (
+                          <button
+                            type="button"
+                            onClick={() => setReEnrollPatient(patient)}
+                            className="whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm hover:shadow-md cursor-pointer active:scale-95"
+                            title="เปิดขั้นตอนสแกนใบหน้าใหม่ 10 เฟรม (Face ID)"
+                          >
+                            <Camera className="w-3.5 h-3.5 shrink-0" />
+                            <span className="whitespace-nowrap">📷 สแกนใบหน้าใหม่</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
@@ -626,6 +640,16 @@ export const PatientsView: React.FC = () => {
                 <div className="space-y-6">
                   {/* Actions Bar */}
                   <div className="grid grid-cols-2 gap-3">
+                    {selectedPatient.registration_status === 'awaiting_face' && (
+                      <button
+                        type="button"
+                        onClick={() => setReEnrollPatient(selectedPatient)}
+                        className="col-span-2 p-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition cursor-pointer active:scale-98 animate-pulse"
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>📷 สแกนใบหน้าใหม่ (Face ID 10 เฟรม)</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -724,14 +748,26 @@ export const PatientsView: React.FC = () => {
                             ลบเฉพาะข้อมูลชีวมาตรใบหน้าเพื่อขอสแกนหน้าใหม่ แต่ยังคงเก็บข้อมูลและเวชระเบียนคนไข้ไว้ในตาราง (สถานะเปลี่ยนเป็นรอสแกนหน้า)
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleDeleteBiometrics}
-                          disabled={actionLoading}
-                          className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center cursor-pointer"
-                        >
-                          <span>รีเซ็ตเฉพาะใบหน้า</span>
-                        </button>
+                        <div className="flex items-center gap-2 self-start sm:self-center">
+                          {selectedPatient.registration_status === 'awaiting_face' && (
+                            <button
+                              type="button"
+                              onClick={() => setReEnrollPatient(selectedPatient)}
+                              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow-xs active:scale-95"
+                            >
+                              <Camera className="w-3.5 h-3.5" />
+                              <span>📷 สแกนใบหน้าใหม่</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleDeleteBiometrics}
+                            disabled={actionLoading}
+                            className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-semibold text-xs transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                          >
+                            <span>รีเซ็ตเฉพาะใบหน้า</span>
+                          </button>
+                        </div>
                       </div>
 
                       {/* 3. Soft Archive */}
@@ -888,6 +924,31 @@ export const PatientsView: React.FC = () => {
           } else {
             setSuccessMsg('ลงทะเบียนคนไข้ใหม่และบันทึกใบหน้าชีวมิติ 10 เฟรมสำเร็จเรียบร้อย');
           }
+        }}
+      />
+
+      {/* Biometric Re-enrollment Modal for existing patient (PDPA Renewal) */}
+      <NewPatientRegistrationModal
+        isOpen={Boolean(reEnrollPatient)}
+        mode="admin"
+        existingPatient={
+          reEnrollPatient
+            ? {
+                id: reEnrollPatient.id,
+                hn: reEnrollPatient.hn,
+                name: formatPatientName(reEnrollPatient.first_name, reEnrollPatient.last_name),
+              }
+            : null
+        }
+        staffUser={defaultApiClient.getUserProfile() || undefined}
+        onClose={() => setReEnrollPatient(null)}
+        onSuccess={async (patientId) => {
+          setReEnrollPatient(null);
+          await fetchPatients();
+          if (selectedPatient && selectedPatient.id === patientId) {
+            setSelectedPatient((prev) => (prev ? { ...prev, registration_status: 'active' } : null));
+          }
+          setSuccessMsg('บันทึกข้อมูลใบหน้าใหม่ 10 เฟรมสำเร็จแล้ว (สถานะเปลี่ยนเป็นลงทะเบียนหน้าแล้ว)');
         }}
       />
 
