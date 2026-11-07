@@ -713,11 +713,15 @@ export function drawAllMinigameHands(
   canvasHeight: number,
   activeHand: MinigameHandEvaluation | null,
   dwellProgress: number = 0,
-  isBothHandsWarning: boolean = false
+  isBothHandsWarning: boolean = false,
+  isMirrored: boolean = true
 ) {
   if (!hands || hands.length === 0) return;
 
   ctx.save();
+
+  const mapX = (xNorm: number) => (isMirrored ? 1.0 - xNorm : xNorm) * canvasWidth;
+  const mapY = (yNorm: number) => yNorm * canvasHeight;
 
   for (const h of hands) {
     const isCurrentActive = Boolean(activeHand && activeHand.handIndex === h.handIndex);
@@ -752,10 +756,10 @@ export function drawAllMinigameHands(
       const p1 = h.landmarks[startIdx];
       const p2 = h.landmarks[endIdx];
       if (p1 && p2) {
-        const x1 = (1.0 - p1.x) * canvasWidth;
-        const y1 = p1.y * canvasHeight;
-        const x2 = (1.0 - p2.x) * canvasWidth;
-        const y2 = p2.y * canvasHeight;
+        const x1 = mapX(p1.x);
+        const y1 = mapY(p1.y);
+        const x2 = mapX(p2.x);
+        const y2 = mapY(p2.y);
 
         ctx.beginPath();
         ctx.moveTo(x1, y1);
@@ -767,8 +771,8 @@ export function drawAllMinigameHands(
     // Draw 21 joints
     for (let i = 0; i < h.landmarks.length; i++) {
       const pt = h.landmarks[i];
-      const x = (1.0 - pt.x) * canvasWidth;
-      const y = pt.y * canvasHeight;
+      const x = mapX(pt.x);
+      const y = mapY(pt.y);
 
       const isTip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20;
       const radius = isTip ? 5 : i === 0 || i === 9 ? 6 : 3;
@@ -785,8 +789,8 @@ export function drawAllMinigameHands(
     // Draw Dwell Progress Ring on the Active Hand's Palm (MCP 9)
     if (isCurrentActive && dwellProgress > 0) {
       const palm = h.landmarks[9];
-      const px = (1.0 - palm.x) * canvasWidth;
-      const py = palm.y * canvasHeight;
+      const px = mapX(palm.x);
+      const py = mapY(palm.y);
       const ringRadius = 32;
 
       // Outer glow / track

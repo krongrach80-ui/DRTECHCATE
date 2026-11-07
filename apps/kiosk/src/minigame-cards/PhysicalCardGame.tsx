@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 
 export const QUESTIONS_PER_ROUND = 10;
+export const MAX_CROP_RATIO = 0.15; // ขีดจำกัดการครอปภาพสูงสุด 15% เพื่อให้เห็นศีรษะและมือครบถ้วน
 
 export interface PhysicalCardGameProps {
   onComplete?: (finalScore: number, totalQuestions: number) => void;
@@ -68,6 +69,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const { t, lang } = useClinicalI18n();
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [sessionSeed, setSessionSeed] = useState<number>(0);
+  const [cameraAspectRatio, setCameraAspectRatio] = useState<number>(16 / 9);
 
   // Filtered Question list (สุ่ม 10 ข้อจากคลังคำถามทั้งหมดต่อรอบ)
   const [filteredList, setFilteredList] = useState<PhysicalCardQuestion[]>(() => {

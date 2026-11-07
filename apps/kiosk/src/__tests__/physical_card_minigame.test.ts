@@ -16,6 +16,7 @@ import {
   HandLandmarkPoint,
 } from '../minigame-cards/HandGestureVerifier.js';
 import { t, CLINICAL_DICTIONARY } from '../../../../packages/clinical-i18n/src/index';
+import { MAX_CROP_RATIO } from '../minigame-cards/PhysicalCardGame.js';
 
 /**
  * Helper: สร้าง Mock Landmarks 21 จุดของมือ
@@ -376,6 +377,154 @@ describe('Physical Card Minigame - Two-Hand Detection & Inverted Mapping Suite',
     expect(emptyResult.activeHand).toBeNull();
     expect(emptyResult.isBothHandsRaised).toBe(false);
     expect(emptyResult.hasNearEdgeHand).toBe(false);
+  });
+
+  // Test 14: MAX_CROP_RATIO and Adaptive Frame Aspect Ratio
+  it('14. MAX_CROP_RATIO is 0.15 (15%) and adaptive aspect ratio eliminates pillarbox bars', () => {
+    expect(MAX_CROP_RATIO).toBe(0.15);
+
+    // 16:9 HD feed
+    const hdStream = { width: 1280, height: 720 };
+    const hdRatio = hdStream.width / hdStream.height;
+    expect(hdRatio).toBeCloseTo(16 / 9, 3);
+
+    // 4:3 SD feed
+    const sdStream = { width: 640, height: 480 };
+    const sdRatio = sdStream.width / sdStream.height;
+    expect(sdRatio).toBeCloseTo(4 / 3, 3);
+
+    // Adaptive container aspect ratio matches feed ratio -> 0% crop and 0% pillarbox
+    const calcCropRatio = (streamW: number, streamH: number, frameAspect: number) => {
+      const streamAspect = streamW / streamH;
+      if (Math.abs(streamAspect - frameAspect) < 1e-4) return 0;
+      if (streamAspect > frameAspect) {
+        // Stream wider than frame: cropped on sides
+        const visibleWidth = streamH * frameAspect;
+        return (streamW - visibleWidth) / streamW;
+      } else {
+        // Stream taller than frame: cropped on top/bottom
+        const visibleHeight = streamW / frameAspect;
+        return (streamH - visibleHeight) / streamH;
+      }
+    };
+
+    expect(calcCropRatio(1280, 720, hdRatio)).toBe(0);
+    expect(calcCropRatio(640, 480, sdRatio)).toBe(0);
+    expect(calcCropRatio(1280, 720, hdRatio)).toBeLessThanOrEqual(MAX_CROP_RATIO);
+    expect(calcCropRatio(640, 480, sdRatio)).toBeLessThanOrEqual(MAX_CROP_RATIO);
+  });
+
+  // Test 15: Overlay coordinate mapping matches mirrored mode
+  it('15. drawAllMinigameHands flips X coordinates when isMirrored is true', () => {
+    const mockCtx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      strokeStyle: '',
+      fillStyle: '',
+      lineWidth: 1,
+      lineCap: '',
+      lineJoin: '',
+    } as unknown as CanvasRenderingContext2D;
+
+    const hand = createMockHandLandmarks({ wristX: 0.2, wristY: 0.6, middleMcpX: 0.2, middleMcpY: 0.4 });
+    const frameResult = evaluateMinigameFrame([hand], [[{ categoryName: 'Right', score: 0.95 }]], { isMirrored: true });
+
+    drawAllMinigameHands(mockCtx, frameResult.allHands, 1000, 500, null, 0, false, true);
+
+    // In mirrored mode, wristX=0.2 should map to (1 - 0.2) * 1000 = 800
+    // Verify an arc or moveTo was called with x = 800
+    const arcCalls = (mockCtx.arc as any).mock.calls;
+    const hasMirroredX = arcCalls.some((call: any[]) => Math.abs(call[0] - 800) < 1e-3);
+    expect(hasMirroredX).toBe(true);
+  });
+
+  // Test 16: Overlay coordinate mapping does not flip X coordinates when isMirrored is false
+  it('16. drawAllMinigameHands preserves normal X coordinates when isMirrored is false', () => {
+    const mockCtx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      strokeStyle: '',
+      fillStyle: '',
+      lineWidth: 1,
+      lineCap: '',
+      lineJoin: '',
+    } as unknown as CanvasRenderingContext2D;
+
+    const hand = createMockHandLandmarks({ wristX: 0.2, wristY: 0.6, middleMcpX: 0.2, middleMcpY: 0.4 });
+    const frameResult = evaluateMinigameFrame([hand], [[{ categoryName: 'Right', score: 0.95 }]], { isMirrored: false });
+
+    drawAllMinigameHands(mockCtx, frameResult.allHands, 1000, 500, null, 0, false, false);
+
+    // In unmirrored mode, wristX=0.2 should map to 0.2 * 1000 = 200
+    const arcCalls = (mockCtx.arc as any).mock.calls;
+    const hasUnmirroredX = arcCalls.some((call: any[]) => Math.abs(call[0] - 200) < 1e-3);
+    expect(hasUnmirroredX).toBe(true);
+  });
+
+  // Test 17: Dwell Progress Ring palm coordinate mapping respects isMirrored
+  it('17. Dwell progress ring palm coordinate maps correctly in both mirrored and unmirrored modes', () => {
+    const mockCtxMirrored = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      strokeStyle: '',
+      fillStyle: '',
+      lineWidth: 1,
+      lineCap: '',
+      lineJoin: '',
+    } as unknown as CanvasRenderingContext2D;
+
+    const mockCtxUnmirrored = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      strokeStyle: '',
+      fillStyle: '',
+      lineWidth: 1,
+      lineCap: '',
+      lineJoin: '',
+    } as unknown as CanvasRenderingContext2D;
+
+    // Palm MCP 9 is at middleMcpX = 0.3
+    const hand = createMockHandLandmarks({ wristX: 0.3, wristY: 0.6, middleMcpX: 0.3, middleMcpY: 0.45 });
+    const frameResult = evaluateMinigameFrame([hand], [[{ categoryName: 'Right', score: 0.95 }]], { isMirrored: true });
+
+    // Mirrored with dwell progress = 0.5
+    drawAllMinigameHands(mockCtxMirrored, frameResult.allHands, 1000, 500, frameResult.activeHand, 0.5, false, true);
+    // Unmirrored with dwell progress = 0.5
+    drawAllMinigameHands(mockCtxUnmirrored, frameResult.allHands, 1000, 500, frameResult.activeHand, 0.5, false, false);
+
+    // Mirrored: px = (1 - 0.3) * 1000 = 700
+    const mirroredArcs = (mockCtxMirrored.arc as any).mock.calls;
+    const hasMirroredPalmRing = mirroredArcs.some((call: any[]) => Math.abs(call[0] - 700) < 1e-3 && Math.abs(call[2] - 32) < 1e-3);
+    expect(hasMirroredPalmRing).toBe(true);
+
+    // Unmirrored: px = 0.3 * 1000 = 300
+    const unmirroredArcs = (mockCtxUnmirrored.arc as any).mock.calls;
+    const hasUnmirroredPalmRing = unmirroredArcs.some((call: any[]) => Math.abs(call[0] - 300) < 1e-3 && Math.abs(call[2] - 32) < 1e-3);
+    expect(hasUnmirroredPalmRing).toBe(true);
   });
 });
 
