@@ -25,11 +25,13 @@ import {
 import { defaultApiClient, PatientRecord } from '../../../../packages/api-client/src/index.js';
 import { SmartScheduleWizardModal } from '../smart-portal/SmartScheduleWizardModal';
 import { PatientCoursePrescriptionModal } from './PatientCoursePrescriptionModal';
+import { ClinicalMenuId } from './ClinicalSidebar';
 
 interface ClinicalScheduleViewProps {
   onOpenCreateScheduleModal?: (patientId?: string) => void;
   preselectedPatientId?: string;
   autoOpenWizard?: boolean;
+  onNavigateToTab?: (tab: ClinicalMenuId, patientId?: string) => void;
 }
 
 const DEMO_PATIENTS: PatientRecord[] = [];
@@ -58,6 +60,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   onOpenCreateScheduleModal,
   preselectedPatientId,
   autoOpenWizard,
+  onNavigateToTab,
 }) => {
   const [calendarMode, setCalendarMode] = useState<'individual' | 'all'>('individual');
   const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
@@ -1023,10 +1026,13 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           setWizardPreselectedDate(undefined);
         }}
         preselectedPatientId={wizardPatientId}
-        onSuccess={() => {
+        onSuccess={(targetId, action) => {
           setIsPrescriptionModalOpen(false);
           setWizardPreselectedDate(undefined);
           void loadData();
+          if (action === 'patients' && onNavigateToTab) {
+            onNavigateToTab('patients', targetId);
+          }
         }}
       />
     </div>

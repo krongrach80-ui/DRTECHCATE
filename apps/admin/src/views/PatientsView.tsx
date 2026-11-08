@@ -28,6 +28,7 @@ import { removePatientFromLocalCache } from '../../../../packages/face-client/sr
 import { SmartPendingPatientsBanner } from '../smart-portal/index.js';
 import { PatientCoursePrescriptionModal } from '../clinical-ui/PatientCoursePrescriptionModal';
 import { NewPatientRegistrationModal } from '../clinical-ui/NewPatientRegistrationModal';
+import { ClinicalMenuId } from '../clinical-ui/ClinicalSidebar';
 
 const DEMO_PATIENTS: PatientRecord[] = [];
 
@@ -37,7 +38,11 @@ const formatPatientName = (first?: string, last?: string): string => {
   return `${cleanFirst}${cleanLast}`.trim() || 'ผู้ป่วย';
 };
 
-export const PatientsView: React.FC = () => {
+export interface PatientsViewProps {
+  onNavigateToTab?: (tab: ClinicalMenuId, patientId?: string) => void;
+}
+
+export const PatientsView: React.FC<PatientsViewProps> = ({ onNavigateToTab }) => {
   const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
   const [ptsList, setPtsList] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -957,8 +962,12 @@ export const PatientsView: React.FC = () => {
         isOpen={isPrescriptionModalOpen}
         onClose={() => setIsPrescriptionModalOpen(false)}
         preselectedPatientId={prescriptionPatientId}
-        onSuccess={() => {
-          fetchPatients();
+        onSuccess={(targetId, action) => {
+          setIsPrescriptionModalOpen(false);
+          void fetchPatients();
+          if ((action === 'schedule' || action === 'patients') && onNavigateToTab) {
+            onNavigateToTab(action, targetId);
+          }
         }}
       />
     </div>

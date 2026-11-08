@@ -32,6 +32,7 @@ import { ClinicalScheduleView } from '../../../admin/src/clinical-ui/index.js';
 
 interface PtScheduleViewProps {
   currentUserId: string;
+  preselectedPatientId?: string;
 }
 
 const DEMO_PATIENTS: PatientRecord[] = [];
@@ -39,8 +40,15 @@ const DEMO_TODAY_COURSES: TodayCourseItem[] = [];
 
 export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
   currentUserId: _currentUserId,
+  preselectedPatientId,
 }) => {
   const [subTab, setSubTab] = useState<'today' | 'calendar' | 'monthly' | 'smart'>('monthly');
+
+  useEffect(() => {
+    if (preselectedPatientId) {
+      setSubTab('monthly');
+    }
+  }, [preselectedPatientId]);
   const [isSmartWizardOpen, setIsSmartWizardOpen] = useState(false);
   const [todayCourses, setTodayCourses] = useState<TodayCourseItem[]>(DEMO_TODAY_COURSES);
   const [calendarCourses, setCalendarCourses] = useState<CourseRecord[]>([]);
@@ -312,7 +320,7 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
       </div>
 
       {/* Master Prompt v6: Monthly Clinical Schedule Planner Grid */}
-      {subTab === 'monthly' && <ClinicalScheduleView />}
+      {subTab === 'monthly' && <ClinicalScheduleView preselectedPatientId={preselectedPatientId} />}
 
       {/* Master Prompt v4: Smart Schedule View */}
       {subTab === 'smart' && <SmartScheduleView />}

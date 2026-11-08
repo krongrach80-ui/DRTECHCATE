@@ -14,7 +14,7 @@
  * 8. Trilingual TH/EN/CN UI.
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   X,
   Calendar as CalendarIcon,
@@ -112,8 +112,8 @@ const I18N = {
     ptNotePlaceholder: 'คำแนะนำพิเศษสำหรับคนไข้ท่านนี้ (เช่น ยกช้าๆ หากตึงไหล่ให้หยุดพัก)...',
     summaryTitle: 'บันทึกคอร์สออกกำลังกายสำเร็จ',
     summarySubtitle: 'ข้อมูลตารางฝึกถูกบันทึกและเชื่อมโยงกับระบบ Kiosk และตารางนัดเรียบร้อยแล้ว',
-    goToScheduleBtn: '📅 ไปหน้าตารางนัด (5. ตารางนัด)',
-    goToPatientsBtn: '👥 กลับหน้ารายการคนไข้ (2. ข้อมูลคนไข้)',
+    goToScheduleBtn: '📅 ไปหน้าตารางนัด',
+    goToPatientsBtn: '👥 กลับหน้ารายการคนไข้',
     startExerciseBtn: '🏋️ เริ่มฝึกกายภาพของผู้ป่วยคนนี้ทันที',
     kioskHomeBtn: '🏠 เสร็จสิ้น / กลับหน้าหลัก Kiosk',
     totalDays: 'รวมวันฝึกทั้งหมด',
@@ -169,8 +169,8 @@ const I18N = {
     ptNotePlaceholder: 'Clinical note for this patient (e.g. Move slowly, stop if shoulder pain occurs)...',
     summaryTitle: 'Course Prescribed Successfully',
     summarySubtitle: 'Schedule is now atomic and synchronized with Kiosk Daily Plan and Schedule Calendar.',
-    goToScheduleBtn: '📅 View Schedule (Menu 5)',
-    goToPatientsBtn: '👥 Return to Patients (Menu 2)',
+    goToScheduleBtn: '📅 View in Schedule',
+    goToPatientsBtn: '👥 Return to Patients List',
     startExerciseBtn: '🏋️ Start Patient Session Now',
     kioskHomeBtn: '🏠 Done / Return to Kiosk Home',
     totalDays: 'Total Training Days',
@@ -226,8 +226,8 @@ const I18N = {
     ptNotePlaceholder: '医生/治疗师特殊嘱咐...',
     summaryTitle: '康复方案下发成功',
     summarySubtitle: '排期数据已与 Kiosk 训练终端及日程大表完全同步。',
-    goToScheduleBtn: '📅 前往日程表 (第5项)',
-    goToPatientsBtn: '👥 返回患者列表 (第2项)',
+    goToScheduleBtn: '📅 前往日程表',
+    goToPatientsBtn: '👥 返回患者列表',
     startExerciseBtn: '🏋️ 立即开始该患者训练',
     kioskHomeBtn: '🏠 完成 / 返回Kiosk主页',
     totalDays: '训练总天数',
@@ -473,6 +473,19 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const isFinishingRef = useRef(false);
+
+  // Clean up state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setIsSummaryModalOpen(false);
+      setIsSaving(false);
+      setErrorMsg(null);
+      setIsFinishing(false);
+      isFinishingRef.current = false;
+    }
+  }, [isOpen]);
 
   // Load all patients on open
   useEffect(() => {
@@ -994,10 +1007,43 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
   };
 
   const handleFinishSummary = (action: 'schedule' | 'patients' | 'start_exercise' | 'kiosk_home') => {
-    setIsSummaryModalOpen(false);
-    onClose();
-    if (onSuccess && selectedPatient) {
-      onSuccess(selectedPatient.id || selectedPatient.hn, action);
+    if (isFinishingRef.current) return;
+    isFinishingRef.current = true;
+    setIsFinishing(true);
+
+    try {
+      // Clear any focus trap on active element
+      if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+
+      // Explicitly close both summary and main prescription modals
+      setIsSummaryModalOpen(false);
+      onClose();
+
+      const pid = selectedPatient?.id || selectedPatient?.hn || preselectedPatientId;
+      if (onSuccess && pid) {
+        onSuccess(pid, action);
+      }
+
+      // Dispatch clinical navigation event for shell coordination
+      if ((action === 'schedule' || action === 'patients') && typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('clinical-navigate', {
+            detail: { tab: action, patientId: pid },
+          })
+        );
+      }
+    } catch (err: unknown) {
+      console.error('Failed to navigate from course summary:', err);
+      const msg = err instanceof Error ? err.message : 'ไม่สามารถนำทางไปยังหน้าปลายทางได้ กรุณาลองใหม่อีกครั้ง';
+      setErrorMsg(msg);
+      setIsSummaryModalOpen(true);
+    } finally {
+      setTimeout(() => {
+        isFinishingRef.current = false;
+        setIsFinishing(false);
+      }, 600);
     }
   };
 
@@ -1993,19 +2039,23 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
               <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
                 <button
                   type="button"
+                  id="go-to-schedule-btn"
                   onClick={() => handleFinishSummary('schedule')}
-                  className="w-full sm:flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
+                  disabled={isFinishing}
+                  className="w-full sm:flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <CalendarCheck className="w-4 h-4" />
+                  <CalendarCheck className="w-4 h-4 shrink-0" />
                   <span>{t.goToScheduleBtn}</span>
                 </button>
 
                 <button
                   type="button"
+                  id="go-to-patients-btn"
                   onClick={() => handleFinishSummary('patients')}
-                  className="w-full sm:flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200 transition cursor-pointer"
+                  disabled={isFinishing}
+                  className="w-full sm:flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200 transition cursor-pointer active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <User className="w-4 h-4" />
+                  <User className="w-4 h-4 shrink-0" />
                   <span>{t.goToPatientsBtn}</span>
                 </button>
               </div>

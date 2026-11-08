@@ -58,6 +58,28 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
   const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPhysicalCardGameOpen, setIsPhysicalCardGameOpen] = useState(false);
+  const [schedulePreselectedPatientId, setSchedulePreselectedPatientId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const handleClinicalNavigate = (e: Event) => {
+      const customEvt = e as CustomEvent<{ tab: ClinicalMenuId; patientId?: string }>;
+      if (customEvt.detail) {
+        const { tab, patientId } = customEvt.detail;
+        if (tab === 'schedule') {
+          if (patientId) setSchedulePreselectedPatientId(patientId);
+          setActiveTab('schedule');
+        } else if (tab === 'patients') {
+          setActiveTab('patients');
+        } else if (tab) {
+          setActiveTab(tab);
+        }
+      }
+    };
+    window.addEventListener('clinical-navigate', handleClinicalNavigate);
+    return () => {
+      window.removeEventListener('clinical-navigate', handleClinicalNavigate);
+    };
+  }, []);
 
   const currentUserId = currentUser?.id || 'pt-01';
 
@@ -234,7 +256,10 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
               <ClinicalRecordsView initialPatientId={activeRecordsPatientId} />
             )}
             {activeTab === 'schedule' && (
-              <PtScheduleView currentUserId={currentUserId} />
+              <PtScheduleView
+                currentUserId={currentUserId}
+                preselectedPatientId={schedulePreselectedPatientId}
+              />
             )}
             {activeTab === 'exercises' && (
               <ExerciseCatalogView
@@ -293,6 +318,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
         onSuccess={(_targetId, action) => {
           setIsPrescriptionModalOpen(false);
           if (action === 'schedule') {
+            if (_targetId) setSchedulePreselectedPatientId(_targetId);
             setActiveTab('schedule');
           } else {
             setActiveTab('patients');

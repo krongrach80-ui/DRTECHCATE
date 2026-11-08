@@ -30,6 +30,7 @@ import {
   ExerciseBuilderModal
 } from '../smart-portal/index.js';
 import { PatientCoursePrescriptionModal } from '../clinical-ui/PatientCoursePrescriptionModal';
+import { ClinicalMenuId } from '../clinical-ui/ClinicalSidebar';
 import { ALL_99_PHYSICAL_CARD_QUESTIONS } from '../../../kiosk/src/minigame-cards/index.js';
 import { ALL_CLINICAL_EXERCISES } from '../../../../packages/pose-engine/src/index';
 
@@ -99,7 +100,11 @@ const DEMO_MINIGAMES: MinigameRecord[] = [
   },
 ];
 
-export const LibraryView: React.FC = () => {
+export interface LibraryViewProps {
+  onNavigateToTab?: (tab: ClinicalMenuId, patientId?: string) => void;
+}
+
+export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => {
   const [activeTab, setActiveTab] = useState<'exercises' | 'minigames' | 'modpacks'>('exercises');
   const [exercises, setExercises] = useState<ExerciseRecord[]>(DEMO_EXERCISES);
   const [minigames, setMinigames] = useState<MinigameRecord[]>(DEMO_MINIGAMES);
@@ -1470,8 +1475,12 @@ export const LibraryView: React.FC = () => {
       <PatientCoursePrescriptionModal
         isOpen={isPrescriptionModalOpen}
         onClose={() => setIsPrescriptionModalOpen(false)}
-        onSuccess={() => {
-          fetchData();
+        onSuccess={(targetId, action) => {
+          setIsPrescriptionModalOpen(false);
+          void fetchData();
+          if ((action === 'schedule' || action === 'patients') && onNavigateToTab) {
+            onNavigateToTab(action, targetId);
+          }
         }}
       />
 

@@ -89,5 +89,31 @@ describe('Kiosk & Clinical Portal Course Prescription Wiring Test Suite', () => 
     expect(element).toBeDefined();
     expect(element.props.directPatient).toEqual(mockPatient);
   });
+
+  it('4. Custom clinical-navigate event dispatches target tab and patientId accurately', () => {
+    let capturedDetail: any = null;
+    const target = new EventTarget();
+    const listener = (e: any) => {
+      capturedDetail = e.detail;
+    };
+    target.addEventListener('clinical-navigate', listener);
+
+    target.dispatchEvent(
+      new CustomEvent('clinical-navigate', {
+        detail: { tab: 'schedule', patientId: 'p-test-123' },
+      })
+    );
+
+    expect(capturedDetail).toEqual({ tab: 'schedule', patientId: 'p-test-123' });
+
+    target.dispatchEvent(
+      new CustomEvent('clinical-navigate', {
+        detail: { tab: 'patients', patientId: 'p-test-123' },
+      })
+    );
+
+    expect(capturedDetail).toEqual({ tab: 'patients', patientId: 'p-test-123' });
+    target.removeEventListener('clinical-navigate', listener);
+  });
 });
 

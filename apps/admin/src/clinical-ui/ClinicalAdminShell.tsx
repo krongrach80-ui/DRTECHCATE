@@ -59,8 +59,29 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isPhysicalCardGameOpen, setIsPhysicalCardGameOpen] = useState(false);
-  const [schedulePreselectedPatientId, _setSchedulePreselectedPatientId] = useState<string | undefined>(undefined);
+  const [schedulePreselectedPatientId, setSchedulePreselectedPatientId] = useState<string | undefined>(undefined);
   const [autoOpenScheduleWizard, setAutoOpenScheduleWizard] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleClinicalNavigate = (e: Event) => {
+      const customEvt = e as CustomEvent<{ tab: ClinicalMenuId; patientId?: string }>;
+      if (customEvt.detail) {
+        const { tab, patientId } = customEvt.detail;
+        if (tab === 'schedule') {
+          if (patientId) setSchedulePreselectedPatientId(patientId);
+          setActiveTab('schedule');
+        } else if (tab === 'patients') {
+          setActiveTab('patients');
+        } else if (tab) {
+          setActiveTab(tab);
+        }
+      }
+    };
+    window.addEventListener('clinical-navigate', handleClinicalNavigate);
+    return () => {
+      window.removeEventListener('clinical-navigate', handleClinicalNavigate);
+    };
+  }, []);
 
   const fetchCalls = useCallback(async () => {
     if (!currentUser) return;
@@ -272,14 +293,39 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           {/* Master Prompt v3 Spec 8.1: 6 Windows */}
           <ErrorBoundary key={activeTab} moduleName={pageMeta.title}>
             {activeTab === 'users' && <StaffView />}
-            {activeTab === 'patients' && <PatientsView />}
+            {activeTab === 'patients' && (
+              <PatientsView
+                onNavigateToTab={(tab, patientId) => {
+                  if (tab === 'schedule') {
+                    if (patientId) setSchedulePreselectedPatientId(patientId);
+                    setActiveTab('schedule');
+                  } else if (tab) {
+                    setActiveTab(tab);
+                  }
+                }}
+              />
+            )}
             {activeTab === 'pts' && <PtsView />}
-            {activeTab === 'library' && <LibraryView />}
+            {activeTab === 'library' && (
+              <LibraryView
+                onNavigateToTab={(tab, patientId) => {
+                  if (tab === 'schedule') {
+                    if (patientId) setSchedulePreselectedPatientId(patientId);
+                    setActiveTab('schedule');
+                  } else if (tab) {
+                    setActiveTab(tab);
+                  }
+                }}
+              />
+            )}
             {activeTab === 'schedule' && (
               <ClinicalScheduleView
                 preselectedPatientId={schedulePreselectedPatientId}
                 autoOpenWizard={autoOpenScheduleWizard}
                 onOpenCreateScheduleModal={() => setAutoOpenScheduleWizard(false)}
+                onNavigateToTab={(tab) => {
+                  setActiveTab(tab);
+                }}
               />
             )}
             {activeTab === 'audit' && (
@@ -326,6 +372,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
         onSuccess={(_targetId, action) => {
           setIsPrescriptionModalOpen(false);
           if (action === 'schedule') {
+            if (_targetId) setSchedulePreselectedPatientId(_targetId);
             setActiveTab('schedule');
           } else {
             setActiveTab('patients');
