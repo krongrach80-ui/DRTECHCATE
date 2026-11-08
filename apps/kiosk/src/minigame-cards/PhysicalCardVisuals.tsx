@@ -371,7 +371,7 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
           );
         }
         return (
-          <svg viewBox="0 0 160 160" className="w-full h-full drop-shadow-md">
+          <svg viewBox="20 65 120 85" className="w-full h-full drop-shadow-md">
             <ellipse cx="80" cy="138" rx="55" ry="8" fill="#E2E8F0" opacity="0.6" />
             <path
               d="M35 120 Q 55 125, 95 125 Q 135 125, 135 110 Q 135 90, 105 90 L85 80 L65 80 L50 95 L35 105 Z"
@@ -512,7 +512,7 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
         if (size === 'large' || (!compact && size !== 'normal')) {
           return (
             <div className="w-full h-full flex items-center justify-center text-center select-none">
-              <span className="text-7xl sm:text-8xl xl:text-[96px] leading-none select-none drop-shadow-md">
+              <span className="text-[96px] sm:text-[100px] xl:text-[104px] leading-none select-none drop-shadow-md">
                 {getIconEmoji(visualKey)}
               </span>
             </div>

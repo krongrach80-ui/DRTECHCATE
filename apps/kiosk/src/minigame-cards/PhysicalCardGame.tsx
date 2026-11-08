@@ -816,10 +816,30 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
   };
 
+  // Determine screen-side of the active hand popup
+  // Mirrored: right hand appears on screen-right. Non-mirrored: right hand appears on screen-left.
+  const isScreenRight = Boolean(
+    activeHandState &&
+    (isMirrored
+      ? activeHandState.anatomicalSide === 'right'
+      : activeHandState.anatomicalSide === 'left')
+  );
+
+  // Centralized CSS variables for single-line hand popups
+  const popupCssVars: React.CSSProperties = {
+    '--popup-max-h': '44px',
+    '--popup-font-size': '20px',
+    '--popup-icon-size': '22px',
+    '--popup-percent-size': '15px',
+    '--popup-bar-h': '4px',
+    '--popup-pad-y': '8px',
+    '--popup-pad-x': '14px',
+  } as React.CSSProperties;
+
   return (
-    <div className="w-full h-full flex flex-col justify-between pt-3 pb-3 px-3 sm:pt-4 sm:pb-4 sm:px-5 md:px-6 bg-[#EDF7F1] text-slate-800 select-none overflow-hidden font-sans relative">
+    <div className="w-full h-full flex flex-col justify-between pt-2.5 pb-2.5 px-3 sm:pt-3 sm:pb-3 sm:px-5 md:px-6 bg-[#EDF7F1] text-slate-800 select-none overflow-hidden font-sans relative">
       {/* Top Header Bar */}
-      <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex items-center justify-between gap-2 shrink-0 pt-0.5">
+      <div className="w-full max-w-4xl mx-auto flex items-center justify-between gap-2 shrink-0 pt-0.5">
         <div className="flex items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl font-black text-[#134E43] tracking-normal">
             {t('card_minigame_title')}
@@ -868,9 +888,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
       {/* Main Game Screen */}
       {!isGameOver ? (
-        <div className="w-full max-w-5xl xl:max-w-6xl mx-auto flex-1 flex flex-col justify-between gap-2 sm:gap-2.5 my-auto min-h-0">
+        <div className="w-full max-w-4xl mx-auto flex-1 flex flex-col items-center justify-between gap-1.5 sm:gap-2 my-auto min-h-0">
           {/* Question Banner */}
-          <div className="w-full bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-4 text-center shadow-xs border border-emerald-100/90 transition animate-fade-in relative overflow-hidden min-h-[60px] sm:min-h-[68px] flex items-center justify-center shrink-0">
+          <div className="w-full max-w-3xl bg-white rounded-2xl sm:rounded-3xl p-2.5 sm:p-3 text-center shadow-xs border border-emerald-100/90 transition animate-fade-in relative overflow-hidden min-h-[50px] sm:min-h-[56px] flex items-center justify-center shrink-0">
             <h2 className="text-xl sm:text-2xl xl:text-3xl font-extrabold text-[#113C34] tracking-normal leading-tight">
               {activeQuestion.prompt}
             </h2>
@@ -878,7 +898,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             {/* Answer Result Banner Alert */}
             {answerState !== 'idle' && (
               <div
-                className={`absolute inset-0 flex items-center justify-center gap-2 text-base sm:text-lg font-bold text-white transition animate-scale-up px-4 py-3 z-30 ${
+                className={`absolute inset-0 flex items-center justify-center gap-2 text-base sm:text-lg font-bold text-white transition animate-scale-up px-4 py-2 z-30 ${
                   answerState === 'correct' ? 'bg-emerald-600' : 'bg-rose-600'
                 }`}
               >
@@ -907,15 +927,15 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             </div>
           )}
 
-          {/* 🆕 Question Illustration Section (Centered directly below Question Box, NEVER overlapping the camera) */}
+          {/* 🆕 Question Illustration Section (Hug Content, Centered directly below Question Box) */}
           {hasIllustration && (
             <div
-              className="mx-auto w-full max-w-3xl flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 px-6 py-2 sm:py-3 bg-white/95 border-2 border-emerald-200/90 rounded-2xl shadow-sm shrink-0 transition-all duration-300"
+              className="mx-auto w-fit max-w-[640px] h-[112px] sm:h-[118px] flex items-center justify-center gap-5 sm:gap-6 px-6 py-2.5 sm:py-3 bg-white border-2 border-emerald-200/90 rounded-2xl shadow-sm shrink-0 transition-all duration-300"
               role="region"
               aria-label={t('card_illustration_label')}
             >
               <div
-                className="w-[120px] h-[120px] sm:w-[140px] sm:h-[140px] xl:w-[150px] xl:h-[150px] max-h-[16vh] min-h-[96px] min-w-[96px] flex items-center justify-center shrink-0 select-none"
+                className="w-[96px] h-[96px] sm:w-[104px] sm:h-[104px] flex items-center justify-center shrink-0 select-none overflow-hidden"
                 role="img"
                 aria-label={`${t('card_illustration_label')}: ${localizedCaption}`}
               >
@@ -925,23 +945,24 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                   size="large"
                 />
               </div>
-              <div className="flex flex-col items-center sm:items-start text-center sm:text-left overflow-hidden">
-                <span className="text-xs sm:text-sm font-bold text-emerald-700 uppercase tracking-wider">
+              <div className="flex flex-col items-start justify-center text-left overflow-hidden">
+                <span className="text-[13px] sm:text-[14px] font-bold text-emerald-700 uppercase tracking-wider leading-tight">
                   {t('card_illustration_label')}
                 </span>
-                <span className="text-[28px] sm:text-[32px] font-black text-slate-900 leading-tight tracking-tight">
+                <span className="text-[30px] sm:text-[32px] font-black text-slate-900 leading-tight tracking-tight">
                   {localizedCaption}
                 </span>
               </div>
             </div>
           )}
 
-          {/* Center Area: Full Camera Viewport with Top Animated Dynamic Popups (No Sidebars) */}
-          <div className="w-full flex-1 min-h-[300px] flex flex-col items-center justify-center relative my-auto">
+          {/* Center Area: Full Camera Viewport with Top Animated Dynamic Popups (Locked to ~665x375px) */}
+          <div className="w-full flex flex-col items-center justify-center relative shrink-0">
             <div
-              className="h-full max-h-[46vh] sm:max-h-[48vh] min-h-[300px] max-w-full bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center"
+              className="w-[665px] max-w-full h-[375px] max-h-[375px] bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center shrink-0"
               style={{
                 aspectRatio: `${cameraAspectRatio}`,
+                ...popupCssVars,
               }}
             >
               {/* Live Video Feed (Adaptive Aspect Ratio & Zero Pillarbox) */}
@@ -975,7 +996,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               {/* Model Loading Status Badge */}
               {cameraActive && isModelLoading && (
-                <div className="absolute top-16 z-20 px-3 py-1 rounded-full bg-emerald-950/85 text-emerald-200 border border-emerald-700/60 text-[10px] sm:text-xs font-bold flex items-center gap-1.5 shadow-md">
+                <div className="absolute top-14 z-20 px-3 py-1 rounded-full bg-emerald-950/85 text-emerald-200 border border-emerald-700/60 text-[10px] sm:text-xs font-bold flex items-center gap-1.5 shadow-md">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                   <span>กำลังเตรียมระบบตรวจจับมือจริง...</span>
                 </div>
@@ -983,7 +1004,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               {/* Model Error Fallback Alert Banner */}
               {modelError && (
-                <div className="absolute top-16 z-25 px-3.5 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs font-bold flex items-center gap-1.5 shadow-lg max-w-[90%]">
+                <div className="absolute top-14 z-25 px-3.5 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs font-bold flex items-center gap-1.5 shadow-lg max-w-[90%]">
                   <AlertTriangle className="w-4 h-4 text-amber-900 shrink-0" />
                   <span className="truncate">{modelError} (แตะปุ่มด้านล่างเพื่อตอบแทนได้)</span>
                 </div>
@@ -1002,74 +1023,74 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               <div className="absolute bottom-3 left-3 w-6 h-6 border-b-3 border-l-3 border-[#6EE7B7] rounded-bl-lg pointer-events-none z-15" />
               <div className="absolute bottom-3 right-3 w-6 h-6 border-b-3 border-r-3 border-[#6EE7B7] rounded-br-lg pointer-events-none z-15" />
 
-              {/* ANIMATED DYNAMIC POPUPS (Floating Top-Center above camera, >= 28px font, high contrast) */}
-              <div className="absolute top-3 sm:top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none flex flex-col items-center gap-2 max-w-[90%]">
-                {/* 1. Confirmed Answer Banner */}
-                {confirmedAnswer && (
-                  <div
-                    className={`px-6 sm:px-8 py-3 rounded-2xl text-white shadow-2xl flex items-center gap-3 animate-scale-up border-2 ${
-                      confirmedAnswer === 'yes'
-                        ? 'bg-emerald-600 border-emerald-300'
-                        : 'bg-orange-600 border-orange-300'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-8 h-8 text-white shrink-0 animate-bounce" />
-                    <span className="text-[28px] sm:text-3xl md:text-4xl font-black">
-                      {confirmedAnswer === 'yes' ? t('card_confirmed_yes') : t('card_confirmed_no')}
-                    </span>
-                  </div>
-                )}
+              {/* ANIMATED DYNAMIC POPUPS (Single-line pills, <= 44-48px height, 220-340px width) */}
+              {/* 1. Confirmed Answer Banner (Top Center, Single-line) */}
+              {confirmedAnswer && (
+                <div
+                  className={`absolute top-2.5 sm:top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-2 rounded-full text-white shadow-xl flex items-center gap-2 animate-scale-up border max-w-[90%] whitespace-nowrap h-[42px] sm:h-[44px] ${
+                    confirmedAnswer === 'yes'
+                      ? 'bg-emerald-600/95 border-emerald-300'
+                      : 'bg-orange-600/95 border-orange-300'
+                  }`}
+                >
+                  <CheckCircle2 className="w-5 h-5 text-white shrink-0 animate-bounce" />
+                  <span className="text-[20px] sm:text-[21px] font-black leading-none">
+                    {confirmedAnswer === 'yes' ? t('card_confirmed_yes') : t('card_confirmed_no')}
+                  </span>
+                </div>
+              )}
 
-                {/* 2. Both Hands Warning Banner */}
-                {!confirmedAnswer && isBothHandsWarning && (
-                  <div className="px-6 sm:px-8 py-3 rounded-2xl bg-rose-600 text-white border-2 border-rose-300 shadow-2xl flex items-center gap-3 animate-bounce">
-                    <AlertTriangle className="w-8 h-8 text-amber-300 shrink-0" />
-                    <span className="text-[28px] sm:text-3xl md:text-4xl font-black">
-                      {t('card_both_hands_warning')}
-                    </span>
-                  </div>
-                )}
+              {/* 2. Both Hands Warning Banner (Top Center, Single-line) */}
+              {!confirmedAnswer && isBothHandsWarning && (
+                <div className="absolute top-2.5 sm:top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-2 rounded-full bg-rose-600/95 text-white border border-rose-300 shadow-xl flex items-center gap-2 animate-bounce max-w-[90%] whitespace-nowrap h-[42px] sm:h-[44px]">
+                  <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0" />
+                  <span className="text-[20px] sm:text-[21px] font-black leading-none">
+                    {t('card_both_hands_warning')}
+                  </span>
+                </div>
+              )}
 
-                {/* 3. Active Hand Raised Dwell Progress Popup */}
-                {!confirmedAnswer && !isBothHandsWarning && activeHandState && (
-                  <div
-                    className={`px-6 sm:px-8 py-3 rounded-2xl text-white shadow-2xl flex flex-col items-center gap-2 border-2 min-w-[280px] sm:min-w-[340px] animate-fade-in ${
-                      activeHandState.answerSide === 'yes'
-                        ? 'bg-emerald-600 border-emerald-300'
-                        : 'bg-orange-600 border-orange-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Hand className="w-8 h-8 text-white shrink-0 animate-pulse" />
-                      <span className="text-[28px] sm:text-3xl md:text-4xl font-black tracking-wide">
-                        {activeHandState.answerSide === 'yes'
-                          ? t('card_right_hand_yes')
-                          : t('card_left_hand_no')}
-                      </span>
-                      <span ref={popupProgressPercentRef} className="text-xl sm:text-2xl font-black font-mono ml-2">
-                        0%
-                      </span>
-                    </div>
-                    {/* 0.6s Progress Bar */}
-                    <div className="w-full bg-black/25 rounded-full h-3 overflow-hidden border border-white/40">
-                      <div
-                        ref={popupProgressBarRef}
-                        className="h-full bg-white rounded-full transition-[width] duration-75"
-                        style={{ width: '0%' }}
-                      />
-                    </div>
+              {/* 3. Active Hand Raised Dwell Progress Popup (Top Corner on side of raised hand, 10-12px away, clear of mirror button) */}
+              {!confirmedAnswer && !isBothHandsWarning && activeHandState && (
+                <div
+                  className={`absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] animate-fade-in whitespace-nowrap ${
+                    isScreenRight
+                      ? 'top-10 sm:top-11 right-2.5 sm:right-3'
+                      : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
+                  } ${
+                    activeHandState.answerSide === 'yes'
+                      ? 'bg-emerald-600/95 border-emerald-300'
+                      : 'bg-orange-600/95 border-orange-300'
+                  }`}
+                >
+                  <Hand className="w-5 h-5 text-white shrink-0 animate-pulse" />
+                  <span className="text-[20px] sm:text-[21px] font-black tracking-wide leading-none">
+                    {activeHandState.answerSide === 'yes'
+                      ? t('card_right_hand_yes')
+                      : t('card_left_hand_no')}
+                  </span>
+                  {/* 4px Progress Bar */}
+                  <div className="w-12 sm:w-16 bg-black/30 rounded-full h-1 overflow-hidden border border-white/40 shrink-0">
+                    <div
+                      ref={popupProgressBarRef}
+                      className="h-full bg-white rounded-full transition-[width] duration-75"
+                      style={{ width: '0%' }}
+                    />
                   </div>
-                )}
+                  <span ref={popupProgressPercentRef} className="text-sm sm:text-[15px] font-black font-mono shrink-0">
+                    0%
+                  </span>
+                </div>
+              )}
 
-                {/* 4. Question 1 Intro Banner (3 seconds) */}
-                {!confirmedAnswer && !isBothHandsWarning && !activeHandState && showIntroBanner && (
-                  <div className="px-6 py-2.5 rounded-2xl bg-white/95 border-2 border-emerald-500 shadow-2xl flex items-center gap-3 animate-fade-in">
-                    <span className="text-[24px] sm:text-[28px] font-black text-[#134E43]">
-                      {t('card_intro_popup_hint')}
-                    </span>
-                  </div>
-                )}
-              </div>
+              {/* 4. Question 1 Intro Banner (3 seconds, Single-line, Top Center) */}
+              {!confirmedAnswer && !isBothHandsWarning && !activeHandState && showIntroBanner && (
+                <div className="absolute top-2.5 sm:top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-2 sm:px-5 sm:py-2 rounded-full bg-white/95 border border-emerald-400 shadow-xl flex items-center gap-2 animate-fade-in whitespace-nowrap h-[42px] sm:h-[44px]">
+                  <span className="text-[20px] sm:text-[21px] font-extrabold text-[#134E43] leading-none">
+                    {t('card_intro_popup_hint')}
+                  </span>
+                </div>
+              )}
 
               {/* Near Edge Warning (Floating at bottom-center) */}
               {!confirmedAnswer && !isBothHandsWarning && isNearEdge && (
@@ -1081,11 +1102,11 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             </div>
 
             {/* Compact Touch Fallback Buttons under camera */}
-            <div className="flex items-center justify-center gap-3 sm:gap-6 mt-3 shrink-0">
+            <div className="flex items-center justify-center gap-3 sm:gap-6 mt-2 shrink-0">
               <button
                 type="button"
                 onClick={() => handleAnswer('no')}
-                className={`px-5 sm:px-8 py-2.5 sm:py-3 rounded-2xl border-2 font-extrabold text-base sm:text-lg shadow-sm hover:shadow-md transition active:scale-95 flex items-center gap-2 cursor-pointer ${
+                className={`px-5 sm:px-8 py-2 sm:py-2.5 rounded-2xl border-2 font-extrabold text-base sm:text-lg shadow-sm hover:shadow-md transition active:scale-95 flex items-center gap-2 cursor-pointer ${
                   selectedSide === 'no'
                     ? answerState === 'correct'
                       ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
@@ -1100,7 +1121,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               <button
                 type="button"
                 onClick={() => handleAnswer('yes')}
-                className={`px-5 sm:px-8 py-2.5 sm:py-3 rounded-2xl border-2 font-extrabold text-base sm:text-lg shadow-sm hover:shadow-md transition active:scale-95 flex items-center gap-2 cursor-pointer ${
+                className={`px-5 sm:px-8 py-2 sm:py-2.5 rounded-2xl border-2 font-extrabold text-base sm:text-lg shadow-sm hover:shadow-md transition active:scale-95 flex items-center gap-2 cursor-pointer ${
                   selectedSide === 'yes'
                     ? answerState === 'correct'
                       ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
@@ -1114,7 +1135,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             </div>
 
             {/* Assistive Hint */}
-            <div className="flex items-center justify-center gap-2 pt-2 text-xs sm:text-sm text-slate-600 font-bold shrink-0">
+            <div className="flex items-center justify-center gap-2 pt-1.5 text-xs sm:text-sm text-slate-600 font-bold shrink-0">
               <span>{t('card_bottom_hint')}</span>
             </div>
           </div>
