@@ -24,6 +24,7 @@ import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 import {
   PhysicalCardQuestion,
   ALL_99_PHYSICAL_CARD_QUESTIONS,
+  getLocalizedImageDescription,
 } from './PhysicalCardGameData.js';
 import { PhysicalCardVisual } from './PhysicalCardVisuals.js';
 import {
@@ -70,6 +71,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [sessionSeed, setSessionSeed] = useState<number>(0);
   const [cameraAspectRatio, setCameraAspectRatio] = useState<number>(16 / 9);
+  const [illustrationError, setIllustrationError] = useState<boolean>(false);
 
   // Filtered Question list (สุ่ม 10 ข้อจากคลังคำถามทั้งหมดต่อรอบ)
   const [filteredList, setFilteredList] = useState<PhysicalCardQuestion[]>(() => {
@@ -160,6 +162,19 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const activeQuestion: PhysicalCardQuestion =
     filteredList[currentIndex] || ALL_99_PHYSICAL_CARD_QUESTIONS[0];
 
+  // Reset illustration error when question changes
+  useEffect(() => {
+    setIllustrationError(false);
+  }, [currentIndex, activeQuestion?.id]);
+
+  const hasIllustration = Boolean(
+    !illustrationError &&
+    activeQuestion &&
+    (activeQuestion.visualKey || activeQuestion.imageDescription || activeQuestion.iconEmoji)
+  );
+
+  const localizedCaption = getLocalizedImageDescription(activeQuestion, lang);
+
   // Cached AudioContext singleton to prevent audio hardware stuttering
   const getAudioContext = useCallback(() => {
     if (typeof window === 'undefined') return null;
@@ -244,6 +259,17 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     [soundEnabled, getAudioContext]
   );
 
+  // Handle video metadata to adapt camera aspect ratio
+  const handleVideoMetadata = useCallback(() => {
+    if (videoRef.current) {
+      const vw = videoRef.current.videoWidth;
+      const vh = videoRef.current.videoHeight;
+      if (vw > 0 && vh > 0) {
+        setCameraAspectRatio(vw / vh);
+      }
+    }
+  }, []);
+
   // Initialize camera
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -254,14 +280,23 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
-              width: { ideal: 640 },
-              height: { ideal: 480 },
+              width: { ideal: 1280, min: 640 },
+              height: { ideal: 720, min: 480 },
               facingMode: 'user',
             },
             audio: false,
           });
           if (!isCancelled && videoRef.current) {
             videoRef.current.srcObject = stream;
+            videoRef.current.onloadedmetadata = () => {
+              if (videoRef.current) {
+                const vw = videoRef.current.videoWidth;
+                const vh = videoRef.current.videoHeight;
+                if (vw > 0 && vh > 0) {
+                  setCameraAspectRatio(vw / vh);
+                }
+              }
+            };
             videoRef.current.play().catch(() => {});
             setCameraActive(true);
           }
@@ -635,7 +670,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             setActiveHandState(null);
 
             if (ctx) {
-              drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, true);
+              drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, true, isMirrored);
             }
           } else {
             setIsBothHandsWarning(false);
@@ -661,7 +696,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               setActiveHandState(null);
 
               if (ctx) {
-                drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false);
+                drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false, isMirrored);
               }
             } else if (frameResult.activeHand) {
               // 3. One hand raised
@@ -682,7 +717,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 }
 
                 if (ctx) {
-                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, currentHand, progress, false);
+                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, currentHand, progress, false, isMirrored);
                 }
 
                 if (progress >= 1.0) {
@@ -716,7 +751,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 }
 
                 if (ctx) {
-                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, currentHand, 0, false);
+                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, currentHand, 0, false, isMirrored);
                 }
               }
             } else {
@@ -724,7 +759,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               if (activeSide && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
                 // Grace period tolerance: hold active state for brief frame drops
                 if (ctx) {
-                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false);
+                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false, isMirrored);
                 }
               } else {
                 activeSide = null;
@@ -735,7 +770,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 setActiveHandState(null);
 
                 if (ctx) {
-                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false);
+                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false, isMirrored);
                 }
               }
             }
@@ -872,15 +907,50 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             </div>
           )}
 
+          {/* 🆕 Question Illustration Section (Centered directly below Question Box, NEVER overlapping the camera) */}
+          {hasIllustration && (
+            <div
+              className="mx-auto w-full max-w-3xl flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 px-6 py-2 sm:py-3 bg-white/95 border-2 border-emerald-200/90 rounded-2xl shadow-sm shrink-0 transition-all duration-300"
+              role="region"
+              aria-label={t('card_illustration_label')}
+            >
+              <div
+                className="w-[120px] h-[120px] sm:w-[140px] sm:h-[140px] xl:w-[150px] xl:h-[150px] max-h-[16vh] min-h-[96px] min-w-[96px] flex items-center justify-center shrink-0 select-none"
+                role="img"
+                aria-label={`${t('card_illustration_label')}: ${localizedCaption}`}
+              >
+                <PhysicalCardVisual
+                  visualKey={activeQuestion.visualKey}
+                  imageDescription={activeQuestion.imageDescription}
+                  size="large"
+                />
+              </div>
+              <div className="flex flex-col items-center sm:items-start text-center sm:text-left overflow-hidden">
+                <span className="text-xs sm:text-sm font-bold text-emerald-700 uppercase tracking-wider">
+                  {t('card_illustration_label')}
+                </span>
+                <span className="text-[28px] sm:text-[32px] font-black text-slate-900 leading-tight tracking-tight">
+                  {localizedCaption}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Center Area: Full Camera Viewport with Top Animated Dynamic Popups (No Sidebars) */}
-          <div className="w-full flex-1 min-h-0 flex flex-col items-center justify-center relative my-auto">
-            <div className="w-full h-full max-h-[60vh] sm:max-h-[64vh] aspect-video bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center">
-              {/* Live Video Feed (Uncropped object-contain) */}
+          <div className="w-full flex-1 min-h-[300px] flex flex-col items-center justify-center relative my-auto">
+            <div
+              className="h-full max-h-[46vh] sm:max-h-[48vh] min-h-[300px] max-w-full bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center"
+              style={{
+                aspectRatio: `${cameraAspectRatio}`,
+              }}
+            >
+              {/* Live Video Feed (Adaptive Aspect Ratio & Zero Pillarbox) */}
               <video
                 ref={videoRef}
                 playsInline
                 muted
-                className={`absolute inset-0 w-full h-full object-contain transform ${
+                onLoadedMetadata={handleVideoMetadata}
+                className={`absolute inset-0 w-full h-full object-cover transform ${
                   isMirrored ? 'scale-x-[-1]' : ''
                 } transition-opacity duration-500 ${
                   cameraActive ? 'opacity-100' : 'opacity-0'
@@ -900,25 +970,8 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               {/* Real Hand Skeleton & Dwell Progress Ring Overlay */}
               <canvas
                 ref={overlayCanvasRef}
-                className="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
               />
-
-              {/* Question Illustration (Docked at bottom-left corner inside camera) */}
-              <div className="absolute bottom-3 left-4 z-20 px-3 py-1.5 rounded-2xl bg-white/95 border border-emerald-200/90 shadow-lg flex items-center gap-2.5 pointer-events-none max-w-[48%] sm:max-w-[42%]">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 bg-emerald-50/80 rounded-xl flex items-center justify-center p-0.5 border border-emerald-100 overflow-hidden">
-                  <PhysicalCardVisual
-                    visualKey={activeQuestion.visualKey}
-                    imageDescription={activeQuestion.imageDescription}
-                    compact
-                  />
-                </div>
-                <div className="flex flex-col text-left overflow-hidden">
-                  <span className="text-[9px] sm:text-[10px] font-bold text-emerald-800 uppercase tracking-wider">ภาพประกอบโจทย์</span>
-                  <span className="text-xs sm:text-sm font-extrabold text-slate-800 truncate leading-snug">
-                    {activeQuestion.imageDescription || activeQuestion.prompt}
-                  </span>
-                </div>
-              </div>
 
               {/* Model Loading Status Badge */}
               {cameraActive && isModelLoading && (

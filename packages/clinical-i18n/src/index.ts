@@ -464,6 +464,11 @@ export const CLINICAL_DICTIONARY = {
     'th-TH': 'ข้อ',
     'en-US': 'Question',
   },
+  card_illustration_label: {
+    'zh-CN': '题目插图',
+    'th-TH': 'ภาพประกอบโจทย์',
+    'en-US': 'Question Illustration',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof CLINICAL_DICTIONARY;

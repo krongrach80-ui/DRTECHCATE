@@ -76,9 +76,25 @@ export default {
       return new Response('DrTech.Care Kiosk System', { status: 200 });
     }
 
+    const addNoCacheHeaders = (res) => {
+      const newHeaders = new Headers(res.headers);
+      newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      newHeaders.set('Pragma', 'no-cache');
+      newHeaders.set('Expires', '0');
+      return new Response(res.body, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: newHeaders,
+      });
+    };
+
     // 3. Static Assets fetch
     let response = await env.ASSETS.fetch(request);
     if (response.status !== 404 && response.status !== 405) {
+      // Never cache HTML entries at Edge or in browser to ensure fresh bundles
+      if (url.pathname.endsWith('.html') || url.pathname === '/' || !url.pathname.includes('.')) {
+        return addNoCacheHeaders(response);
+      }
       return response;
     }
 
@@ -97,18 +113,6 @@ export default {
         method: 'GET',
         headers: request.headers,
       });
-
-    const addNoCacheHeaders = (res) => {
-      const newHeaders = new Headers(res.headers);
-      newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
-      newHeaders.set('Pragma', 'no-cache');
-      newHeaders.set('Expires', '0');
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: newHeaders,
-      });
-    };
 
     if (url.pathname.startsWith('/admin')) {
       const adminRes = await env.ASSETS.fetch(spaGetReq('/admin/index.html'));

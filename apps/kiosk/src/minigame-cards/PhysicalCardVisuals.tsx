@@ -11,6 +11,7 @@ interface PhysicalCardVisualProps {
   imageDescription: string;
   className?: string;
   compact?: boolean;
+  size?: 'large' | 'compact' | 'normal';
 }
 
 export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(({
@@ -18,6 +19,7 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
   imageDescription,
   className = '',
   compact = false,
+  size,
 }) => {
   // Helper to render distinct vector illustrations
   const renderGraphic = () => {
@@ -507,6 +509,15 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
 
       // Default fallback with stylized card illustration
       default:
+        if (size === 'large' || (!compact && size !== 'normal')) {
+          return (
+            <div className="w-full h-full flex items-center justify-center text-center select-none">
+              <span className="text-7xl sm:text-8xl xl:text-[96px] leading-none select-none drop-shadow-md">
+                {getIconEmoji(visualKey)}
+              </span>
+            </div>
+          );
+        }
         return (
           <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center">
             <div className="w-24 h-24 rounded-3xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-5xl mb-2 shadow-inner">
@@ -517,7 +528,7 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
     }
   };
 
-  if (compact) {
+  if (size === 'large' || compact) {
     return (
       <div className={`relative flex items-center justify-center w-full h-full ${className}`}>
         <div className="w-full h-full flex items-center justify-center p-0.5">
