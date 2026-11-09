@@ -20,7 +20,14 @@ import {
   RepPhase,
   ActiveCompensationWarning,
   BodySide,
+  LandmarkTriplet,
+  AngleMechanicsConfig,
 } from '../types/exerciseConfig';
+import {
+  resolveTargetSide,
+  resolveTripletsForSide,
+  getWrongSideCoachingMessage,
+} from '../math/sideResolution';
 import { calculateAngle3D, calculateAngle2D, normalizeLandmarksDepth } from '../math/geometry3d';
 import { PoseSkeletonFilter } from '../math/filters';
 import { ShoulderPendulumAnalyzer } from '../math/pendulumAnalyzer';
@@ -93,7 +100,17 @@ export class RepStateMachine {
   }
 
   public updateConfig(config: ExerciseDetectionConfig): void {
-    this.config = config;
+    // If stateMachine was explicitly set to unilateral 'left' or 'right', preserve it unless incoming config explicitly provides another unilateral side
+    const currentSide = this.config?.side;
+    const incomingSide = config.side;
+    let finalSide = incomingSide;
+    if (incomingSide === 'bilateral' && (currentSide === 'left' || currentSide === 'right')) {
+      finalSide = currentSide;
+    }
+    this.config = {
+      ...config,
+      side: resolveTargetSide(finalSide),
+    };
     if (config.pendulumMechanics) {
       this.pendulumAnalyzer = new ShoulderPendulumAnalyzer(config.pendulumMechanics);
     }
@@ -108,7 +125,7 @@ export class RepStateMachine {
   }
 
   public setSide(side: BodySide): void {
-    this.config = { ...this.config, side };
+    this.config = { ...this.config, side: resolveTargetSide(side) };
     this.reset();
   }
 
@@ -248,39 +265,20 @@ export class RepStateMachine {
   }
 
   /**
-   * Evaluates standard angle-based hold exercise (Supports both increase & decrease directions)
+   * Computes joint angle, readiness status, and desk mode flags for a specific anatomical triplet
    */
-  private evaluateAngleRepHold(
+  private computeAngleForTriplet(
+    triplet: LandmarkTriplet,
+    normalizedLandmarks: PoseEngineLandmark[],
     landmarks: PoseEngineLandmark[],
-    timestampMs: number,
-    lockResult?: SubjectLockResult
-  ): RepEvaluationResult {
-    const angleCfg = this.config.angleMechanics;
-    const targetReps = this.config.defaultPrescription?.repsPerSet || 10;
-    const totalSets = this.config.defaultPrescription?.totalSets || 3;
-
-    if (!angleCfg) {
-      return this.createDefaultResult(landmarks, 'ยังไม่ได้กำหนดค่ามุมสำหรับท่านี้');
-    }
-
-    // Normalize landmarks for monocular depth invariance
-    const normalizedLandmarks = normalizeLandmarksDepth(landmarks);
-
-    // Resolve side triplet (supporting bilateral auto-selection)
-    let triplet =
-      this.config.side === 'left' ? angleCfg.landmarks.left : angleCfg.landmarks.right;
-
-    if (this.config.side === 'bilateral') {
-      const leftConf =
-        (normalizedLandmarks[angleCfg.landmarks.left.vertex]?.visibility ?? 0) +
-        (normalizedLandmarks[angleCfg.landmarks.left.pointB]?.visibility ?? 0);
-      const rightConf =
-        (normalizedLandmarks[angleCfg.landmarks.right.vertex]?.visibility ?? 0) +
-        (normalizedLandmarks[angleCfg.landmarks.right.pointB]?.visibility ?? 0);
-      triplet = rightConf >= leftConf ? angleCfg.landmarks.right : angleCfg.landmarks.left;
-    }
-
-    let currentAngle = 0;
+    angleCfg: AngleMechanicsConfig
+  ): {
+    angle: number;
+    readiness: RepEvaluationResult['readinessStatus'];
+    isDeskActive: boolean;
+    isElbowMissing: boolean;
+  } {
+    let currentAngle = angleCfg.startAngleDeg;
     let readinessStatus: RepEvaluationResult['readinessStatus'] = 'ready';
     let isUpperBodyDeskActive = false;
     let isDistalElbowMissing = false;
@@ -290,9 +288,9 @@ export class RepStateMachine {
       normalizedLandmarks.length > triplet.vertex &&
       normalizedLandmarks.length > triplet.pointB
     ) {
-      let pA = normalizedLandmarks[triplet.pointA];
+      const pA = normalizedLandmarks[triplet.pointA];
       const pV = normalizedLandmarks[triplet.vertex];
-      let pB = normalizedLandmarks[triplet.pointB];
+      const pB = normalizedLandmarks[triplet.pointB];
 
       const policy = DEFAULT_LANDMARK_VISIBILITY_POLICY;
       const isCamUsable = (idx: number, minVis: number): boolean => {
@@ -347,14 +345,17 @@ export class RepStateMachine {
           const oppShoulderIdx = shoulderIdx === 11 ? 12 : 11;
           const oppShoulder = landmarks[oppShoulderIdx];
           const nose = landmarks[0];
-          const baselineY = isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
-            ? oppShoulder.y
-            : (isCamUsable(0, 0.35) && nose ? nose.y + 0.18 : (landmarks[shoulderIdx]?.y ?? 0.35));
+          const baselineY =
+            isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
+              ? oppShoulder.y
+              : isCamUsable(0, 0.35) && nose
+              ? nose.y + 0.18
+              : landmarks[shoulderIdx]?.y ?? 0.35;
 
           const upwardLift = Math.max(0, baselineY - (landmarks[shoulderIdx]?.y ?? 0.35));
           const targetMin = angleCfg.targetMinDeg;
           const startAngle = angleCfg.startAngleDeg;
-          const liftRatio = Math.min(1.0, upwardLift / 0.10);
+          const liftRatio = Math.min(1.0, upwardLift / 0.1);
           currentAngle = startAngle + liftRatio * (targetMin - startAngle);
         } else {
           currentAngle = triplet.use3DWorld
@@ -378,7 +379,7 @@ export class RepStateMachine {
           readinessStatus = 'partial_upper_body';
           const synthWrist = {
             x: pV.x + (pV.x - pA.x) * 0.5,
-            y: pV.y + 0.20,
+            y: pV.y + 0.2,
             z: pV.z ?? 0,
             visibility: 0.7,
           };
@@ -393,9 +394,12 @@ export class RepStateMachine {
           const oppShoulderIdx = shoulderIdx === 11 ? 12 : 11;
           const oppShoulder = landmarks[oppShoulderIdx];
           const nose = landmarks[0];
-          const baselineY = isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
-            ? oppShoulder.y
-            : (isCamUsable(0, 0.35) && nose ? nose.y + 0.18 : (landmarks[shoulderIdx]?.y ?? 0.35));
+          const baselineY =
+            isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
+              ? oppShoulder.y
+              : isCamUsable(0, 0.35) && nose
+              ? nose.y + 0.18
+              : landmarks[shoulderIdx]?.y ?? 0.35;
 
           const upwardLift = Math.max(0, baselineY - (landmarks[shoulderIdx]?.y ?? 0.35));
           const targetMin = angleCfg.targetMinDeg;
@@ -407,9 +411,9 @@ export class RepStateMachine {
           readinessStatus = 'partial_upper_body';
         }
       } else {
-        const isAUsable = isCamUsable(triplet.pointA, 0.30);
-        const isVUsable = isCamUsable(triplet.vertex, 0.30);
-        const isBUsable = isCamUsable(triplet.pointB, 0.30);
+        const isAUsable = isCamUsable(triplet.pointA, 0.3);
+        const isVUsable = isCamUsable(triplet.vertex, 0.3);
+        const isBUsable = isCamUsable(triplet.pointB, 0.3);
         currentAngle = triplet.use3DWorld
           ? calculateAngle3D(pA, pV, pB)
           : calculateAngle2D(pA, pV, pB);
@@ -417,16 +421,53 @@ export class RepStateMachine {
       }
     }
 
-    // Update telemetry metrics
-    if (currentAngle > this.maxAngleAchievedDeg) {
-      this.maxAngleAchievedDeg = Math.round(currentAngle);
-    }
-    this.recordedAnglesSum += currentAngle;
-    this.recordedAnglesCount++;
+    return {
+      angle: currentAngle,
+      readiness: readinessStatus,
+      isDeskActive: isUpperBodyDeskActive,
+      isElbowMissing: isDistalElbowMissing,
+    };
+  }
 
-    // Safety Angle Cap Check
-    const safetyCap = this.config.safetyContraindications?.maxSafeAngleCapDeg || 175;
-    const isExceedingSafetyCap = currentAngle > safetyCap;
+  /**
+   * Evaluates standard angle-based hold exercise (Supports both increase & decrease directions)
+   */
+  private evaluateAngleRepHold(
+    landmarks: PoseEngineLandmark[],
+    timestampMs: number,
+    lockResult?: SubjectLockResult
+  ): RepEvaluationResult {
+    const angleCfg = this.config.angleMechanics;
+    const targetReps = this.config.defaultPrescription?.repsPerSet || 10;
+    const totalSets = this.config.defaultPrescription?.totalSets || 3;
+
+    if (!angleCfg) {
+      return this.createDefaultResult(landmarks, 'ยังไม่ได้กำหนดค่ามุมสำหรับท่านี้');
+    }
+
+    // Normalize landmarks for monocular depth invariance
+    const normalizedLandmarks = normalizeLandmarksDepth(landmarks);
+
+    // Resolve side triplet (supporting authoritative unilateral side and bilateral auto-selection)
+    const effectiveSide = resolveTargetSide(this.config.side);
+    const sideInfo = resolveTripletsForSide(angleCfg, effectiveSide);
+    let triplet = sideInfo.targetTriplet;
+
+    if (effectiveSide === 'bilateral') {
+      const leftConf =
+        (normalizedLandmarks[angleCfg.landmarks.left.vertex]?.visibility ?? 0) +
+        (normalizedLandmarks[angleCfg.landmarks.left.pointB]?.visibility ?? 0);
+      const rightConf =
+        (normalizedLandmarks[angleCfg.landmarks.right.vertex]?.visibility ?? 0) +
+        (normalizedLandmarks[angleCfg.landmarks.right.pointB]?.visibility ?? 0);
+      triplet = rightConf >= leftConf ? angleCfg.landmarks.right : angleCfg.landmarks.left;
+    }
+
+    const targetComp = this.computeAngleForTriplet(triplet, normalizedLandmarks, landmarks, angleCfg);
+    let currentAngle = targetComp.angle;
+    let readinessStatus = targetComp.readiness;
+    let isUpperBodyDeskActive = targetComp.isDeskActive;
+    let isDistalElbowMissing = targetComp.isElbowMissing;
 
     // Target zone parameters
     const startAngle = angleCfg.startAngleDeg;
@@ -436,6 +477,64 @@ export class RepStateMachine {
     const holdDurationSec = angleCfg.holdDurationSec || 1.0;
     const direction = angleCfg.direction || 'increase';
     const isDecreasing = direction === 'decrease';
+
+    // Biomechanical Anti-Cheat Guards
+    const isSitToStand = this.config.id === 'sit-to-stand';
+    const isHipAbduction = this.config.id === 'standing-hip-abduction' || this.config.id === 'standing-hip-abd';
+
+    // Check compensation rules with normalized landmarks
+    const compResult = this.compensationDetector.evaluate(
+      normalizedLandmarks,
+      currentAngle,
+      timestampMs
+    );
+    const activeWarnings = [...compResult.warnings];
+
+    let isHipAbductionCheating = false;
+    if (isHipAbduction && compResult.lateralTiltDeg > 10.0) {
+      isHipAbductionCheating = true;
+    }
+
+    // Wrong-Side Movement Guard for Unilateral Exercises
+    let isWrongSideMoving = false;
+    let oppositeAngle = 0;
+
+    if (sideInfo.isUnilateral && sideInfo.oppositeTriplet && !isHipAbductionCheating) {
+      const oppComp = this.computeAngleForTriplet(
+        sideInfo.oppositeTriplet,
+        normalizedLandmarks,
+        landmarks,
+        angleCfg
+      );
+      oppositeAngle = oppComp.angle;
+
+      // Check if opposite side is actively moving into exercise ROM
+      const isOppositeActive = isDecreasing
+        ? oppositeAngle < startAngle - tolerance - 10
+        : oppositeAngle > startAngle + tolerance + 10;
+
+      // Check if target side is still resting in start zone
+      const isTargetInactive = isDecreasing
+        ? currentAngle >= startAngle - tolerance - 5
+        : currentAngle <= startAngle + tolerance + 5;
+
+      if (isOppositeActive && isTargetInactive) {
+        isWrongSideMoving = true;
+      }
+    }
+
+    // Update telemetry metrics (only when moving the correct side)
+    if (!isWrongSideMoving) {
+      if (currentAngle > this.maxAngleAchievedDeg) {
+        this.maxAngleAchievedDeg = Math.round(currentAngle);
+      }
+      this.recordedAnglesSum += currentAngle;
+      this.recordedAnglesCount++;
+    }
+
+    // Safety Angle Cap Check
+    const safetyCap = this.config.safetyContraindications?.maxSafeAngleCapDeg || 175;
+    const isExceedingSafetyCap = currentAngle > safetyCap;
 
     // Calculate real-time smooth accuracy percent (0%–100%)
     let accuracyPercent = 0;
@@ -468,10 +567,6 @@ export class RepStateMachine {
       accuracyPercent = 0;
     }
 
-    // Biomechanical Anti-Cheat Guards
-    const isSitToStand = this.config.id === 'sit-to-stand';
-    const isHipAbduction = this.config.id === 'standing-hip-abduction' || this.config.id === 'standing-hip-abd';
-
     const curHipY = (normalizedLandmarks[23]?.y !== undefined && normalizedLandmarks[24]?.y !== undefined)
       ? (normalizedLandmarks[23].y + normalizedLandmarks[24].y) / 2
       : (normalizedLandmarks[23]?.y ?? normalizedLandmarks[24]?.y ?? null);
@@ -502,23 +597,13 @@ export class RepStateMachine {
     if (isSitToStand && isSitToStandCheating) {
       isInsideTargetZone = false;
     }
+    if (isWrongSideMoving) {
+      isInsideTargetZone = false;
+    }
 
     const isAtStartZone = isDecreasing
       ? currentAngle >= startAngle - tolerance - 5
       : Math.abs(currentAngle - startAngle) <= tolerance + 5;
-
-    // Check compensation rules with normalized landmarks
-    const compResult = this.compensationDetector.evaluate(
-      normalizedLandmarks,
-      currentAngle,
-      timestampMs
-    );
-    const activeWarnings = [...compResult.warnings];
-
-    let isHipAbductionCheating = false;
-    if (isHipAbduction && compResult.lateralTiltDeg > 10.0) {
-      isHipAbductionCheating = true;
-    }
 
     let coachingMessage = 'เริ่มขยับข้อต่อเข้าสู่มุมเป้าหมาย';
     let coachingMessageEn: string | undefined;
@@ -553,6 +638,25 @@ export class RepStateMachine {
         severity: 'error',
         currentValue: Math.round(compResult.lateralTiltDeg),
         thresholdValue: 10,
+      });
+    } else if (isWrongSideMoving) {
+      formRating = 'warning';
+      const wrongMsg = getWrongSideCoachingMessage(
+        effectiveSide as 'left' | 'right',
+        this.config.targetJoint
+      );
+      coachingMessage = wrongMsg.th;
+      coachingMessageEn = wrongMsg.en;
+      coachingMessageCn = wrongMsg.cn;
+      activeWarnings.unshift({
+        ruleId: 'wrong_side_movement',
+        type: 'wrong_side' as any,
+        messageTh: wrongMsg.th,
+        severity: 'warning',
+        currentValue: Math.round(oppositeAngle),
+        thresholdValue: isDecreasing
+          ? startAngle - tolerance - 10
+          : startAngle + tolerance + 10,
       });
     } else if (isDistalElbowMissing) {
       formRating = 'warning';
@@ -593,6 +697,10 @@ export class RepStateMachine {
     // STATE TRANSITIONS
     switch (this.phase) {
       case 'IDLE': {
+        if (isWrongSideMoving) {
+          // Block transitioning when wrong side is moving
+          break;
+        }
         if (isInsideTargetZone) {
           this.phase = 'HOLDING_TARGET';
           this.holdStartTimeMs = timestampMs;
@@ -615,6 +723,10 @@ export class RepStateMachine {
       }
 
       case 'MOVING_TO_TARGET': {
+        if (isWrongSideMoving) {
+          // Block advancing to HOLDING_TARGET when wrong side is moving
+          break;
+        }
         if (isInsideTargetZone) {
           this.phase = 'HOLDING_TARGET';
           this.holdStartTimeMs = timestampMs;
@@ -630,13 +742,23 @@ export class RepStateMachine {
       }
 
       case 'HOLDING_TARGET': {
-        if (!isInsideTargetZone) {
+        if (isWrongSideMoving || !isInsideTargetZone) {
           // Patient fell out of target zone before finishing hold
           this.holdStartTimeMs = null;
           this.holdPauseStartMs = null;
           this.totalHoldPausedDurationMs = 0;
           this.phase = 'MOVING_TO_TARGET';
-          coachingMessage = 'หลุดออกจากมุมเป้าหมาย ขยับกลับเข้าแถบสีเขียว';
+          if (isWrongSideMoving) {
+            const wrongMsg = getWrongSideCoachingMessage(
+              effectiveSide as 'left' | 'right',
+              this.config.targetJoint
+            );
+            coachingMessage = wrongMsg.th;
+            coachingMessageEn = wrongMsg.en;
+            coachingMessageCn = wrongMsg.cn;
+          } else {
+            coachingMessage = 'หลุดออกจากมุมเป้าหมาย ขยับกลับเข้าแถบสีเขียว';
+          }
         } else {
           // Pause hold timer if subject is occluded (exempt in Upper-Body Desk Mode)
           const isOccluded = !isUpperBodyDeskActive && (lockResult?.isOccluded ?? false);
@@ -743,7 +865,15 @@ export class RepStateMachine {
       });
     }
 
-    if (isExceedingSafetyCap) {
+    if (isWrongSideMoving) {
+      const wrongMsg = getWrongSideCoachingMessage(
+        effectiveSide as 'left' | 'right',
+        this.config.targetJoint
+      );
+      coachingMessage = wrongMsg.th;
+      coachingMessageEn = wrongMsg.en;
+      coachingMessageCn = wrongMsg.cn;
+    } else if (isExceedingSafetyCap) {
       coachingMessage = '⚠️ สูงเกินไปแล้ว ค่อยๆ ลดระดับลงเพื่อความปลอดภัย';
     } else if (compResult.isVelocityViolated) {
       coachingMessage = 'เคลื่อนไหวช้าลง ควบคุมจังหวะให้สม่ำเสมอ';
@@ -769,6 +899,7 @@ export class RepStateMachine {
       totalSets,
       isSetCompleted: this.isSetCompleted,
       isExerciseCompleted: this.isExerciseCompleted,
+      coachingMessage,
       coachingMessageTh: coachingMessage,
       activeWarnings,
       formRating,
@@ -912,6 +1043,7 @@ export class RepStateMachine {
       totalSets,
       isSetCompleted: this.isSetCompleted,
       isExerciseCompleted: this.isExerciseCompleted,
+      coachingMessage,
       coachingMessageTh: coachingMessage,
       activeWarnings: [],
       formRating,
@@ -1049,6 +1181,7 @@ export class RepStateMachine {
       totalSets,
       isSetCompleted: this.isSetCompleted,
       isExerciseCompleted: this.isExerciseCompleted,
+      coachingMessage,
       coachingMessageTh: coachingMessage,
       activeWarnings: [],
       formRating,
@@ -1074,8 +1207,9 @@ export class RepStateMachine {
     const targetReps = this.config.defaultPrescription?.repsPerSet || 10;
     const totalSets = this.config.defaultPrescription?.totalSets || 3;
 
-    let isRight = this.config.side !== 'left';
-    if (this.config.side === 'bilateral' && landmarks.length > 24) {
+    const effectiveSide = resolveTargetSide(this.config.side);
+    let isRight = effectiveSide !== 'left';
+    if (effectiveSide === 'bilateral' && landmarks.length > 24) {
       const leftScore = (landmarks[11]?.visibility ?? 0) + (landmarks[15]?.visibility ?? 0);
       const rightScore = (landmarks[12]?.visibility ?? 0) + (landmarks[16]?.visibility ?? 0);
       isRight = rightScore >= leftScore;
@@ -1267,6 +1401,7 @@ export class RepStateMachine {
       totalSets,
       isSetCompleted: this.isSetCompleted,
       isExerciseCompleted: this.isExerciseCompleted,
+      coachingMessage,
       coachingMessageTh: coachingMessage,
       coachingMessageEn: isUpperBodyMode
         ? result.cycleProgressRatio > 0
@@ -1415,6 +1550,7 @@ export class RepStateMachine {
       totalSets,
       isSetCompleted: this.isSetCompleted,
       isExerciseCompleted: this.isExerciseCompleted,
+      coachingMessage,
       coachingMessageTh: coachingMessage,
       coachingMessageEn,
       coachingMessageCn,
@@ -1538,6 +1674,7 @@ export class RepStateMachine {
       totalSets,
       isSetCompleted: this.isSetCompleted,
       isExerciseCompleted: this.isExerciseCompleted,
+      coachingMessage,
       coachingMessageTh: coachingMessage,
       activeWarnings,
       formRating: activeWarnings.length > 0 ? 'warning' : 'good',

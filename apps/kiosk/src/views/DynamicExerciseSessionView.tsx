@@ -328,7 +328,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [modelDelegate, setModelDelegate] = useState<'GPU' | 'CPU'>('GPU');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [activeSide, setActiveSide] = useState<BodySide>(resolvedConfig.side || 'right');
+  const initialSide: BodySide =
+    resolvedConfig.side && resolvedConfig.side !== 'bilateral'
+      ? resolvedConfig.side
+      : ((props.exercise as any)?.target_side as BodySide) ||
+        ((props.exercise as any)?.side as BodySide) ||
+        resolvedConfig.side ||
+        'right';
+  const [activeSide, setActiveSide] = useState<BodySide>(initialSide);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [lowPowerMode, setLowPowerMode] = useState<boolean>(false);
   const [showDebugHud, setShowDebugHud] = useState<boolean>(false);
@@ -501,7 +508,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const resolvedConfigRef = useRef(resolvedConfig);
   useEffect(() => {
     resolvedConfigRef.current = resolvedConfig;
-    stateMachineRef.current.updateConfig(resolvedConfig);
+    const currentSide = activeSideRef.current || resolvedConfig.side;
+    stateMachineRef.current.updateConfig({
+      ...resolvedConfig,
+      side: currentSide,
+    });
+    if (currentSide) {
+      stateMachineRef.current.setSide(currentSide);
+    }
   }, [resolvedConfig]);
 
   // 1. ตัดเสียงพูดทั้งหมดในหน้าสแกนท่าฝึก และล้างคิวเสียงค้างทันทีที่เข้าหน้า/เปลี่ยนท่า/ออกจากหน้า
@@ -747,8 +761,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const handleToggleSide = useCallback(
     (newSide: BodySide) => {
       setActiveSide(newSide);
+      activeSideRef.current = newSide;
+      if (stateMachineRef.current) {
+        stateMachineRef.current.setSide(newSide);
+      }
       speakThai(
-        newSide === 'right' ? 'ตรวจจับข้างขวา' : 'ตรวจจับข้างซ้าย',
+        newSide === 'right' ? 'ตรวจจับข้างขวา' : newSide === 'left' ? 'ตรวจจับข้างซ้าย' : 'ตรวจจับทั้งสองข้าง',
         'side_toggle',
         0
       );
@@ -1279,8 +1297,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             const currentActiveSide = activeSideRef.current || resolvedConfig.side || 'right';
             const isBilateral =
               currentActiveSide === 'bilateral' ||
-              resolvedConfig.side === 'bilateral' ||
-              Boolean((resolvedConfig as any).bilateral);
+              (currentActiveSide !== 'left' &&
+                currentActiveSide !== 'right' &&
+                (resolvedConfig.side === 'bilateral' || Boolean((resolvedConfig as any).bilateral)));
 
             // Active side dynamic stroke color from form rating
             const activeColor = strokeColor;
@@ -1727,12 +1746,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     resolvedConfig.targetJoint === 'knee' ||
     resolvedConfig.targetJoint === 'ankle' ||
     resolvedConfig.targetJoint === 'hip';
-  const isBilateral =
+  const isInherentlyBilateral =
     resolvedConfig.targetJoint === 'neck' ||
     resolvedConfig.evaluationMode === 'neck_tilt' ||
     resolvedConfig.evaluationMode === 'heel_raise' ||
     resolvedConfig.id === 'sit-to-stand' ||
-    resolvedConfig.id === 'wall-pushup';
+    resolvedConfig.id === 'wall-pushup' ||
+    resolvedConfig.id === 'scapular-retraction' ||
+    resolvedConfig.id === 'chin-tuck' ||
+    resolvedConfig.id === 'shoulder-shrug' ||
+    resolvedConfig.id === 'mini-squat';
+  const isBilateral =
+    activeSide === 'bilateral' ||
+    (activeSide !== 'left' &&
+      activeSide !== 'right' &&
+      (isInherentlyBilateral || resolvedConfig.side === 'bilateral'));
 
   const titleString =
     explicitTitle ||
@@ -2154,6 +2182,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               </div>
               <div>📷 กล้อง/AI: {hudState.fps} FPS | หลอดแสดงผล: {hudState.renderFps ?? 60} FPS</div>
               <div>🧠 โมเดล: {modelStatus} | พบ: {hudState.detectedPeople} คน</div>
+              <div>🦾 ข้างที่ตรวจจับ: {activeSide === 'left' ? 'ซ้าย (L)' : activeSide === 'right' ? 'ขวา (R)' : 'ทั้งสองข้าง (Bilateral)'}</div>
               <div>📐 มุม: {hudState.currentAngle}° | แม่นยำ: {hudState.accuracyPct}%</div>
               <div>🔄 เฟส: {hudState.repPhase} | นับ: {hudState.completedReps} ครั้ง</div>
             </div>
@@ -2645,7 +2674,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               </div>
 
               {/* 6. Manual Side Toggle (Staff Override) */}
-              {!isBilateral && (
+              {!isInherentlyBilateral && (
                 <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
                   <div>
                     <div className="font-bold text-white text-base">🦾 ปรับข้างตรวจจับ (Side Override)</div>
@@ -2655,22 +2684,32 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                     <button
                       type="button"
                       onClick={() => handleToggleSide('right')}
-                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'right'
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'right'
                         ? 'bg-teal-500 text-slate-950 shadow-sm'
                         : 'bg-slate-800 text-slate-400 hover:text-white'
                         }`}
                     >
-                      ขวา
+                      ขวา (R)
                     </button>
                     <button
                       type="button"
                       onClick={() => handleToggleSide('left')}
-                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'left'
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'left'
                         ? 'bg-teal-500 text-slate-950 shadow-sm'
                         : 'bg-slate-800 text-slate-400 hover:text-white'
                         }`}
                     >
-                      ซ้าย
+                      ซ้าย (L)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSide('bilateral')}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'bilateral'
+                        ? 'bg-teal-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                    >
+                      สองข้าง (Auto)
                     </button>
                   </div>
                 </div>

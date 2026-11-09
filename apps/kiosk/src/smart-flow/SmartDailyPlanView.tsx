@@ -337,7 +337,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       // Merge custom angle overrides, side, and sets/reps from prescription builder
       const mergedConfig: ExerciseDetectionConfig = {
         ...config,
-        side: (exerciseItem.side as any) || config.side,
+        side: (exerciseItem.side as any) || (exerciseItem.target_side as any) || (exerciseItem.prescribed_side as any) || config.side,
         angleMechanics: config.angleMechanics
           ? {
               ...config.angleMechanics,
