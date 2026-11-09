@@ -2019,7 +2019,18 @@ export class ApiClient {
                   const dist = typeof top.distance === 'number' ? top.distance : Math.max(0, 1 - calSim);
                   const patientObj = normalizePatientRecord(top);
 
-                  if (rawCos >= 0.85 && dist <= 0.38) {
+                  // Deduplicate margin check against runner-up if multiple returned
+                  let rpcRunnerUp = null;
+                  for (let ri = 1; ri < rpcData.length; ri++) {
+                    const rCand = rpcData[ri];
+                    if (rCand.id !== top.id && rCand.hn !== top.hn && rCand.first_name?.toLowerCase().trim() !== top.first_name?.toLowerCase().trim()) {
+                      rpcRunnerUp = rCand;
+                      break;
+                    }
+                  }
+                  const rpcMargin = rpcRunnerUp && typeof rpcRunnerUp.similarity === 'number' ? (rawCos - rpcRunnerUp.similarity) : 1.0;
+
+                  if (rawCos >= 0.85 && dist <= 0.38 && rpcMargin >= 0.08) {
                     return {
                       ok: true,
                       matched: true,
@@ -2030,7 +2041,7 @@ export class ApiClient {
                       distance: dist,
                       data: { matched: true, patient: patientObj },
                     } as T;
-                  } else if (rawCos >= 0.70 && rawCos < 0.85) {
+                  } else if ((rawCos >= 0.70 && rawCos < 0.85) || (rawCos >= 0.85 && rpcMargin < 0.08)) {
                     return {
                       ok: true,
                       matched: false,
@@ -2186,8 +2197,21 @@ export class ApiClient {
             }
           }
 
-          // Guard 2: Multi-User Database Margin Verification
-          const margin = top2 ? (top1.rawCos - top2.rawCos) : 1.0;
+          // Guard 2: Multi-User Database Margin Verification with Deduplication of same-person profiles
+          let runnerUpCand: ScoredPatient | null = null;
+          for (let i = 1; i < scoredPatients.length; i++) {
+            const cand = scoredPatients[i];
+            const isDuplicateOfTop1 =
+              cand.patient?.id === top1.patient?.id ||
+              cand.patient?.hn === top1.patient?.hn ||
+              (cand.patient?.first_name && cand.patient.first_name.toLowerCase().trim() === top1.patient?.first_name?.toLowerCase().trim());
+            if (!isDuplicateOfTop1) {
+              runnerUpCand = cand;
+              break;
+            }
+          }
+
+          const margin = runnerUpCand ? (top1.rawCos - runnerUpCand.rawCos) : 1.0;
 
           // Case A: High Match (genuine match strictly requires rawCos >= 0.85, dist <= 0.38, and margin >= 0.08)
           if (normalizedMatch && top1.rawCos >= 0.85 && top1.dist <= 0.38) {
