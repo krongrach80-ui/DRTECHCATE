@@ -6390,11 +6390,37 @@ export class ApiClient {
     onMessage: (event: { event: string; data: unknown }) => void,
     onError?: (err: unknown) => void
   ): () => void {
-    const eventSource = new EventSource(`${this.baseUrl}/events`, {
-      withCredentials: true,
-    });
+    if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
+      return () => {};
+    }
+
+    let isClosed = false;
+    let errorCount = 0;
+    let eventSource: EventSource | null = null;
+
+    try {
+      eventSource = new EventSource(`${this.baseUrl}/events`, {
+        withCredentials: true,
+      });
+    } catch {
+      return () => {};
+    }
+
+    const closeConnection = () => {
+      if (isClosed) return;
+      isClosed = true;
+      if (eventSource) {
+        eventSource.onerror = null;
+        eventSource.onmessage = null;
+        try {
+          eventSource.close();
+        } catch {}
+        eventSource = null;
+      }
+    };
 
     eventSource.onmessage = (msg) => {
+      errorCount = 0;
       try {
         const parsed: unknown = JSON.parse(msg.data);
         onMessage({ event: 'message', data: parsed });
@@ -6417,7 +6443,8 @@ export class ApiClient {
       'audit_log',
     ];
     listeners.forEach((eventName) => {
-      eventSource.addEventListener(eventName, (e: Event) => {
+      eventSource?.addEventListener(eventName, (e: Event) => {
+        errorCount = 0;
         const me = e as MessageEvent;
         try {
           const parsed: unknown = JSON.parse(me.data);
@@ -6428,12 +6455,22 @@ export class ApiClient {
       });
     });
 
-    if (onError) {
-      eventSource.onerror = onError;
-    }
+    eventSource.onerror = (err) => {
+      errorCount++;
+      if (onError) {
+        try {
+          onError(err);
+        } catch {}
+      }
+      // Circuit breaker: after 3 consecutive failures, close the EventSource connection
+      // to eliminate infinite reconnection loops and thousands of console errors in static/Cloudflare deployments
+      if (errorCount >= 3) {
+        closeConnection();
+      }
+    };
 
     return () => {
-      eventSource.close();
+      closeConnection();
     };
   }
 

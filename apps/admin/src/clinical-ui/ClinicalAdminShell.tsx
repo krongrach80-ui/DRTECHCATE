@@ -102,6 +102,12 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   }, [currentUser]);
 
   useEffect(() => {
+    // When Physical Card Game modal is open, pause background polling and SSE
+    // to give full CPU resources to the real-time hand vision detector and eliminate lag
+    if (isPhysicalCardGameOpen) {
+      return;
+    }
+
     if (initialStaffCalls) {
       const seen = new Set<string>();
       const deduped = initialStaffCalls.filter((c) => {
@@ -133,7 +139,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
       unsubSse?.();
       clearInterval(syncInterval);
     };
-  }, [initialStaffCalls, fetchCalls]);
+  }, [initialStaffCalls, fetchCalls, isPhysicalCardGameOpen]);
 
   // Tab change (Instant, zero fake setTimeout per Rule 2.2)
   const handleSelectTab = (tab: ClinicalMenuId) => {

@@ -33,6 +33,7 @@ import {
   MinigameFrameResult,
   evaluateMinigameFrame,
   drawAllMinigameHands,
+  HandLandmarkPoint,
 } from './HandGestureVerifier.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
@@ -48,6 +49,11 @@ import {
   Camera,
   AlertTriangle,
 } from 'lucide-react';
+
+// Module-level Singleton cache for MediaPipe HandLandmarker to avoid re-allocating 7.46 MB model
+let cachedFileset: any = null;
+let cachedHandLandmarker: any = null;
+let landmarkerInitPromise: Promise<any> | null = null;
 
 export const QUESTIONS_PER_ROUND = 10;
 export const MAX_CROP_RATIO = 0.15; // ขีดจำกัดการครอปภาพสูงสุด 15% เพื่อให้เห็นศีรษะและมือครบถ้วน
@@ -119,13 +125,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
 
-  // Animated Dynamic Popup States
-  const [activeHandState, setActiveHandState] = useState<{
-    anatomicalSide: 'left' | 'right';
-    answerSide: 'yes' | 'no';
-  } | null>(null);
-  const [isBothHandsWarning, setIsBothHandsWarning] = useState<boolean>(false);
-  const [isNearEdge, setIsNearEdge] = useState<boolean>(false);
+  // Animated Dynamic Popup States (Only state changes that require high-level UI updates)
   const [confirmedAnswer, setConfirmedAnswer] = useState<'yes' | 'no' | null>(null);
   const [showIntroBanner, setShowIntroBanner] = useState<boolean>(true);
 
@@ -143,8 +143,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   }, [currentIndex]);
 
   // High-performance DOM Refs (Zero React re-renders during motion detection)
+  const popupContainerRef = useRef<HTMLDivElement | null>(null);
+  const popupTitleRef = useRef<HTMLSpanElement | null>(null);
   const popupProgressBarRef = useRef<HTMLDivElement | null>(null);
   const popupProgressPercentRef = useRef<HTMLSpanElement | null>(null);
+  const warningContainerRef = useRef<HTMLDivElement | null>(null);
+  const nearEdgeContainerRef = useRef<HTMLDivElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Camera & Real Hand Landmarker Detection
@@ -388,11 +392,19 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         setAnswerState('idle');
         setSelectedSide(null);
         setConfirmedAnswer(null);
-        setActiveHandState(null);
-        setIsBothHandsWarning(false);
-        setIsNearEdge(false);
         if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
         if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+        if (popupContainerRef.current) {
+          popupContainerRef.current.style.opacity = '0';
+          popupContainerRef.current.style.pointerEvents = 'none';
+        }
+        if (warningContainerRef.current) {
+          warningContainerRef.current.style.opacity = '0';
+          warningContainerRef.current.style.pointerEvents = 'none';
+        }
+        if (nearEdgeContainerRef.current) {
+          nearEdgeContainerRef.current.style.opacity = '0';
+        }
 
         if (currentIndex + 1 < filteredList.length) {
           const nextIdx = currentIndex + 1;
@@ -434,12 +446,32 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     handleAnswerRef.current = handleAnswer;
   }, [handleAnswer]);
 
-  // 1. Initialize MediaPipe HandLandmarker with 2-Hand Detection (GPU + CPU fallback)
+  // 1. Initialize MediaPipe HandLandmarker with Singleton Reuse (GPU + CPU fallback)
   useEffect(() => {
     let isCancelled = false;
 
     async function initLandmarker() {
-      try {
+      // 1. Check singleton reuse (0 ms reload when reopening modal)
+      if (cachedHandLandmarker) {
+        handLandmarkerRef.current = cachedHandLandmarker;
+        setIsModelLoading(false);
+        return;
+      }
+
+      if (landmarkerInitPromise) {
+        try {
+          const lm = await landmarkerInitPromise;
+          if (!isCancelled && lm) {
+            handLandmarkerRef.current = lm;
+            setIsModelLoading(false);
+            return;
+          }
+        } catch {
+          // Fall through to retry init
+        }
+      }
+
+      landmarkerInitPromise = (async () => {
         setIsModelLoading(true);
         setModelError(null);
         const vision = await import('@mediapipe/tasks-vision');
@@ -462,14 +494,18 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
           'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
         ];
 
-        let fileset: any = null;
-        for (const wSource of wasmSources) {
-          if (isCancelled) return;
-          try {
-            fileset = await FilesetResolver.forVisionTasks(wSource);
-            if (fileset) break;
-          } catch {
-            // Try next wasm source
+        let fileset = cachedFileset;
+        if (!fileset) {
+          for (const wSource of wasmSources) {
+            try {
+              fileset = await FilesetResolver.forVisionTasks(wSource);
+              if (fileset) {
+                cachedFileset = fileset;
+                break;
+              }
+            } catch {
+              // Try next wasm source
+            }
           }
         }
 
@@ -477,13 +513,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
           throw new Error('ไม่สามารถโหลดโมดูล WASM ของ MediaPipe ได้จากทุกแหล่ง');
         }
 
-        if (isCancelled) return;
-
         let landmarker: any = null;
         let lastError: Error | null = null;
 
         for (const mSource of modelSources) {
-          if (isCancelled) return;
           // 1. Try GPU delegate with numHands = 2, confidence 0.5
           try {
             landmarker = await HandLandmarker.createFromOptions(fileset, {
@@ -523,25 +556,32 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
           throw lastError || new Error('ไม่สามารถโหลดโมเดล hand_landmarker.task ได้');
         }
 
-        if (!isCancelled) {
-          handLandmarkerRef.current = landmarker;
+        // Warm-up inference once so first frame doesn't stutter or freeze
+        try {
+          const warmUpCanvas = document.createElement('canvas');
+          warmUpCanvas.width = 160;
+          warmUpCanvas.height = 120;
+          const now = performance.now();
+          lastTimestampRef.current = now;
+          landmarker.detectForVideo(warmUpCanvas, now);
+        } catch {
+          // Warm-up non-blocking
+        }
+
+        cachedHandLandmarker = landmarker;
+        return landmarker;
+      })();
+
+      try {
+        const lm = await landmarkerInitPromise;
+        if (!isCancelled && lm) {
+          handLandmarkerRef.current = lm;
           setIsModelLoading(false);
-          // Warm-up inference once so first frame doesn't stutter or freeze
-          try {
-            const warmUpCanvas = document.createElement('canvas');
-            warmUpCanvas.width = 160;
-            warmUpCanvas.height = 120;
-            const now = performance.now();
-            lastTimestampRef.current = now;
-            landmarker.detectForVideo(warmUpCanvas, now);
-          } catch {
-            // Warm-up non-blocking
-          }
-        } else {
-          landmarker?.close();
         }
       } catch (err: any) {
         console.warn('MediaPipe HandLandmarker init error:', err);
+        cachedHandLandmarker = null;
+        landmarkerInitPromise = null;
         if (!isCancelled) {
           setIsModelLoading(false);
           setModelError(err?.message || 'โมเดลตรวจจับมือขัดข้อง แตะปุ่มด้านล่างเพื่อตอบได้ทันที');
@@ -553,22 +593,34 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
     return () => {
       isCancelled = true;
-      if (handLandmarkerRef.current) {
-        try {
-          handLandmarkerRef.current.close();
-        } catch {
-          // cleanup safe
-        }
-        handLandmarkerRef.current = null;
-      }
+      // Do not dispose cached singleton to enable instant 0ms reopening
+      handLandmarkerRef.current = null;
     };
   }, []);
 
-  // 2. Two-Hand Detection Loop: 480px Downscale, ~20 FPS Throttle, Anatomical Left/Right, Inverted Mapping & 600ms Dwell
+  // 2. High-Performance Decoupled Vision Loop:
+  // - 60 FPS Canvas Overlay Render with Landmark Interpolation (Lerp)
+  // - ~25 FPS Throttled Inference Cycle with Monotonic Timestamps
+  // - Persistent DOM Updates (Zero React State Thrashing, Zero 0% Stuck)
   useEffect(() => {
-    if (!cameraActive || isGameOver || answerState !== 'idle') {
+    const resetProgressDom = () => {
       if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
       if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+      if (popupContainerRef.current) {
+        popupContainerRef.current.style.opacity = '0';
+        popupContainerRef.current.style.pointerEvents = 'none';
+      }
+      if (warningContainerRef.current) {
+        warningContainerRef.current.style.opacity = '0';
+        warningContainerRef.current.style.pointerEvents = 'none';
+      }
+      if (nearEdgeContainerRef.current) {
+        nearEdgeContainerRef.current.style.opacity = '0';
+      }
+    };
+
+    if (!cameraActive || isGameOver || answerState !== 'idle') {
+      resetProgressDom();
       if (overlayCanvasRef.current) {
         const ctx = overlayCanvasRef.current.getContext('2d');
         if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
@@ -578,9 +630,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
     let animFrame: number;
     let lastDetectTime = 0;
-    const TARGET_INTERVAL_MS = 50; // ~20 FPS throttle
+    const TARGET_INTERVAL_MS = 40; // ~25 FPS detection rate
     const HOLD_DWELL_MS = 600; // 0.6 seconds continuous hold requirement
     const GRACE_PERIOD_MS = 200; // 200ms grace period tolerance for frame drops
+    const LERP_FACTOR = 0.55; // Quick responsive smoothing for 60 FPS overlay
 
     let activeSide: 'left' | 'right' | null = null;
     let sideHoldStart = 0;
@@ -588,39 +641,37 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     let handNeutralFrames = 0;
     let candidateSide: 'left' | 'right' | null = null;
     let candidateCount = 0;
+    let currentDwellProgress = 0;
+    let isBothHandsWarningActive = false;
 
-    const resetProgressDom = () => {
-      if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
-      if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
-    };
+    // Smoothed hands for 60 FPS rendering
+    let targetHands: MinigameHandEvaluation[] = [];
+    let targetActiveHand: MinigameHandEvaluation | null = null;
+    let smoothedHands: MinigameHandEvaluation[] = [];
 
-    const detectHands = (timestamp: number) => {
+    const frameLoop = (timestamp: number) => {
       const video = videoRef.current;
       const landmarker = handLandmarkerRef.current;
       const canvas = overlayCanvasRef.current;
 
-      if (
-        video &&
-        landmarker &&
-        canvas &&
-        video.readyState >= 2 &&
-        !video.paused &&
-        timestamp - lastDetectTime >= TARGET_INTERVAL_MS
-      ) {
+      if (!video || video.readyState < 2 || video.paused || !canvas) {
+        animFrame = requestAnimationFrame(frameLoop);
+        return;
+      }
+
+      // Auto-fit overlay canvas dimensions to video feed (maintaining 100% adaptive camera layout)
+      const vw = video.videoWidth || 1280;
+      const vh = video.videoHeight || 720;
+      if (canvas.width !== vw || canvas.height !== vh) {
+        canvas.width = vw;
+        canvas.height = vh;
+      }
+
+      // -------------------------------------------------------------
+      // PART A: INFERENCE CYCLE (~25 FPS Throttle, Decoupled from Render)
+      // -------------------------------------------------------------
+      if (landmarker && timestamp - lastDetectTime >= TARGET_INTERVAL_MS) {
         lastDetectTime = timestamp;
-
-        // Auto-fit overlay canvas dimensions to video feed
-        const vw = video.videoWidth || 640;
-        const vh = video.videoHeight || 480;
-        if (canvas.width !== vw || canvas.height !== vh) {
-          canvas.width = vw;
-          canvas.height = vh;
-        }
-
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
 
         try {
           // Downscale input frame to 480px width canvas to keep ML inference smooth
@@ -651,13 +702,15 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
           // Multi-hand evaluation using anatomical left/right and inverted mapping
           const frameResult: MinigameFrameResult = evaluateMinigameFrame(rawHands, handednessList, {
             isMirrored,
-            minConfidence: 0.5,
-            maxYThreshold: 0.82,
+            minConfidence: 0.45,
+            maxYThreshold: 0.78,
             raisedTipMargin: 0.03,
           });
 
-          // Edge detection state
-          setIsNearEdge((prev) => (prev !== frameResult.hasNearEdgeHand ? frameResult.hasNearEdgeHand : prev));
+          // Edge detection state (Direct DOM)
+          if (nearEdgeContainerRef.current) {
+            nearEdgeContainerRef.current.style.opacity = frameResult.hasNearEdgeHand ? '1' : '0';
+          }
 
           // 1. Bilateral Ambiguity Check: Both hands raised simultaneously
           if (frameResult.isBothHandsRaised) {
@@ -665,15 +718,26 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             candidateSide = null;
             candidateCount = 0;
             sideHoldStart = 0;
-            resetProgressDom();
-            setIsBothHandsWarning(true);
-            setActiveHandState(null);
+            currentDwellProgress = 0;
+            isBothHandsWarningActive = true;
 
-            if (ctx) {
-              drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, true, isMirrored);
+            // Direct DOM updates
+            if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+            if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+            if (popupContainerRef.current) {
+              popupContainerRef.current.style.opacity = '0';
+              popupContainerRef.current.style.pointerEvents = 'none';
+            }
+            if (warningContainerRef.current) {
+              warningContainerRef.current.style.opacity = '1';
+              warningContainerRef.current.style.pointerEvents = 'auto';
             }
           } else {
-            setIsBothHandsWarning(false);
+            isBothHandsWarningActive = false;
+            if (warningContainerRef.current) {
+              warningContainerRef.current.style.opacity = '0';
+              warningContainerRef.current.style.pointerEvents = 'none';
+            }
 
             // 2. Neutral Hand Reset Gate Check: Must lower hands between questions
             if (neutralGateRef.current) {
@@ -692,11 +756,13 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               candidateSide = null;
               candidateCount = 0;
               sideHoldStart = 0;
-              resetProgressDom();
-              setActiveHandState(null);
+              currentDwellProgress = 0;
 
-              if (ctx) {
-                drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false, isMirrored);
+              if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+              if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+              if (popupContainerRef.current) {
+                popupContainerRef.current.style.opacity = '0';
+                popupContainerRef.current.style.pointerEvents = 'none';
               }
             } else if (frameResult.activeHand) {
               // 3. One hand raised
@@ -706,8 +772,8 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               if (activeSide === detectedSide) {
                 const elapsed = monotonicTimestamp - sideHoldStart;
-                const progress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
-                const percentStr = `${Math.round(progress * 100)}%`;
+                currentDwellProgress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
+                const percentStr = `${Math.round(currentDwellProgress * 100)}%`;
 
                 if (popupProgressBarRef.current) {
                   popupProgressBarRef.current.style.width = percentStr;
@@ -716,19 +782,45 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                   popupProgressPercentRef.current.textContent = percentStr;
                 }
 
-                if (ctx) {
-                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, currentHand, progress, false, isMirrored);
+                // Show popup container directly
+                if (popupContainerRef.current) {
+                  popupContainerRef.current.style.opacity = '1';
+                  popupContainerRef.current.style.pointerEvents = 'auto';
+                  const isScreenRight = isMirrored
+                    ? detectedSide === 'right'
+                    : detectedSide === 'left';
+                  popupContainerRef.current.className = `absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-100 ${
+                    isScreenRight
+                      ? 'top-10 sm:top-11 right-2.5 sm:right-3'
+                      : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
+                  } ${
+                    currentHand.answerSide === 'yes'
+                      ? 'bg-emerald-600/95 border-emerald-300'
+                      : 'bg-orange-600/95 border-orange-300'
+                  }`;
+                }
+                if (popupTitleRef.current) {
+                  popupTitleRef.current.textContent =
+                    currentHand.answerSide === 'yes'
+                      ? t('card_right_hand_yes')
+                      : t('card_left_hand_no');
                 }
 
-                if (progress >= 1.0) {
+                if (currentDwellProgress >= 1.0) {
                   const finalAnswer = currentHand.answerSide; // 'yes' or 'no'
                   activeSide = null;
                   candidateSide = null;
                   candidateCount = 0;
                   sideHoldStart = 0;
+                  currentDwellProgress = 0;
                   neutralGateRef.current = true;
                   handNeutralFrames = 0;
-                  resetProgressDom();
+                  if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+                  if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+                  if (popupContainerRef.current) {
+                    popupContainerRef.current.style.opacity = '0';
+                    popupContainerRef.current.style.pointerEvents = 'none';
+                  }
                   handleAnswerRef.current(finalAnswer);
                 }
               } else {
@@ -739,62 +831,139 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                     activeSide = detectedSide;
                     sideHoldStart = monotonicTimestamp;
                     candidateCount = 0;
-                    resetProgressDom();
-                    setActiveHandState({
-                      anatomicalSide: activeSide,
-                      answerSide: currentHand.answerSide,
-                    });
+                    currentDwellProgress = 0.05; // เริ่มต้นที่ 5% ทันที ไม่ค้างที่ 0%
+                    if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '5%';
+                    if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '5%';
+                    if (popupContainerRef.current) {
+                      popupContainerRef.current.style.opacity = '1';
+                      popupContainerRef.current.style.pointerEvents = 'auto';
+                      const isScreenRight = isMirrored
+                        ? activeSide === 'right'
+                        : activeSide === 'left';
+                      popupContainerRef.current.className = `absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-100 ${
+                        isScreenRight
+                          ? 'top-10 sm:top-11 right-2.5 sm:right-3'
+                          : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
+                      } ${
+                        currentHand.answerSide === 'yes'
+                          ? 'bg-emerald-600/95 border-emerald-300'
+                          : 'bg-orange-600/95 border-orange-300'
+                      }`;
+                    }
+                    if (popupTitleRef.current) {
+                      popupTitleRef.current.textContent =
+                        currentHand.answerSide === 'yes'
+                          ? t('card_right_hand_yes')
+                          : t('card_left_hand_no');
+                    }
                   }
                 } else {
                   candidateSide = detectedSide;
                   candidateCount = 1;
                 }
-
-                if (ctx) {
-                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, currentHand, 0, false, isMirrored);
-                }
               }
             } else {
               // 4. No hand raised (hands neutral or absent)
               if (activeSide && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
-                // Grace period tolerance: hold active state for brief frame drops
-                if (ctx) {
-                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false, isMirrored);
+                // Grace period tolerance: keep hold dwell timing alive during brief frame drops
+                const elapsed = monotonicTimestamp - sideHoldStart;
+                currentDwellProgress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
+                const percentStr = `${Math.round(currentDwellProgress * 100)}%`;
+                if (popupProgressBarRef.current) {
+                  popupProgressBarRef.current.style.width = percentStr;
+                }
+                if (popupProgressPercentRef.current) {
+                  popupProgressPercentRef.current.textContent = percentStr;
                 }
               } else {
                 activeSide = null;
                 candidateSide = null;
                 candidateCount = 0;
                 sideHoldStart = 0;
-                resetProgressDom();
-                setActiveHandState(null);
-
-                if (ctx) {
-                  drawAllMinigameHands(ctx, frameResult.allHands, canvas.width, canvas.height, null, 0, false, isMirrored);
+                currentDwellProgress = 0;
+                if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+                if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+                if (popupContainerRef.current) {
+                  popupContainerRef.current.style.opacity = '0';
+                  popupContainerRef.current.style.pointerEvents = 'none';
                 }
               }
             }
           }
+
+          // Target hands for 60 FPS interpolation
+          targetHands = frameResult.allHands;
+          targetActiveHand = frameResult.activeHand;
         } catch {
-          // Graceful skip on frame error
+          // Frame skip safe
         }
       }
 
-      animFrame = requestAnimationFrame(detectHands);
+      // -------------------------------------------------------------
+      // PART B: 60 FPS CANVAS OVERLAY RENDER WITH LERP INTERPOLATION
+      // -------------------------------------------------------------
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Smooth landmarks between prev position and target position
+        if (targetHands.length > 0) {
+          smoothedHands = targetHands.map((tgt) => {
+            const prev = smoothedHands.find((p) => p.anatomicalSide === tgt.anatomicalSide);
+            if (!prev || !prev.landmarks || prev.landmarks.length < 21) {
+              return tgt;
+            }
+            const interpolatedLandmarks: HandLandmarkPoint[] = tgt.landmarks.map((pt, idx) => {
+              const prevPt = prev.landmarks[idx];
+              if (!prevPt) return pt;
+              return {
+                x: prevPt.x + (pt.x - prevPt.x) * LERP_FACTOR,
+                y: prevPt.y + (pt.y - prevPt.y) * LERP_FACTOR,
+                z: typeof pt.z === 'number' && typeof prevPt.z === 'number'
+                  ? prevPt.z + (pt.z - prevPt.z) * LERP_FACTOR
+                  : pt.z,
+              };
+            });
+            return {
+              ...tgt,
+              landmarks: interpolatedLandmarks,
+            };
+          });
+
+          // Draw all smoothed hands onto overlay canvas at 60 FPS
+          const activeHandToDraw = targetActiveHand
+            ? smoothedHands.find((h) => h.anatomicalSide === targetActiveHand?.anatomicalSide) || targetActiveHand
+            : null;
+
+          drawAllMinigameHands(
+            ctx,
+            smoothedHands,
+            canvas.width,
+            canvas.height,
+            activeHandToDraw,
+            currentDwellProgress,
+            isBothHandsWarningActive,
+            isMirrored
+          );
+        } else {
+          smoothedHands = [];
+        }
+      }
+
+      animFrame = requestAnimationFrame(frameLoop);
     };
 
-    animFrame = requestAnimationFrame(detectHands);
+    animFrame = requestAnimationFrame(frameLoop);
 
     return () => {
       cancelAnimationFrame(animFrame);
-      if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
-      if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+      resetProgressDom();
       if (overlayCanvasRef.current) {
         const ctx = overlayCanvasRef.current.getContext('2d');
         if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
       }
     };
-  }, [cameraActive, isGameOver, answerState, isMirrored]);
+  }, [cameraActive, isGameOver, answerState, isMirrored, t]);
 
   const handleRestart = () => {
     try {
@@ -806,24 +975,23 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     setAnswerState('idle');
     setSelectedSide(null);
     setConfirmedAnswer(null);
-    setActiveHandState(null);
-    setIsBothHandsWarning(false);
-    setIsNearEdge(false);
     setShowIntroBanner(true);
     setIsGameOver(false);
     setShowExplanation(false);
     if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
     if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+    if (popupContainerRef.current) {
+      popupContainerRef.current.style.opacity = '0';
+      popupContainerRef.current.style.pointerEvents = 'none';
+    }
+    if (warningContainerRef.current) {
+      warningContainerRef.current.style.opacity = '0';
+      warningContainerRef.current.style.pointerEvents = 'none';
+    }
+    if (nearEdgeContainerRef.current) {
+      nearEdgeContainerRef.current.style.opacity = '0';
+    }
   };
-
-  // Determine screen-side of the active hand popup
-  // Mirrored: right hand appears on screen-right. Non-mirrored: right hand appears on screen-left.
-  const isScreenRight = Boolean(
-    activeHandState &&
-    (isMirrored
-      ? activeHandState.anatomicalSide === 'right'
-      : activeHandState.anatomicalSide === 'left')
-  );
 
   // Centralized CSS variables for single-line hand popups
   const popupCssVars: React.CSSProperties = {
@@ -1040,51 +1208,41 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 </div>
               )}
 
-              {/* 2. Both Hands Warning Banner (Top Center, Single-line) */}
-              {!confirmedAnswer && isBothHandsWarning && (
-                <div className="absolute top-2.5 sm:top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-2 rounded-full bg-rose-600/95 text-white border border-rose-300 shadow-xl flex items-center gap-2 animate-bounce max-w-[90%] whitespace-nowrap h-[42px] sm:h-[44px]">
-                  <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0" />
-                  <span className="text-[20px] sm:text-[21px] font-black leading-none">
-                    {t('card_both_hands_warning')}
-                  </span>
-                </div>
-              )}
+              {/* 2. Both Hands Warning Banner (Always Mounted DOM, Controlled via Ref) */}
+              <div
+                ref={warningContainerRef}
+                className="absolute top-2.5 sm:top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-2 rounded-full bg-rose-600/95 text-white border border-rose-300 shadow-xl flex items-center gap-2 max-w-[90%] whitespace-nowrap h-[42px] sm:h-[44px] transition-all duration-150 opacity-0 pointer-events-none"
+              >
+                <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0" />
+                <span className="text-[20px] sm:text-[21px] font-black leading-none">
+                  {t('card_both_hands_warning')}
+                </span>
+              </div>
 
-              {/* 3. Active Hand Raised Dwell Progress Popup (Top Corner on side of raised hand, 10-12px away, clear of mirror button) */}
-              {!confirmedAnswer && !isBothHandsWarning && activeHandState && (
-                <div
-                  className={`absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] animate-fade-in whitespace-nowrap ${
-                    isScreenRight
-                      ? 'top-10 sm:top-11 right-2.5 sm:right-3'
-                      : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
-                  } ${
-                    activeHandState.answerSide === 'yes'
-                      ? 'bg-emerald-600/95 border-emerald-300'
-                      : 'bg-orange-600/95 border-orange-300'
-                  }`}
-                >
-                  <Hand className="w-5 h-5 text-white shrink-0 animate-pulse" />
-                  <span className="text-[20px] sm:text-[21px] font-black tracking-wide leading-none">
-                    {activeHandState.answerSide === 'yes'
-                      ? t('card_right_hand_yes')
-                      : t('card_left_hand_no')}
-                  </span>
-                  {/* 4px Progress Bar */}
-                  <div className="w-12 sm:w-16 bg-black/30 rounded-full h-1 overflow-hidden border border-white/40 shrink-0">
-                    <div
-                      ref={popupProgressBarRef}
-                      className="h-full bg-white rounded-full transition-[width] duration-75"
-                      style={{ width: '0%' }}
-                    />
-                  </div>
-                  <span ref={popupProgressPercentRef} className="text-sm sm:text-[15px] font-black font-mono shrink-0">
-                    0%
-                  </span>
+              {/* 3. Active Hand Raised Dwell Progress Popup (Always Mounted DOM, Zero 0% Stuck) */}
+              <div
+                ref={popupContainerRef}
+                className="absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-0 pointer-events-none top-2.5 sm:top-3 left-2.5 sm:left-3 bg-emerald-600/95 border-emerald-300"
+              >
+                <Hand className="w-5 h-5 text-white shrink-0 animate-pulse" />
+                <span ref={popupTitleRef} className="text-[20px] sm:text-[21px] font-black tracking-wide leading-none">
+                  {t('card_right_hand_yes')}
+                </span>
+                {/* 4px Progress Bar */}
+                <div className="w-12 sm:w-16 bg-black/30 rounded-full h-1 overflow-hidden border border-white/40 shrink-0">
+                  <div
+                    ref={popupProgressBarRef}
+                    className="h-full bg-white rounded-full transition-[width] duration-75"
+                    style={{ width: '0%' }}
+                  />
                 </div>
-              )}
+                <span ref={popupProgressPercentRef} className="text-sm sm:text-[15px] font-black font-mono shrink-0">
+                  0%
+                </span>
+              </div>
 
               {/* 4. Question 1 Intro Banner (3 seconds, Single-line, Top Center) */}
-              {!confirmedAnswer && !isBothHandsWarning && !activeHandState && showIntroBanner && (
+              {!confirmedAnswer && showIntroBanner && (
                 <div className="absolute top-2.5 sm:top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-2 sm:px-5 sm:py-2 rounded-full bg-white/95 border border-emerald-400 shadow-xl flex items-center gap-2 animate-fade-in whitespace-nowrap h-[42px] sm:h-[44px]">
                   <span className="text-[20px] sm:text-[21px] font-extrabold text-[#134E43] leading-none">
                     {t('card_intro_popup_hint')}
@@ -1093,12 +1251,13 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               )}
 
               {/* Near Edge Warning (Floating at bottom-center) */}
-              {!confirmedAnswer && !isBothHandsWarning && isNearEdge && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-25 px-4 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-lg pointer-events-none animate-pulse">
-                  <AlertTriangle className="w-4 h-4 text-amber-950 shrink-0" />
-                  <span>{t('card_move_to_center')}</span>
-                </div>
-              )}
+              <div
+                ref={nearEdgeContainerRef}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-25 px-4 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-lg pointer-events-none transition-opacity duration-150 opacity-0"
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-950 shrink-0" />
+                <span>{t('card_move_to_center')}</span>
+              </div>
             </div>
 
             {/* Compact Touch Fallback Buttons under camera */}

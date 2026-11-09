@@ -555,7 +555,7 @@ export function evaluateMinigameFrame(
   const {
     isMirrored = true,
     minConfidence = 0.45,
-    maxYThreshold = 0.82,
+    maxYThreshold = 0.78, // ระดับอกที่สบายต่อผู้ป่วยสูงอายุ
     raisedTipMargin = 0.03,
   } = options;
 
@@ -617,13 +617,24 @@ export function evaluateMinigameFrame(
       anatomicalSide = mirroredX > 0.5 ? 'right' : 'left';
     }
 
-    // Spatial consistency guard on mirrored screen:
-    if (mirroredX > 0.68) {
-      anatomicalSide = 'right';
-    } else if (mirroredX < 0.32) {
-      anatomicalSide = 'left';
+    // Spatial consistency guard:
+    // In mirrored mode (scale-x-[-1]): player's right hand appears on Screen Right (mirroredX > 0.65)
+    // In non-mirrored mode: player's right hand appears on Screen Left (middleMcp.x < 0.35)
+    if (isMirrored) {
+      if (mirroredX > 0.65) {
+        anatomicalSide = 'right';
+      } else if (mirroredX < 0.35) {
+        anatomicalSide = 'left';
+      }
+    } else {
+      if (middleMcp.x < 0.35) {
+        anatomicalSide = 'right';
+      } else if (middleMcp.x > 0.65) {
+        anatomicalSide = 'left';
+      }
     }
 
+    // Canonical mapping: Right hand = 'yes' (ใช่), Left hand = 'no' (ไม่)
     const answerSide = HAND_ANSWER_MAP[anatomicalSide];
 
     // Extended fingers check
@@ -644,7 +655,7 @@ export function evaluateMinigameFrame(
 
     // Raised hand check:
     const isUpward = middleTip.y < wrist.y - raisedTipMargin || indexTip.y < wrist.y - raisedTipMargin;
-    const isAboveChest = middleMcp.y <= maxYThreshold && wrist.y <= 0.92;
+    const isAboveChest = middleMcp.y <= maxYThreshold && wrist.y <= 0.88;
     const isOpen = extendedFingers >= 2;
     const isConfOk = confidence >= minConfidence;
 
@@ -681,13 +692,31 @@ export function evaluateMinigameFrame(
   const raisedHands = primaryHands.filter((h) => h.isRaised);
   const hasNearEdgeHand = primaryHands.some((h) => h.isNearEdge);
 
-  const hasRaisedRight = raisedHands.some((h) => h.anatomicalSide === 'right');
-  const hasRaisedLeft = raisedHands.some((h) => h.anatomicalSide === 'left');
-  const isBothHandsRaised = hasRaisedRight && hasRaisedLeft;
+  const rightRaised = raisedHands.filter((h) => h.anatomicalSide === 'right');
+  const leftRaised = raisedHands.filter((h) => h.anatomicalSide === 'left');
 
+  let isBothHandsRaised = false;
   let activeHand: MinigameHandEvaluation | null = null;
-  if (!isBothHandsRaised && raisedHands.length > 0) {
-    activeHand = raisedHands[0];
+
+  if (rightRaised.length > 0 && leftRaised.length > 0) {
+    // ทั้งสองข้างยกขึ้นมา ตรวจสอบด้วย Differential Height
+    const highestRight = rightRaised.reduce((prev, curr) => (curr.palmCenter.y < prev.palmCenter.y ? curr : prev));
+    const highestLeft = leftRaised.reduce((prev, curr) => (curr.palmCenter.y < prev.palmCenter.y ? curr : prev));
+    const heightDiff = Math.abs(highestRight.palmCenter.y - highestLeft.palmCenter.y);
+
+    // หากมือข้างหนึ่งยกสูงกว่าอีกข้างชัดเจน (> 0.15) หรือมืออีกข้างอยู่ในโซนต่ำพักแขน (> 0.68)
+    // ให้ถือว่าเลือกตอบด้วยมือข้างที่ยกสูงจริง ไม่ติดสถานะยก 2 มือ
+    if (heightDiff > 0.15 || highestRight.palmCenter.y > 0.68 || highestLeft.palmCenter.y > 0.68) {
+      activeHand = highestRight.palmCenter.y < highestLeft.palmCenter.y ? highestRight : highestLeft;
+      isBothHandsRaised = false;
+    } else {
+      isBothHandsRaised = true;
+      activeHand = null;
+    }
+  } else if (raisedHands.length > 0) {
+    // ยกข้างเดียวชัดเจน
+    activeHand = raisedHands.reduce((prev, curr) => (curr.palmCenter.y < prev.palmCenter.y ? curr : prev));
+    isBothHandsRaised = false;
   }
 
   return {
