@@ -128,6 +128,55 @@ export const KIOSK_CAMERA_STANDARDIZATION_CONFIG = {
   MAX_SIZE_CHANGE_RATIO: 0.35,
 } as const;
 
+export const KIOSK_CAMERA_STORAGE_KEY = 'kiosk_preferred_camera_id';
+
+/**
+ * กรองอุปกรณ์กล้องที่ไม่ใช่กล้องอินฟราเรด (IR / Windows Hello) หรือกล้องเสมือน (OBS / Virtual)
+ */
+export function isUsableCamera(device: MediaDeviceInfo): boolean {
+  const label = (device.label || '').toLowerCase();
+  const excludedKeywords = ['ir', 'infrared', 'windows hello', 'virtual', 'obs', 'snap camera'];
+  for (const kw of excludedKeywords) {
+    if (label.includes(kw)) return false;
+  }
+  return true;
+}
+
+/**
+ * เลือกกล้องที่เหมาะสมที่สุดตามลำดับความสำคัญ (Rule 1):
+ * (ก) deviceId ที่เจ้าหน้าที่เคยเลือกไว้และยังเสียบอยู่
+ * (ข) กล้อง USB / ภายนอก ที่ไม่ใช่ IR หรือกล้องเสมือน
+ * (ค) กล้องตัวแรกที่ใช้ได้
+ */
+export function selectOptimalCamera(
+  devices: MediaDeviceInfo[],
+  savedDeviceId?: string | null
+): MediaDeviceInfo | null {
+  if (!devices || devices.length === 0) return null;
+
+  // (ก) deviceId ที่บันทึกไว้
+  if (savedDeviceId) {
+    const saved = devices.find((d) => d.deviceId === savedDeviceId);
+    if (saved) return saved;
+  }
+
+  // กรองกล้อง IR / Virtual
+  const usableDevices = devices.filter(isUsableCamera);
+  const candidates = usableDevices.length > 0 ? usableDevices : devices;
+
+  // (ข) ค้นหากล้องภายนอก (ไม่ใช่กล้องในเครื่องโน้ตบุ๊ก)
+  const externalDevice = candidates.find((d) => {
+    const l = (d.label || '').toLowerCase();
+    const isInternal = l.includes('integrated') || l.includes('internal') || l.includes('built-in');
+    return !isInternal;
+  });
+
+  if (externalDevice) return externalDevice;
+
+  // (ค) ตัวแรกที่ใช้ได้
+  return candidates[0] || null;
+}
+
 export interface FaceImageQualityResult {
   brightness: number;
   sharpness: number;
@@ -427,10 +476,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   // Multi-camera & device management
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [selectedCameraId, setSelectedCameraId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(KIOSK_CAMERA_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
   const [activeCameraLabel, setActiveCameraLabel] = useState<string>('กล้องเริ่มต้น');
   const [activeSettings, setActiveSettings] = useState<MediaTrackSettings | null>(null);
   const [activeCapabilities, setActiveCapabilities] = useState<any>(null);
+  const [isCameraAdjustingLight, setIsCameraAdjustingLight] = useState<boolean>(true);
+  const [cameraDisconnectedError, setCameraDisconnectedError] = useState<string | null>(null);
+
+  const exposureBoostLevelRef = useRef<number>(0);
+  const lastExposureAdjustTimeRef = useRef<number>(0);
+  const lightStabilizedUntilRef = useRef<number>(Date.now() + 2000);
   const [currentTelemetry, setCurrentTelemetry] = useState<{
     faceHeightRatio: number;
     sharpness: number;
@@ -644,46 +705,91 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const startCamera = useCallback(async (deviceIdToUse?: string) => {
     if (isCameraStartingRef.current) return;
     isCameraStartingRef.current = true;
+    setCameraDisconnectedError(null);
+    setIsCameraAdjustingLight(true);
+    lightStabilizedUntilRef.current = Date.now() + 1800;
+    exposureBoostLevelRef.current = 0;
+    setStatusText('กำลังปรับแสงกล้อง...');
+
     try {
       const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
       const { camera } = services;
 
+      // 1. Resolve optimal camera device if not explicitly provided
+      let devId = deviceIdToUse || selectedCameraId;
+      try {
+        const rawDevices = await (camera as any).getAvailableVideoDevices?.();
+        if (Array.isArray(rawDevices) && rawDevices.length > 0) {
+          const usable = rawDevices.filter(isUsableCamera);
+          const filtered = usable.length > 0 ? usable : rawDevices;
+          if (isMountedRef.current) {
+            setAvailableCameras(filtered);
+          }
+          const savedId = localStorage.getItem(KIOSK_CAMERA_STORAGE_KEY) || devId;
+          const optimal = selectOptimalCamera(filtered, savedId);
+          if (optimal) {
+            devId = optimal.deviceId;
+          }
+        }
+      } catch {}
+
       if (videoRef.current) {
-        const devId = deviceIdToUse || selectedCameraId || undefined;
-        await camera.start(videoRef.current, {
+        const stream = await camera.start(videoRef.current, {
           kioskLockConstraints: true,
           width: 640,
           height: 480,
           aspectRatio: KIOSK_CAMERA_STANDARDIZATION_CONFIG.TARGET_ASPECT_RATIO,
-          deviceId: devId,
+          deviceId: devId || undefined,
         });
-        // Ensure hardware exposure compensation is applied (+1.2 EV)
+
+        // 2. Query active track telemetry & bind lifecycle listeners
+        const track = (camera as any).getVideoTrack?.();
+        if (track) {
+          const actualDevId = track.getSettings?.()?.deviceId || devId || '';
+          if (actualDevId) {
+            setSelectedCameraId(actualDevId);
+            try {
+              localStorage.setItem(KIOSK_CAMERA_STORAGE_KEY, actualDevId);
+            } catch {}
+          }
+          setActiveCameraLabel(track.label || 'กล้องหลัก');
+          setActiveSettings((camera as any).getSettings?.());
+          setActiveCapabilities((camera as any).getCapabilities?.());
+
+          // Listen for hardware disconnection mid-session
+          track.onended = () => {
+            if (isMountedRef.current) {
+              setCameraReady(false);
+              setCameraDisconnectedError('ไม่พบกล้อง กรุณาตรวจสอบการเชื่อมต่อ');
+              setStatusText('ไม่พบกล้อง กรุณาตรวจสอบการเชื่อมต่อ');
+            }
+          };
+        }
+
+        // 3. Hardware exposure & backlight compensation (+1.2 EV / brightness boost)
         try {
           if (typeof (camera as any).applyHardwareExposure === 'function') {
-            await (camera as any).applyHardwareExposure();
+            await (camera as any).applyHardwareExposure(stream, { targetBrightnessOffset: 18 });
           }
         } catch {
           // non-blocking
         }
-        // Ensure hardware zoom lock & focus stabilization is applied
+
+        // 4. Hardware zoom lock & focus stabilization
         try {
           if (typeof (camera as any).applyHardwareKioskLock === 'function') {
-            await (camera as any).applyHardwareKioskLock();
+            await (camera as any).applyHardwareKioskLock(stream);
           }
         } catch {
           // non-blocking
         }
-        // Query active track telemetry & capabilities
+
+        // 5. Query devices again with full labels after user permission granted
         try {
-          const track = (camera as any).getVideoTrack?.();
-          if (track) {
-            setActiveCameraLabel(track.label || 'Default Camera');
-            setActiveSettings((camera as any).getSettings?.());
-            setActiveCapabilities((camera as any).getCapabilities?.());
-          }
-          const devices = await (camera as any).getAvailableVideoDevices?.();
-          if (Array.isArray(devices) && devices.length > 0 && isMountedRef.current) {
-            setAvailableCameras(devices);
+          const freshDevices = await (camera as any).getAvailableVideoDevices?.();
+          if (Array.isArray(freshDevices) && freshDevices.length > 0 && isMountedRef.current) {
+            const usableFresh = freshDevices.filter(isUsableCamera);
+            setAvailableCameras(usableFresh.length > 0 ? usableFresh : freshDevices);
           }
         } catch {}
 
@@ -696,9 +802,17 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       console.warn('Camera start error:', camErr);
       if (isMountedRef.current) {
         setCameraReady(false);
+        setCameraDisconnectedError('ไม่พบกล้อง กรุณาตรวจสอบการเชื่อมต่อ');
+        setStatusText('ไม่พบกล้อง กรุณาตรวจสอบการเชื่อมต่อ');
       }
     } finally {
       isCameraStartingRef.current = false;
+      // Allow 1.8 seconds for hardware auto-exposure to converge before unlocking quality gate
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setIsCameraAdjustingLight(false);
+        }
+      }, 1800);
     }
   }, [selectedCameraId]);
 
@@ -1405,7 +1519,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
         const devices = await (services.camera as any).getAvailableVideoDevices?.();
         if (isSubscribed && Array.isArray(devices) && devices.length > 0) {
-          setAvailableCameras(devices);
+          const usable = devices.filter(isUsableCamera);
+          setAvailableCameras(usable.length > 0 ? usable : devices);
         }
       } catch {}
     };
@@ -1417,15 +1532,38 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
         const devices = await (services.camera as any).getAvailableVideoDevices?.();
         if (!isSubscribed || !Array.isArray(devices)) return;
-        setAvailableCameras(devices);
+        const usable = devices.filter(isUsableCamera);
+        const filtered = usable.length > 0 ? usable : devices;
+        setAvailableCameras(filtered);
 
-        // If active camera was unplugged/disconnected, fall back to first available camera
-        if (selectedCameraId && !devices.some((d) => d.deviceId === selectedCameraId)) {
-          const fallbackId = devices[0]?.deviceId || '';
-          setSelectedCameraId(fallbackId);
-          if (fallbackId && !userDisabledCamera) {
-            startCamera(fallbackId);
+        // If no cameras at all are detected
+        if (devices.length === 0) {
+          setCameraReady(false);
+          setCameraDisconnectedError('ไม่พบกล้อง กรุณาตรวจสอบการเชื่อมต่อ');
+          setStatusText('ไม่พบกล้อง กรุณาตรวจสอบการเชื่อมต่อ');
+          return;
+        }
+
+        // If active camera was unplugged/disconnected, fall back to next optimal camera
+        const isCurrentStillAttached = devices.some((d) => d.deviceId === selectedCameraId);
+        if (!isCurrentStillAttached) {
+          const savedId = localStorage.getItem(KIOSK_CAMERA_STORAGE_KEY);
+          const nextOptimal = selectOptimalCamera(devices, savedId);
+          if (nextOptimal) {
+            setSelectedCameraId(nextOptimal.deviceId);
+            try {
+              localStorage.setItem(KIOSK_CAMERA_STORAGE_KEY, nextOptimal.deviceId);
+            } catch {}
+            if (!userDisabledCamera) {
+              startCamera(nextOptimal.deviceId);
+            }
+          } else {
+            setCameraReady(false);
+            setCameraDisconnectedError('ไม่พบกล้อง กรุณาตรวจสอบการเชื่อมต่อ');
+            setStatusText('ไม่พบกล้อง กรุณาตรวจสอบการเชื่อมต่อ');
           }
+        } else {
+          setCameraDisconnectedError(null);
         }
       } catch {}
     };
@@ -1558,8 +1696,33 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               brightness: imageQuality.brightness,
             });
 
+            // Dynamic hardware exposure compensation / brightness boost when face is dark (Rule 4)
+            if (imageQuality.brightness < KIOSK_CAMERA_STANDARDIZATION_CONFIG.MIN_BRIGHTNESS) {
+              const nowMs = Date.now();
+              // Hysteresis: only step every 800ms, and only up to 3 increments
+              if (nowMs - lastExposureAdjustTimeRef.current > 800 && exposureBoostLevelRef.current < 3) {
+                lastExposureAdjustTimeRef.current = nowMs;
+                exposureBoostLevelRef.current += 1;
+                const nextOffset = 18 + exposureBoostLevelRef.current * 8; // 26, 34...
+                const nextEv = 1.0 + exposureBoostLevelRef.current * 0.25; // 1.25, 1.50...
+                try {
+                  const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+                  services.camera.applyHardwareExposure(null, {
+                    exposureBoostStep: nextEv,
+                    targetBrightnessOffset: nextOffset,
+                  });
+                } catch {}
+              }
+            }
+
+            // If camera is still stabilizing light during first ~1.8s, don't prematurely block on TOO_DARK (Rule 5 & 7)
+            const isLightStabilizing = isCameraAdjustingLight || Date.now() < lightStabilizedUntilRef.current;
+            const effectiveQuality = (isLightStabilizing && imageQuality.reason === 'TOO_DARK')
+              ? { ...imageQuality, passed: false, statusMessageThai: 'กำลังปรับแสงกล้อง...' }
+              : imageQuality;
+
             // 2. Automated Pose & Size Quality Gate
-            const quality = checkKioskFaceQuality(res, dw, dh, imageQuality);
+            const quality = checkKioskFaceQuality(res, dw, dh, effectiveQuality);
             if (!quality.passed) {
               consecutiveSteadyFramesRef.current = 0;
               lockedTargetRef.current = null;
@@ -1836,7 +1999,34 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         
         {/* 🎥 Hero Camera Scanning Stage (Full Width & Generous Height - Clean Vision Without Frames) */}
         <div className="flex-1 w-full min-h-[460px] md:min-h-[540px] bg-gradient-to-br from-[#07192B] via-[#0B2740] to-[#062826] rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col items-center justify-center cursor-pointer group">
-          {!cameraReady || userDisabledCamera || isScanningPaused ? (
+          {cameraDisconnectedError ? (
+            /* Camera Disconnected Error State (เมื่อถอดกล้องออก: ไม่ขึ้นจอขาว ไม่ค้าง แสดงข้อความภาษาไทยชัดเจน และมีปุ่มให้กดลองใหม่เมื่อเสียบกลับ) */
+            <div
+              className="w-full h-full flex flex-col items-center justify-center relative p-6 text-center select-none z-10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-20 h-20 rounded-full bg-rose-500/20 border-2 border-rose-400 flex items-center justify-center mb-4 shadow-[0_0_25px_rgba(244,63,94,0.3)]">
+                <Camera className="w-10 h-10 text-rose-300" />
+              </div>
+              <h3 className="text-white text-lg sm:text-xl font-bold mb-2">
+                {cameraDisconnectedError}
+              </h3>
+              <p className="text-rose-200/80 text-xs sm:text-sm max-w-md mb-6">
+                ระบบตรวจไม่พบสัญญาณกล้อง โปรดตรวจสอบสายเชื่อมต่อ USB ของกล้องเว็บแคม หรือเสียบใหม่อีกครั้ง
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraDisconnectedError(null);
+                  handleRetryCamera();
+                }}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white font-bold text-sm shadow-lg shadow-teal-500/30 flex items-center gap-2 transition cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>ลองใหม่ (ค้นหากล้อง)</span>
+              </button>
+            </div>
+          ) : !cameraReady || userDisabledCamera || isScanningPaused ? (
             /* Standby / Idle State: Center Glowing Scanner Ring */
             <div
               onClick={() => {
@@ -1874,7 +2064,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             >
               <canvas
                 ref={previewCanvasRef}
-                className="w-full h-full object-cover filter brightness-[1.18] contrast-[1.05]"
+                className="w-full h-full object-cover filter brightness-[1.22] contrast-[1.05]"
               />
 
               {/* Real-time Liveness Telemetry Badge */}
@@ -1905,7 +2095,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
               {/* Status Pill Badge at bottom of camera box */}
               <div className="absolute bottom-4 px-4 py-2 rounded-full bg-slate-950/85 backdrop-blur-md border border-teal-500/40 text-xs sm:text-sm font-bold text-teal-300 flex items-center gap-2 shadow-xl max-w-[90%] truncate z-20 pointer-events-none">
-                {countdownValue !== null ? (
+                {isCameraAdjustingLight ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-amber-300 shrink-0" />
+                    <span className="text-amber-200 truncate font-semibold">กำลังปรับแสงกล้อง...</span>
+                  </>
+                ) : countdownValue !== null ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
                     <span className="text-emerald-300 truncate">
@@ -2001,24 +2196,32 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
               {/* Camera Orientation Controls & Calibration Button */}
               <div className="absolute top-3 left-3 flex items-center gap-1.5 z-20" onClick={(e) => e.stopPropagation()}>
-                {availableCameras.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const idx = availableCameras.findIndex((c) => c.deviceId === selectedCameraId);
-                      const next = availableCameras[(idx + 1) % availableCameras.length];
-                      if (next) {
-                        setSelectedCameraId(next.deviceId);
-                        startCamera(next.deviceId);
-                      }
-                    }}
-                    className="px-2 py-1 rounded-lg bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer"
-                    title={`สลับกล้อง (${activeCameraLabel})`}
-                  >
-                    <Camera className="w-3.5 h-3.5 text-cyan-300" />
-                    <span>กล้อง {availableCameras.findIndex((c) => c.deviceId === selectedCameraId) + 1}/{availableCameras.length}</span>
-                  </button>
-                )}
+                {availableCameras.length > 1 && (() => {
+                  const currentIdx = availableCameras.findIndex((c) => c.deviceId === selectedCameraId);
+                  const displayIdx = currentIdx >= 0 ? currentIdx + 1 : 1;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idx = availableCameras.findIndex((c) => c.deviceId === selectedCameraId);
+                        const nextIdx = (Math.max(0, idx) + 1) % availableCameras.length;
+                        const next = availableCameras[nextIdx];
+                        if (next) {
+                          setSelectedCameraId(next.deviceId);
+                          try {
+                            localStorage.setItem(KIOSK_CAMERA_STORAGE_KEY, next.deviceId);
+                          } catch {}
+                          startCamera(next.deviceId);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold flex items-center gap-1.5 backdrop-blur-sm transition border border-white/20 cursor-pointer"
+                      title={`สลับกล้อง (${activeCameraLabel})`}
+                    >
+                      <Camera className="w-3.5 h-3.5 text-cyan-300" />
+                      <span>กล้อง {displayIdx}/{availableCameras.length}</span>
+                    </button>
+                  );
+                })()}
                 <button
                   type="button"
                   onClick={() => {

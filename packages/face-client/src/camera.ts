@@ -68,14 +68,35 @@ export class CameraManager {
     try {
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (err: unknown) {
-      const error = err as Error;
-      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        throw new Error('Camera permission was denied by the user or hospital kiosk policy');
+      // If exact deviceId failed (e.g. OverconstrainedError), fallback to ideal deviceId
+      if (effectiveOptions.deviceId) {
+        try {
+          const fallbackConstraints: MediaStreamConstraints = {
+            video: {
+              width: { ideal: targetWidth },
+              height: { ideal: targetHeight },
+              frameRate: { ideal: 30 },
+              deviceId: { ideal: effectiveOptions.deviceId },
+              ...(effectiveOptions.aspectRatio ? { aspectRatio: { ideal: effectiveOptions.aspectRatio } } : {}),
+            },
+            audio: false,
+          };
+          this.stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+        } catch {
+          // fall through to standard error handling
+        }
       }
-      if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-        throw new Error('No camera hardware was detected on this kiosk terminal');
+
+      if (!this.stream) {
+        const error = err as Error;
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          throw new Error('Camera permission was denied by the user or hospital kiosk policy');
+        }
+        if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+          throw new Error('No camera hardware was detected on this kiosk terminal');
+        }
+        throw new Error(`Failed to initialize camera: ${error.message}`);
       }
-      throw new Error(`Failed to initialize camera: ${error.message}`);
     }
 
     // Hardware exposure and backlight compensation for kiosks facing windows
@@ -115,10 +136,14 @@ export class CameraManager {
   }
 
   /**
-   * Attempts hardware MediaStreamTrack exposure and backlight compensation (+1.2 EV).
-   * Automatically adapts to device capabilities and clamps within safe bounds.
+   * Attempts hardware MediaStreamTrack exposure, brightness and backlight compensation.
+   * Automatically adapts to device capabilities (exposureCompensation or brightness/contrast)
+   * and clamps within safe bounds.
    */
-  public async applyHardwareExposure(mediaStream?: MediaStream | null): Promise<boolean> {
+  public async applyHardwareExposure(
+    mediaStream?: MediaStream | null,
+    options?: { exposureBoostStep?: number; targetBrightnessOffset?: number }
+  ): Promise<boolean> {
     const stream = mediaStream || this.stream;
     if (!stream) return false;
     try {
@@ -129,21 +154,48 @@ export class CameraManager {
       const advancedConstraint: any = {};
       let hasAdvanced = false;
 
+      // 1. Exposure mode: continuous
       if (capabilities.exposureMode && Array.isArray(capabilities.exposureMode) && capabilities.exposureMode.includes('continuous')) {
         advancedConstraint.exposureMode = 'continuous';
         hasAdvanced = true;
       }
 
+      // 2. White balance mode: continuous
       if (capabilities.whiteBalanceMode && Array.isArray(capabilities.whiteBalanceMode) && capabilities.whiteBalanceMode.includes('continuous')) {
         advancedConstraint.whiteBalanceMode = 'continuous';
         hasAdvanced = true;
       }
 
+      // 3. Hardware exposure compensation (EV stops)
       if (capabilities.exposureCompensation) {
         const minComp = typeof capabilities.exposureCompensation.min === 'number' ? capabilities.exposureCompensation.min : -2.0;
         const maxComp = typeof capabilities.exposureCompensation.max === 'number' ? capabilities.exposureCompensation.max : 2.0;
-        const targetComp = 1.2;
-        advancedConstraint.exposureCompensation = Math.max(minComp, Math.min(targetComp, maxComp));
+        const targetComp = typeof options?.exposureBoostStep === 'number' ? options.exposureBoostStep : 1.2;
+        // Clamp to safe ceiling (+1.5 EV or device max)
+        const safeMax = Math.min(maxComp, 1.5);
+        advancedConstraint.exposureCompensation = Math.max(minComp, Math.min(targetComp, safeMax));
+        hasAdvanced = true;
+      }
+
+      // 4. Hardware brightness (For UVC webcams lacking exposureCompensation, e.g. Sunplus, Realtek)
+      if (capabilities.brightness && typeof capabilities.brightness.min === 'number' && typeof capabilities.brightness.max === 'number') {
+        const minB = capabilities.brightness.min;
+        const maxB = capabilities.brightness.max;
+        const currentSettings = typeof videoTrack.getSettings === 'function' ? videoTrack.getSettings() : ({} as any);
+        const curB = typeof currentSettings.brightness === 'number' ? currentSettings.brightness : 0;
+        const offset = typeof options?.targetBrightnessOffset === 'number' ? options.targetBrightnessOffset : 16;
+        // Target: default (often 0) + offset, safe clamp not exceeding 70% of span
+        const safeMaxB = Math.round(minB + (maxB - minB) * 0.70);
+        const targetB = Math.max(minB, Math.min(curB + offset, safeMaxB));
+        advancedConstraint.brightness = targetB;
+        hasAdvanced = true;
+      }
+
+      // 5. Hardware contrast: ensure not crushed
+      if (capabilities.contrast && typeof capabilities.contrast.min === 'number' && typeof capabilities.contrast.max === 'number') {
+        const currentSettings = typeof videoTrack.getSettings === 'function' ? videoTrack.getSettings() : ({} as any);
+        const curC = typeof currentSettings.contrast === 'number' ? currentSettings.contrast : 32;
+        advancedConstraint.contrast = Math.max(capabilities.contrast.min, Math.min(curC, capabilities.contrast.max));
         hasAdvanced = true;
       }
 
