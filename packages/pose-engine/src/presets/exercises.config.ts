@@ -7,7 +7,7 @@
  * and biomechanical anti-cheat parameters.
  */
 
-import { ExerciseDetectionConfig } from '../types/exerciseConfig';
+import { ExerciseDetectionConfig, ExerciseCoachingCues, BodySide } from '../types/exerciseConfig';
 
 export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> = {
   // 1. Active Shoulder Flexion
@@ -2023,6 +2023,638 @@ export function getClinicalExerciseConfig(idOrName?: string | null): ExerciseDet
   if (q.includes('neck') || q.includes('คอ') || q.includes('侧倾')) return CLINICAL_EXERCISES_CONFIG['neck-side-tilt'];
 
   return null;
+}
+
+/**
+ * Centralized Clinical Real-Time Exercise Coaching Cues Registry
+ * Provides targeted, anatomy-specific phase instructions (TH / EN / CN),
+ * directional icons, and target anatomical keypoints.
+ */
+export const EXERCISE_COACHING_REGISTRY: Record<string, ExerciseCoachingCues> = {
+  'seated-cervical-rotation': {
+    idleMessageTh: 'นั่งตัวตรง มองตรงมาที่กล้อง',
+    idleMessageEn: 'Sit upright, look directly at the camera',
+    idleMessageCn: '端正坐好，目视前方摄像头',
+    idleIcon: '👤',
+
+    movingMessageTh: 'ค่อยๆ หันศีรษะช้าๆ ไปทางเป้าหมาย...',
+    movingMessageEn: 'Slowly rotate head toward target...',
+    movingMessageCn: '缓慢向目标方向转头...',
+    movingIcon: '↔️',
+
+    holdingMessageTh: 'ค้างไว้สักครู่',
+    holdingMessageEn: 'Hold steady at target...',
+    holdingMessageCn: '在目标位置保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ หันกลับมามองตรง',
+    returningMessageEn: 'Slowly return to center...',
+    returningMessageCn: '缓慢回正，向前看...',
+    returningIcon: '↔️',
+
+    framingMessageTh: 'กรุณาให้เห็นใบหน้า ศีรษะ และหัวไหล่ชัดเจน',
+    framingMessageEn: 'Please ensure your head, face, and shoulders are visible',
+    framingMessageCn: '请确保头部、面部及双肩清晰可见',
+
+    targetKeypoints: [0, 7, 8],
+  },
+
+  'cervical-side-bend': {
+    idleMessageTh: 'ศีรษะตั้งตรง มองตรงมาที่กล้อง',
+    idleMessageEn: 'Head upright, face forward',
+    idleMessageCn: '头部正中，面向前方',
+    idleIcon: '👤',
+
+    movingMessageTh: 'ค่อยๆ เอียงศีรษะเข้าหาไหล่ช้าๆ...',
+    movingMessageEn: 'Slowly tilt head toward shoulder...',
+    movingMessageCn: '缓慢将头向肩部侧倾...',
+    movingIcon: '↔️',
+
+    holdingMessageTh: 'ค้างไว้สักครู่ ให้รู้สึกตึงสบาย',
+    holdingMessageEn: 'Hold steady for a gentle stretch...',
+    holdingMessageCn: '在拉伸位保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ยกศีรษะกลับสู่ตรงกลาง',
+    returningMessageEn: 'Slowly return head to center...',
+    returningMessageCn: '缓慢将头抬回正中...',
+    returningIcon: '↔️',
+
+    framingMessageTh: 'กรุณาให้เห็นใบหน้า ศีรษะ และหัวไหล่ชัดเจน',
+    framingMessageEn: 'Please ensure your head, face, and shoulders are visible',
+    framingMessageCn: '请确保头部、面部及双肩清晰可见',
+
+    targetKeypoints: [0, 7, 8],
+  },
+
+  'neck-side-tilt': {
+    idleMessageTh: 'ศีรษะตั้งตรง มองตรงมาที่กล้อง',
+    idleMessageEn: 'Head upright, face forward',
+    idleMessageCn: '头部正中，面向前方',
+    idleIcon: '👤',
+
+    movingMessageTh: 'ค่อยๆ เอียงศีรษะเข้าหาไหล่ช้าๆ...',
+    movingMessageEn: 'Slowly tilt head toward shoulder...',
+    movingMessageCn: '缓慢将头向肩部侧倾...',
+    movingIcon: '↔️',
+
+    holdingMessageTh: 'ค้างไว้สักครู่ ให้รู้สึกตึงสบาย',
+    holdingMessageEn: 'Hold steady for a gentle stretch...',
+    holdingMessageCn: '在拉伸位保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ยกศีรษะกลับสู่ตรงกลาง',
+    returningMessageEn: 'Slowly return head to center...',
+    returningMessageCn: '缓慢将头抬回正中...',
+    returningIcon: '↔️',
+
+    framingMessageTh: 'กรุณาให้เห็นใบหน้า ศีรษะ และหัวไหล่ชัดเจน',
+    framingMessageEn: 'Please ensure your head, face, and shoulders are visible',
+    framingMessageCn: '请确保头部、面部及双肩清晰可见',
+
+    targetKeypoints: [0, 7, 8],
+  },
+
+  'chin-tuck': {
+    idleMessageTh: 'ตามองตรง ดึงคางและศีรษะเข้าหาลำคอในแนวราบ',
+    idleMessageEn: 'Look forward, tuck chin horizontally',
+    idleMessageCn: '目视前方，水平向后收下巴',
+    idleIcon: '👤',
+
+    movingMessageTh: 'ค่อยๆ ดึงคางและศีรษะไปด้านหลังในแนวราบ...',
+    movingMessageEn: 'Gently glide chin straight backward...',
+    movingMessageCn: '平稳水平向后收紧下巴...',
+    movingIcon: '⬅️',
+
+    holdingMessageTh: 'ค้างท่าเก็บเหนียงไว้สักครู่',
+    holdingMessageEn: 'Hold chin tuck position...',
+    holdingMessageCn: '保持收下颌体位...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ผ่อนคลายกล้ามเนื้อคอกลับสู่ท่าปกติ',
+    returningMessageEn: 'Slowly relax neck muscles back to neutral...',
+    returningMessageCn: '缓缓放松颈部恢复中立位...',
+    returningIcon: '➡️',
+
+    framingMessageTh: 'นั่งหรือยืนตรง ให้เห็นศีรษะและลำคอด้านข้างชัดเจน',
+    framingMessageEn: 'Sit or stand upright with head and neck visible',
+    framingMessageCn: '端坐或站直，确保头部和颈部清晰可见',
+
+    targetKeypoints: [0, 7, 8],
+  },
+
+  'active-shoulder-flexion': {
+    idleMessageTh: 'ยืนหรือนั่งหลังตรง แขนผ่อนคลายข้างลำตัว',
+    idleMessageEn: 'Stand or sit upright, arms relaxed at sides',
+    idleMessageCn: '身姿挺拔，双臂自然垂于体侧',
+    idleIcon: '🧍',
+
+    movingMessageTh: 'ค่อยๆ ยกแขนตรงไปข้างหน้าช้าๆ...',
+    movingMessageEn: 'Slowly raise arm forward and up...',
+    movingMessageCn: '慢慢向前上方抬臂...',
+    movingIcon: '⬆️',
+
+    holdingMessageTh: 'ค้างไว้ที่ระดับเป้าหมายนิ่งๆ',
+    holdingMessageEn: 'Hold steady at target height...',
+    holdingMessageCn: '在目标高度平稳保持...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ผ่อนแขนลงช้าๆ สู่ตำแหน่งเริ่มต้น',
+    returningMessageEn: 'Slowly lower arm down to start...',
+    returningMessageCn: '慢慢放下手臂回到起点...',
+    returningIcon: '⬇️',
+
+    targetKeypoints: [11, 13, 15],
+  },
+
+  'shoulder-flexion': {
+    idleMessageTh: 'ยืนหรือนั่งหลังตรง แขนผ่อนคลายข้างลำตัว',
+    idleMessageEn: 'Stand or sit upright, arms relaxed at sides',
+    idleMessageCn: '身姿挺拔，双臂自然垂于体侧',
+    idleIcon: '🧍',
+
+    movingMessageTh: 'ค่อยๆ ยกแขนตรงไปข้างหน้าช้าๆ...',
+    movingMessageEn: 'Slowly raise arm forward and up...',
+    movingMessageCn: '慢慢向前上方抬臂...',
+    movingIcon: '⬆️',
+
+    holdingMessageTh: 'ค้างไว้ที่ระดับเป้าหมายนิ่งๆ',
+    holdingMessageEn: 'Hold steady at target height...',
+    holdingMessageCn: '在目标高度平稳保持...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ผ่อนแขนลงช้าๆ สู่ตำแหน่งเริ่มต้น',
+    returningMessageEn: 'Slowly lower arm down to start...',
+    returningMessageCn: '慢慢放下手臂回到起点...',
+    returningIcon: '⬇️',
+
+    targetKeypoints: [11, 13, 15],
+  },
+
+  'shoulder-abduction': {
+    idleMessageTh: 'ยืนหรือนั่งหน้าตรง แขนแนบลำตัว',
+    idleMessageEn: 'Face camera directly, arms at sides',
+    idleMessageCn: '正面端坐或站立，双臂贴侧',
+    idleIcon: '🧍',
+
+    movingMessageTh: 'ค่อยๆ กางแขนออกด้านข้างลำตัวช้าๆ...',
+    movingMessageEn: 'Slowly raise arm out to the side...',
+    movingMessageCn: '慢慢向身体侧面展开手臂...',
+    movingIcon: '↗️',
+
+    holdingMessageTh: 'ค้างแขนไว้ที่ระดับเป้าหมายสักครู่',
+    holdingMessageEn: 'Hold arm steady at target...',
+    holdingMessageCn: '在目标位置平稳保持手臂...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ลดแขนลงข้างลำตัวช้าๆ',
+    returningMessageEn: 'Slowly lower arm back to side...',
+    returningMessageCn: '慢慢将手臂收回体侧...',
+    returningIcon: '↙️',
+
+    targetKeypoints: [11, 13, 15],
+  },
+
+  'shoulder-abd': {
+    idleMessageTh: 'ยืนหรือนั่งหน้าตรง แขนแนบลำตัว',
+    idleMessageEn: 'Face camera directly, arms at sides',
+    idleMessageCn: '正面端坐或站立，双臂贴侧',
+    idleIcon: '🧍',
+
+    movingMessageTh: 'ค่อยๆ กางแขนออกด้านข้างลำตัวช้าๆ...',
+    movingMessageEn: 'Slowly raise arm out to the side...',
+    movingMessageCn: '慢慢向身体侧面展开手臂...',
+    movingIcon: '↗️',
+
+    holdingMessageTh: 'ค้างแขนไว้ที่ระดับเป้าหมายสักครู่',
+    holdingMessageEn: 'Hold arm steady at target...',
+    holdingMessageCn: '在目标位置平稳保持手臂...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ลดแขนลงข้างลำตัวช้าๆ',
+    returningMessageEn: 'Slowly lower arm back to side...',
+    returningMessageCn: '慢慢将手臂收回体侧...',
+    returningIcon: '↙️',
+
+    targetKeypoints: [11, 13, 15],
+  },
+
+  'shoulder-pendulum': {
+    idleMessageTh: 'โน้มตัวไปข้างหน้าเล็กน้อย ปล่อยแขนห้อยสบาย',
+    idleMessageEn: 'Lean forward slightly, let arm hang loose',
+    idleMessageCn: '身体微前倾，手臂自然下垂放松',
+    idleIcon: '🌀',
+
+    movingMessageTh: 'แกว่งแขนช้า ๆ เป็นวงกลม ปล่อยแขนตามสบาย',
+    movingMessageEn: 'Swing arm gently in a circle, stay relaxed',
+    movingMessageCn: '顺畅做圆周摆动，手臂保持放松',
+    movingIcon: '🌀',
+
+    holdingMessageTh: 'แกว่งแขนต่อเนื่องอย่างผ่อนคลาย',
+    holdingMessageEn: 'Keep swinging smoothly...',
+    holdingMessageCn: '保持平稳画圈摆动...',
+    holdingIcon: '🌀',
+
+    returningMessageTh: 'ค่อยๆ ชะลอวงแกว่งจนหยุดนิ่ง',
+    returningMessageEn: 'Gradually slow down arm swing to stop',
+    returningMessageCn: '逐渐放慢画圈直至停止',
+    returningIcon: '🌀',
+
+    targetKeypoints: [11, 13, 15],
+  },
+
+  'elbow-flexion-extension': {
+    idleMessageTh: 'นั่งหรือยืนตรง แขนเหยียดตรงสบายๆ',
+    idleMessageEn: 'Sit or stand upright, arm extended comfortably',
+    idleMessageCn: '身姿直立，手臂自然伸直放松',
+    idleIcon: '💪',
+
+    movingMessageTh: 'ค่อยๆ พับงอข้อศอกขึ้นหาหัวไหล่ช้าๆ...',
+    movingMessageEn: 'Slowly bend your elbow upward...',
+    movingMessageCn: '慢慢屈曲手肘向上抬起...',
+    movingIcon: '⤴️',
+
+    holdingMessageTh: 'ค้างไว้ที่มุมงอศอกสักครู่',
+    holdingMessageEn: 'Hold steady at target flexion...',
+    holdingMessageCn: '在屈肘目标位置保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ คลายเหยียดข้อศอกลงสู่ท่าเดิม',
+    returningMessageEn: 'Slowly lower and extend elbow back down...',
+    returningMessageCn: '慢慢伸直手肘回到初始位置...',
+    returningIcon: '⤵️',
+
+    targetKeypoints: [11, 13, 15],
+  },
+
+  'elbow-flexion': {
+    idleMessageTh: 'นั่งหรือยืนตรง แขนเหยียดตรงสบายๆ',
+    idleMessageEn: 'Sit or stand upright, arm extended comfortably',
+    idleMessageCn: '身姿直立，手臂自然伸直放松',
+    idleIcon: '💪',
+
+    movingMessageTh: 'ค่อยๆ พับงอข้อศอกขึ้นหาหัวไหล่ช้าๆ...',
+    movingMessageEn: 'Slowly bend your elbow upward...',
+    movingMessageCn: '慢慢屈曲手肘向上抬起...',
+    movingIcon: '⤴️',
+
+    holdingMessageTh: 'ค้างไว้ที่มุมงอศอกสักครู่',
+    holdingMessageEn: 'Hold steady at target flexion...',
+    holdingMessageCn: '在屈肘目标位置保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ คลายเหยียดข้อศอกลงสู่ท่าเดิม',
+    returningMessageEn: 'Slowly lower and extend elbow back down...',
+    returningMessageCn: '慢慢伸直手肘回到初始位置...',
+    returningIcon: '⤵️',
+
+    targetKeypoints: [11, 13, 15],
+  },
+
+  'scapular-retraction': {
+    idleMessageTh: 'นั่งหรือยืนตัวตรง กางแขนงอศอก 90°',
+    idleMessageEn: 'Sit or stand upright, bend elbows at 90°',
+    idleMessageCn: '端坐或站直，屈肘90度',
+    idleIcon: '🔙',
+
+    movingMessageTh: 'ดึงหัวไหล่และสะบักทั้งสองข้างไปด้านหลังช้าๆ...',
+    movingMessageEn: 'Squeeze shoulder blades backward together...',
+    movingMessageCn: '向后收拢双侧肩胛骨...',
+    movingIcon: '🔙',
+
+    holdingMessageTh: 'ค้างท่าดึงสะบักไว้สักครู่ หายใจสม่ำเสมอ',
+    holdingMessageEn: 'Hold shoulder blades pinched, breathe evenly',
+    holdingMessageCn: '保持肩胛骨收紧，呼吸均匀',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ผ่อนคลายสะบักกลับสู่ท่าเริ่มต้น',
+    returningMessageEn: 'Slowly release shoulder blades forward...',
+    returningMessageCn: '慢慢放松肩胛骨回到初始位...',
+    returningIcon: '🔜',
+
+    targetKeypoints: [11, 12, 13, 14],
+  },
+
+  'shoulder-shrug': {
+    idleMessageTh: 'นั่งหรือยืนหลังตรง ผ่อนคลายหัวไหล่ลง',
+    idleMessageEn: 'Sit or stand upright, shoulders relaxed down',
+    idleMessageCn: '身姿挺拔，双肩自然下垂放松',
+    idleIcon: '👤',
+
+    movingMessageTh: 'ค่อยๆ ยักหัวไหล่ทั้งสองข้างขึ้นหาใบหูช้าๆ...',
+    movingMessageEn: 'Slowly shrug shoulders up toward ears...',
+    movingMessageCn: '缓慢向上耸起双肩至耳侧...',
+    movingIcon: '⬆️',
+
+    holdingMessageTh: 'ค้างท่ายักไหล่ไว้สักครู่',
+    holdingMessageEn: 'Hold shrug position steadily...',
+    holdingMessageCn: '保持耸肩体位片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ผ่อนหัวไหล่ทั้งสองข้างลงสบายๆ',
+    returningMessageEn: 'Slowly relax shoulders back down...',
+    returningMessageCn: '慢慢放下双肩回到自然位...',
+    returningIcon: '⬇️',
+
+    targetKeypoints: [11, 12],
+  },
+
+  'shoulder-er-band': {
+    idleMessageTh: 'แนบข้อศอกชิดลำตัว งอศอก 90° จับยางยืด',
+    idleMessageEn: 'Keep elbows at sides bent at 90°, hold band',
+    idleMessageCn: '屈肘90度贴紧体侧，握紧弹力带',
+    idleIcon: '💪',
+
+    movingMessageTh: 'แนบศอกชิดลำตัว ค่อยๆ หมุนแขนออกด้านนอกช้าๆ...',
+    movingMessageEn: 'Keeping elbow pinned, slowly rotate forearm outward...',
+    movingMessageCn: '保持手肘紧贴躯干，缓慢向外旋前臂...',
+    movingIcon: '🔄',
+
+    holdingMessageTh: 'ค้างไว้ที่มุมหมุนออกสักครู่',
+    holdingMessageEn: 'Hold steady at external rotation...',
+    holdingMessageCn: '在外旋位置平稳保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ผ่อนแขนกลับสู่ตรงกลางช้าๆ',
+    returningMessageEn: 'Slowly return forearm back to center...',
+    returningMessageCn: '慢慢控制前臂收回中位...',
+    returningIcon: '↩️',
+
+    targetKeypoints: [11, 13, 15],
+  },
+
+  'wall-pushup': {
+    idleMessageTh: 'ยืนหันหน้าเข้าหาผนัง วางฝ่ามือระดับหัวไหล่',
+    idleMessageEn: 'Stand facing wall, hands on wall at shoulder level',
+    idleMessageCn: '面向墙壁站立，双手掌平贴于肩高墙面',
+    idleIcon: '🧱',
+
+    movingMessageTh: 'ค่อยๆ งอศอกโน้มตัวเข้าหาผนังช้าๆ...',
+    movingMessageEn: 'Slowly bend elbows and lean chest toward wall...',
+    movingMessageCn: '慢慢屈肘将胸部向墙面靠近...',
+    movingIcon: '🧱',
+
+    holdingMessageTh: 'ค้างตัวในท่าโน้มเข้าหาผนังสักครู่ ลำตัวตรง',
+    holdingMessageEn: 'Hold position near wall, body straight',
+    holdingMessageCn: '在靠近墙面处保持片刻，保持身体成一直线',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ออกแรงดันตัวกลับสู่ตำแหน่งเริ่มต้น',
+    returningMessageEn: 'Slowly push body back to starting position...',
+    returningMessageCn: '慢慢推离墙面回到初始站姿...',
+    returningIcon: '↩️',
+
+    targetKeypoints: [11, 12, 13, 14, 15, 16],
+  },
+
+  'seated-knee-extension': {
+    idleMessageTh: 'นั่งเก้าอี้หลังตรง เท้าวางราบกับพื้น',
+    idleMessageEn: 'Sit upright in chair with feet flat',
+    idleMessageCn: '端坐于椅子上，双脚平放地面',
+    idleIcon: '🪑',
+
+    movingMessageTh: 'ค่อยๆ เตะเหยียดข้อเข่าขึ้นตรงไปข้างหน้าช้าๆ...',
+    movingMessageEn: 'Slowly straighten knee and lift lower leg forward...',
+    movingMessageCn: '慢慢向前踢腿伸直膝关节...',
+    movingIcon: '🦵',
+
+    holdingMessageTh: 'ค้างขาเหยียดตรงไว้สักครู่',
+    holdingMessageEn: 'Hold leg straight at target height...',
+    holdingMessageCn: '在伸膝位平稳保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ผ่อนขาวางลงสู่พื้นช้าๆ',
+    returningMessageEn: 'Slowly lower foot back down to floor...',
+    returningMessageCn: '慢慢放下小腿使双脚平放地面...',
+    returningIcon: '⬇️',
+
+    targetKeypoints: [23, 25, 27],
+  },
+
+  'seated-knee-ext': {
+    idleMessageTh: 'นั่งเก้าอี้หลังตรง เท้าวางราบกับพื้น',
+    idleMessageEn: 'Sit upright in chair with feet flat',
+    idleMessageCn: '端坐于椅子上，双脚平放地面',
+    idleIcon: '🪑',
+
+    movingMessageTh: 'ค่อยๆ เตะเหยียดข้อเข่าขึ้นตรงไปข้างหน้าช้าๆ...',
+    movingMessageEn: 'Slowly straighten knee and lift lower leg forward...',
+    movingMessageCn: '慢慢向前踢腿伸直膝关节...',
+    movingIcon: '🦵',
+
+    holdingMessageTh: 'ค้างขาเหยียดตรงไว้สักครู่',
+    holdingMessageEn: 'Hold leg straight at target height...',
+    holdingMessageCn: '在伸膝位平稳保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ผ่อนขาวางลงสู่พื้นช้าๆ',
+    returningMessageEn: 'Slowly lower foot back down to floor...',
+    returningMessageCn: '慢慢放下小腿使双脚平放地面...',
+    returningIcon: '⬇️',
+
+    targetKeypoints: [23, 25, 27],
+  },
+
+  'sit-to-stand': {
+    idleMessageTh: 'นั่งบนเก้าอี้ เท้าวางมั่นคง ลำตัวตรง',
+    idleMessageEn: 'Sit on chair, feet firmly planted',
+    idleMessageCn: '坐在椅子上，双脚平稳踏地',
+    idleIcon: '🪑',
+
+    movingMessageTh: 'ดันเท้าลงพื้น ค่อยๆ ลุกขึ้นยืนตัวตรงช้าๆ...',
+    movingMessageEn: 'Push through feet and stand up smoothly...',
+    movingMessageCn: '双脚踩实地面，平缓站立起身...',
+    movingIcon: '🧍‍♂️',
+
+    holdingMessageTh: 'ยืนตัวตรง ทรงตัวมั่นคงสักครู่',
+    holdingMessageEn: 'Stand tall and steady...',
+    holdingMessageCn: '完全站直，平稳保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ ย่อตัวนั่งลงบนเก้าอี้อย่างช้าๆ ควบคุมจังหวะ',
+    returningMessageEn: 'Slowly lower hips and sit down with control...',
+    returningMessageCn: '控制重心，慢慢坐回椅子上...',
+    returningIcon: '🪑',
+
+    targetKeypoints: [23, 24, 25, 26, 27, 28],
+  },
+
+  'standing-hip-abduction': {
+    idleMessageTh: 'ยืนตรงเกาะพนักพิง น้ำหนักลงขากลาง',
+    idleMessageEn: 'Stand tall holding support, weight on stance leg',
+    idleMessageCn: '扶好支撑物站直，重心放于支撑腿',
+    idleIcon: '🧍',
+
+    movingMessageTh: 'ลำตัวตรง ค่อยๆ กางขาออกด้านข้างช้าๆ...',
+    movingMessageEn: 'Keep torso upright, slowly raise leg out to side...',
+    movingMessageCn: '身体保持直立，缓慢向侧方抬起外侧腿...',
+    movingIcon: '↗️',
+
+    holdingMessageTh: 'ค้างขาไว้ที่ระดับเป้าหมาย ลำตัวไม่เอียง',
+    holdingMessageEn: 'Hold leg steady without leaning torso',
+    holdingMessageCn: '在目标角度保持片刻，切勿倾斜躯干',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ หุบขากลับสู่ตำแหน่งเริ่มต้นช้าๆ',
+    returningMessageEn: 'Slowly bring leg back down to start...',
+    returningMessageCn: '缓慢平稳将腿收回初始位...',
+    returningIcon: '↙️',
+
+    targetKeypoints: [23, 24, 27],
+  },
+
+  'standing-hip-abd': {
+    idleMessageTh: 'ยืนตรงเกาะพนักพิง น้ำหนักลงขากลาง',
+    idleMessageEn: 'Stand tall holding support, weight on stance leg',
+    idleMessageCn: '扶好支撑物站直，重心放于支撑腿',
+    idleIcon: '🧍',
+
+    movingMessageTh: 'ลำตัวตรง ค่อยๆ กางขาออกด้านข้างช้าๆ...',
+    movingMessageEn: 'Keep torso upright, slowly raise leg out to side...',
+    movingMessageCn: '身体保持直立，缓慢向侧方抬起外侧腿...',
+    movingIcon: '↗️',
+
+    holdingMessageTh: 'ค้างขาไว้ที่ระดับเป้าหมาย ลำตัวไม่เอียง',
+    holdingMessageEn: 'Hold leg steady without leaning torso',
+    holdingMessageCn: '在目标角度保持片刻，切勿倾斜躯干',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ หุบขากลับสู่ตำแหน่งเริ่มต้นช้าๆ',
+    returningMessageEn: 'Slowly bring leg back down to start...',
+    returningMessageCn: '缓慢平稳将腿收回初始位...',
+    returningIcon: '↙️',
+
+    targetKeypoints: [23, 24, 27],
+  },
+
+  'calf-raise': {
+    idleMessageTh: 'ยืนตรงเกาะโต๊ะหรือผนัง เท้าขนานกัน',
+    idleMessageEn: 'Stand upright holding support, feet parallel',
+    idleMessageCn: '扶好支撑物站直，双脚平行',
+    idleIcon: '🦶',
+
+    movingMessageTh: 'ค่อยๆ เขย่งส้นเท้าทั้งสองข้างขึ้นช้าๆ...',
+    movingMessageEn: 'Slowly raise both heels up onto balls of feet...',
+    movingMessageCn: '慢慢向上抬起双脚脚后跟...',
+    movingIcon: '⬆️',
+
+    holdingMessageTh: 'ค้างไว้บนปลายเท้าสักครู่ ทรงตัวให้นิ่ง',
+    holdingMessageEn: 'Hold steady on balls of feet...',
+    holdingMessageCn: '脚尖点地，平稳保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ วางส้นเท้าทั้งสองข้างลงแตะพื้นช้าๆ',
+    returningMessageEn: 'Slowly lower heels back down to floor...',
+    returningMessageCn: '慢慢将双侧脚后跟放回地面...',
+    returningIcon: '⬇️',
+
+    targetKeypoints: [27, 28, 29, 30],
+  },
+
+  'heel-raise': {
+    idleMessageTh: 'ยืนตรงเกาะโต๊ะหรือผนัง เท้าขนานกัน',
+    idleMessageEn: 'Stand upright holding support, feet parallel',
+    idleMessageCn: '扶好支撑物站直，双脚平行',
+    idleIcon: '🦶',
+
+    movingMessageTh: 'ค่อยๆ เขย่งส้นเท้าทั้งสองข้างขึ้นช้าๆ...',
+    movingMessageEn: 'Slowly raise both heels up onto balls of feet...',
+    movingMessageCn: '慢慢向上抬起双脚脚后跟...',
+    movingIcon: '⬆️',
+
+    holdingMessageTh: 'ค้างไว้บนปลายเท้าสักครู่ ทรงตัวให้นิ่ง',
+    holdingMessageEn: 'Hold steady on balls of feet...',
+    holdingMessageCn: '脚尖点地，平稳保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ วางส้นเท้าทั้งสองข้างลงแตะพื้นช้าๆ',
+    returningMessageEn: 'Slowly lower heels back down to floor...',
+    returningMessageCn: '慢慢将双侧脚后跟放回地面...',
+    returningIcon: '⬇️',
+
+    targetKeypoints: [27, 28, 29, 30],
+  },
+
+  'standing-calf-raise': {
+    idleMessageTh: 'ยืนตรงเกาะโต๊ะหรือผนัง เท้าขนานกัน',
+    idleMessageEn: 'Stand upright holding support, feet parallel',
+    idleMessageCn: '扶好支撑物站直，双脚平行',
+    idleIcon: '🦶',
+
+    movingMessageTh: 'ค่อยๆ เขย่งส้นเท้าทั้งสองข้างขึ้นช้าๆ...',
+    movingMessageEn: 'Slowly raise both heels up onto balls of feet...',
+    movingMessageCn: '慢慢向上抬起双脚脚后跟...',
+    movingIcon: '⬆️',
+
+    holdingMessageTh: 'ค้างไว้บนปลายเท้าสักครู่ ทรงตัวให้นิ่ง',
+    holdingMessageEn: 'Hold steady on balls of feet...',
+    holdingMessageCn: '脚尖点地，平稳保持片刻...',
+    holdingIcon: '🌟',
+
+    returningMessageTh: 'ค่อยๆ วางส้นเท้าทั้งสองข้างลงแตะพื้นช้าๆ',
+    returningMessageEn: 'Slowly lower heels back down to floor...',
+    returningMessageCn: '慢慢将双侧脚后跟放回地面...',
+    returningIcon: '⬇️',
+
+    targetKeypoints: [27, 28, 29, 30],
+  },
+};
+
+const NEUTRAL_COACHING_FALLBACK: ExerciseCoachingCues = {
+  idleMessageTh: 'จัดท่าทางให้พร้อมตามภาพตัวอย่าง แล้วเริ่มทำช้าๆ',
+  idleMessageEn: 'Get in starting position as shown, then begin slowly',
+  idleMessageCn: '准备就绪后，参考示例平稳开始动作',
+  idleIcon: '✨',
+
+  movingMessageTh: 'ทำท่าช้าๆ ตามภาพตัวอย่าง...',
+  movingMessageEn: 'Move smoothly as shown in the guide...',
+  movingMessageCn: '请参考示例平稳做动作...',
+  movingIcon: '🎯',
+
+  holdingMessageTh: 'ค้างไว้ในตำแหน่งเป้าหมายสักครู่',
+  holdingMessageEn: 'Hold steady at target position...',
+  holdingMessageCn: '在目标位置保持片刻...',
+  holdingIcon: '🌟',
+
+  returningMessageTh: 'ค่อยๆ ผ่อนกลับสู่ตำแหน่งเริ่มต้น',
+  returningMessageEn: 'Return smoothly to starting position...',
+  returningMessageCn: '缓慢平稳回到初始位置...',
+  returningIcon: '↩️',
+
+  targetKeypoints: [],
+};
+
+/**
+ * Resolves localized coaching cues, directional icons, and target landmarks
+ * with fallback to neutral, non-organ-specific guidance.
+ */
+export function getExerciseCoachingCues(
+  exerciseId?: string | null,
+  side?: BodySide
+): ExerciseCoachingCues {
+  if (!exerciseId) return NEUTRAL_COACHING_FALLBACK;
+  const cleanId = exerciseId.toLowerCase().trim();
+  const base = EXERCISE_COACHING_REGISTRY[cleanId];
+  if (!base) return NEUTRAL_COACHING_FALLBACK;
+
+  const result: ExerciseCoachingCues = { ...base };
+
+  // Side-specific adjustments for directional exercises like Seated Cervical Rotation
+  if (cleanId === 'seated-cervical-rotation') {
+    if (side === 'left') {
+      result.movingMessageTh = 'ค่อยๆ หันศีรษะไปทางซ้ายช้าๆ...';
+      result.movingMessageEn = 'Slowly rotate head to the left...';
+      result.movingMessageCn = '缓慢向左转头...';
+      result.movingIcon = '⬅️';
+    } else if (side === 'right') {
+      result.movingMessageTh = 'ค่อยๆ หันศีรษะไปทางขวาช้าๆ...';
+      result.movingMessageEn = 'Slowly rotate head to the right...';
+      result.movingMessageCn = '缓慢向右转头...';
+      result.movingIcon = '➡️';
+    }
+  }
+
+  return result;
 }
 
 export interface PatientClinicalSummary {

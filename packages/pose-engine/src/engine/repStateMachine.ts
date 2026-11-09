@@ -952,7 +952,10 @@ export class RepStateMachine {
       ? 100
       : Math.min(100, Math.max(0, Math.round((tiltAngleDeg / 20) * 100)));
 
-    let coachingMessage = 'เอียงคอช้าๆ ไปด้านข้าง';
+    const isRotation = this.config.id === 'seated-cervical-rotation';
+    let coachingMessage = isRotation ? 'ค่อยๆ หันศีรษะช้าๆ ไปทางเป้าหมาย...' : 'เอียงคอช้าๆ ไปด้านข้าง';
+    let coachingMessageEn = isRotation ? 'Slowly rotate head toward target...' : 'Slowly tilt neck to side';
+    let coachingMessageCn = isRotation ? '缓慢向目标方向转头...' : '缓慢向侧面倾斜颈部';
     let holdProgressRatio = 0.0;
     const formRating: 'good' | 'warning' | 'error' = 'good';
 
@@ -961,12 +964,18 @@ export class RepStateMachine {
         if (isInsideTargetZone) {
           this.phase = 'HOLDING_TARGET';
           this.holdStartTimeMs = timestampMs;
-          coachingMessage = `เอียงคอได้ดี ค้างไว้ ${holdDurationSec} วินาที`;
+          coachingMessage = isRotation ? 'หันศีรษะได้ดี ค้างไว้สักครู่' : `เอียงคอได้ดี ค้างไว้ ${holdDurationSec} วินาที`;
+          coachingMessageEn = isRotation ? 'Good rotation! Hold steady at target...' : `Good tilt! Hold for ${holdDurationSec}s`;
+          coachingMessageCn = isRotation ? '转头到位，保持片刻...' : `侧倾到位，保持 ${holdDurationSec} 秒`;
         } else if (isAtStartZone) {
-          coachingMessage = 'ศีรษะตั้งตรง พร้อมแล้วค่อยๆ เอียงคอ';
+          coachingMessage = isRotation ? 'นั่งตัวตรง มองตรงมาที่กล้อง' : 'ศีรษะตั้งตรง พร้อมแล้วค่อยๆ เอียงคอ';
+          coachingMessageEn = isRotation ? 'Sit upright, look directly at the camera' : 'Head upright, gently tilt neck';
+          coachingMessageCn = isRotation ? '端正坐好，目视前方摄像头' : '头部正中，缓慢侧倾颈部';
         } else if (tiltAngleDeg >= 7) {
           this.phase = 'MOVING_TO_TARGET';
-          coachingMessage = 'เอียงคอเพิ่มอีกนิด ให้รู้สึกตึงพอดี';
+          coachingMessage = isRotation ? 'ค่อยๆ หันศีรษะช้าๆ ไปทางเป้าหมาย...' : 'เอียงคอเพิ่มอีกนิด ให้รู้สึกตึงพอดี';
+          coachingMessageEn = isRotation ? 'Slowly rotate head toward target...' : 'Tilt neck a bit further';
+          coachingMessageCn = isRotation ? '缓慢向目标方向转头...' : '再稍侧倾一点';
         }
         break;
       }
@@ -974,9 +983,13 @@ export class RepStateMachine {
         if (isInsideTargetZone) {
           this.phase = 'HOLDING_TARGET';
           this.holdStartTimeMs = timestampMs;
-          coachingMessage = `เอียงคอได้ดี ค้างไว้ ${holdDurationSec} วินาที`;
+          coachingMessage = isRotation ? 'หันศีรษะได้ดี ค้างไว้สักครู่' : `เอียงคอได้ดี ค้างไว้ ${holdDurationSec} วินาที`;
+          coachingMessageEn = isRotation ? 'Good rotation! Hold steady at target...' : `Good tilt! Hold for ${holdDurationSec}s`;
+          coachingMessageCn = isRotation ? '转头到位，保持片刻...' : `侧倾到位，保持 ${holdDurationSec} 秒`;
         } else if (tiltAngleDeg < 18) {
-          coachingMessage = 'เอียงคอเพิ่มอีกนิด ให้รู้สึกตึงพอดี';
+          coachingMessage = isRotation ? 'หันเพิ่มอีกนิด ให้ถึงแถบสีเขียว' : 'เอียงคอเพิ่มอีกนิด ให้รู้สึกตึงพอดี';
+          coachingMessageEn = isRotation ? 'Rotate head a bit further to reach green zone' : 'Tilt neck a bit further';
+          coachingMessageCn = isRotation ? '再转动一点，达到绿色区域' : '再稍侧倾一点';
         }
         break;
       }
@@ -984,16 +997,28 @@ export class RepStateMachine {
         if (!isInsideTargetZone) {
           this.phase = 'MOVING_TO_TARGET';
           this.holdStartTimeMs = null;
-          coachingMessage = 'รักษาการเอียงคอให้อยู่ในช่วงเป้าหมาย';
+          coachingMessage = isRotation ? 'หันเพิ่มอีกนิด ให้อยู่ในช่วงเป้าหมาย' : 'รักษาการเอียงคอให้อยู่ในช่วงเป้าหมาย';
+          coachingMessageEn = isRotation ? 'Rotate head to stay inside target zone' : 'Maintain neck tilt in target zone';
+          coachingMessageCn = isRotation ? '请保持转头在目标区间内' : '保持颈部侧倾在目标区间';
         } else {
           const rawElapsedSec = (timestampMs - (this.holdStartTimeMs || timestampMs)) / 1000.0;
           holdProgressRatio = Math.min(1.0, rawElapsedSec / Math.max(0.1, holdDurationSec));
           if (rawElapsedSec >= holdDurationSec) {
             this.phase = 'RETURNING_TO_START';
             this.holdStartTimeMs = null;
-            coachingMessage = 'ค่อยๆ ยกศีรษะกลับสู่ตรงกลาง';
+            coachingMessage = isRotation ? 'ค่อยๆ หันกลับมามองตรง' : 'ค่อยๆ ยกศีรษะกลับสู่ตรงกลาง';
+            coachingMessageEn = isRotation ? 'Slowly return to center...' : 'Slowly return head to center...';
+            coachingMessageCn = isRotation ? '缓慢回正，向前看...' : '缓慢将头抬回正中...';
           } else {
-            coachingMessage = `ค้างไว้อีก ${(holdDurationSec - rawElapsedSec).toFixed(1)} วินาที`;
+            coachingMessage = isRotation
+              ? 'ค้างไว้สักครู่'
+              : `ค้างไว้อีก ${(holdDurationSec - rawElapsedSec).toFixed(1)} วินาที`;
+            coachingMessageEn = isRotation
+              ? 'Hold steady at target...'
+              : `Hold for ${(holdDurationSec - rawElapsedSec).toFixed(1)}s`;
+            coachingMessageCn = isRotation
+              ? '在目标位置保持片刻...'
+              : `还需保持 ${(holdDurationSec - rawElapsedSec).toFixed(1)} 秒`;
           }
         }
         break;
@@ -1006,6 +1031,8 @@ export class RepStateMachine {
             this.lastRepCompletedTimeMs = nowMs;
             this.phase = 'REP_COMPLETED';
             coachingMessage = `ครบ 1 ครั้ง! (${this.completedReps}/${targetReps})`;
+            coachingMessageEn = `1 Rep Completed! (${this.completedReps}/${targetReps})`;
+            coachingMessageCn = `完成 1 次！(${this.completedReps}/${targetReps})`;
 
             if (this.completedReps >= targetReps) {
               this.isSetCompleted = true;
@@ -1015,7 +1042,9 @@ export class RepStateMachine {
             }
           }
         } else {
-          coachingMessage = 'กลับสู่ศีรษะตั้งตรง';
+          coachingMessage = isRotation ? 'ค่อยๆ หันกลับมามองตรง' : 'กลับสู่ศีรษะตั้งตรง';
+          coachingMessageEn = isRotation ? 'Slowly return to center...' : 'Return head to center...';
+          coachingMessageCn = isRotation ? '缓慢回正，向前看...' : '缓慢回正...';
         }
         break;
       }
@@ -1045,6 +1074,8 @@ export class RepStateMachine {
       isExerciseCompleted: this.isExerciseCompleted,
       coachingMessage,
       coachingMessageTh: coachingMessage,
+      coachingMessageEn,
+      coachingMessageCn,
       activeWarnings: [],
       formRating,
       instantaneousVelocity: 0,

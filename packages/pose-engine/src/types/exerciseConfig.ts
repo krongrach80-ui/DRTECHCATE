@@ -152,7 +152,41 @@ export interface ExerciseDetectionConfig {
     bilateral?: number[];
   };
   minLandmarkVisibility?: Record<number, number>;
+  coachingCues?: ExerciseCoachingCues;
 }
+
+/**
+ * Per-exercise real-time visual and text coaching cues across movement phases
+ */
+export interface ExerciseCoachingCues {
+  idleMessageTh?: string;
+  idleMessageEn?: string;
+  idleMessageCn?: string;
+  idleIcon?: string;
+
+  movingMessageTh?: string;
+  movingMessageEn?: string;
+  movingMessageCn?: string;
+  movingIcon?: string;
+
+  holdingMessageTh?: string;
+  holdingMessageEn?: string;
+  holdingMessageCn?: string;
+  holdingIcon?: string;
+
+  returningMessageTh?: string;
+  returningMessageEn?: string;
+  returningMessageCn?: string;
+  returningIcon?: string;
+
+  framingMessageTh?: string;
+  framingMessageEn?: string;
+  framingMessageCn?: string;
+
+  targetKeypoints?: number[];
+}
+
+export type ExerciseConfig = ExerciseDetectionConfig;
 
 /**
  * Standard MediaPipe Pose Landmark Point

@@ -23,6 +23,7 @@ import {
   RepEvaluationResult,
   BodySide,
 } from '../../../../packages/pose-engine/src/types/exerciseConfig';
+import { getExerciseCoachingCues } from '../../../../packages/pose-engine/src/presets/exercises.config';
 import { RepStateMachine } from '../../../../packages/pose-engine/src/engine/repStateMachine';
 import { CameraStreamWatchdog, WatchdogHealthStatus } from '../../../../packages/pose-engine/src/hardwareWatchdog';
 import { projectLandmarkToCanvas } from '../../../../packages/pose-engine/src/math/projection';
@@ -100,6 +101,16 @@ export const POSE_CONNECTIONS: [number, number][] = [
   [28, 30], [28, 32], [30, 32], // Right foot
 ];
 
+export const HEAD_POSE_CONNECTIONS: [number, number][] = [
+  [7, 0], // Left ear to nose/face center
+  [8, 0], // Right ear to nose/face center
+  [7, 8], // Ear to ear horizontal head bridge
+  [0, 11], // Nose to left shoulder (neck line)
+  [0, 12], // Nose to right shoulder (neck line)
+];
+
+export const HEAD_JOINT_INDICES = [0, 7, 8];
+
 export const BODY_JOINT_INDICES = [
   11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
   23, 24, 25, 26, 27, 28, 29, 30, 31, 32
@@ -126,6 +137,7 @@ export function getRequiredKeypointsForExercise(config?: ExerciseDetectionConfig
 }
 
 export const KEYPOINT_NAME_MAP: Record<number, { th: string; en: string; cn: string }> = {
+  0: { th: 'ใบหน้า/จมูก', en: 'Face/Nose', cn: '面部/鼻尖' },
   7: { th: 'หูซ้าย', en: 'L Ear', cn: '左耳' },
   8: { th: 'หูขวา', en: 'R Ear', cn: '右耳' },
   11: { th: 'ไหล่ซ้าย', en: 'L Shoulder', cn: '左肩' },
@@ -1307,8 +1319,30 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             const inactiveColor = 'rgba(148, 163, 184, 0.65)'; // slate-400 with high contrast against camera feed
             const torsoBridgeColor = 'rgba(56, 189, 248, 0.75)'; // sky-400
 
-            // Helper to determine connection style (Active side vs Inactive side vs Torso bridge)
+            // Helper to determine connection style (Active side vs Inactive side vs Torso bridge vs Head/Neck)
+            const isNeckExercise = resolvedConfig.targetJoint === 'neck' || resolvedConfig.framing === 'head_shoulders';
+
             const getConnectionStyle = (idxA: number, idxB: number) => {
+              const isHeadConn =
+                (idxA === 0 || idxA === 7 || idxA === 8) &&
+                (idxB === 0 || idxB === 7 || idxB === 8 || idxB === 11 || idxB === 12);
+
+              if (isNeckExercise) {
+                if (isHeadConn) {
+                  return { lineWidth: 5, strokeStyle: activeColor, isActive: true };
+                }
+                // Shoulders bridge
+                if (idxA === 11 && idxB === 12) {
+                  return { lineWidth: 4, strokeStyle: torsoBridgeColor, isActive: false };
+                }
+                // For neck exercises, arms and legs are inactive
+                return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
+              }
+
+              if (isHeadConn) {
+                return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
+              }
+
               if (isBilateral) {
                 return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
               }
@@ -1331,14 +1365,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             };
 
             const isJointActive = (idx: number) => {
+              if (isNeckExercise) {
+                return idx === 0 || idx === 7 || idx === 8;
+              }
               if (isBilateral) return true;
               if (currentActiveSide === 'left') return idx % 2 === 1;
               if (currentActiveSide === 'right') return idx % 2 === 0;
               return true;
             };
 
-            // 1. Draw Skeleton Lines (Torso, Arms, Hands, Legs)
-            for (const [idxA, idxB] of POSE_CONNECTIONS) {
+            // 1. Draw Skeleton Lines (Torso, Arms, Hands, Legs, + Head when neck exercise)
+            const activeConnections = isNeckExercise
+              ? [...HEAD_POSE_CONNECTIONS, ...POSE_CONNECTIONS]
+              : POSE_CONNECTIONS;
+
+            for (const [idxA, idxB] of activeConnections) {
               const ptA = renderPoints[idxA];
               const ptB = renderPoints[idxB];
               // Strictly draw ONLY when both joints are in-frame with sufficient visibility
@@ -1348,8 +1389,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 ptB &&
                 ptA.inFrame &&
                 ptB.inFrame &&
-                (ptA.visibility ?? 0) >= 0.40 &&
-                (ptB.visibility ?? 0) >= 0.40
+                (ptA.visibility ?? 0) >= 0.35 &&
+                (ptB.visibility ?? 0) >= 0.35
               ) {
                 const style = getConnectionStyle(idxA, idxB);
                 ctx.lineWidth = style.lineWidth;
@@ -1361,13 +1402,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               }
             }
 
-            // 2. Draw Joint Circular Dots (Shoulders, Elbows, Wrists, Hips, Knees, Ankles, Fingers)
-            // Never draw facial landmarks (0-10)
+            // 2. Draw Joint Circular Dots (Shoulders, Elbows, Wrists, Hips, Knees, Ankles, Fingers, + Head when neck)
+            const activeJointIndices = isNeckExercise
+              ? [...HEAD_JOINT_INDICES, ...BODY_JOINT_INDICES]
+              : BODY_JOINT_INDICES;
+
             const fingerJointIndices = [17, 18, 19, 20, 21, 22];
 
-            for (const idx of BODY_JOINT_INDICES) {
+            for (const idx of activeJointIndices) {
               const pt = renderPoints[idx];
-              if (!pt || !pt.inFrame || (pt.visibility ?? 0) < 0.40) continue;
+              if (!pt || !pt.inFrame || (pt.visibility ?? 0) < 0.35) continue;
 
               const active = isJointActive(idx);
               const isFinger = fingerJointIndices.includes(idx);
@@ -1383,7 +1427,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ctx.stroke();
 
               // Draw debug label if staff debug is enabled
-              if (showDebugRef.current && idx >= 11) {
+              if (showDebugRef.current && (idx >= 11 || isNeckExercise)) {
                 ctx.font = 'bold 11px sans-serif';
                 ctx.fillStyle = '#38bdf8';
                 ctx.fillText(`#${idx} (${pt.visibility.toFixed(2)})`, pt.x + 10, pt.y - 6);
@@ -1813,6 +1857,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       };
     }
 
+    // Resolve per-exercise side-aware coaching cues
+    const cues = getExerciseCoachingCues(resolvedConfig.id, activeSide);
+
     // Priority (ก): Person detection, framing, distance
     if (hudState.detectedPeople === 0 || hudState.landmarkCount === 0) {
       return {
@@ -1828,14 +1875,20 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
 
     if (hudState.shoulderWidthPct > 55 || evalResult?.readinessStatus === 'missing_shoulder') {
+      const framingMsg =
+        lang === 'zh-CN'
+          ? (cues.framingMessageCn || '请后退一些，确保进入镜头')
+          : lang === 'en-US'
+            ? (cues.framingMessageEn || 'Step back slightly into view')
+            : (cues.framingMessageTh ||
+                (isLowerBody
+                  ? 'ถอยหลังอีกนิด ให้เห็นขาชัดเจน'
+                  : resolvedConfig.targetJoint === 'neck'
+                    ? 'ถอยหลังอีกนิด ให้เห็นศีรษะและไหล่ชัดเจน'
+                    : 'ถอยหลังอีกนิด ให้เห็นแขนถึงข้อศอก'));
       return {
         icon: '⚠️',
-        message:
-          lang === 'zh-CN'
-            ? '请后退一些，确保看到手臂到手肘'
-            : lang === 'en-US'
-              ? 'Step back slightly so your arms and elbows are visible'
-              : 'ถอยหลังอีกนิด ให้เห็นแขนถึงข้อศอก',
+        message: framingMsg,
         tone: 'amber',
       };
     }
@@ -1855,13 +1908,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
     if (isWaitingPose) {
       return {
-        icon: '📷',
+        icon: cues.idleIcon || '📷',
         message:
           lang === 'zh-CN'
-            ? '请站直并进入检测区域以开始训练'
+            ? (cues.idleMessageCn || '请站直并进入检测区域以开始训练')
             : lang === 'en-US'
-              ? 'Stand upright in frame to begin'
-              : 'กรุณายืนตรงให้เห็นช่วงบนชัดเจนเพื่อเริ่มท่า',
+              ? (cues.idleMessageEn || 'Stand upright in frame to begin')
+              : (cues.idleMessageTh ||
+                  (resolvedConfig.targetJoint === 'neck'
+                    ? 'นั่งตัวตรงมองมาที่กล้อง เพื่อเริ่มท่า'
+                    : 'กรุณายืนตรงให้เห็นช่วงบนชัดเจนเพื่อเริ่มท่า')),
         tone: 'amber',
       };
     }
@@ -1912,65 +1968,72 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     if (isPendulum) {
       if (evalResult?.coachingMessageTh) {
         return {
-          icon: '🌀',
+          icon: cues.movingIcon || '🌀',
           message: evalResult.coachingMessageTh,
           tone: 'teal',
         };
       }
       return {
-        icon: '🌀',
+        icon: cues.movingIcon || '🌀',
         message:
           lang === 'zh-CN'
-            ? '身体向前微倾，顺畅做圆周摆动'
+            ? (cues.movingMessageCn || '身体向前微倾，顺畅做圆周摆动')
             : lang === 'en-US'
-              ? 'Lean forward slightly, relax arm and swing in circles'
-              : 'แกว่งแขนช้า ๆ เป็นวงกลม ปล่อยแขนตามสบาย',
+              ? (cues.movingMessageEn || 'Lean forward slightly, relax arm and swing in circles')
+              : (cues.movingMessageTh || 'แกว่งแขนช้า ๆ เป็นวงกลม ปล่อยแขนตามสบาย'),
         tone: 'teal',
       };
     }
 
     if (evalResult?.phase === 'HOLDING_TARGET') {
       return {
-        icon: '🌟',
+        icon: cues.holdingIcon || '🌟',
         message:
           lang === 'zh-CN'
-            ? '很好！请在目标位置保持稳定...'
+            ? (cues.holdingMessageCn || '很好！请在目标位置保持稳定...')
             : lang === 'en-US'
-              ? 'Great! Hold steady at target...'
-              : 'ค้างไว้นิ่งๆ อีกนิด ดีมากครับ',
+              ? (cues.holdingMessageEn || 'Great! Hold steady at target...')
+              : (cues.holdingMessageTh || 'ค้างไว้นิ่งๆ อีกนิด ดีมากครับ'),
         tone: 'emerald',
       };
     }
 
     if (evalResult?.phase === 'MOVING_TO_TARGET') {
       return {
-        icon: '⬆️',
-        message: isLowerBody
-          ? (lang === 'zh-CN' ? '慢慢向上抬腿...' : lang === 'en-US' ? 'Lift leg up smoothly...' : 'ค่อยๆ ยกขาขึ้นช้าๆ...')
-          : (lang === 'zh-CN' ? '慢慢向上抬臂...' : lang === 'en-US' ? 'Lift arm up smoothly...' : 'ค่อยๆ ยกแขนขึ้นช้าๆ...'),
+        icon: cues.movingIcon || (isLowerBody ? '⬆️' : '🎯'),
+        message:
+          lang === 'zh-CN'
+            ? (cues.movingMessageCn || (isLowerBody ? '慢慢向上抬腿...' : '做动作直到达标...'))
+            : lang === 'en-US'
+              ? (cues.movingMessageEn || (isLowerBody ? 'Lift leg up smoothly...' : 'Move smoothly to target...'))
+              : (cues.movingMessageTh || (isLowerBody ? 'ค่อยๆ ยกขาขึ้นช้าๆ...' : 'ทำท่าช้าๆ ตามภาพตัวอย่าง...')),
         tone: 'teal',
       };
     }
 
     if (evalResult?.phase === 'RETURNING_TO_START') {
       return {
-        icon: '⬇️',
-        message: isLowerBody
-          ? (lang === 'zh-CN' ? '慢慢放下腿部回到起点...' : lang === 'en-US' ? 'Lower leg down smoothly...' : 'ค่อยๆ ผ่อนขาลงช้าๆ...')
-          : (lang === 'zh-CN' ? '慢慢放下手臂回到起点...' : lang === 'en-US' ? 'Lower arm down smoothly...' : 'ค่อยๆ ผ่อนแขนลงช้าๆ...'),
+        icon: cues.returningIcon || (isLowerBody ? '⬇️' : '↩️'),
+        message:
+          lang === 'zh-CN'
+            ? (cues.returningMessageCn || (isLowerBody ? '慢慢放下腿部回到起点...' : '缓慢回到初始位置...'))
+            : lang === 'en-US'
+              ? (cues.returningMessageEn || (isLowerBody ? 'Lower leg down smoothly...' : 'Return smoothly to starting position...'))
+              : (cues.returningMessageTh || (isLowerBody ? 'ค่อยๆ ผ่อนขาลงช้าๆ...' : 'ค่อยๆ ผ่อนกลับสู่ตำแหน่งเริ่มต้นช้าๆ')),
         tone: 'teal',
       };
     }
 
     // Priority (ง): Normal Training / Encouraging
     return {
-      icon: '✨',
+      icon: cues.idleIcon || '✨',
       message:
-        lang === 'zh-CN'
-          ? '动作标准，请继续保持'
+        (evalResult?.coachingMessageTh && evalResult.phase !== 'IDLE' ? evalResult.coachingMessageTh : undefined) ||
+        (lang === 'zh-CN'
+          ? (cues.idleMessageCn || '动作标准，请继续保持')
           : lang === 'en-US'
-            ? 'Good form, keep going smoothly'
-            : 'ดีมาก ทำต่อเนื่องอย่างผ่อนคลายเลยครับ',
+            ? (cues.idleMessageEn || 'Good form, keep going smoothly')
+            : (cues.idleMessageTh || 'ดีมาก ทำต่อเนื่องอย่างผ่อนคลายเลยครับ')),
       tone: 'emerald',
     };
   };
