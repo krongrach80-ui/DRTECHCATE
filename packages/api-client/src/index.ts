@@ -2254,6 +2254,27 @@ export class ApiClient {
               }
             }
 
+            // Fallback comparison: if match score is between 68% and 74%, run a fallback comparison against top 2 stored enrollment frames in patient.history.frames
+            if (candBestRaw >= 0.68 && candBestRaw < 0.74) {
+              const histFrames = p.history?.frames || p.frames || [];
+              if (Array.isArray(histFrames) && histFrames.length > 0) {
+                const top2Frames = histFrames.slice(0, 2);
+                for (const hf of top2Frames) {
+                  const hVec = hf?.embedding || hf?.vector || (Array.isArray(hf) ? hf : null);
+                  if (Array.isArray(hVec) && hVec.length === probe.length) {
+                    const normH = l2Normalize(hVec);
+                    const hCos = cosineSimilarity(normProbe, normH);
+                    const hDist = euclideanDistance(normProbe, normH);
+                    if (hCos > candBestRaw) {
+                      candBestRaw = hCos;
+                      candBestCal = calibrateCosineSimilarity(hCos);
+                      candBestDist = hDist;
+                    }
+                  }
+                }
+              }
+            }
+
             if (candBestRaw > 0) {
               return {
                 patient: p,
@@ -2288,7 +2309,7 @@ export class ApiClient {
                   const top = rpcData[0];
                   const rawCos = typeof top.similarity === 'number' ? top.similarity : 0;
                   const calSim = calibrateCosineSimilarity(rawCos);
-                  const pct = Math.min(100, Math.round(calSim * 100));
+                  const pct = Math.min(100, Math.round(Math.max(rawCos, calSim) * 100));
                   const dist = typeof top.distance === 'number' ? top.distance : Math.max(0, 1 - calSim);
                   const patientObj = normalizePatientRecord(top);
 
@@ -2303,7 +2324,8 @@ export class ApiClient {
                   }
                   const rpcMargin = rpcRunnerUp && typeof rpcRunnerUp.similarity === 'number' ? (rawCos - rpcRunnerUp.similarity) : 1.0;
 
-                  if (rawCos >= 0.85 && dist <= 0.38 && rpcMargin >= 0.08) {
+                  const isMatchThreshold = (rawCos >= 0.74 || calSim >= 0.74) && dist <= 0.58;
+                  if (isMatchThreshold && rpcMargin >= 0.06) {
                     return {
                       ok: true,
                       matched: true,
@@ -2314,7 +2336,7 @@ export class ApiClient {
                       distance: dist,
                       data: { matched: true, patient: patientObj },
                     } as T;
-                  } else if ((rawCos >= 0.70 && rawCos < 0.85) || (rawCos >= 0.85 && rpcMargin < 0.08)) {
+                  } else if ((rawCos >= 0.65 && rawCos < 0.74) || (isMatchThreshold && rpcMargin < 0.06)) {
                     return {
                       ok: true,
                       matched: false,
@@ -2432,13 +2454,13 @@ export class ApiClient {
 
           const liveSource = (targetId && livePatientsMap.get(targetId)) || (targetHn && liveHnMap.get(targetHn)) || top1.patient;
           const normalizedMatch = liveSource ? normalizePatientRecord(liveSource) : null;
-          const finalPercentage = Math.min(100, Math.round(top1.calSim * 100));
+          const finalPercentage = Math.min(100, Math.max(0, Math.round(Math.max(top1.rawCos, top1.calSim) * 100)));
 
           // Guard 1: Single User Database Strict Guard
           // When exactly 1 patient is in the DB, strangers must NEVER be suggested as ambiguous candidates (no PIN prompt)
-          // Genuine match strictly requires rawCos >= 0.85 AND dist <= 0.32
+          // Normalized acceptance threshold: rawCos >= 0.74 or calSim >= 0.74 AND dist <= 0.58
           if (isSingleUserInDb) {
-            if (normalizedMatch && top1.rawCos >= 0.85 && top1.dist <= 0.32) {
+            if (normalizedMatch && (top1.rawCos >= 0.74 || top1.calSim >= 0.74) && top1.dist <= 0.58) {
               return {
                 ok: true,
                 matched: true,
@@ -2453,7 +2475,7 @@ export class ApiClient {
                 },
               } as T;
             } else {
-              // Below strict threshold in single-user DB -> FAIL CLOSED STRANGER REJECTION
+              // Below threshold in single-user DB -> FAIL CLOSED STRANGER REJECTION
               return {
                 ok: true,
                 matched: false,
@@ -2465,7 +2487,7 @@ export class ApiClient {
                 cosineSimilarity: Number(top1.calSim.toFixed(4)),
                 rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
                 distance: top1.dist,
-                message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 85%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่',
+                message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 74%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่',
               } as T;
             }
           }
@@ -2486,9 +2508,9 @@ export class ApiClient {
 
           const margin = runnerUpCand ? (top1.rawCos - runnerUpCand.rawCos) : 1.0;
 
-          // Case A: High Match (genuine match strictly requires rawCos >= 0.85, dist <= 0.38, and margin >= 0.08)
-          if (normalizedMatch && top1.rawCos >= 0.85 && top1.dist <= 0.38) {
-            if (margin < 0.08) {
+          // Case A: High Match (normalized genuine match accepts rawCos >= 0.74, dist <= 0.58, and margin >= 0.06)
+          if (normalizedMatch && (top1.rawCos >= 0.74 || top1.calSim >= 0.74) && top1.dist <= 0.58) {
+            if (margin < 0.06) {
               return {
                 ok: true,
                 matched: false,
@@ -2520,8 +2542,8 @@ export class ApiClient {
             } as T;
           }
 
-          // Case B: Ambiguous candidate match (0.70 <= rawCos < 0.85) -> Require PIN
-          if (normalizedMatch && top1.rawCos >= 0.70 && top1.rawCos < 0.85) {
+          // Case B: Ambiguous candidate match (0.65 <= rawCos < 0.74) -> Require PIN
+          if (normalizedMatch && top1.rawCos >= 0.65 && top1.rawCos < 0.74) {
             return {
               ok: true,
               matched: false,
@@ -2539,7 +2561,7 @@ export class ApiClient {
           }
         }
 
-        // Case C: Below threshold / Impostor / Stranger (rawCos < 0.70 or no candidate)
+        // Case C: Below threshold / Impostor / Stranger (rawCos < 0.65 or no candidate)
         return {
           ok: true,
           matched: false,
@@ -2551,7 +2573,7 @@ export class ApiClient {
           cosineSimilarity: 0,
           rawCosineSimilarity: 0,
           distance: 2.0,
-          message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 85%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่',
+          message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 74%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่',
         } as T;
       }
 

@@ -121,3 +121,4 @@ describe('Profile Avatar Hardening & Base64 Egress Leak Prevention', () => {
     expect(capturedPatchBody.avatar_url.startsWith('data:')).toBe(false);
   });
 });
+

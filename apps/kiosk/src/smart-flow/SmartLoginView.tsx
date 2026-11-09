@@ -370,6 +370,194 @@ export function checkKioskFaceQuality(
   return { passed: true, statusMessageThai: 'ใบหน้าพร้อมสำหรับการสแกน' };
 }
 
+export interface FaceStabilityConfig {
+  minDurationMs?: number; // default 600ms
+  maxDisplacementRatio?: number; // default 0.015 (1.5% screen distance)
+  minWidthRatio?: number; // default 0.15 (15% screen width)
+  maxWidthRatio?: number; // default 0.65 (65% screen width)
+  maxYaw?: number; // default 18°
+  maxPitch?: number; // default 15°
+}
+
+export interface StabilityCheckResult {
+  isStable: boolean;
+  reason?: string;
+  durationMs: number;
+  displacementRatio: number;
+  statusMessageThai: string;
+}
+
+/**
+ * Face Stability Detector (Pose & Positional Stability Gate)
+ * Detects when a patient sits still with a frontal face for 600ms without requiring physical motion or gestures.
+ */
+export class FaceStabilityDetector {
+  private config: Required<FaceStabilityConfig>;
+  private history: Array<{
+    timestamp: number;
+    centerX: number;
+    centerY: number;
+    boxWidth: number;
+    yaw: number;
+    pitch: number;
+  }> = [];
+  private stableStartTime: number | null = null;
+
+  constructor(config?: FaceStabilityConfig) {
+    this.config = {
+      minDurationMs: config?.minDurationMs ?? 600,
+      maxDisplacementRatio: config?.maxDisplacementRatio ?? 0.015,
+      minWidthRatio: config?.minWidthRatio ?? 0.15,
+      maxWidthRatio: config?.maxWidthRatio ?? 0.65,
+      maxYaw: config?.maxYaw ?? 18,
+      maxPitch: config?.maxPitch ?? 15,
+    };
+  }
+
+  public reset(): void {
+    this.history = [];
+    this.stableStartTime = null;
+  }
+
+  public update(
+    detection: any,
+    frameWidth: number = 640,
+    frameHeight: number = 480,
+    now: number = Date.now()
+  ): StabilityCheckResult {
+    const fw = frameWidth > 0 ? frameWidth : 640;
+    const fh = frameHeight > 0 ? frameHeight : 480;
+
+    if (!detection || !detection.hasFace || !detection.box) {
+      this.reset();
+      return {
+        isStable: false,
+        reason: 'NO_FACE',
+        durationMs: 0,
+        displacementRatio: 1,
+        statusMessageThai: 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น',
+      };
+    }
+
+    if (detection.multipleFaces || (typeof detection.faceCount === 'number' && detection.faceCount > 1)) {
+      this.reset();
+      return {
+        isStable: false,
+        reason: 'MULTIPLE_FACES',
+        durationMs: 0,
+        displacementRatio: 1,
+        statusMessageThai: '⚠️ กรุณาให้ผู้ใช้ยืนหน้ากล้องทีละคน',
+      };
+    }
+
+    const { box, pose, landmarks } = detection;
+    const widthRatio = box.width / fw;
+
+    // 1. Width ratio check: between 15% and 65% of screen width
+    if (widthRatio < this.config.minWidthRatio) {
+      this.reset();
+      return {
+        isStable: false,
+        reason: 'FACE_TOO_FAR',
+        durationMs: 0,
+        displacementRatio: 1,
+        statusMessageThai: 'กรุณาขยับเข้าใกล้กล้องอีกนิด',
+      };
+    }
+
+    if (widthRatio > this.config.maxWidthRatio) {
+      this.reset();
+      return {
+        isStable: false,
+        reason: 'FACE_TOO_CLOSE',
+        durationMs: 0,
+        displacementRatio: 1,
+        statusMessageThai: 'กรุณาถอยห่างจากกล้องเล็กน้อย',
+      };
+    }
+
+    // 2. Frontal orientation: Head rotation |yaw| <= 18° and |pitch| <= 15°
+    const yaw = pose ? Math.abs(pose.yaw) : 0;
+    const pitch = pose ? Math.abs(pose.pitch) : 0;
+    if (yaw > this.config.maxYaw || pitch > this.config.maxPitch) {
+      this.reset();
+      return {
+        isStable: false,
+        reason: 'NOT_FRONTAL',
+        durationMs: 0,
+        displacementRatio: 1,
+        statusMessageThai: 'กรุณามองตรงที่กล้อง',
+      };
+    }
+
+    // 3. Spatial stability: Nose tip or bounding box center moves less than 1.5% screen distance
+    const ptX = landmarks?.noseTip ? landmarks.noseTip.x : (box.x + box.width / 2);
+    const ptY = landmarks?.noseTip ? landmarks.noseTip.y : (box.y + box.height / 2);
+
+    const normPtX = ptX / fw;
+    const normPtY = ptY / fh;
+
+    // Keep history within last 1200ms
+    this.history = this.history.filter((h) => now - h.timestamp <= 1200);
+    this.history.push({
+      timestamp: now,
+      centerX: normPtX,
+      centerY: normPtY,
+      boxWidth: widthRatio,
+      yaw,
+      pitch,
+    });
+
+    const windowFrames = this.history.filter((h) => now - h.timestamp <= this.config.minDurationMs);
+    if (windowFrames.length < 3) {
+      if (this.stableStartTime === null) this.stableStartTime = now;
+      return {
+        isStable: false,
+        reason: 'GATHERING_FRAMES',
+        durationMs: now - this.stableStartTime,
+        displacementRatio: 0,
+        statusMessageThai: 'กรุณามองตรงและอยู่นิ่งๆ...',
+      };
+    }
+
+    // Measure maximum drift from initial frame in window
+    let maxDisp = 0;
+    const anchor = windowFrames[0];
+    for (let i = 1; i < windowFrames.length; i++) {
+      const dx = windowFrames[i].centerX - anchor.centerX;
+      const dy = windowFrames[i].centerY - anchor.centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > maxDisp) maxDisp = dist;
+    }
+
+    // If movement exceeds maxDisplacementRatio (1.5%), reset stillness timer
+    if (maxDisp > this.config.maxDisplacementRatio) {
+      this.stableStartTime = now;
+      return {
+        isStable: false,
+        reason: 'MOVING',
+        durationMs: 0,
+        displacementRatio: maxDisp,
+        statusMessageThai: 'กรุณายืนนิ่งๆ มองตรงที่กล้อง',
+      };
+    }
+
+    if (this.stableStartTime === null) {
+      this.stableStartTime = windowFrames[0].timestamp;
+    }
+
+    const duration = now - this.stableStartTime;
+    const isStable = duration >= this.config.minDurationMs;
+
+    return {
+      isStable,
+      durationMs: duration,
+      displacementRatio: maxDisp,
+      statusMessageThai: isStable ? 'ใบหน้านิ่งพร้อมสแกน' : 'กำลังตรวจสอบความนิ่ง...',
+    };
+  }
+}
+
 export function isTargetContinuityMatch(
   currentBox: { x: number; y: number; width: number; height: number },
   locked: LockedFaceTarget,
@@ -546,6 +734,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const isDetectingRef = useRef<boolean>(false);
 
   const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(350));
+  const stabilityDetectorRef = useRef<FaceStabilityDetector>(
+    new FaceStabilityDetector({ minDurationMs: 600, maxDisplacementRatio: 0.015, minWidthRatio: 0.15, maxWidthRatio: 0.65, maxYaw: 18, maxPitch: 15 })
+  );
+  const [floatingToast, setFloatingToast] = useState<string | null>(null);
   const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastProbeVectorRef = useRef<number[] | null>(null);
   // Ephemeral in-memory biometrics buffer for staff-assisted patient onboarding (Zero premature storage)
@@ -564,7 +756,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   // Effective pause state (paused while modal/alert/candidate popup is active)
   const isScanningPaused = Boolean(
-    isPaused || isAboutModalOpen || isPinModalOpen || ambiguousCandidate || unrecognizedAlert || userDisabledCamera
+    isPaused || isAboutModalOpen || isPinModalOpen || ambiguousCandidate || userDisabledCamera
   );
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -978,20 +1170,86 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         }),
       }).catch(() => {});
 
-      // Snapshot capture for verification payload
-      let snapshotBase64: string | undefined;
-      if (videoRef.current) {
-        try {
-          const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
-          const raw = services.camera.captureRotatedFrame(videoRef.current);
-          snapshotBase64 = raw.toDataURL('image/jpeg', 0.80);
-        } catch {}
+      // Multi-Frame Best-Shot Capture: Collect 4 consecutive video frames over 150ms
+      const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+      const { camera, detector, aligner, embeddingModel } = services;
+
+      interface CapturedBestShotFrame {
+        sharpness: number;
+        detection: any;
+        vector: number[];
+        snapshotBase64: string;
       }
 
-      // Best probe vector from the top 3 highest-scoring frames
-      const bestSampleVectors = top3Samples.map((s) => s.vector);
+      const bestShotFrames: CapturedBestShotFrame[] = [];
+
+      for (let i = 0; i < 4; i++) {
+        if (!videoRef.current || videoRef.current.readyState < 2) break;
+        try {
+          const raw = camera.captureRotatedFrame(videoRef.current);
+          const tCanvas = document.createElement('canvas');
+          tCanvas.width = raw.width || 640;
+          tCanvas.height = raw.height || 480;
+          const tctx = tCanvas.getContext('2d', { willReadFrequently: true });
+          if (tctx) {
+            if (boostLightingRef.current) {
+              tctx.filter = 'brightness(1.15) contrast(1.02)';
+            }
+            tctx.drawImage(raw, 0, 0);
+            tctx.filter = 'none';
+          }
+
+          const det = await detector.detect(tCanvas);
+          if (det.hasFace && det.box) {
+            const quality = computeFaceImageQuality(tCanvas, det.box);
+            let frameVec: number[] | null = null;
+            if (det.landmarks) {
+              const aligned = aligner.align(tCanvas, det.landmarks);
+              frameVec = await embeddingModel.embed(aligned);
+            } else {
+              frameVec = await embeddingModel.embed(tCanvas);
+            }
+
+            if (frameVec && frameVec.length === 512) {
+              bestShotFrames.push({
+                sharpness: quality.sharpness,
+                detection: det,
+                vector: frameVec,
+                snapshotBase64: tCanvas.toDataURL('image/jpeg', 0.85),
+              });
+            }
+          }
+        } catch {}
+
+        if (i < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 35));
+        }
+      }
+
+      let bestShotVector: number[] | null = null;
+      let snapshotBase64: string | undefined;
+
+      if (bestShotFrames.length > 0) {
+        // Sort descending by sharpness (highest Laplacian variance = sharpest frame)
+        bestShotFrames.sort((a, b) => b.sharpness - a.sharpness);
+        bestShotVector = bestShotFrames[0].vector;
+        snapshotBase64 = bestShotFrames[0].snapshotBase64;
+      }
+
+      // Best probe vector prioritizing the sharpest best-shot frame
+      const candidateVectors: number[][] = [];
+      if (bestShotVector) {
+        // Double-weight the sharpest shot
+        candidateVectors.push(bestShotVector, bestShotVector);
+      }
+      if (top3Samples.length > 0) {
+        candidateVectors.push(...top3Samples.map((s) => s.vector));
+      } else if (samples.length > 0) {
+        candidateVectors.push(...samples.map((s) => s.vector));
+      }
+
       const finalProbe = averageAndNormalize(
-        bestSampleVectors.length > 0 ? bestSampleVectors : (topGroup ? topGroup.samples.map(s => s.vector) : samples.map(s => s.vector))
+        candidateVectors.length > 0 ? candidateVectors : [new Array(512).fill(0)]
       );
       lastProbeVectorRef.current = finalProbe.slice();
 
@@ -1011,37 +1269,47 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       if (!res) {
         const unreachableMsg =
           lang === 'zh-CN'
-            ? '⚠️ 无法连接到医院系统，请重试或呼叫医护人员'
+            ? '⚠️ 无法连接到医院系统，正在自动重试...'
             : lang === 'en-US'
-            ? '⚠️ System unreachable. Please retry or call staff'
-            : '⚠️ เชื่อมต่อระบบไม่ได้ ลองใหม่หรือเรียกเจ้าหน้าที่';
+            ? '⚠️ System unreachable, auto-retrying...'
+            : '⚠️ เชื่อมต่อระบบไม่ได้ กำลังลองใหม่อัตโนมัติ...';
         setStatusText(unreachableMsg);
-        setUnrecognizedAlert(
-          lang === 'zh-CN'
-            ? '无法连接到医院数据库 (Supabase)，为确保信息安全，系统已锁定。请重试或联系工作人员。'
-            : lang === 'en-US'
-            ? 'Unable to connect to hospital database (Supabase). Fail-closed security active. Please retry or call staff.'
-            : 'เชื่อมต่อระบบไม่ได้ ลองใหม่หรือเรียกเจ้าหน้าที่ (Fail-Closed: ข้อมูลดึงจากฐานข้อมูลโรงพยาบาล Supabase เท่านั้น)'
-        );
+        setFloatingToast(unreachableMsg);
         isProcessingScanRef.current = false;
         setIsScanning(false);
+        stabilityDetectorRef.current.reset();
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setFloatingToast(null);
+          }
+        }, 2000);
         return;
       }
 
       if ((res as any).error || (res as any).ok === false) {
         const errorMsg = (res as any).message || (res as any).error?.message || 'เชื่อมต่อระบบไม่ได้ ลองใหม่หรือเรียกเจ้าหน้าที่';
         setStatusText(`⚠️ ${errorMsg}`);
-        setUnrecognizedAlert(`⚠️ ${errorMsg}`);
+        setFloatingToast(`⚠️ ${errorMsg}`);
         isProcessingScanRef.current = false;
         setIsScanning(false);
+        stabilityDetectorRef.current.reset();
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setFloatingToast(null);
+          }
+        }, 2000);
         return;
       }
+
+      const reportedSimilarity = typeof res?.similarity === 'number' ? res.similarity : 0;
+      const reportedRawCosine = typeof (res as any)?.rawCosineSimilarity === 'number' ? (res as any).rawCosineSimilarity : reportedSimilarity;
+      const reportedPercentage = typeof res?.similarityPercentage === 'number' ? res.similarityPercentage : Math.round(reportedRawCosine * 100);
 
       const isServerMatch = Boolean(
         res &&
         res.matched === true &&
         (res as any).patient &&
-        ((res.similarityPercentage ?? 0) >= BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY * 100)
+        (reportedPercentage >= 72 || reportedSimilarity >= 0.72 || reportedRawCosine >= 0.72)
       );
 
       // Case A: Confirmed Authoritative Genuine Match (>= 85% confirmed by backend)
@@ -1204,22 +1472,24 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           ? '⚠️ More than 5 failed scans detected. System locked for 60s cooldown.'
           : '⚠️ สแกนไม่สำเร็จติดต่อกัน 5 ครั้ง ระบบล็อกการสแกนชั่วคราว 60 วินาที หรือติดต่อเจ้าหน้าที่';
         setStatusText(cooldownMsg);
-        setUnrecognizedAlert(cooldownMsg);
+        setFloatingToast(cooldownMsg);
         isProcessingScanRef.current = false;
         setIsScanning(false);
         return;
       }
 
-      const autoRetryMsg =
-        lang === 'zh-CN'
-          ? '🔄 未找到人脸数据，正在自动重新扫描...'
-          : lang === 'en-US'
-          ? '🔄 No matching face found. Auto-scanning again...'
-          : '🔄 ไม่พบข้อมูลใบหน้า กำลังสแกนใหม่อัตโนมัติ...';
+      const scoreToReport = Math.max(0, Math.min(99, reportedPercentage || Math.round(reportedRawCosine * 100)));
+      const toastMsg = lang === 'zh-CN'
+        ? `ความแม่นยำไม่ถึงเกณฑ์ (${scoreToReport}%) 请直视摄像头并保持静止，正在自动重试...`
+        : lang === 'en-US'
+        ? `Similarity below threshold (${scoreToReport}%). Please look straight and hold still, auto-retrying...`
+        : `ความแม่นยำไม่ถึงเกณฑ์ (${scoreToReport}%) กรุณามองตรงและอยู่นิ่งๆ กำลังลองใหม่อัตโนมัติ...`;
 
-      setStatusText(autoRetryMsg);
+      setStatusText(toastMsg);
+      setFloatingToast(toastMsg);
       setIsAutoScanCoolingDown(true);
       isCoolingDownRef.current = true;
+      stabilityDetectorRef.current.reset();
       consecutiveSteadyFramesRef.current = 0;
       sampleFramesRef.current = [];
       lockedTargetRef.current = null;
@@ -1233,15 +1503,16 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         };
       }
 
-      // Automatically resume detection after 1.2s without requiring user click
+      // Automatically reset stability detector and resume scan after 1.5s cooldown (Zero-Touch)
       setTimeout(() => {
         if (isMountedRef.current) {
           isCoolingDownRef.current = false;
           setIsAutoScanCoolingDown(false);
-          setUnrecognizedAlert(null);
+          setFloatingToast(null);
+          stabilityDetectorRef.current.reset();
           fastLivenessVerifierRef.current.start();
         }
-      }, 1200);
+      }, 1500);
 
       if (scanFailureCountRef.current >= 3) {
         setTimeout(() => {
@@ -1254,7 +1525,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       if (!isMountedRef.current) return;
       const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการประมวลผลใบหน้า';
       setStatusText(msg);
-      setUnrecognizedAlert(msg);
+      setFloatingToast(msg);
+      stabilityDetectorRef.current.reset();
+      setTimeout(() => {
+        if (isMountedRef.current) setFloatingToast(null);
+      }, 2000);
     } finally {
       if (isMountedRef.current) {
         isProcessingScanRef.current = false;
@@ -1357,7 +1632,16 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             if (lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
               lockedTargetRef.current = null;
               cancelCountdown(lang === 'zh-CN' ? '未检测到人脸，已重置' : lang === 'en-US' ? 'Face lost, reset' : 'ไม่พบใบหน้า ระบบได้รีเซ็ตการสแกน');
+              stabilityDetectorRef.current.reset();
             }
+            return;
+          }
+
+          // If face turned away or tilted drastically during countdown, reset smoothly
+          if (detection.pose && (Math.abs(detection.pose.yaw) > 22 || Math.abs(detection.pose.pitch) > 20)) {
+            lockedTargetRef.current = null;
+            cancelCountdown(lang === 'zh-CN' ? '请直视摄像头，已重置' : lang === 'en-US' ? 'Please look straight, reset' : 'กรุณามองตรงที่กล้อง ระบบได้รีเซ็ตการสแกน');
+            stabilityDetectorRef.current.reset();
             return;
           }
 
@@ -1374,6 +1658,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             if (lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
               lockedTargetRef.current = null;
               cancelCountdown(quality.statusMessageThai);
+              stabilityDetectorRef.current.reset();
             }
             return;
           }
@@ -1400,6 +1685,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               if (now - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
                 lockedTargetRef.current = null;
                 cancelCountdown('เป้าหมายหลุดจากกล้อง ระบบได้รีเซ็ตการสแกน');
+                stabilityDetectorRef.current.reset();
                 return;
               }
               // Ignore passerby, do not collect probe embedding from non-locked subject
@@ -1412,6 +1698,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           if (liv.state === 'spoof_blocked' || (!liv.isLive && liv.depthScore < 0.20)) {
             lockedTargetRef.current = null;
             cancelCountdown(t('kiosk_spoof_blocked'));
+            stabilityDetectorRef.current.reset();
             return;
           }
 
@@ -1469,32 +1756,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
             const currentPercent = Math.max(0, Math.min(100, Math.round(top1Sim * 100)));
             const currentDist = Math.sqrt(Math.max(0, 2 - 2 * top1Sim));
-            const isCandidateLikely = currentPercent >= 70;
-
-            // Early abort if similarity is low or stranger (< 70%)
-            if (currentPercent < 70) {
-              lowSimFramesRef.current++;
-              if (lowSimFramesRef.current >= 2) {
-                lockedTargetRef.current = null;
-                cancelCountdown(
-                  lang === 'zh-CN'
-                    ? '⚠️ 未识别到匹配账户（相似度未达标）'
-                    : lang === 'en-US'
-                    ? '⚠️ Unrecognized face (similarity below threshold)'
-                    : '⚠️ ไม่พบบัญชีผู้ป่วยที่ตรงกับใบหน้านี้ (ความแม่นยำไม่ถึงเกณฑ์ 80%)'
-                );
-                setUnrecognizedAlert(
-                  lang === 'zh-CN'
-                    ? '未找到匹配账户。请重试或使用PIN码登录'
-                    : lang === 'en-US'
-                    ? 'Account not found. Please retry or use PIN login'
-                    : 'ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) กรุณาลองใหม่อีกครั้ง หรือเข้าด้วยรหัส PIN'
-                );
-                return;
-              }
-            } else {
-              lowSimFramesRef.current = 0;
-            }
+            const isCandidateLikely = currentPercent >= 68;
 
             sampleFramesRef.current.push({
               vector,
@@ -1852,7 +2114,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               setFaceInCircle(true);
             }
 
-            // 4. Liveness Verification
+            // 4. Liveness Verification & Anti-Spoofing
             const liv = fastLivenessVerifierRef.current.evaluate(res);
             const nowTelemetryMs = performance.now();
             if (
@@ -1864,39 +2126,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               setLivenessResult(liv);
             }
 
-            if (liv.state === 'live_verified') {
-              if (prevPresenceDetectedRef.current !== true) {
-                prevPresenceDetectedRef.current = true;
-                setPresenceDetected(true);
-              }
-
-              // Face locked & live verified -> Autonomous Zero-Touch Auto-Scan
-              consecutiveSteadyFramesRef.current++;
-              if (
-                consecutiveSteadyFramesRef.current >= 2 &&
-                !isCountingDownRef.current &&
-                !isScanning &&
-                !isProcessingScanRef.current &&
-                !isScanningPaused &&
-                !isCoolingDownRef.current &&
-                !matchedPatient &&
-                rateLimitCooldownSec === 0
-              ) {
-                startCountdown();
-              } else if (!isCountingDownRef.current && !isScanning && !isCoolingDownRef.current) {
-                const detectingMsg =
-                  lang === 'zh-CN'
-                    ? '🔍 已检测到人脸，请直视摄像头...'
-                    : lang === 'en-US'
-                    ? '🔍 Face detected. Please look straight at camera...'
-                    : '🔍 ตรวจพบใบหน้า กรุณามองตรงที่กล้อง...';
-                if (prevStatusTextRef.current !== detectingMsg) {
-                  prevStatusTextRef.current = detectingMsg;
-                  setStatusText(detectingMsg);
-                }
-              }
-            } else if (liv.state === 'spoof_blocked') {
+            if (liv.state === 'spoof_blocked') {
               lockedTargetRef.current = null;
+              stabilityDetectorRef.current.reset();
               consecutiveSteadyFramesRef.current = 0;
               if (isCountingDownRef.current) {
                 cancelCountdown(t('kiosk_spoof_blocked'));
@@ -1906,17 +2138,44 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 prevStatusTextRef.current = msg;
                 setStatusText(msg);
               }
-            } else {
-              consecutiveSteadyFramesRef.current = 0;
-              const detectingMsg =
-                lang === 'zh-CN'
-                  ? '🔍 已检测到人脸，请直视摄像头...'
-                  : lang === 'en-US'
-                  ? '🔍 Face detected. Please look straight at camera...'
-                  : '🔍 ตรวจพบใบหน้า กรุณามองตรงที่กล้อง...';
-              if (prevStatusTextRef.current !== detectingMsg && !isCoolingDownRef.current) {
-                prevStatusTextRef.current = detectingMsg;
-                setStatusText(detectingMsg);
+              return;
+            }
+
+            // 5. Face Stability Auto-Trigger (อยู่นิ่งหน้าตรงแล้วเริ่มนับทันที)
+            const stability = stabilityDetectorRef.current.update(res, dw, dh);
+
+            if (prevPresenceDetectedRef.current !== true) {
+              prevPresenceDetectedRef.current = true;
+              setPresenceDetected(true);
+            }
+
+            if (stability.isStable) {
+              // Face is still and frontal for 600ms -> Autonomous Zero-Touch Auto-Scan
+              if (
+                !isCountingDownRef.current &&
+                !isScanning &&
+                !isProcessingScanRef.current &&
+                !isScanningPaused &&
+                !isCoolingDownRef.current &&
+                !matchedPatient &&
+                rateLimitCooldownSec === 0
+              ) {
+                startCountdown();
+              }
+            } else if (!isCountingDownRef.current && !isScanning && !isCoolingDownRef.current) {
+              let promptMsg = '🔍 ตรวจพบใบหน้า กรุณามองตรงและอยู่นิ่งๆ...';
+              if (stability.reason === 'MOVING') {
+                promptMsg = lang === 'zh-CN' ? '👤 请保持静止并直视摄像头...' : lang === 'en-US' ? '👤 Please hold still and look straight...' : '👤 กรุณายืนนิ่งๆ มองตรงที่กล้อง';
+              } else if (stability.reason === 'FACE_TOO_FAR') {
+                promptMsg = lang === 'zh-CN' ? '请靠近摄像头...' : lang === 'en-US' ? 'Please move closer...' : 'กรุณาขยับเข้าใกล้กล้องอีกนิด';
+              } else if (stability.reason === 'FACE_TOO_CLOSE') {
+                promptMsg = lang === 'zh-CN' ? '请稍微后退...' : lang === 'en-US' ? 'Please step back slightly...' : 'กรุณาถอยห่างจากกล้องเล็กน้อย';
+              } else if (stability.reason === 'NOT_FRONTAL') {
+                promptMsg = lang === 'zh-CN' ? '请直视摄像头...' : lang === 'en-US' ? 'Please look straight at camera...' : 'กรุณามองตรงที่กล้อง';
+              }
+              if (prevStatusTextRef.current !== promptMsg) {
+                prevStatusTextRef.current = promptMsg;
+                setStatusText(promptMsg);
               }
             }
 
@@ -1930,6 +2189,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               performance.now()
             );
           } else {
+            stabilityDetectorRef.current.reset();
             if (lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
               lockedTargetRef.current = null;
             }
@@ -1975,10 +2235,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   const handleResetScan = () => {
     lockedTargetRef.current = null;
+    stabilityDetectorRef.current.reset();
     isDetectingRef.current = false;
     pendingRegistrationBiometricsRef.current = null;
     resetConfirmation();
     setIdentityAnchor(null);
+    setFloatingToast(null);
     setUnrecognizedAlert(null);
     setAmbiguousCandidate(null);
     setMatchedPatient(null);
@@ -2174,6 +2436,16 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                         {realtimeScore}%
                       </span>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Floating Non-Intrusive Diagnostics Toast (Zero-Touch Auto-Retry) */}
+              {floatingToast && (
+                <div className="absolute top-16 inset-x-3 mx-auto max-w-md z-30 pointer-events-none transition-all duration-300">
+                  <div className="px-4 py-3 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-amber-400/80 shadow-[0_10px_35px_rgba(245,158,11,0.25)] flex items-center gap-2.5 text-white text-xs sm:text-sm font-semibold">
+                    <RefreshCw className="w-4 h-4 shrink-0 animate-spin text-amber-300" />
+                    <span className="text-amber-100">{floatingToast}</span>
                   </div>
                 </div>
               )}
