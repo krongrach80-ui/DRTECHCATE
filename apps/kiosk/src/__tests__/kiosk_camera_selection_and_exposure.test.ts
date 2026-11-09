@@ -146,6 +146,62 @@ describe('Kiosk Camera Selection & Exposure Standardization', () => {
       expect(applied.advanced[0].exposureCompensation).toBe(1.5);
     });
 
+    it('handles 0..255 UVC webcams with undefined settings without crushing brightness to 18', async () => {
+      const applyConstraintsMock = vi.fn().mockResolvedValue(undefined);
+      const mockTrack = {
+        getCapabilities: () => ({
+          brightness: { min: 0, max: 255, step: 1 },
+          contrast: { min: 0, max: 255, step: 1 },
+          exposureMode: ['continuous', 'manual'],
+          whiteBalanceMode: ['continuous', 'manual'],
+        }),
+        // In Chrome on Windows, getSettings() often returns undefined for brightness & contrast
+        getSettings: () => ({}),
+        applyConstraints: applyConstraintsMock,
+      };
+
+      const mockStream = {
+        getVideoTracks: () => [mockTrack],
+      } as unknown as MediaStream;
+
+      const camera = new CameraManager();
+      await camera.applyHardwareExposure(mockStream, { targetBrightnessOffset: 18 });
+
+      expect(applyConstraintsMock).toHaveBeenCalledTimes(1);
+      const applied = applyConstraintsMock.mock.calls[0][0];
+      expect(applied.advanced).toBeDefined();
+      // Midpoint is 127.5, offset scaled is 18 * (255 / 128) ≈ 35.86 -> target ≈ 163 (NOT 18)
+      expect(applied.advanced[0].brightness).toBeGreaterThanOrEqual(160);
+      expect(applied.advanced[0].brightness).toBeLessThanOrEqual(165);
+      // Contrast midpoint is 128 (NOT 32)
+      expect(applied.advanced[0].contrast).toBe(128);
+    });
+
+    it('applies boost lighting offset (28) proportionally to 0..255 range', async () => {
+      const applyConstraintsMock = vi.fn().mockResolvedValue(undefined);
+      const mockTrack = {
+        getCapabilities: () => ({
+          brightness: { min: 0, max: 255, step: 1 },
+          contrast: { min: 0, max: 255, step: 1 },
+        }),
+        getSettings: () => ({}),
+        applyConstraints: applyConstraintsMock,
+      };
+
+      const mockStream = {
+        getVideoTracks: () => [mockTrack],
+      } as unknown as MediaStream;
+
+      const camera = new CameraManager();
+      await camera.applyHardwareExposure(mockStream, { targetBrightnessOffset: 28 });
+
+      expect(applyConstraintsMock).toHaveBeenCalledTimes(1);
+      const applied = applyConstraintsMock.mock.calls[0][0];
+      // Midpoint 127.5 + 28 * (255 / 128) ≈ 183
+      expect(applied.advanced[0].brightness).toBeGreaterThanOrEqual(180);
+      expect(applied.advanced[0].brightness).toBeLessThanOrEqual(186);
+    });
+
     it('handles camera streams without video tracks gracefully', async () => {
       const emptyStream = {
         getVideoTracks: () => [],

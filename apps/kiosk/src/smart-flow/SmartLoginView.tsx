@@ -491,6 +491,19 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [isCameraAdjustingLight, setIsCameraAdjustingLight] = useState<boolean>(true);
   const [cameraDisconnectedError, setCameraDisconnectedError] = useState<string | null>(null);
 
+  // Light Boost Mode (Persists across sessions, enhances video stream in dim/backlit rooms)
+  const [boostLighting, setBoostLighting] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('kiosk_boost_lighting') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const boostLightingRef = useRef<boolean>(boostLighting);
+  useEffect(() => {
+    boostLightingRef.current = boostLighting;
+  }, [boostLighting]);
+
   const exposureBoostLevelRef = useRef<number>(0);
   const lastExposureAdjustTimeRef = useRef<number>(0);
   const lightStabilizedUntilRef = useRef<number>(Date.now() + 2000);
@@ -769,10 +782,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           };
         }
 
-        // 3. Hardware exposure & backlight compensation (+1.2 EV / brightness boost)
+        // 3. Hardware exposure & backlight compensation (+1.2 EV to +1.5 EV / brightness boost)
         try {
           if (typeof (camera as any).applyHardwareExposure === 'function') {
-            await (camera as any).applyHardwareExposure(stream, { targetBrightnessOffset: 18 });
+            await (camera as any).applyHardwareExposure(stream, {
+              exposureBoostStep: boostLightingRef.current ? 1.5 : 1.2,
+              targetBrightnessOffset: boostLightingRef.current ? 28 : 18,
+            });
           }
         } catch {
           // non-blocking
@@ -1281,7 +1297,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           }
           const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
           if (dctx) {
+            if (boostLightingRef.current) {
+              dctx.filter = 'brightness(1.15) contrast(1.02)';
+            } else {
+              dctx.filter = 'none';
+            }
             dctx.drawImage(rawFrame, 0, 0, dw, dh);
+            dctx.filter = 'none';
           }
 
           const detection = await detector.detect(dCanvas);
@@ -1675,7 +1697,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           }
           const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
           if (dctx) {
+            if (boostLightingRef.current) {
+              dctx.filter = 'brightness(1.15) contrast(1.02)';
+            } else {
+              dctx.filter = 'none';
+            }
             dctx.drawImage(videoRef.current, 0, 0, dw, dh);
+            dctx.filter = 'none';
           }
 
           const res = await detector.detect(dCanvas);
@@ -1707,8 +1735,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               if (nowMs - lastExposureAdjustTimeRef.current > 800 && exposureBoostLevelRef.current < 3) {
                 lastExposureAdjustTimeRef.current = nowMs;
                 exposureBoostLevelRef.current += 1;
-                const nextOffset = 18 + exposureBoostLevelRef.current * 8; // 26, 34...
-                const nextEv = 1.0 + exposureBoostLevelRef.current * 0.25; // 1.25, 1.50...
+                const baseOffset = boostLightingRef.current ? 28 : 18;
+                const nextOffset = baseOffset + exposureBoostLevelRef.current * 8; // 26, 34... or 36, 44...
+                const baseEv = boostLightingRef.current ? 1.25 : 1.0;
+                const nextEv = baseEv + exposureBoostLevelRef.current * 0.25; // 1.25, 1.50...
                 try {
                   const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
                   services.camera.applyHardwareExposure(null, {
@@ -2068,7 +2098,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             >
               <canvas
                 ref={previewCanvasRef}
-                className="w-full h-full object-cover filter brightness-[1.22] contrast-[1.05]"
+                className="w-full h-full object-cover transition-all duration-300"
+                style={{
+                  filter: boostLighting
+                    ? 'brightness(1.28) contrast(1.02) saturate(1.08)'
+                    : 'brightness(1.16) contrast(1.01) saturate(1.05)',
+                }}
               />
 
               {/* Real-time Liveness Telemetry Badge */}
@@ -2172,7 +2207,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                     <div>Face Ratio: <b className="text-cyan-300">{(currentTelemetry.faceHeightRatio * 100).toFixed(1)}%</b> <span className="text-[9px] text-slate-400">(Std: 45%)</span></div>
                     <div>Sharpness: <b className={currentTelemetry.sharpness >= 15 ? 'text-emerald-400' : 'text-amber-400'}>{currentTelemetry.sharpness.toFixed(1)}</b> <span className="text-[9px] text-slate-400">(min 15)</span></div>
                     <div>Brightness: <b className={currentTelemetry.brightness >= 35 && currentTelemetry.brightness <= 225 ? 'text-emerald-400' : 'text-amber-400'}>{currentTelemetry.brightness.toFixed(0)}</b> <span className="text-[9px] text-slate-400">(35-225)</span></div>
-                    <div className="col-span-2">HW Zoom: <b className="text-white">{activeCapabilities?.zoom ? `${activeCapabilities.zoom.min}-${activeCapabilities.zoom.max}x` : 'N/A (Active 112px ROI Lock)'}</b></div>
+                    <div>HW Zoom: <b className="text-white">{activeCapabilities?.zoom ? `${activeCapabilities.zoom.min}-${activeCapabilities.zoom.max}x` : 'N/A (Active 112px ROI Lock)'}</b></div>
+                    <div>Boost Light: <b className={boostLighting ? 'text-amber-300' : 'text-slate-400'}>{boostLighting ? 'Active (+1.5 EV)' : 'Standard (+1.2 EV)'}</b></div>
                   </div>
                   <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                     <div>cos(θ): <b className="text-white">{calibrationStats?.currentCos.toFixed(3) ?? '0.000'}</b></div>
@@ -2254,6 +2290,32 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   title="สลับกลับหัว / กระจก"
                 >
                   <FlipHorizontal className="w-3.5 h-3.5 text-emerald-300" />
+                </button>
+                <button
+                  type="button"
+                  id="kiosk-boost-light-btn"
+                  data-testid="kiosk-boost-light-btn"
+                  onClick={() => {
+                    const next = !boostLighting;
+                    setBoostLighting(next);
+                    try {
+                      localStorage.setItem('kiosk_boost_lighting', String(next));
+                    } catch {}
+                    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
+                    services.camera.applyHardwareExposure(null, {
+                      exposureBoostStep: next ? 1.5 : 1.2,
+                      targetBrightnessOffset: next ? 28 : 18,
+                    });
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border cursor-pointer ${
+                    boostLighting
+                      ? 'bg-amber-500/80 border-amber-300 text-white shadow-sm'
+                      : 'bg-black/60 hover:bg-black/80 border-white/20 text-white'
+                  }`}
+                  title={boostLighting ? 'ปิดโหมดเร่งแสง' : 'เปิดโหมดเร่งแสง (Camera Brightness Boost)'}
+                >
+                  <span className={boostLighting ? 'text-amber-200 animate-pulse' : 'text-slate-300'}>💡</span>
+                  <span>{boostLighting ? 'เร่งแสง: เปิด' : 'เร่งแสง'}</span>
                 </button>
                 <button
                   type="button"

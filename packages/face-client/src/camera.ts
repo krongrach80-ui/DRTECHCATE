@@ -166,7 +166,7 @@ export class CameraManager {
         hasAdvanced = true;
       }
 
-      // 3. Hardware exposure compensation (EV stops)
+      // 3. Hardware exposure compensation (EV stops) - Optimal method for UVC webcams
       if (capabilities.exposureCompensation) {
         const minComp = typeof capabilities.exposureCompensation.min === 'number' ? capabilities.exposureCompensation.min : -2.0;
         const maxComp = typeof capabilities.exposureCompensation.max === 'number' ? capabilities.exposureCompensation.max : 2.0;
@@ -177,26 +177,48 @@ export class CameraManager {
         hasAdvanced = true;
       }
 
-      // 4. Hardware brightness (For UVC webcams lacking exposureCompensation, e.g. Sunplus, Realtek)
+      // 4. Hardware brightness (For UVC webcams, e.g. Sunplus, Realtek, Logitech)
+      // Range can be [0, 255] (midpoint 128), [-64, 64] (midpoint 0), or [0, 100] (midpoint 50)
       if (capabilities.brightness && typeof capabilities.brightness.min === 'number' && typeof capabilities.brightness.max === 'number') {
         const minB = capabilities.brightness.min;
         const maxB = capabilities.brightness.max;
-        const currentSettings = typeof videoTrack.getSettings === 'function' ? videoTrack.getSettings() : ({} as any);
-        const curB = typeof currentSettings.brightness === 'number' ? currentSettings.brightness : 0;
-        const offset = typeof options?.targetBrightnessOffset === 'number' ? options.targetBrightnessOffset : 16;
-        // Target: default (often 0) + offset, safe clamp not exceeding 70% of span
-        const safeMaxB = Math.round(minB + (maxB - minB) * 0.70);
-        const targetB = Math.max(minB, Math.min(curB + offset, safeMaxB));
-        advancedConstraint.brightness = targetB;
-        hasAdvanced = true;
+        const spanB = maxB - minB;
+        if (spanB > 0) {
+          const midB = minB + spanB / 2;
+          const currentSettings = typeof videoTrack.getSettings === 'function' ? videoTrack.getSettings() : ({} as any);
+          // Only trust currentSettings.brightness if it's a realistic value above 20% of range (avoid undefined or 0 fallback)
+          const curB = (typeof currentSettings.brightness === 'number' && currentSettings.brightness > minB + spanB * 0.20)
+            ? currentSettings.brightness
+            : midB;
+
+          // Scale offset proportionally to device span (normalized against standard 128-unit span)
+          const rawOffset = typeof options?.targetBrightnessOffset === 'number' ? options.targetBrightnessOffset : 18;
+          const scaleFactor = spanB / 128.0;
+          const boostAmount = rawOffset * scaleFactor;
+
+          // Safe upper clamp: never exceed 85% of span to prevent blowing out highlights
+          const safeMaxB = Math.round(minB + spanB * 0.85);
+          const targetB = Math.max(minB, Math.min(Math.round(curB + boostAmount), safeMaxB));
+
+          advancedConstraint.brightness = targetB;
+          hasAdvanced = true;
+        }
       }
 
-      // 5. Hardware contrast: ensure not crushed
+      // 5. Hardware contrast: maintain natural balanced midpoint to prevent shadow crushing
       if (capabilities.contrast && typeof capabilities.contrast.min === 'number' && typeof capabilities.contrast.max === 'number') {
-        const currentSettings = typeof videoTrack.getSettings === 'function' ? videoTrack.getSettings() : ({} as any);
-        const curC = typeof currentSettings.contrast === 'number' ? currentSettings.contrast : 32;
-        advancedConstraint.contrast = Math.max(capabilities.contrast.min, Math.min(curC, capabilities.contrast.max));
-        hasAdvanced = true;
+        const minC = capabilities.contrast.min;
+        const maxC = capabilities.contrast.max;
+        const spanC = maxC - minC;
+        if (spanC > 0) {
+          const midC = minC + spanC / 2;
+          const currentSettings = typeof videoTrack.getSettings === 'function' ? videoTrack.getSettings() : ({} as any);
+          const curC = (typeof currentSettings.contrast === 'number' && currentSettings.contrast > minC + spanC * 0.20)
+            ? currentSettings.contrast
+            : midC;
+          advancedConstraint.contrast = Math.round(Math.max(minC, Math.min(curC, maxC)));
+          hasAdvanced = true;
+        }
       }
 
       if (hasAdvanced && typeof videoTrack.applyConstraints === 'function') {
