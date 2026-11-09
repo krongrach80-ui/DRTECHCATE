@@ -3158,6 +3158,21 @@ var init_exercises_config = __esm({
           stopOnPainMessageCn: "\u5982\u611F\u5230\u80A9\u5173\u8282\u523A\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62\u3002",
           maxSafeAngleCapDeg: 180
         },
+        elevationPlane: {
+          requiredPlane: "flexion",
+          targetMinDeg: 60,
+          targetMaxDeg: 120,
+          scaptionMinDeg: 30,
+          scaptionMaxDeg: 60,
+          minElevationDegToEnforce: 30,
+          framesAvgCount: 4,
+          warningMessageTh: "\u0E17\u0E33\u0E1C\u0E34\u0E14\u0E17\u0E48\u0E32: \u0E43\u0E2B\u0E49\u0E22\u0E01\u0E41\u0E02\u0E19\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32",
+          warningMessageEn: "Incorrect Form: Please raise arm forward",
+          warningMessageCn: "\u52A8\u4F5C\u9519\u8BEF\uFF1A\u8BF7\u5411\u524D\u4E0A\u65B9\u4E3E\u81C2",
+          scaptionCueTh: "\u0E43\u0E01\u0E25\u0E49\u0E40\u0E04\u0E35\u0E22\u0E07: \u0E2B\u0E38\u0E1A\u0E41\u0E02\u0E19\u0E40\u0E02\u0E49\u0E32\u0E14\u0E49\u0E32\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E2D\u0E35\u0E01\u0E40\u0E25\u0E47\u0E01\u0E19\u0E49\u0E2D\u0E22",
+          scaptionCueEn: "Close: Move arm slightly more forward",
+          scaptionCueCn: "\u63A5\u8FD1\u8FBE\u6807\uFF1A\u8BF7\u5C06\u624B\u81C2\u518D\u5F80\u524D\u6536\u4E00\u4E9B"
+        },
         requiredLandmarks: {
           right: [12, 14, 16],
           left: [11, 13, 15],
@@ -3245,6 +3260,21 @@ var init_exercises_config = __esm({
           stopOnPainMessageEn: "Stop immediately if shoulder pain occurs.",
           stopOnPainMessageCn: "\u82E5\u80A9\u90E8\u51FA\u73B0\u75BC\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62\u3002",
           maxSafeAngleCapDeg: 175
+        },
+        elevationPlane: {
+          requiredPlane: "abduction",
+          targetMinDeg: -30,
+          targetMaxDeg: 30,
+          scaptionMinDeg: 30,
+          scaptionMaxDeg: 60,
+          minElevationDegToEnforce: 30,
+          framesAvgCount: 4,
+          warningMessageTh: "\u0E17\u0E33\u0E1C\u0E34\u0E14\u0E17\u0E48\u0E32: \u0E43\u0E2B\u0E49\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07",
+          warningMessageEn: "Incorrect Form: Please raise arm out to the side",
+          warningMessageCn: "\u52A8\u4F5C\u9519\u8BEF\uFF1A\u8BF7\u5411\u4FA7\u65B9\u5C55\u5F00\u624B\u81C2",
+          scaptionCueTh: "\u0E43\u0E01\u0E25\u0E49\u0E40\u0E04\u0E35\u0E22\u0E07: \u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07\u0E2D\u0E35\u0E01\u0E40\u0E25\u0E47\u0E01\u0E19\u0E49\u0E2D\u0E22",
+          scaptionCueEn: "Close: Move arm slightly more out to the side",
+          scaptionCueCn: "\u63A5\u8FD1\u8FBE\u6807\uFF1A\u8BF7\u5C06\u624B\u81C2\u518D\u5411\u4FA7\u9762\u5C55\u5F00\u4E00\u4E9B"
         },
         requiredLandmarks: {
           right: [12, 14, 16],

@@ -197,3 +197,143 @@ export function normalizeLandmarksDepth<T extends Point3DLike>(
     };
   });
 }
+
+export interface PlaneOfElevationResult {
+  planeAngleDeg: number;   // Angle in degrees [ -180°, 180° ], where 0° = Abduction (Coronal), 90° = Flexion (Sagittal)
+  lateralComp: number;     // Projection on coronal axis (> 0 is lateral)
+  anteriorComp: number;    // Projection on sagittal axis (> 0 is anterior / forward)
+  isConfident: boolean;    // true if required landmarks are usable
+}
+
+/**
+ * Calculates the Plane of Elevation (ISB Shoulder Biomechanics Standard).
+ * Projects the arm vector (Shoulder -> Wrist/Elbow) onto the thorax transverse plane.
+ * - Coronal Axis (Lateral): points outward from mid-shoulder to active shoulder (0° = pure abduction)
+ * - Sagittal Axis (Anterior): points forward from the chest (90° = pure flexion)
+ * - Scaption Zone: ~30° to 60°
+ *
+ * Invariant to body rotation (works when patient stands front, 45°, or side-on).
+ */
+export function calculatePlaneOfElevation(
+  landmarks: (Point3DLike & { visibility?: number })[],
+  side: 'left' | 'right',
+  useWrist: boolean = true
+): PlaneOfElevationResult | null {
+  if (!landmarks || landmarks.length < 25) return null;
+
+  const activeShoulderIdx = side === 'left' ? 11 : 12;
+  const oppShoulderIdx = side === 'left' ? 12 : 11;
+  const activeHipIdx = side === 'left' ? 23 : 24;
+  const oppHipIdx = side === 'left' ? 24 : 23;
+  const elbowIdx = side === 'left' ? 13 : 14;
+  const wristIdx = side === 'left' ? 15 : 16;
+
+  const s = landmarks[activeShoulderIdx];
+  const oppS = landmarks[oppShoulderIdx];
+  const h = landmarks[activeHipIdx];
+  const oppH = landmarks[oppHipIdx];
+  const distal = (useWrist && landmarks[wristIdx] && (landmarks[wristIdx].visibility ?? 1.0) >= 0.3)
+    ? landmarks[wristIdx]
+    : landmarks[elbowIdx];
+
+  if (!s || !oppS || !distal) return null;
+
+  const sVis = s.visibility ?? 1.0;
+  const oppSVis = oppS.visibility ?? 1.0;
+  const dVis = distal.visibility ?? 1.0;
+  const isConfident = sVis >= 0.35 && oppSVis >= 0.35 && dVis >= 0.35;
+
+  // 1. Thorax Midpoints
+  const midShoulder: Point3DLike = {
+    x: (s.x + oppS.x) / 2.0,
+    y: (s.y + oppS.y) / 2.0,
+    z: ((s.z ?? 0) + (oppS.z ?? 0)) / 2.0,
+  };
+
+  const hasHips = h && oppH && (h.visibility ?? 1.0) >= 0.3 && (oppH.visibility ?? 1.0) >= 0.3;
+  const midHip: Point3DLike = hasHips
+    ? {
+        x: (h.x + oppH.x) / 2.0,
+        y: (h.y + oppH.y) / 2.0,
+        z: ((h.z ?? 0) + (oppH.z ?? 0)) / 2.0,
+      }
+    : {
+        x: midShoulder.x,
+        y: midShoulder.y + 0.35, // fallback downwards in image coordinates (+Y)
+        z: midShoulder.z,
+      };
+
+  // 2. Trunk Longitudinal Axis (Upward: from midHip to midShoulder)
+  let uUp = {
+    x: midShoulder.x - midHip.x,
+    y: midShoulder.y - midHip.y,
+    z: (midShoulder.z ?? 0) - (midHip.z ?? 0),
+  };
+  const magUp = Math.hypot(uUp.x, uUp.y, uUp.z);
+  if (magUp < 1e-6) {
+    uUp = { x: 0, y: -1, z: 0 };
+  } else {
+    uUp = { x: uUp.x / magUp, y: uUp.y / magUp, z: uUp.z / magUp };
+  }
+
+  // 3. Coronal / Lateral Axis (Outward: from midShoulder to active shoulder)
+  const vLatRaw = {
+    x: s.x - midShoulder.x,
+    y: s.y - midShoulder.y,
+    z: (s.z ?? 0) - (midShoulder.z ?? 0),
+  };
+  // Gram-Schmidt orthogonalization against uUp
+  const dotLatUp = vLatRaw.x * uUp.x + vLatRaw.y * uUp.y + vLatRaw.z * uUp.z;
+  let uLat = {
+    x: vLatRaw.x - dotLatUp * uUp.x,
+    y: vLatRaw.y - dotLatUp * uUp.y,
+    z: vLatRaw.z - dotLatUp * uUp.z,
+  };
+  const magLat = Math.hypot(uLat.x, uLat.y, uLat.z);
+  if (magLat < 1e-6) {
+    uLat = side === 'left' ? { x: 1, y: 0, z: 0 } : { x: -1, y: 0, z: 0 };
+  } else {
+    uLat = { x: uLat.x / magLat, y: uLat.y / magLat, z: uLat.z / magLat };
+  }
+
+  // 4. Sagittal / Anterior Axis (Forward from chest: normalize((LeftShoulder - RightShoulder) x uUp))
+  const leftShoulder = side === 'left' ? s : oppS;
+  const rightShoulder = side === 'left' ? oppS : s;
+  const shVec = {
+    x: leftShoulder.x - rightShoulder.x,
+    y: leftShoulder.y - rightShoulder.y,
+    z: (leftShoulder.z ?? 0) - (rightShoulder.z ?? 0),
+  };
+  let uAnt = {
+    x: shVec.y * uUp.z - shVec.z * uUp.y,
+    y: shVec.z * uUp.x - shVec.x * uUp.z,
+    z: shVec.x * uUp.y - shVec.y * uUp.x,
+  };
+  const magAnt = Math.hypot(uAnt.x, uAnt.y, uAnt.z);
+  if (magAnt < 1e-6) {
+    uAnt = { x: 0, y: 0, z: -1 };
+  } else {
+    uAnt = { x: uAnt.x / magAnt, y: uAnt.y / magAnt, z: uAnt.z / magAnt };
+  }
+
+  // 5. Arm Vector (from active shoulder to distal point)
+  const arm = {
+    x: distal.x - s.x,
+    y: distal.y - s.y,
+    z: (distal.z ?? 0) - (s.z ?? 0),
+  };
+
+  // 6. Project arm onto transverse plane (uLat, uAnt)
+  const lateralComp = arm.x * uLat.x + arm.y * uLat.y + arm.z * uLat.z;
+  const anteriorComp = arm.x * uAnt.x + arm.y * uAnt.y + arm.z * uAnt.z;
+
+  const planeAngleRad = Math.atan2(anteriorComp, lateralComp);
+  const planeAngleDeg = (planeAngleRad * 180.0) / Math.PI;
+
+  return {
+    planeAngleDeg,
+    lateralComp,
+    anteriorComp,
+    isConfident,
+  };
+}

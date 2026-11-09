@@ -41,22 +41,26 @@ describe('RepStateMachine Clinical Evaluation Suite', () => {
     let currentTime = 1000;
 
     for (let rep = 1; rep <= 10; rep++) {
-      // Step A: At start zone (20° abduction: hip 24 at (0.4, 0.6), shoulder 12 at (0.4, 0.3), wrist 16 down at (0.43, 0.6))
+      // Step A: At start zone (hip 24 at (0.4, 0.6), shoulder 12 at (0.4, 0.3), wrist 16 down at (0.4, 0.6))
       const skelResting = createMockSkeleton();
-      skelResting[24] = { x: 0.4, y: 0.6, z: 0.0 }; // Right hip
+      skelResting[11] = { x: 0.6, y: 0.3, z: 0.0 }; // Left shoulder
       skelResting[12] = { x: 0.4, y: 0.3, z: 0.0 }; // Right shoulder
-      skelResting[16] = { x: 0.43, y: 0.6, z: 0.0 }; // Right wrist hanging down (~20°)
+      skelResting[23] = { x: 0.6, y: 0.6, z: 0.0 }; // Left hip
+      skelResting[24] = { x: 0.4, y: 0.6, z: 0.0 }; // Right hip
+      skelResting[14] = { x: 0.4, y: 0.45, z: 0.0 }; // Right elbow down
+      skelResting[16] = { x: 0.4, y: 0.6, z: 0.0 }; // Right wrist hanging down
 
       let res = machine.evaluate(skelResting, currentTime);
       currentTime += 100;
 
-      // Step B: Move into target zone (90° abduction: wrist raised horizontally to x=0.7, y=0.3)
+      // Step B: Move into target zone (90° abduction laterally away from torso: x=0.1, y=0.3)
       const skelTarget = createMockSkeleton();
-      skelTarget[23] = { x: 0.6, y: 0.6, z: 0.0 }; // Left hip
-      skelTarget[24] = { x: 0.4, y: 0.6, z: 0.0 }; // Right hip
       skelTarget[11] = { x: 0.6, y: 0.3, z: 0.0 }; // Left shoulder
       skelTarget[12] = { x: 0.4, y: 0.3, z: 0.0 }; // Right shoulder
-      skelTarget[16] = { x: 0.7, y: 0.3, z: 0.0 }; // Right wrist (90° abduction)
+      skelTarget[23] = { x: 0.6, y: 0.6, z: 0.0 }; // Left hip
+      skelTarget[24] = { x: 0.4, y: 0.6, z: 0.0 }; // Right hip
+      skelTarget[14] = { x: 0.25, y: 0.3, z: 0.0 }; // Right elbow laterally
+      skelTarget[16] = { x: 0.1, y: 0.3, z: 0.0 }; // Right wrist (90° abduction laterally)
 
       // Move into target over 400ms (4 x 100ms)
       for (let f = 0; f < 4; f++) {

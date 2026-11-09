@@ -167,16 +167,20 @@ describe('10-Exercise Biomechanical State Machine Trajectory Simulations', () =>
     sm.setSide('right');
 
     const sk = createDummySkeleton();
-    sk[24] = { x: 0.55, y: 0.65, z: 0.0, visibility: 0.95 }; // Hip
-    sk[12] = { x: 0.55, y: 0.35, z: 0.0, visibility: 0.95 }; // Shoulder
+    sk[11] = { x: 0.60, y: 0.35, z: 0.0, visibility: 0.95 }; // Left Shoulder
+    sk[12] = { x: 0.40, y: 0.35, z: 0.0, visibility: 0.95 }; // Right Shoulder
+    sk[23] = { x: 0.60, y: 0.65, z: 0.0, visibility: 0.95 }; // Left Hip
+    sk[24] = { x: 0.40, y: 0.65, z: 0.0, visibility: 0.95 }; // Right Hip
 
     // Start position: arm down ~20°
-    sk[16] = { x: 0.55, y: 0.65, z: 0.0, visibility: 0.95 };
+    sk[14] = { x: 0.40, y: 0.50, z: 0.0, visibility: 0.95 };
+    sk[16] = { x: 0.40, y: 0.65, z: 0.0, visibility: 0.95 };
     let res = simulateFrames(sm, sk, 10);
     expect(res.phase).toBe('IDLE');
 
-    // Raise arm to ~150°
-    sk[16] = { x: 0.70, y: 0.09, z: 0.0, visibility: 0.95 };
+    // Raise arm forward to ~150° (Sagittal plane)
+    sk[14] = { x: 0.40, y: 0.20, z: -0.20, visibility: 0.95 };
+    sk[16] = { x: 0.40, y: 0.05, z: -0.35, visibility: 0.95 };
     res = simulateFrames(sm, sk, 15);
     expect(res.accuracyPercent).toBeGreaterThan(80);
     expect(res.phase).toBe('HOLDING_TARGET');
@@ -186,7 +190,8 @@ describe('10-Exercise Biomechanical State Machine Trajectory Simulations', () =>
     expect(res.phase).toBe('RETURNING_TO_START');
 
     // Return to start down
-    sk[16] = { x: 0.55, y: 0.65, z: 0.0, visibility: 0.95 };
+    sk[14] = { x: 0.40, y: 0.50, z: 0.0, visibility: 0.95 };
+    sk[16] = { x: 0.40, y: 0.65, z: 0.0, visibility: 0.95 };
     res = simulateFrames(sm, sk, 15);
     expect(res.completedReps).toBe(1);
   });

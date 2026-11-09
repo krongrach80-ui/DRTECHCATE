@@ -114,6 +114,22 @@ export interface SafetyContraindications {
   minTempoDurationSec?: number;      // Minimum tempo duration for a clean concentric/eccentric rep
 }
 
+export interface ElevationPlaneConfig {
+  requiredPlane: 'flexion' | 'abduction';
+  targetMinDeg: number; // e.g. 60 for flexion, -30 for abduction
+  targetMaxDeg: number; // e.g. 120 for flexion, 30 for abduction
+  scaptionMinDeg?: number; // default 30.0
+  scaptionMaxDeg?: number; // default 60.0
+  minElevationDegToEnforce?: number; // default 30.0 (only enforce when arm is raised past resting position)
+  framesAvgCount?: number; // default 4 (moving window averaging)
+  warningMessageTh: string;
+  warningMessageEn?: string;
+  warningMessageCn?: string;
+  scaptionCueTh?: string;
+  scaptionCueEn?: string;
+  scaptionCueCn?: string;
+}
+
 export interface ExerciseDetectionConfig {
   id?: string;
   exerciseId?: string;
@@ -153,6 +169,7 @@ export interface ExerciseDetectionConfig {
   };
   minLandmarkVisibility?: Record<number, number>;
   coachingCues?: ExerciseCoachingCues;
+  elevationPlane?: ElevationPlaneConfig;
 }
 
 /**
@@ -254,6 +271,7 @@ export interface RepEvaluationResult {
   repRejectionReasonTh?: string;
   isOccluded?: boolean;
   occlusionReasonTh?: string;
+  elevationPlaneDeg?: number;
   isSubjectLocked?: boolean;
   isFrameDropped?: boolean;
   frameDropReason?: string;

@@ -28,7 +28,13 @@ import {
   resolveTripletsForSide,
   getWrongSideCoachingMessage,
 } from '../math/sideResolution';
-import { calculateAngle3D, calculateAngle2D, normalizeLandmarksDepth } from '../math/geometry3d';
+import {
+  calculateAngle3D,
+  calculateAngle2D,
+  normalizeLandmarksDepth,
+  calculatePlaneOfElevation,
+  PlaneOfElevationResult,
+} from '../math/geometry3d';
 import { PoseSkeletonFilter } from '../math/filters';
 import { ShoulderPendulumAnalyzer } from '../math/pendulumAnalyzer';
 import { CompensationDetector } from '../compensation';
@@ -85,6 +91,7 @@ export class RepStateMachine {
   private timerStartTimeMs: number | null = null;
   private balanceHoldStartTimeMs: number | null = null;
   private balanceHoldAccumulatedMs: number = 0;
+  private recentPlaneAngles: number[] = [];
 
   constructor(config: ExerciseDetectionConfig) {
     this.config = config;
@@ -601,6 +608,69 @@ export class RepStateMachine {
       isInsideTargetZone = false;
     }
 
+    // Biomechanical Elevation Plane (Flexion vs Abduction) Enforcement
+    let isWrongPlane = false;
+    let isScaption = false;
+    let isPlaneLandmarkDegraded = false;
+    let currentPlaneAngleDeg: number | undefined = undefined;
+
+    const elevationPlaneCfg = this.config.elevationPlane;
+    if (elevationPlaneCfg) {
+      const minElevationToEnforce = elevationPlaneCfg.minElevationDegToEnforce ?? 30.0;
+      if (currentAngle < minElevationToEnforce) {
+        // Arm is resting near side; reset window to avoid stale angles when movement begins
+        this.recentPlaneAngles = [];
+      } else {
+        const targetSide = sideInfo.isUnilateral && effectiveSide === 'left' ? 'left' : (effectiveSide === 'right' ? 'right' : (triplet.vertex === 11 ? 'left' : 'right'));
+        const isWristTarget = triplet.pointB === 15 || triplet.pointB === 16;
+        const planeRes = calculatePlaneOfElevation(normalizedLandmarks, targetSide, isWristTarget);
+
+        if (!planeRes || !planeRes.isConfident) {
+          isPlaneLandmarkDegraded = true;
+          isInsideTargetZone = false;
+        } else {
+          currentPlaneAngleDeg = Math.round(planeRes.planeAngleDeg * 10) / 10;
+          this.recentPlaneAngles.push(planeRes.planeAngleDeg);
+          const maxWindow = elevationPlaneCfg.framesAvgCount ?? 4;
+          if (this.recentPlaneAngles.length > maxWindow) {
+            this.recentPlaneAngles.shift();
+          }
+          const avgPlane = this.recentPlaneAngles.reduce((a, b) => a + b, 0) / this.recentPlaneAngles.length;
+
+          const scaptionMin = elevationPlaneCfg.scaptionMinDeg ?? 30.0;
+          const scaptionMax = elevationPlaneCfg.scaptionMaxDeg ?? 60.0;
+
+          if (elevationPlaneCfg.requiredPlane === 'abduction') {
+            const isTargetPlane = avgPlane >= elevationPlaneCfg.targetMinDeg && avgPlane <= elevationPlaneCfg.targetMaxDeg;
+            const isScaptionZone = avgPlane > scaptionMin && avgPlane < scaptionMax;
+
+            if (isScaptionZone) {
+              isScaption = true;
+              isInsideTargetZone = false;
+            } else if (!isTargetPlane) {
+              isWrongPlane = true;
+              isInsideTargetZone = false;
+            }
+          } else if (elevationPlaneCfg.requiredPlane === 'flexion') {
+            const isTargetPlane = avgPlane >= elevationPlaneCfg.targetMinDeg && avgPlane <= elevationPlaneCfg.targetMaxDeg;
+            const isScaptionZone = avgPlane >= scaptionMin && avgPlane < scaptionMax;
+
+            if (isScaptionZone) {
+              isScaption = true;
+              isInsideTargetZone = false;
+            } else if (!isTargetPlane) {
+              isWrongPlane = true;
+              isInsideTargetZone = false;
+            }
+          }
+        }
+      }
+    }
+
+    if (isWrongPlane) {
+      accuracyPercent = 0;
+    }
+
     const isAtStartZone = isDecreasing
       ? currentAngle >= startAngle - tolerance - 5
       : Math.abs(currentAngle - startAngle) <= tolerance + 5;
@@ -613,7 +683,46 @@ export class RepStateMachine {
     let isRepRejected = false;
     let repRejectionReasonTh: string | undefined = undefined;
 
-    if (isSitToStandCheating) {
+    if (isPlaneLandmarkDegraded) {
+      formRating = 'warning';
+      coachingMessage = 'ปรับตำแหน่งให้เห็นไหล่และแขนชัด';
+      coachingMessageEn = 'Please adjust position so shoulder and arm are clearly visible';
+      coachingMessageCn = '请调整位置以清晰显示肩部和手臂';
+      activeWarnings.unshift({
+        ruleId: 'elevation_plane_landmarks_degraded',
+        type: 'trunk_lean' as any,
+        messageTh: 'ปรับตำแหน่งให้เห็นไหล่และแขนชัด',
+        severity: 'warning',
+        currentValue: 0,
+        thresholdValue: 0.35,
+      });
+    } else if (isWrongPlane && elevationPlaneCfg) {
+      formRating = 'warning';
+      coachingMessage = elevationPlaneCfg.warningMessageTh;
+      coachingMessageEn = elevationPlaneCfg.warningMessageEn;
+      coachingMessageCn = elevationPlaneCfg.warningMessageCn;
+      activeWarnings.unshift({
+        ruleId: 'wrong_elevation_plane',
+        type: 'trunk_lean' as any,
+        messageTh: elevationPlaneCfg.warningMessageTh,
+        severity: 'warning',
+        currentValue: Math.round(currentPlaneAngleDeg ?? 0),
+        thresholdValue: elevationPlaneCfg.requiredPlane === 'abduction' ? elevationPlaneCfg.targetMaxDeg : elevationPlaneCfg.targetMinDeg,
+      });
+    } else if (isScaption && elevationPlaneCfg) {
+      formRating = 'warning';
+      coachingMessage = elevationPlaneCfg.scaptionCueTh || 'ใกล้เคียง: ปรับทิศทางการยกแขนเล็กน้อย';
+      coachingMessageEn = elevationPlaneCfg.scaptionCueEn || 'Close: Adjust arm direction slightly';
+      coachingMessageCn = elevationPlaneCfg.scaptionCueCn || '接近达标：请稍微调整手臂方向';
+      activeWarnings.unshift({
+        ruleId: 'scaption_plane_cue',
+        type: 'trunk_lean' as any,
+        messageTh: coachingMessage,
+        severity: 'warning',
+        currentValue: Math.round(currentPlaneAngleDeg ?? 0),
+        thresholdValue: 45,
+      });
+    } else if (isSitToStandCheating) {
       formRating = 'error';
       coachingMessage = 'กรุณาลุกขึ้นยืนจากเก้าอี้จริง (อย่ายกเฉพาะขาขณะนั่ง)';
       coachingMessageEn = 'Please stand up fully from the chair (do not just kick legs while seated)';
@@ -697,8 +806,8 @@ export class RepStateMachine {
     // STATE TRANSITIONS
     switch (this.phase) {
       case 'IDLE': {
-        if (isWrongSideMoving) {
-          // Block transitioning when wrong side is moving
+        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded) {
+          // Block transitioning when wrong side or wrong plane
           break;
         }
         if (isInsideTargetZone) {
@@ -723,8 +832,8 @@ export class RepStateMachine {
       }
 
       case 'MOVING_TO_TARGET': {
-        if (isWrongSideMoving) {
-          // Block advancing to HOLDING_TARGET when wrong side is moving
+        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded) {
+          // Block advancing to HOLDING_TARGET when wrong side or wrong plane
           break;
         }
         if (isInsideTargetZone) {
@@ -742,8 +851,8 @@ export class RepStateMachine {
       }
 
       case 'HOLDING_TARGET': {
-        if (isWrongSideMoving || !isInsideTargetZone) {
-          // Patient fell out of target zone before finishing hold
+        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded || !isInsideTargetZone) {
+          // Patient fell out of target zone or deviated into wrong plane before finishing hold
           this.holdStartTimeMs = null;
           this.holdPauseStartMs = null;
           this.totalHoldPausedDurationMs = 0;
@@ -756,6 +865,18 @@ export class RepStateMachine {
             coachingMessage = wrongMsg.th;
             coachingMessageEn = wrongMsg.en;
             coachingMessageCn = wrongMsg.cn;
+          } else if (isPlaneLandmarkDegraded) {
+            coachingMessage = 'ปรับตำแหน่งให้เห็นไหล่และแขนชัด';
+            coachingMessageEn = 'Please adjust position so shoulder and arm are clearly visible';
+            coachingMessageCn = '请调整位置以清晰显示肩部和手臂';
+          } else if (isWrongPlane && elevationPlaneCfg) {
+            coachingMessage = elevationPlaneCfg.warningMessageTh;
+            coachingMessageEn = elevationPlaneCfg.warningMessageEn;
+            coachingMessageCn = elevationPlaneCfg.warningMessageCn;
+          } else if (isScaption && elevationPlaneCfg) {
+            coachingMessage = elevationPlaneCfg.scaptionCueTh || 'ใกล้เคียง: ปรับทิศทางการยกแขนเล็กน้อย';
+            coachingMessageEn = elevationPlaneCfg.scaptionCueEn;
+            coachingMessageCn = elevationPlaneCfg.scaptionCueCn;
           } else {
             coachingMessage = 'หลุดออกจากมุมเป้าหมาย ขยับกลับเข้าแถบสีเขียว';
           }
@@ -821,6 +942,7 @@ export class RepStateMachine {
             // Rep completed successfully!
             this.completedReps++;
             this.lastRepCompletedTimeMs = nowMs;
+            this.recentPlaneAngles = [];
             this.phase = 'REP_COMPLETED';
             coachingMessage = `ครบ 1 ครั้ง! (${this.completedReps}/${targetReps})`;
 
@@ -865,7 +987,22 @@ export class RepStateMachine {
       });
     }
 
-    if (isWrongSideMoving) {
+    if (isPlaneLandmarkDegraded) {
+      formRating = 'warning';
+      coachingMessage = 'ปรับตำแหน่งให้เห็นไหล่และแขนชัด';
+      coachingMessageEn = 'Please adjust position so shoulder and arm are clearly visible';
+      coachingMessageCn = '请调整位置以清晰显示肩部和手臂';
+    } else if (isWrongPlane && elevationPlaneCfg) {
+      formRating = 'warning';
+      coachingMessage = elevationPlaneCfg.warningMessageTh;
+      coachingMessageEn = elevationPlaneCfg.warningMessageEn;
+      coachingMessageCn = elevationPlaneCfg.warningMessageCn;
+    } else if (isScaption && elevationPlaneCfg) {
+      formRating = 'warning';
+      coachingMessage = elevationPlaneCfg.scaptionCueTh || 'ใกล้เคียง: ปรับทิศทางการยกแขนเล็กน้อย';
+      coachingMessageEn = elevationPlaneCfg.scaptionCueEn;
+      coachingMessageCn = elevationPlaneCfg.scaptionCueCn;
+    } else if (isWrongSideMoving) {
       const wrongMsg = getWrongSideCoachingMessage(
         effectiveSide as 'left' | 'right',
         this.config.targetJoint
@@ -911,6 +1048,7 @@ export class RepStateMachine {
       repRejectionReasonTh,
       isOccluded: lockResult?.isOccluded ?? false,
       occlusionReasonTh: lockResult?.occlusionReasonTh,
+      elevationPlaneDeg: currentPlaneAngleDeg,
       isSubjectLocked: lockResult?.isSubjectLocked ?? true,
       isFrameDropped: lockResult?.isFrameDropped ?? false,
       frameDropReason: lockResult?.frameDropReason,
@@ -1783,6 +1921,7 @@ export class RepStateMachine {
     this.timerStartTimeMs = null;
     this.balanceHoldStartTimeMs = null;
     this.balanceHoldAccumulatedMs = 0;
+    this.recentPlaneAngles = [];
     this.skeletonFilter.reset();
     this.pendulumAnalyzer.reset();
     this.compensationDetector.reset();

@@ -133,6 +133,21 @@ export const SHOULDER_ABDUCTION_PRESET: ExerciseDetectionConfig = {
     stopOnPainMessageTh: 'หากรู้สึกเจ็บบริเวณข้อต่อหัวไหล่ ให้หยุดพักทันที',
     maxSafeAngleCapDeg: 135,
   },
+  elevationPlane: {
+    requiredPlane: 'abduction',
+    targetMinDeg: -30.0,
+    targetMaxDeg: 30.0,
+    scaptionMinDeg: 30.0,
+    scaptionMaxDeg: 60.0,
+    minElevationDegToEnforce: 30.0,
+    framesAvgCount: 4,
+    warningMessageTh: 'ทำผิดท่า: ให้กางแขนออกด้านข้าง',
+    warningMessageEn: 'Incorrect Form: Please raise arm out to the side',
+    warningMessageCn: '动作错误：请向侧方展开手臂',
+    scaptionCueTh: 'ใกล้เคียง: กางแขนออกด้านข้างอีกเล็กน้อย',
+    scaptionCueEn: 'Close: Move arm slightly more out to the side',
+    scaptionCueCn: '接近达标：请将手臂再向侧面展开一些',
+  },
 };
 
 /**
