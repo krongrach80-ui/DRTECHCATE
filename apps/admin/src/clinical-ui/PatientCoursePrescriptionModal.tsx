@@ -51,7 +51,7 @@ export interface PrescribedExerciseCustom {
   target_joint: string;
   sets: number; // 1-10
   reps: number; // 1-50
-  side: 'right' | 'left' | 'both';
+  side: 'right' | 'left' | 'both' | 'bilateral';
   start_angle_deg?: number;
   target_min_deg?: number;
   target_max_deg?: number;
@@ -68,7 +68,7 @@ export interface PatientCoursePrescriptionModalProps {
   onClose: () => void;
   preselectedPatientId?: string;
   preselectedDate?: string;
-  onSuccess?: (patientId: string, action?: 'schedule' | 'patients' | 'start_exercise' | 'kiosk_home') => void;
+  onSuccess?: (patientId: string, action?: 'schedule' | 'patients' | 'start_exercise' | 'kiosk_home', snapshot?: any) => void;
   kioskMode?: boolean;
 }
 
@@ -84,7 +84,7 @@ const I18N = {
     diagnosis: 'การวินิจฉัย/อาการหลัก',
     targetJoint: 'ข้อต่อเป้าหมาย',
     contraindicationsTitle: '⚠️ ข้อห้ามและข้อควรระวังทางคลินิก (Contraindications & Precautions)',
-    noContraindications: 'ไม่มีข้อห้ามระบุไว้เป็นพิเศษ (Normal clinical precautions apply)',
+    noContraindications: 'ไม่มีข้อห้ามระบุไว้',
     tabAll: 'ทั้งหมด (15 ท่า)',
     tabRecommended: 'แนะนำตามข้อต่อคนไข้',
     tabUpper: 'ครึ่งตัวบน (Upper Body)',
@@ -141,7 +141,7 @@ const I18N = {
     diagnosis: 'Diagnosis / Chief Complaint',
     targetJoint: 'Target Joint',
     contraindicationsTitle: '⚠️ Clinical Contraindications & Precautions',
-    noContraindications: 'No specific contraindications recorded',
+    noContraindications: 'No contraindications specified',
     tabAll: 'All (15 Exercises)',
     tabRecommended: 'Recommended for Joint',
     tabUpper: 'Upper Body',
@@ -198,7 +198,7 @@ const I18N = {
     diagnosis: '诊断/主要症状',
     targetJoint: '目标关节',
     contraindicationsTitle: '⚠️ 临床禁忌与注意事项 (Contraindications & Precautions)',
-    noContraindications: '未记录特殊禁忌症',
+    noContraindications: '无特殊禁忌',
     tabAll: '全部动作 (15 动作)',
     tabRecommended: '根据目标关节推荐',
     tabUpper: '上半身 (肩/肘/颈)',
@@ -426,8 +426,9 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
   // Prescription exercise list state
   const [prescribedExercises, setPrescribedExercises] = useState<PrescribedExerciseCustom[]>([]);
-  const [activeCatalogFilter, setActiveCatalogFilter] = useState<'all' | 'recommended' | 'upper' | 'lower'>('all');
+  const [activeCatalogFilter, setActiveCatalogFilter] = useState<'all' | 'recommended' | 'upper' | 'lower'>('recommended');
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
+  const savedScheduleSnapshotRef = useRef<any>(null);
 
   // Scheduling state: Mode A and Mode B completely separated
   const defaultStart = useMemo(() => {
@@ -618,7 +619,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 target_joint: ex.target_joint || baseEx?.targetJoint || 'ทั่วไป',
                 sets: ex.sets || baseEx?.defaultPrescription?.totalSets || 3,
                 reps: ex.reps || baseEx?.defaultPrescription?.repsPerSet || 10,
-                side: (ex.side as any) || (baseEx?.side as any) || 'both',
+                side: ((ex.side === 'bilateral' || baseEx?.side === 'bilateral' || ex.side === 'both') ? 'both' : (ex.side as any) || 'both'),
                 start_angle_deg: ex.start_angle_deg ?? ex.startAngleDeg ?? baseEx?.angleMechanics?.startAngleDeg,
                 target_min_deg: ex.target_min_deg ?? ex.targetMinDeg ?? baseEx?.angleMechanics?.targetMinDeg,
                 target_max_deg: ex.target_max_deg ?? ex.targetMaxDeg ?? baseEx?.angleMechanics?.targetMaxDeg,
@@ -753,7 +754,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
       target_joint: catalogEx.targetJoint,
       sets: catalogEx.defaultPrescription?.totalSets || 3,
       reps: catalogEx.defaultPrescription?.repsPerSet || 10,
-      side: (catalogEx.side as any) || 'both',
+      side: (catalogEx.side === 'bilateral' ? 'both' : (catalogEx.side as any)) || 'both',
       start_angle_deg: catalogEx.angleMechanics?.startAngleDeg ?? 0,
       target_min_deg: catalogEx.angleMechanics?.targetMinDeg ?? 80,
       target_max_deg: catalogEx.angleMechanics?.targetMaxDeg ?? 100,
@@ -878,6 +879,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
   // Handle Save Course Prescription with Atomic Transaction
   const handleSaveCourse = async () => {
+    if (isSaving) return;
     if (!selectedPatient || !selectedPatient.id) {
       setErrorMsg(t.noPatientSelected);
       return;
@@ -925,29 +927,29 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
       const targetPid = selectedPatient.id || selectedPatient.hn;
       const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
 
-      // 0. Save Authoritative Clinical Prescription Record
-      try {
-        await defaultApiClient.smartOnboarding.savePrescription({
-          patient_id: selectedPatient.id,
-          target_joint: selectedPatient.target_joint || 'ข้อไหล่',
-          diagnosis: selectedPatient.injury || (selectedPatient as any).diagnosis || undefined,
-          contraindications: selectedPatient.contraindications || undefined,
-          start_date: finalStartDate,
-          end_date: finalEndDate,
-          scheduled_dates: prescriptionScheduledDates,
-          exercises: prescribedExercises.map((e, idx) => ({
-            exercise_id: e.exercise_id,
-            exercise_name: e.name || e.name_th || 'ท่าฝึกกายภาพ',
-            target_side: e.side === 'both' ? 'bilateral' : e.side,
-            sets: e.sets,
-            reps: e.reps,
-            hold_seconds: Math.round(e.hold_duration_sec || 3),
-            sequence_order: idx + 1,
-            clinical_notes: e.pt_note || undefined,
-          })),
-        });
-      } catch {
-        // non-blocking
+      // 0. Save Authoritative Clinical Prescription Record (Strict Error Propagation - No Silent Swallow)
+      const rxRes = await defaultApiClient.smartOnboarding.savePrescription({
+        patient_id: selectedPatient.id,
+        target_joint: selectedPatient.target_joint || 'ข้อเข่า',
+        diagnosis: selectedPatient.injury || (selectedPatient as any).diagnosis || undefined,
+        contraindications: selectedPatient.contraindications || undefined,
+        start_date: finalStartDate,
+        end_date: finalEndDate,
+        scheduled_dates: prescriptionScheduledDates,
+        exercises: prescribedExercises.map((e, idx) => ({
+          exercise_id: e.exercise_id,
+          exercise_name: e.name || e.name_th || 'ท่าฝึกกายภาพ',
+          target_side: (e.side === 'both' || e.side === 'bilateral') ? 'bilateral' : (e.side as any),
+          sets: e.sets,
+          reps: e.reps,
+          hold_seconds: Math.round(e.hold_duration_sec || 3),
+          sequence_order: idx + 1,
+          clinical_notes: e.pt_note || undefined,
+        })),
+      });
+
+      if (!rxRes || (rxRes as any).ok === false) {
+        throw new Error((rxRes as any)?.message || 'ไม่สามารถบันทึกคำสั่งจ่ายคอร์สกายภาพบำบัดได้ (Failed to save prescription)');
       }
 
       const schedulePayload = {
@@ -1003,10 +1005,21 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
       };
 
       // 1. Save atomic schedule to API
-      await defaultApiClient.smartOnboarding.saveSchedule({
+      const schedRes = await defaultApiClient.smartOnboarding.saveSchedule({
         patient_id: targetPid,
         schedule: schedulePayload,
       });
+
+      if (schedRes && (schedRes as any).ok === false) {
+        throw new Error((schedRes as any)?.error?.message || (schedRes as any)?.message || 'ไม่สามารถบันทึกตารางนัดหมายได้');
+      }
+
+      // Snapshot for seamless post-prescription transition
+      savedScheduleSnapshotRef.current = {
+        prescription_id: rxRes.prescription_id,
+        schedule: schedulePayload,
+        prescribed_exercises: prescribedExercises,
+      };
 
       // 2. Broadcast realtime update for 5. ตารางนัด and Kiosk
       broadcastScheduleSync(targetPid);
@@ -1038,7 +1051,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
 
       const pid = selectedPatient?.id || selectedPatient?.hn || preselectedPatientId;
       if (onSuccess && pid) {
-        onSuccess(pid, action);
+        onSuccess(pid, action, savedScheduleSnapshotRef.current);
       }
 
       // Dispatch clinical navigation event for shell coordination
@@ -1216,9 +1229,13 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                 <span>{t.contraindicationsTitle}</span>
               </div>
               <p className="leading-relaxed">
-                {selectedPatient?.contraindications ||
-                  (selectedPatient as any)?.history?.contraindications ||
-                  t.noContraindications}
+                {(() => {
+                  const contra = selectedPatient?.contraindications || (selectedPatient as any)?.history?.contraindications;
+                  if (!contra || contra.trim() === '-' || contra.trim() === '') {
+                    return t.noContraindications;
+                  }
+                  return contra;
+                })()}
               </p>
               {selectedPatient?.underlying_diseases && selectedPatient.underlying_diseases !== '-' && (
                 <div className="mt-1 text-[11px] text-amber-800">
@@ -1285,7 +1302,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                           className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-xs text-slate-700 flex items-center gap-1.5 border border-slate-200 shadow-xs cursor-pointer"
                         >
                           <Sliders className="w-3.5 h-3.5 text-blue-600" />
-                          <span>{ex.sets} เซ็ต x {ex.reps} ครั้ง ({ex.side === 'both' ? 'ทั้งสองข้าง' : ex.side === 'right' ? 'ขวา' : 'ซ้าย'})</span>
+                          <span>{ex.sets} เซ็ต x {ex.reps} ครั้ง ({(ex.side === 'both' || ex.side === 'bilateral') ? 'ทั้งสองข้าง' : ex.side === 'right' ? 'ขวา' : 'ซ้าย'})</span>
                         </button>
 
                         {/* Reorder Buttons */}
@@ -1398,7 +1415,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                               {t.side}
                             </label>
                             <select
-                              value={ex.side}
+                              value={ex.side === 'bilateral' ? 'both' : (ex.side || 'both')}
                               onChange={(e) => handleUpdateExerciseField(idx, 'side', e.target.value as any)}
                               className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-300 text-slate-800 font-medium"
                             >
@@ -1962,8 +1979,8 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
           <button
             type="button"
             onClick={handleSaveCourse}
-            disabled={isSaving || !selectedPatient?.id}
-            title={!selectedPatient?.id ? 'กรุณาเลือกคนไข้ก่อนบันทึกคอร์ส' : undefined}
+            disabled={isSaving || !selectedPatient?.id || prescribedExercises.length === 0}
+            title={!selectedPatient?.id ? 'กรุณาเลือกคนไข้ก่อนบันทึกคอร์ส' : prescribedExercises.length === 0 ? 'กรุณาเลือกท่าฝึกกายภาพอย่างน้อย 1 ท่า' : undefined}
             className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold shadow-sm transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? (
@@ -2014,7 +2031,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
                         {e.order_index}. {e.name_th}
                       </span>
                       <span className="text-slate-500 font-mono">
-                        {e.sets}x{e.reps} ({e.side}) | มุมเป้าหมาย: {e.target_max_deg || 95}°
+                        {e.sets}x{e.reps} ({(e.side === 'both' || e.side === 'bilateral') ? 'ทั้งสองข้าง' : e.side === 'right' ? 'ขวา' : 'ซ้าย'}) | มุมเป้าหมาย: {e.target_max_deg || 95}°
                       </span>
                     </div>
                   ))}

@@ -373,6 +373,32 @@ export const DEFAULT_SUPABASE_URL = decodeFallbackString('aHR0cHM6Ly9tY3RlZ3Zucn
 export const DEFAULT_SUPABASE_ANON_KEY = decodeFallbackString('c2JfcHVibGlzaGFibGVfUklNN2hpdDBfWlkweTVmQkNLX1V1d19iRUpZN0g1SQ==');
 export const DEFAULT_AUTH_SECRET = 'drtechcare-enterprise-production-hmac-secret-2026';
 
+export const CANONICAL_EXERCISE_UUID_MAP: Record<string, string> = {
+  'active-shoulder-flexion': 'e1000000-0000-0000-0000-000000000001',
+  'shoulder-abduction': 'e1000000-0000-0000-0000-000000000002',
+  'shoulder-er-band': 'e1000000-0000-0000-0000-000000000003',
+  'scapular-retraction': 'e1000000-0000-0000-0000-000000000004',
+  'elbow-flexion-extension': 'e1000000-0000-0000-0000-000000000005',
+  'chin-tuck': 'e1000000-0000-0000-0000-000000000006',
+  'seated-cervical-rotation': 'e1000000-0000-0000-0000-000000000007',
+  'cervical-side-bend': 'e1000000-0000-0000-0000-000000000008',
+  'shoulder-shrug': 'e1000000-0000-0000-0000-000000000009',
+  'upper-trapezius-stretch': 'e1000000-0000-0000-0000-000000000010',
+  'seated-trunk-rotation': 'e1000000-0000-0000-0000-000000000011',
+  'seated-side-bend': 'e1000000-0000-0000-0000-000000000012',
+  'cross-body-shoulder-stretch': 'e1000000-0000-0000-0000-000000000013',
+  'seated-horizontal-abduction': 'e1000000-0000-0000-0000-000000000014',
+  'wrist-flexion-extension': 'e1000000-0000-0000-0000-000000000015',
+};
+
+export function resolveCanonicalExerciseUuid(idOrSlug?: string): string {
+  if (!idOrSlug) return 'e1000000-0000-0000-0000-000000000001';
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug)) {
+    return idOrSlug;
+  }
+  return CANONICAL_EXERCISE_UUID_MAP[idOrSlug] || 'e1000000-0000-0000-0000-000000000001';
+}
+
 export function normalizePatientRecord(p: any): any {
   if (!p) p = {};
   const id = p.patient_id || p.id || (p.hn ? `p-${p.hn}` : `p-${Date.now()}`);
@@ -416,6 +442,7 @@ export function normalizePatientRecord(p: any): any {
       enrolled_at: p.biometrics?.enrolled_at || p.created_at || new Date().toISOString(),
     },
     schedule: p.schedule || history.schedule || null,
+    activePrescriptionSnapshot: p.activePrescriptionSnapshot || history.activePrescriptionSnapshot || null,
     daily_checklists: p.daily_checklists || history.daily_checklists || {},
     rehab_scores: p.rehab_scores || history.rehab_scores || [],
     clinical: p.clinical || history.clinical || {
@@ -1314,7 +1341,7 @@ export class ApiClient {
           validTodayAliases.includes(Number(d)) ||
           validTodayAliases.includes(String(d))
         );
-        const scheduleMatchesToday = dates.includes(bkkIsoDate) || (schedDayMatch && schedInRange);
+        const scheduleMatchesToday = dates.includes(bkkIsoDate) || (schedDayMatch && schedInRange) || (dates.length === 0 && days.length === 0 && schedInRange && schedule !== null);
 
         // Check if any active course matches today
         let matchedCourse: any = null;
@@ -1329,7 +1356,10 @@ export class ApiClient {
               validTodayAliases.includes(Number(w)) ||
               validTodayAliases.includes(String(w))
             );
-            if (cInRange && cDayMatch) {
+            // Mode A: check weekdays. Mode B: specific dates or within date range if weekdays is empty
+            const isModeBCourse = cWeekdays.length === 0;
+            const modeBMatch = isModeBCourse && (dates.includes(bkkIsoDate) || (cStart === cEnd && bkkIsoDate === cStart) || cInRange);
+            if ((cInRange && cDayMatch) || modeBMatch) {
               matchedCourse = c;
               break;
             }
@@ -1439,7 +1469,8 @@ export class ApiClient {
           }
 
           if (resolvedExercises.length === 0) {
-            const schedExercises = schedule?.prescribed_exercises || schedule?.assigned_exercises || [];
+            const snapshotExs = (patientRec as any)?.activePrescriptionSnapshot?.prescribed_exercises || (patientRec as any)?.activePrescriptionSnapshot?.schedule?.prescribed_exercises;
+            const schedExercises = snapshotExs || schedule?.prescribed_exercises || schedule?.assigned_exercises || [];
             if (Array.isArray(schedExercises) && schedExercises.length > 0) {
               resolvedExercises = schedExercises.map((ex: any) => ({
                 exercise_id: ex.exercise_id || ex.id,
@@ -1448,9 +1479,10 @@ export class ApiClient {
                 name_th: ex.name_th || ex.name || ex.title || 'ท่ากายภาพบำบัด',
                 name_en: ex.name_en || ex.name || 'Physical Therapy Exercise',
                 name_cn: ex.name_cn || ex.name || '康复动作',
-                target_joint: ex.target_joint || 'shoulder',
+                target_joint: ex.target_joint || patientRec.target_joint || 'general',
                 sets: ex.sets || 3,
                 reps: ex.reps || 10,
+                side: ex.side || 'both',
                 hold_duration_sec: ex.hold_duration_sec,
                 target_max_deg: ex.target_max_deg,
                 target_min_deg: ex.target_min_deg,
@@ -1721,8 +1753,10 @@ export class ApiClient {
             } catch {}
           }
 
-          // Direct live Supabase Cloud courses sync with valid schema
+          // Direct live Supabase Cloud courses sync with valid schema and course_items
           try {
+            const staffToken = this.getAuthToken();
+            const authHeader = staffToken ? `Bearer ${staffToken}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
             const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
             const isModeB = resolvedMode === 'modeB';
             const weekdaysNum = isModeB
@@ -1732,12 +1766,13 @@ export class ApiClient {
             const finalStartDate = scheduleData.startDate || scheduleData.start_date || (isModeB && datesArr[0] ? datesArr[0] : todayBkk);
             const finalEndDate = scheduleData.endDate || scheduleData.end_date || (isModeB && datesArr[datesArr.length - 1] ? datesArr[datesArr.length - 1] : todayBkk);
 
-            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/courses`, {
+            const courseRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/courses`, {
               method: 'POST',
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                Authorization: authHeader,
                 'Content-Type': 'application/json',
+                Prefer: 'return=representation',
               },
               body: JSON.stringify({
                 patient_id: targetPid,
@@ -1750,6 +1785,30 @@ export class ApiClient {
                 status: 'active',
               }),
             });
+
+            if (courseRes.ok) {
+              const cRows = await courseRes.json().catch(() => []);
+              const createdCourseId = cRows[0]?.id;
+              const exs = scheduleData.prescribed_exercises || scheduleData.assigned_exercises || [];
+              if (createdCourseId && Array.isArray(exs) && exs.length > 0) {
+                const cItems = exs.map((ex: any, idx: number) => ({
+                  course_id: createdCourseId,
+                  exercise_id: resolveCanonicalExerciseUuid(ex.exercise_id || ex.id),
+                  sets: Number(ex.sets) || 3,
+                  reps: Number(ex.reps) || 10,
+                  position: idx + 1,
+                }));
+                await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/course_items`, {
+                  method: 'POST',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: authHeader,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(cItems),
+                }).catch(() => {});
+              }
+            }
           } catch {}
 
           // Authoritative Supabase Cloud patients.history.schedule sync
@@ -6184,20 +6243,22 @@ export class ApiClient {
           body: JSON.stringify(payload),
         });
       } catch (apiErr) {
-        // Direct Supabase REST fallback
+        // Direct Supabase REST fallback with authenticated staff authorization
         try {
+          const staffToken = this.getAuthToken();
+          const authHeader = staffToken ? `Bearer ${staffToken}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
           const rxRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/exercise_prescriptions`, {
             method: 'POST',
             headers: {
               apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              Authorization: authHeader,
               'Content-Type': 'application/json',
               Prefer: 'return=representation',
             },
             body: JSON.stringify({
               patient_id: payload.patient_id,
               prescribed_by: payload.prescribed_by || null,
-              target_joint: payload.target_joint || 'ข้อไหล่',
+              target_joint: payload.target_joint || 'ข้อเข่า',
               diagnosis: payload.diagnosis || null,
               contraindications: payload.contraindications || null,
               start_date: payload.start_date || new Date().toISOString().slice(0, 10),
@@ -6211,10 +6272,9 @@ export class ApiClient {
             const rxRows = await rxRes.json();
             const rxId = rxRows[0]?.id;
             if (rxId && payload.exercises && payload.exercises.length > 0) {
-              const defaultExId = 'e1000000-0000-0000-0000-000000000001';
               const items = payload.exercises.map((ex, idx) => ({
                 prescription_id: rxId,
-                exercise_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ex.exercise_id) ? ex.exercise_id : defaultExId,
+                exercise_id: resolveCanonicalExerciseUuid(ex.exercise_id),
                 exercise_name: ex.exercise_name,
                 target_side: ex.target_side || 'right',
                 sets: ex.sets || 3,
@@ -6227,16 +6287,20 @@ export class ApiClient {
                 method: 'POST',
                 headers: {
                   apikey: DEFAULT_SUPABASE_ANON_KEY,
-                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  Authorization: authHeader,
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(items),
               });
             }
             return { ok: true, prescription_id: rxId };
+          } else {
+            const errJson = await rxRes.json().catch(() => ({}));
+            throw new Error(errJson.message || `ไม่สามารถบันทึกคำสั่งจ่ายทางคลินิกได้ (HTTP ${rxRes.status})`);
           }
-        } catch {}
-        throw apiErr;
+        } catch (fbErr: any) {
+          throw fbErr?.message ? fbErr : apiErr;
+        }
       }
     },
 

@@ -649,12 +649,9 @@ export const App: React.FC = () => {
             setIsPrescriptionModalOpen(false);
             handleExitStaffAssistMode();
           }}
-          onSuccess={async (targetPatientId, action) => {
+          onSuccess={async (targetPatientId, action, snapshotData) => {
             setIsPrescriptionModalOpen(false);
             if (action === 'start_exercise') {
-              // Exit staff privileges immediately
-              handleExitStaffAssistMode();
-
               // Fetch target patient and transition directly to SmartDailyPlanView
               try {
                 let targetRecord: any = null;
@@ -664,11 +661,26 @@ export const App: React.FC = () => {
                   const dossier = await defaultApiClient.smartOnboarding.getDossier(targetPatientId);
                   targetRecord = dossier?.record;
                 }
-                const norm = normalizePatientRecord(targetRecord || { id: targetPatientId, hn: targetPatientId });
+                const baseRec = targetRecord || { id: targetPatientId, hn: targetPatientId };
+                if (snapshotData) {
+                  baseRec.schedule = snapshotData.schedule || baseRec.schedule;
+                  baseRec.activePrescriptionSnapshot = snapshotData;
+                }
+                const norm = normalizePatientRecord(baseRec);
                 setDirectPatient(norm);
               } catch {
-                setDirectPatient(normalizePatientRecord({ id: targetPatientId, hn: targetPatientId }));
+                const fallbackRec: any = { id: targetPatientId, hn: targetPatientId };
+                if (snapshotData) {
+                  fallbackRec.schedule = snapshotData.schedule;
+                  fallbackRec.activePrescriptionSnapshot = snapshotData;
+                }
+                setDirectPatient(normalizePatientRecord(fallbackRec));
               }
+
+              // Delay staff privilege exit slightly so initial plan hydration completes with valid credentials
+              setTimeout(() => {
+                handleExitStaffAssistMode();
+              }, 150);
             } else {
               // Return to Kiosk home
               handleExitStaffAssistMode();

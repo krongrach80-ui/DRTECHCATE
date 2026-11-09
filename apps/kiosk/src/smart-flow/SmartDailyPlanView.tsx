@@ -153,8 +153,6 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       setDailyPlanResponse(res);
       const scheduled = Boolean(res.is_scheduled_today);
       const completed = Boolean(res.is_completed_today);
-      setIsScheduledToday(scheduled);
-      setIsCompletedToday(completed);
 
       // Hydrate completed exercise IDs from server response
       if (Array.isArray((res as any)?.completed_exercise_ids) && (res as any).completed_exercise_ids.length > 0) {
@@ -165,15 +163,57 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         });
       }
 
-      if (!scheduled) {
+      // If server returned !scheduled (e.g. slight replication lag or fallback mismatch), but patient was just directly prescribed a schedule for today
+      const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+      const snapshot = (patient as any)?.activePrescriptionSnapshot;
+      const sched = patient.schedule || snapshot?.schedule;
+      const snapshotDates = sched?.scheduled_dates || sched?.scheduledDates || [];
+      const hasTodayInSnapshot = snapshotDates.includes(todayBkk) || (snapshot && (snapshot.prescribed_exercises?.length > 0));
+
+      const isEffectivelyScheduled = scheduled || Boolean(hasTodayInSnapshot);
+      setIsScheduledToday(isEffectivelyScheduled);
+      setIsCompletedToday(completed);
+
+      if (!isEffectivelyScheduled) {
         setExercises([]);
         setRestReason(res.reason || 'rest_day_default');
       } else {
         setRestReason(res.reason || '');
         let resolvedExercises = res.exercises && res.exercises.length > 0 ? res.exercises : [];
+
+        // If server response had empty exercises, use snapshot or patient.schedule
         if (resolvedExercises.length === 0) {
-          // If scheduled today but no custom subset assigned, fallback to clinical presets
-          resolvedExercises = ALL_CLINICAL_EXERCISES.map((ex) => ({
+          const snapshotExs = snapshot?.prescribed_exercises || sched?.prescribed_exercises || sched?.assigned_exercises || [];
+          if (Array.isArray(snapshotExs) && snapshotExs.length > 0) {
+            resolvedExercises = snapshotExs.map((ex: any) => ({
+              exercise_id: ex.exercise_id || ex.id,
+              id: ex.exercise_id || ex.id,
+              name: ex.name || ex.name_th || 'ท่ากายภาพบำบัด',
+              name_th: ex.name_th || ex.name || 'ท่ากายภาพบำบัด',
+              name_en: ex.name_en || ex.name || 'Physical Therapy Exercise',
+              name_cn: ex.name_cn || ex.name || '康复动作',
+              target_joint: ex.target_joint || (patient as any).target_joint || 'general',
+              sets: Number(ex.sets) || 3,
+              reps: Number(ex.reps) || 10,
+              side: ex.side || 'both',
+              hold_duration_sec: ex.hold_duration_sec,
+              target_max_deg: ex.target_max_deg,
+              target_min_deg: ex.target_min_deg,
+              detection_config: ex.detection_config || ALL_CLINICAL_EXERCISES.find((c) => c.id === (ex.exercise_id || ex.id)),
+            }));
+          }
+        }
+
+        // If still empty, filter catalog presets by patient's target joint (never dump all 15 poses with shoulder #1 to knee patients!)
+        if (resolvedExercises.length === 0) {
+          const pJoint = ((patient as any).target_joint || (patient as any)?.history?.target_joint || '').toLowerCase();
+          const filteredPresets = ALL_CLINICAL_EXERCISES.filter((ex) => {
+            if (!pJoint) return true;
+            const exJ = ex.targetJoint.toLowerCase();
+            return pJoint.includes(exJ) || exJ.includes(pJoint);
+          });
+          const pool = filteredPresets.length > 0 ? filteredPresets : ALL_CLINICAL_EXERCISES;
+          resolvedExercises = pool.map((ex) => ({
             exercise_id: ex.id,
             id: ex.id,
             name: ex.nameTh,
@@ -183,11 +223,13 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             target_joint: ex.targetJoint,
             sets: ex.defaultPrescription.totalSets,
             reps: ex.defaultPrescription.repsPerSet,
+            side: 'both',
             detection_config: ex,
           }));
         }
+
         setExercises(resolvedExercises);
-        setIncludeMinigame(res.include_minigame ?? true);
+        setIncludeMinigame(res.include_minigame ?? sched?.include_minigame ?? true);
       }
     } catch (err: any) {
       if (!isMountedRef.current) return;

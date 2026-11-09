@@ -13658,12 +13658,33 @@ var init_service10 = __esm({
               }
             } catch {
             }
+            const CANONICAL_EXERCISE_UUID_MAP = {
+              "active-shoulder-flexion": "e1000000-0000-0000-0000-000000000001",
+              "shoulder-abduction": "e1000000-0000-0000-0000-000000000002",
+              "shoulder-er-band": "e1000000-0000-0000-0000-000000000003",
+              "scapular-retraction": "e1000000-0000-0000-0000-000000000004",
+              "elbow-flexion-extension": "e1000000-0000-0000-0000-000000000005",
+              "chin-tuck": "e1000000-0000-0000-0000-000000000006",
+              "seated-cervical-rotation": "e1000000-0000-0000-0000-000000000007",
+              "cervical-side-bend": "e1000000-0000-0000-0000-000000000008",
+              "shoulder-shrug": "e1000000-0000-0000-0000-000000000009",
+              "upper-trapezius-stretch": "e1000000-0000-0000-0000-000000000010",
+              "seated-trunk-rotation": "e1000000-0000-0000-0000-000000000011",
+              "seated-side-bend": "e1000000-0000-0000-0000-000000000012",
+              "cross-body-shoulder-stretch": "e1000000-0000-0000-0000-000000000013",
+              "seated-horizontal-abduction": "e1000000-0000-0000-0000-000000000014",
+              "wrist-flexion-extension": "e1000000-0000-0000-0000-000000000015"
+            };
+            const resolveExUuid = (idOrSlug) => {
+              if (!idOrSlug) return defaultExId;
+              if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug)) {
+                return idOrSlug;
+              }
+              return CANONICAL_EXERCISE_UUID_MAP[idOrSlug] || defaultExId;
+            };
             const prescribed = schedule.assigned_exercises || schedule.prescribed_exercises || [];
             const courseItems = prescribed.map((ex, idx) => {
-              let exId = ex.exercise_id || ex.id;
-              if (!exId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(exId)) {
-                exId = defaultExId;
-              }
+              const exId = resolveExUuid(ex.exercise_id || ex.id);
               return {
                 exercise_id: exId,
                 sets: ex.sets || 3,
@@ -13753,7 +13774,7 @@ var init_service10 = __esm({
         };
         const rxPromise = supabase.from("exercise_prescriptions").insert(rxData).select("id").maybeSingle();
         const timeoutPromise = new Promise(
-          (_, reject) => setTimeout(() => reject(new Error("Supabase insert timed out")), 1200)
+          (_, reject) => setTimeout(() => reject(new Error("Supabase insert timed out")), 5e3)
         );
         let { data: rx, error: rxErr } = await Promise.race([rxPromise, timeoutPromise]).catch((e) => ({
           data: null,
@@ -13775,11 +13796,32 @@ var init_service10 = __esm({
             }
           } catch {
           }
-          const items = payload.exercises.map((ex, idx) => {
-            let exId = ex.exercise_id;
-            if (!exId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(exId)) {
-              exId = defaultExId;
+          const CANONICAL_EXERCISE_UUID_MAP = {
+            "active-shoulder-flexion": "e1000000-0000-0000-0000-000000000001",
+            "shoulder-abduction": "e1000000-0000-0000-0000-000000000002",
+            "shoulder-er-band": "e1000000-0000-0000-0000-000000000003",
+            "scapular-retraction": "e1000000-0000-0000-0000-000000000004",
+            "elbow-flexion-extension": "e1000000-0000-0000-0000-000000000005",
+            "chin-tuck": "e1000000-0000-0000-0000-000000000006",
+            "seated-cervical-rotation": "e1000000-0000-0000-0000-000000000007",
+            "cervical-side-bend": "e1000000-0000-0000-0000-000000000008",
+            "shoulder-shrug": "e1000000-0000-0000-0000-000000000009",
+            "upper-trapezius-stretch": "e1000000-0000-0000-0000-000000000010",
+            "seated-trunk-rotation": "e1000000-0000-0000-0000-000000000011",
+            "seated-side-bend": "e1000000-0000-0000-0000-000000000012",
+            "cross-body-shoulder-stretch": "e1000000-0000-0000-0000-000000000013",
+            "seated-horizontal-abduction": "e1000000-0000-0000-0000-000000000014",
+            "wrist-flexion-extension": "e1000000-0000-0000-0000-000000000015"
+          };
+          const resolveExUuid = (idOrSlug) => {
+            if (!idOrSlug) return defaultExId;
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug)) {
+              return idOrSlug;
             }
+            return CANONICAL_EXERCISE_UUID_MAP[idOrSlug] || defaultExId;
+          };
+          const items = payload.exercises.map((ex, idx) => {
+            const exId = resolveExUuid(ex.exercise_id);
             return {
               prescription_id: prescriptionId,
               exercise_id: exId,
