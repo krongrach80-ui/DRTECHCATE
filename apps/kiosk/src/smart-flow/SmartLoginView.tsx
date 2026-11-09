@@ -483,6 +483,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       return '';
     }
   });
+  const selectedCameraIdRef = useRef<string>(selectedCameraId);
+  selectedCameraIdRef.current = selectedCameraId;
   const [activeCameraLabel, setActiveCameraLabel] = useState<string>('กล้องเริ่มต้น');
   const [activeSettings, setActiveSettings] = useState<MediaTrackSettings | null>(null);
   const [activeCapabilities, setActiveCapabilities] = useState<any>(null);
@@ -716,7 +718,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       const { camera } = services;
 
       // 1. Resolve optimal camera device if not explicitly provided
-      let devId = deviceIdToUse || selectedCameraId;
+      let devId = deviceIdToUse || selectedCameraIdRef.current;
       try {
         const rawDevices = await (camera as any).getAvailableVideoDevices?.();
         if (Array.isArray(rawDevices) && rawDevices.length > 0) {
@@ -747,6 +749,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         if (track) {
           const actualDevId = track.getSettings?.()?.deviceId || devId || '';
           if (actualDevId) {
+            selectedCameraIdRef.current = actualDevId;
             setSelectedCameraId(actualDevId);
             try {
               localStorage.setItem(KIOSK_CAMERA_STORAGE_KEY, actualDevId);
@@ -814,7 +817,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         }
       }, 1800);
     }
-  }, [selectedCameraId]);
+  }, []);
 
   // Cancel running countdown immediately if face leaves or liveness fails
   const cancelCountdown = useCallback((reason?: string) => {
@@ -1545,11 +1548,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         }
 
         // If active camera was unplugged/disconnected, fall back to next optimal camera
-        const isCurrentStillAttached = devices.some((d) => d.deviceId === selectedCameraId);
+        const isCurrentStillAttached = devices.some((d) => d.deviceId === selectedCameraIdRef.current);
         if (!isCurrentStillAttached) {
           const savedId = localStorage.getItem(KIOSK_CAMERA_STORAGE_KEY);
           const nextOptimal = selectOptimalCamera(devices, savedId);
           if (nextOptimal) {
+            selectedCameraIdRef.current = nextOptimal.deviceId;
             setSelectedCameraId(nextOptimal.deviceId);
             try {
               localStorage.setItem(KIOSK_CAMERA_STORAGE_KEY, nextOptimal.deviceId);
@@ -1577,7 +1581,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
       }
     };
-  }, [selectedCameraId, startCamera, userDisabledCamera]);
+  }, [startCamera, userDisabledCamera]);
 
   // PREVIEW CANVAS RENDER LOOP (Runs on requestAnimationFrame)
   useEffect(() => {
