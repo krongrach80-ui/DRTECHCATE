@@ -91,10 +91,16 @@ export default {
     };
 
     // 3. Static Assets fetch
-    let response = await env.ASSETS.fetch(request);
+    const assetUrl = new URL(request.url);
+    const isRootOrHtml = assetUrl.pathname === '/' || assetUrl.pathname.endsWith('.html') || !assetUrl.pathname.includes('.');
+    const fetchPath = assetUrl.pathname === '/' ? '/index.html' : assetUrl.pathname;
+    let response = await env.ASSETS.fetch(new Request(new URL(fetchPath, request.url), {
+      method: 'GET',
+      headers: request.headers,
+    }));
     if (response.status !== 404 && response.status !== 405) {
       // Never cache HTML entries at Edge or in browser to ensure fresh bundles
-      if (url.pathname.endsWith('.html') || url.pathname === '/' || !url.pathname.includes('.')) {
+      if (isRootOrHtml) {
         return addNoCacheHeaders(response);
       }
       return response;
