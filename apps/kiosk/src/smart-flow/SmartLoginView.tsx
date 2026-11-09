@@ -1683,6 +1683,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const prevFaceInCircleRef = useRef<boolean>(false);
   const prevPresenceDetectedRef = useRef<boolean>(false);
   const prevLivenessStateRef = useRef<string>('');
+  const lastLivenessBadgeUpdateRef = useRef<number>(0);
   const prevStatusTextRef = useRef<string>('');
 
   useEffect(() => {
@@ -1852,8 +1853,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
             // 4. Liveness Verification
             const liv = fastLivenessVerifierRef.current.evaluate(res);
-            if (prevLivenessStateRef.current !== liv.state) {
+            const nowTelemetryMs = performance.now();
+            if (
+              prevLivenessStateRef.current !== liv.state ||
+              nowTelemetryMs - lastLivenessBadgeUpdateRef.current > 120
+            ) {
               prevLivenessStateRef.current = liv.state;
+              lastLivenessBadgeUpdateRef.current = nowTelemetryMs;
               setLivenessResult(liv);
             }
 

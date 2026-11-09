@@ -581,6 +581,45 @@ function getSafeSessionStorage(): Storage | null {
 const inflightStaffCalls = new Map<string, Promise<any>>();
 const lastKioskCallTimestamps = new Map<string, { timestamp: number; response: any }>();
 
+/**
+ * Validates if a token is a cryptographically valid Supabase GoTrue JWT.
+ * Filters out internal resilient fallback signatures and non-Supabase session tokens.
+ */
+export const isValidSupabaseJwt = (token: string | null | undefined): boolean => {
+  if (!token || typeof token !== 'string') return false;
+  const trimmed = token.trim();
+  // Filter out internal resilient fallback tokens and custom non-JWT tokens
+  if (
+    trimmed.includes('resilient_signature') ||
+    trimmed.includes('drtechcare_resilient') ||
+    trimmed.startsWith('pat_') ||
+    trimmed.startsWith('stf_') ||
+    trimmed.startsWith('usr_')
+  ) {
+    return false;
+  }
+  const parts = trimmed.split('.');
+  if (parts.length !== 3 || !parts.every((p) => p.length > 0)) return false;
+  try {
+    const payloadStr =
+      typeof atob !== 'undefined'
+        ? atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
+        : typeof Buffer !== 'undefined'
+        ? Buffer.from(parts[1], 'base64').toString('utf8')
+        : '';
+    if (!payloadStr) return false;
+    const payload = JSON.parse(payloadStr);
+    if (!payload || typeof payload !== 'object') return false;
+    // Check expiration if exp is present (with 30s clock skew margin)
+    if (payload.exp && typeof payload.exp === 'number') {
+      if (payload.exp * 1000 < Date.now() - 30000) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export class ApiClient {
   public readonly baseUrl: string;
   private authToken: string | null = null;
@@ -643,6 +682,14 @@ export class ApiClient {
       }
     }
     return this.authToken;
+  }
+
+  public getSupabaseAuthHeader(): string {
+    const token = this.getAuthToken();
+    if (isValidSupabaseJwt(token)) {
+      return `Bearer ${token}`;
+    }
+    return `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
   }
 
   public setUserProfile(profile: UserProfile | null): void {
@@ -1806,8 +1853,7 @@ export class ApiClient {
 
           // Direct live Supabase Cloud courses sync with valid schema and course_items
           try {
-            const staffToken = this.getAuthToken();
-            const authHeader = staffToken ? `Bearer ${staffToken}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+            const authHeader = this.getSupabaseAuthHeader();
             const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
             const isModeB = resolvedMode === 'modeB';
             const weekdaysNum = isModeB
@@ -3287,7 +3333,7 @@ export class ApiClient {
 
         // 6.1 Fallback for /patients/:id/treatment-results
         if (subAction === 'treatment-results') {
-          const authHeader = this.getAuthToken() ? `Bearer ${this.getAuthToken()}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+          const authHeader = this.getSupabaseAuthHeader();
           let canonicalPatientId = patientId;
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId || '');
           if (!isUuid && patientId) {
@@ -3406,7 +3452,7 @@ export class ApiClient {
 
         // 6.2 Fallback for /patients/:id/notes
         if (subAction === 'notes') {
-          const authHeader = this.getAuthToken() ? `Bearer ${this.getAuthToken()}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+          const authHeader = this.getSupabaseAuthHeader();
           let canonicalPatientId = patientId;
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId || '');
           if (!isUuid && patientId) {
@@ -4921,7 +4967,7 @@ export class ApiClient {
 
       // 11.5 Fallback for /case-transfers
       if (endpointPath.startsWith('/case-transfers')) {
-        const authHeader = this.getAuthToken() ? `Bearer ${this.getAuthToken()}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+        const authHeader = this.getSupabaseAuthHeader();
         if (options.method === 'POST') {
           const body = parseSafeBody(options.body);
           const newId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `ct-${Date.now()}`;
@@ -5750,7 +5796,7 @@ export class ApiClient {
 
       if (transfers.length === 0) {
         try {
-          const authHeader = this.getAuthToken() ? `Bearer ${this.getAuthToken()}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+          const authHeader = this.getSupabaseAuthHeader();
           const supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/case_transfers?select=*&order=created_at.desc&limit=50`, {
             headers: {
               apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -6584,8 +6630,7 @@ export class ApiClient {
       } catch (apiErr) {
         // Direct Supabase REST fallback with authenticated staff authorization
         try {
-          const staffToken = this.getAuthToken();
-          const authHeader = staffToken ? `Bearer ${staffToken}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+          const authHeader = this.getSupabaseAuthHeader();
           const rxRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/exercise_prescriptions`, {
             method: 'POST',
             headers: {

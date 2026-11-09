@@ -422,19 +422,20 @@ export class FastLoginLivenessVerifier {
 
     this.samplesCount++;
 
-    // 1. Precise Eye Blink Tracking (EAR < 0.20 -> > 0.26)
+    // 1. Precise Eye Blink Tracking (Absolute EAR < 0.22 or Relative Delta >= 0.06 or MediaPipe isBlinking)
     const ear = detection.eyes?.ear ?? 0.30;
     if (ear < this.lowestEar) this.lowestEar = ear;
     if (ear > this.highestEar) this.highestEar = ear;
 
-    if (this.lowestEar < 0.20 && this.highestEar >= 0.26) {
-      this.hasSeenBlink = true;
-    }
-    if (detection.eyes?.isBlinking) {
+    if (
+      (this.lowestEar < 0.22 && this.highestEar >= 0.26) ||
+      (this.highestEar - this.lowestEar >= 0.06) ||
+      detection.eyes?.isBlinking
+    ) {
       this.hasSeenBlink = true;
     }
 
-    // 2. Head Articulation / Micro-Motion Tracking (Yaw / Pitch change >= 8°)
+    // 2. Head Articulation / Micro-Motion Tracking (Yaw / Pitch change >= 4°)
     if (detection.pose) {
       if (this.initialYaw === null) this.initialYaw = detection.pose.yaw;
       if (this.initialPitch === null) this.initialPitch = detection.pose.pitch;
@@ -442,7 +443,7 @@ export class FastLoginLivenessVerifier {
       const dp = Math.abs(detection.pose.pitch - this.initialPitch);
       if (dy > this.maxYawDelta) this.maxYawDelta = dy;
       if (dp > this.maxPitchDelta) this.maxPitchDelta = dp;
-      if (this.maxYawDelta >= 8.0 || this.maxPitchDelta >= 8.0) {
+      if (this.maxYawDelta >= 4.0 || this.maxPitchDelta >= 4.0) {
         this.hasHeadMotion = true;
       }
     }
@@ -453,9 +454,9 @@ export class FastLoginLivenessVerifier {
     if (this.depthScores.length > 20) this.depthScores.shift();
 
     const avgDepth = this.depthScores.reduce((a, b) => a + b, 0) / this.depthScores.length;
-    this.hasSufficientDepth = avgDepth >= 0.25;
+    this.hasSufficientDepth = avgDepth >= 0.20;
 
-    // 4. Passive Multi-Frame Liveness (Optical flow / landmark micro-jitter within 0.002–0.02)
+    // 4. Passive Multi-Frame Liveness (Optical flow / landmark micro-jitter within 0.0005–0.02)
     let naturalJitter = 0;
     const currentNose = detection.landmarks?.noseTip || (detection.box ? { x: detection.box.x + detection.box.width / 2, y: detection.box.y + detection.box.height / 2 } : null);
     if (currentNose && this.prevNosePos) {
@@ -468,18 +469,18 @@ export class FastLoginLivenessVerifier {
     }
 
     const hasMicroMovement =
-      (detection.liveness?.microMotionScore !== undefined && detection.liveness.microMotionScore >= 0.002) ||
-      (naturalJitter >= 0.001) ||
-      (this.maxYawDelta >= 0.3 || this.maxPitchDelta >= 0.3);
+      (detection.liveness?.microMotionScore !== undefined && detection.liveness.microMotionScore >= 0.001) ||
+      (naturalJitter >= 0.0005) ||
+      (this.maxYawDelta >= 0.2 || this.maxPitchDelta >= 0.2);
 
-    const isFramePassivelyLive = (avgDepth >= 0.22 || detection.liveness?.is3dLive === true) && hasMicroMovement;
+    const isFramePassivelyLive = (avgDepth >= 0.20 || detection.liveness?.is3dLive === true) && hasMicroMovement;
     if (isFramePassivelyLive) {
       this.consecutivePassiveLiveFrames++;
     } else if (avgDepth < 0.15) {
       this.consecutivePassiveLiveFrames = 0;
     }
 
-    const hasPassiveLiveness = this.consecutivePassiveLiveFrames >= 4;
+    const hasPassiveLiveness = this.consecutivePassiveLiveFrames >= 3;
 
     const motionScore = Math.max(
       detection.liveness?.microMotionScore ?? 0,
@@ -489,7 +490,7 @@ export class FastLoginLivenessVerifier {
 
     const elapsed = Date.now() - this.startTime;
     const isDurationReady = elapsed >= this.requiredDurationMs;
-    const isPassiveDurationReady = hasPassiveLiveness && elapsed >= Math.min(this.requiredDurationMs, 250);
+    const isPassiveDurationReady = hasPassiveLiveness && elapsed >= Math.min(this.requiredDurationMs, 200);
 
     // Strict Spoof Rejection: If 3D depth is flat (< 0.15) after multiple samples
     if (this.samplesCount >= 8 && avgDepth < 0.15) {

@@ -78,7 +78,9 @@ export default {
 
     const addNoCacheHeaders = (res) => {
       const newHeaders = new Headers(res.headers);
-      newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      newHeaders.set('CDN-Cache-Control', 'no-store');
+      newHeaders.set('Cloudflare-CDN-Cache-Control', 'no-store');
       newHeaders.set('Pragma', 'no-cache');
       newHeaders.set('Expires', '0');
       return new Response(res.body, {
