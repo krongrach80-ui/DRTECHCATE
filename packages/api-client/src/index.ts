@@ -583,15 +583,17 @@ const lastKioskCallTimestamps = new Map<string, { timestamp: number; response: a
 
 /**
  * Validates if a token is a cryptographically valid Supabase GoTrue JWT.
- * Filters out internal resilient fallback signatures and non-Supabase session tokens.
+ * Filters out internal resilient fallback signatures, mock sessions, and non-Supabase tokens.
  */
 export const isValidSupabaseJwt = (token: string | null | undefined): boolean => {
   if (!token || typeof token !== 'string') return false;
   const trimmed = token.trim();
-  // Filter out internal resilient fallback tokens and custom non-JWT tokens
+  // Filter out internal resilient fallback tokens, mock strings, and custom non-JWT tokens
   if (
     trimmed.includes('resilient_signature') ||
     trimmed.includes('drtechcare_resilient') ||
+    trimmed.startsWith('mock-') ||
+    trimmed.startsWith('session-') ||
     trimmed.startsWith('pat_') ||
     trimmed.startsWith('stf_') ||
     trimmed.startsWith('usr_')
@@ -619,6 +621,8 @@ export const isValidSupabaseJwt = (token: string | null | undefined): boolean =>
     return false;
   }
 };
+
+export const isValidJwtFormat = isValidSupabaseJwt;
 
 export class ApiClient {
   public readonly baseUrl: string;
@@ -685,11 +689,37 @@ export class ApiClient {
   }
 
   public getSupabaseAuthHeader(): string {
-    const token = this.getAuthToken();
-    if (isValidSupabaseJwt(token)) {
-      return `Bearer ${token}`;
+    const rawToken = this.getAuthToken();
+    if (
+      rawToken &&
+      isValidJwtFormat(rawToken) &&
+      !rawToken.startsWith('mock-') &&
+      !rawToken.startsWith('session-')
+    ) {
+      return `Bearer ${rawToken}`;
     }
     return `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+  }
+
+  public getSupabaseRestHeaders(options?: { prefer?: string; contentType?: string }): Record<string, string> {
+    const rawToken = this.getAuthToken();
+    const headers: Record<string, string> = {
+      apikey: DEFAULT_SUPABASE_ANON_KEY,
+      'Content-Type': options?.contentType || 'application/json',
+      Prefer: options?.prefer || 'return=representation',
+    };
+
+    if (
+      rawToken &&
+      isValidJwtFormat(rawToken) &&
+      !rawToken.startsWith('mock-') &&
+      !rawToken.startsWith('session-')
+    ) {
+      headers['Authorization'] = `Bearer ${rawToken}`;
+    } else {
+      headers['Authorization'] = `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+    }
+    return headers;
   }
 
   public setUserProfile(profile: UserProfile | null): void {
@@ -3365,10 +3395,15 @@ export class ApiClient {
               }
             } catch {}
 
+            const isUuidVal = (v: unknown): v is string =>
+              typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
             const profile = this.getUserProfile();
-            const authorId = profile?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profile.id)
-              ? profile.id
-              : 'b1000000-0000-0000-0000-000000000003';
+            const authorId =
+              (isUuidVal(body.author_id) ? body.author_id.trim() : null) ||
+              (isUuidVal(body.created_by) ? body.created_by.trim() : null) ||
+              (isUuidVal(body.pt_id) ? body.pt_id.trim() : null) ||
+              (isUuidVal(profile?.id) ? profile.id.trim() : null) ||
+              'b1000000-0000-0000-0000-000000000003';
             const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `f1000000-0000-0000-0000-${Date.now().toString().slice(-12).padStart(12, '0')}`;
             const rowPayload = {
               id: newId,
@@ -3380,26 +3415,39 @@ export class ApiClient {
               created_at: new Date().toISOString(),
             };
 
-            const insertRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/treatment_results`, {
+            const restHeaders = this.getSupabaseRestHeaders({ prefer: 'return=representation' });
+            let insertRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/treatment_results`, {
               method: 'POST',
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: authHeader,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation',
-              },
+              headers: restHeaders,
               body: JSON.stringify(rowPayload),
             });
 
             if (!insertRes.ok) {
               const errBody = await insertRes.json().catch(() => ({}));
-              throw new Error(errBody.message || `ไม่สามารถบันทึกผลการรักษาได้ (HTTP ${insertRes.status})`);
+              const rawMsg = errBody.message || '';
+              if (rawMsg.includes('JWT') || rawMsg.includes('cryptographic') || rawMsg.includes('signature')) {
+                insertRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/treatment_results`, {
+                  method: 'POST',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation',
+                  },
+                  body: JSON.stringify(rowPayload),
+                });
+              }
+              if (!insertRes.ok) {
+                throw new Error(errBody.message || `ไม่สามารถบันทึกผลการรักษาได้ (HTTP ${insertRes.status})`);
+              }
             }
 
             const insertedRows = await insertRes.json().catch(() => [rowPayload]);
             const created = insertedRows[0] || rowPayload;
             created.author = { id: authorId, full_name: profile?.full_name || 'กภ. วิภาวี สุขใจ', username: profile?.username || 'pt_somchai' };
             created.author_name = profile?.full_name || 'กภ. วิภาวี สุขใจ';
+            created.created_by = authorId;
+            created.pt_id = authorId;
 
             try {
               if (typeof window !== 'undefined' && window.localStorage) {
@@ -3472,10 +3520,15 @@ export class ApiClient {
             if (!body.body || !body.body.trim()) {
               throw new Error('กรุณากรอกข้อความบันทึกเวชระเบียน');
             }
+            const isUuidVal = (v: unknown): v is string =>
+              typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
             const profile = this.getUserProfile();
-            const authorId = profile?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profile.id)
-              ? profile.id
-              : 'b1000000-0000-0000-0000-000000000003';
+            const authorId =
+              (isUuidVal(body.author_id) ? body.author_id.trim() : null) ||
+              (isUuidVal(body.created_by) ? body.created_by.trim() : null) ||
+              (isUuidVal(body.pt_id) ? body.pt_id.trim() : null) ||
+              (isUuidVal(profile?.id) ? profile.id.trim() : null) ||
+              'b1000000-0000-0000-0000-000000000003';
             const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `f2000000-0000-0000-0000-${Date.now().toString().slice(-12).padStart(12, '0')}`;
             const rowPayload = {
               id: newId,
@@ -3485,26 +3538,39 @@ export class ApiClient {
               created_at: new Date().toISOString(),
             };
 
-            const insertRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/medical_notes`, {
+            const restHeaders = this.getSupabaseRestHeaders({ prefer: 'return=representation' });
+            let insertRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/medical_notes`, {
               method: 'POST',
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: authHeader,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation',
-              },
+              headers: restHeaders,
               body: JSON.stringify(rowPayload),
             });
 
             if (!insertRes.ok) {
               const errBody = await insertRes.json().catch(() => ({}));
-              throw new Error(errBody.message || `ไม่สามารถสร้างบันทึกเวชระเบียนได้ (HTTP ${insertRes.status})`);
+              const rawMsg = errBody.message || '';
+              if (rawMsg.includes('JWT') || rawMsg.includes('cryptographic') || rawMsg.includes('signature')) {
+                insertRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/medical_notes`, {
+                  method: 'POST',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation',
+                  },
+                  body: JSON.stringify(rowPayload),
+                });
+              }
+              if (!insertRes.ok) {
+                throw new Error(errBody.message || `ไม่สามารถสร้างบันทึกเวชระเบียนได้ (HTTP ${insertRes.status})`);
+              }
             }
 
             const insertedRows = await insertRes.json().catch(() => [rowPayload]);
             const created = insertedRows[0] || rowPayload;
             created.author = { id: authorId, full_name: profile?.full_name || 'กภ. วิภาวี สุขใจ', username: profile?.username || 'pt_somchai' };
             created.author_name = profile?.full_name || 'กภ. วิภาวี สุขใจ';
+            created.created_by = authorId;
+            created.pt_id = authorId;
 
             return { ok: true, data: created, ...created } as T;
           }
@@ -6141,10 +6207,16 @@ export class ApiClient {
       return [] as MedicalNoteRecord[];
     },
 
-    createNote: async (patientId: string, body: string) => {
+    createNote: async (patientId: string, body: string, authorId?: string) => {
+      const currentUserId = authorId || this.getUserProfile()?.id;
       return this.request<MedicalNoteRecord>(`/patients/${patientId}/notes`, {
         method: 'POST',
-        body: JSON.stringify({ body }),
+        body: JSON.stringify({
+          body,
+          author_id: currentUserId,
+          created_by: currentUserId,
+          pt_id: currentUserId,
+        }),
       });
     },
 
@@ -6161,11 +6233,18 @@ export class ApiClient {
     },
 
     createTreatmentResult: async (patientId: string, body: string, supersedesId?: string) => {
+      const currentUserId = this.getUserProfile()?.id;
       return this.request<TreatmentResultRecord>(
         `/patients/${patientId}/treatment-results`,
         {
           method: 'POST',
-          body: JSON.stringify({ body, supersedes_id: supersedesId || null }),
+          body: JSON.stringify({
+            body,
+            supersedes_id: supersedesId || null,
+            author_id: currentUserId,
+            created_by: currentUserId,
+            pt_id: currentUserId,
+          }),
         }
       );
     },

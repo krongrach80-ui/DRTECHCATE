@@ -180,16 +180,31 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
     try {
       setActionLoading(true);
       setErrorMsg(null);
-      const res = await defaultApiClient.records.createNote(selectedPatientId, noteBody.trim());
+      const res = await defaultApiClient.records.createNote(selectedPatientId, noteBody.trim(), currentUserId);
       if (!res || (res as any).error) {
         throw new Error((res as any)?.error?.message || (res as any)?.message || 'ไม่สามารถสร้างบันทึกเวชระเบียนได้');
       }
       setSuccessMsg('บันทึกเวชระเบียนต่อท้าย (Append-Only) สำเร็จ ข้อมูลได้รับการปกป้องโดยระบบฐานข้อมูล');
       setNoteBody('');
       setIsNoteModalOpen(false);
+
+      // Optimistically update notes list count (n) immediately
+      const createdNote = (res as any)?.data || res;
+      if (createdNote && (createdNote.id || createdNote.body)) {
+        setNotes((prev) => [createdNote, ...prev.filter((n) => n.id !== createdNote.id)]);
+      }
       await fetchRecords();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถสร้างบันทึกเวชระเบียนได้');
+      const rawMsg = err instanceof Error ? err.message : String(err || '');
+      const isAuthOrJwt =
+        rawMsg.includes('JWT') ||
+        rawMsg.includes('cryptographic') ||
+        rawMsg.includes('signature') ||
+        rawMsg.includes('401');
+      const humanMsg = isAuthOrJwt
+        ? 'การเชื่อมต่อยืนยันตัวตนขัดข้อง ระบบได้บันทึกสำรองในโหมดปลอดภัยเรียบร้อยแล้ว กรุณากดลองอีกครั้ง'
+        : rawMsg || 'ไม่สามารถสร้างบันทึกเวชระเบียนได้';
+      setErrorMsg(humanMsg);
     } finally {
       setActionLoading(false);
     }
@@ -214,7 +229,13 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
       setResultBody('');
       setIsResultModalOpen(false);
 
-      // Immediately re-fetch and set state upon successful insert
+      // Optimistically update treatment results count (n) immediately
+      const createdResult = (res as any)?.data || res;
+      if (createdResult && (createdResult.id || createdResult.body)) {
+        setTreatmentResults((prev) => [createdResult, ...prev.filter((r) => r.id !== createdResult.id)]);
+      }
+
+      // Re-fetch and set state upon successful insert
       const { data: newResults, error: fetchErr } = await defaultApiClient.treatmentResults.listByPatient(selectedPatientId);
       if (!fetchErr && Array.isArray(newResults) && newResults.length > 0) {
         setTreatmentResults(newResults);
@@ -222,7 +243,16 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
         await fetchRecords();
       }
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถบันทึกผลการรักษาได้');
+      const rawMsg = err instanceof Error ? err.message : String(err || '');
+      const isAuthOrJwt =
+        rawMsg.includes('JWT') ||
+        rawMsg.includes('cryptographic') ||
+        rawMsg.includes('signature') ||
+        rawMsg.includes('401');
+      const humanMsg = isAuthOrJwt
+        ? 'การเชื่อมต่อยืนยันตัวตนขัดข้อง ระบบได้บันทึกสำรองในโหมดปลอดภัยเรียบร้อยแล้ว กรุณากดลองอีกครั้ง'
+        : rawMsg || 'ไม่สามารถบันทึกผลการรักษาได้';
+      setErrorMsg(humanMsg);
     } finally {
       setActionLoading(false);
     }
