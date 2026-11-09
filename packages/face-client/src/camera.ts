@@ -14,6 +14,9 @@ export interface CameraOptions {
   facingMode?: 'user' | 'environment';
   rotation?: 0 | 90 | 180 | 270;
   mirror?: boolean;
+  kioskLockConstraints?: boolean;
+  deviceId?: string;
+  aspectRatio?: number;
 }
 
 export class CameraManager {
@@ -23,13 +26,15 @@ export class CameraManager {
   private ctx: CanvasRenderingContext2D | null = null;
   private rotation: 0 | 90 | 180 | 270 = 0;
   private mirrorPreview: boolean = true;
+  private options: CameraOptions = {};
 
   constructor(options: CameraOptions = {}) {
+    this.options = options;
     this.rotation = options.rotation || 0;
     this.mirrorPreview = options.mirror ?? true;
   }
 
-  public async start(videoElement?: HTMLVideoElement): Promise<MediaStream> {
+  public async start(videoElement?: HTMLVideoElement, startOptions?: CameraOptions): Promise<MediaStream> {
     // 1. Enforce HTTPS check (or localhost in development)
     if (typeof window !== 'undefined') {
       const isLocalhost =
@@ -43,11 +48,19 @@ export class CameraManager {
       throw new Error('Camera API (mediaDevices.getUserMedia) is not supported in this environment');
     }
 
+    const effectiveOptions = { ...this.options, ...startOptions };
+    const isKioskLock = Boolean(effectiveOptions.kioskLockConstraints);
+    const targetWidth = effectiveOptions.width || (isKioskLock ? 640 : 1280);
+    const targetHeight = effectiveOptions.height || (isKioskLock ? 480 : 720);
+
     const constraints: MediaStreamConstraints = {
       video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        facingMode: 'user',
+        width: { ideal: targetWidth },
+        height: { ideal: targetHeight },
+        frameRate: { ideal: 30 },
+        facingMode: effectiveOptions.deviceId ? undefined : (effectiveOptions.facingMode || 'user'),
+        ...(effectiveOptions.deviceId ? { deviceId: { exact: effectiveOptions.deviceId } } : {}),
+        ...(effectiveOptions.aspectRatio ? { aspectRatio: { ideal: effectiveOptions.aspectRatio } } : {}),
       },
       audio: false,
     };
@@ -70,6 +83,15 @@ export class CameraManager {
       await this.applyHardwareExposure(this.stream);
     } catch {
       // non-blocking
+    }
+
+    // Hardware zoom & autofocus lock (Dedicated for kiosk face scan; non-breaking on unsupported webcams)
+    if (isKioskLock) {
+      try {
+        await this.applyHardwareKioskLock(this.stream);
+      } catch {
+        // non-blocking
+      }
     }
 
     if (videoElement) {
@@ -138,6 +160,123 @@ export class CameraManager {
   }
 
   /**
+   * Locks camera zoom to minimum and stabilizes focus to prevent lens breathing / auto-zooming.
+   * Only applied when hardware capabilities support it; wrapped in try-catch to guarantee zero failure.
+   */
+  public async applyHardwareKioskLock(mediaStream?: MediaStream | null): Promise<boolean> {
+    const stream = mediaStream || this.stream;
+    if (!stream) return false;
+    try {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) return false;
+
+      const capabilities: any = typeof videoTrack.getCapabilities === 'function' ? videoTrack.getCapabilities() : {};
+      const advancedConstraint: any = {};
+      let hasAdvanced = false;
+
+      // 1. Lock zoom to minimum (1.0 or capabilities.zoom.min) to prevent digital zooming/cropping
+      if (capabilities.zoom) {
+        const minZoom = typeof capabilities.zoom.min === 'number' ? capabilities.zoom.min : 1.0;
+        advancedConstraint.zoom = minZoom;
+        hasAdvanced = true;
+      }
+
+      // 2. Prevent autofocus hunting/lens breathing:
+      // If manual focus is supported, lock focus distance to normal kiosk standing range (~0.6m)
+      if (capabilities.focusMode && Array.isArray(capabilities.focusMode)) {
+        if (capabilities.focusMode.includes('manual')) {
+          advancedConstraint.focusMode = 'manual';
+          if (capabilities.focusDistance && typeof capabilities.focusDistance.min === 'number') {
+            const minD = capabilities.focusDistance.min;
+            const maxD = capabilities.focusDistance.max;
+            advancedConstraint.focusDistance = Math.max(minD, Math.min(0.65, maxD));
+          }
+          hasAdvanced = true;
+        } else if (capabilities.focusMode.includes('continuous')) {
+          advancedConstraint.focusMode = 'continuous';
+          hasAdvanced = true;
+        }
+      }
+
+      if (hasAdvanced && typeof videoTrack.applyConstraints === 'function') {
+        await videoTrack.applyConstraints({
+          advanced: [advancedConstraint],
+        } as any);
+        return true;
+      }
+    } catch {
+      // Hardware constraints not supported by browser/device; fallback gracefully
+    }
+    return false;
+  }
+
+  /**
+   * Retrieves active MediaStreamTrack for camera telemetry & capabilities inspection.
+   */
+  public getVideoTrack(): MediaStreamTrack | null {
+    if (!this.stream) return null;
+    return this.stream.getVideoTracks()[0] || null;
+  }
+
+  /**
+   * Returns current active settings (resolution, frameRate, aspectRatio, etc.).
+   */
+  public getSettings(): MediaTrackSettings | null {
+    const track = this.getVideoTrack();
+    if (!track || typeof track.getSettings !== 'function') return null;
+    return track.getSettings();
+  }
+
+  /**
+   * Returns hardware capabilities (zoom min/max, focus modes, resolution boundaries).
+   */
+  public getCapabilities(): any {
+    const track = this.getVideoTrack();
+    if (!track || typeof track.getCapabilities !== 'function') return {};
+    try {
+      return track.getCapabilities();
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Enumerates all video input cameras connected to the terminal.
+   */
+  public async getAvailableVideoDevices(): Promise<MediaDeviceInfo[]> {
+    if (typeof navigator === 'undefined' || !navigator?.mediaDevices?.enumerateDevices) return [];
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter((d) => d.kind === 'videoinput');
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Applies hardware optical or digital zoom if supported by the camera device.
+   */
+  public async applyHardwareZoom(targetZoom: number): Promise<boolean> {
+    const track = this.getVideoTrack();
+    if (!track) return false;
+    try {
+      const capabilities: any = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
+      if (capabilities.zoom) {
+        const minZ = typeof capabilities.zoom.min === 'number' ? capabilities.zoom.min : 1.0;
+        const maxZ = typeof capabilities.zoom.max === 'number' ? capabilities.zoom.max : 1.0;
+        const clampedZoom = Math.max(minZ, Math.min(targetZoom, maxZ));
+        await track.applyConstraints({
+          advanced: [{ zoom: clampedZoom }],
+        } as any);
+        return true;
+      }
+    } catch {
+      // Hardware zoom constraint failed or unsupported; fallback to software ROI
+    }
+    return false;
+  }
+
+  /**
    * Captures the current video frame onto an HTMLCanvasElement with actual pixel rotation.
    * STRICT SPEC INVARIANT (Spec 7.1.5):
    * Do NOT apply mirror (ctx.scale(-1, 1)) on this canvas. It is passed into detection models.
@@ -162,8 +301,11 @@ export class CameraManager {
     const targetWidth = isRotated90or270 ? vh : vw;
     const targetHeight = isRotated90or270 ? vw : vh;
 
-    this.canvas.width = targetWidth;
-    this.canvas.height = targetHeight;
+    // Invariant: ONLY update canvas dimensions when width/height actually changes
+    if (this.canvas.width !== targetWidth || this.canvas.height !== targetHeight) {
+      this.canvas.width = targetWidth;
+      this.canvas.height = targetHeight;
+    }
 
     if (this.canvas.getContext) {
       this.ctx = this.canvas.getContext('2d');
@@ -205,8 +347,12 @@ export class CameraManager {
     const targetWidth = isRotated90or270 ? vh : vw;
     const targetHeight = isRotated90or270 ? vw : vh;
 
-    previewCanvas.width = targetWidth;
-    previewCanvas.height = targetHeight;
+    // Invariant: ONLY update canvas dimensions when width/height actually changes
+    // Mutating canvas.width or canvas.height on every frame flushes the GPU backing store buffer and causes severe stutter
+    if (previewCanvas.width !== targetWidth || previewCanvas.height !== targetHeight) {
+      previewCanvas.width = targetWidth;
+      previewCanvas.height = targetHeight;
+    }
 
     const ctx = previewCanvas.getContext('2d');
     if (!ctx) return;

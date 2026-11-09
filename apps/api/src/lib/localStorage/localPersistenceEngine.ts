@@ -557,9 +557,7 @@ export function activateLocalPersistenceEngine(): void {
   console.log('------------------------------------------------------------------------');
   console.log('✓ LOCAL PERSISTENCE ENGINE ACTIVE (Docker-Bypass Mode Enabled)');
   console.log('  Data storage: data/local_db.json');
-  console.log('  Admin Account: director / Admin12345678!');
-  console.log('  Admin Account: admin / Admin12345678!');
-  console.log('  PT Account:    pt_somchai / CorrectPassword123!');
+  console.log('  Default Accounts: [director, admin, pt_somchai] (Credentials Secured)');
   console.log('  Kiosk:         kiosk-01 (Paired & Ready)');
   console.log('------------------------------------------------------------------------');
 }

@@ -3039,12 +3039,27 @@ function getClinicalExerciseConfig(idOrName) {
   }
   if (q === "\u0E14\u0E31\u0E19\u0E1C\u0E19\u0E31\u0E07" || q === "wall-pushup") return CLINICAL_EXERCISES_CONFIG["wall-pushup"];
   if (q.includes("\u4FA7\u503E") || q === "neck-side-tilt") return CLINICAL_EXERCISES_CONFIG["neck-side-tilt"];
+  for (const ex of Object.values(CLINICAL_EXERCISES_CONFIG)) {
+    if (ex.exerciseId === q || ex.id === q) return ex;
+    if (ex.nameTh && (ex.nameTh.toLowerCase().includes(q) || q.includes(ex.nameTh.toLowerCase()))) return ex;
+    if (ex.nameEn && (ex.nameEn.toLowerCase().includes(q) || q.includes(ex.nameEn.toLowerCase()))) return ex;
+    if (ex.nameCn && (ex.nameCn.includes(q) || q.includes(ex.nameCn))) return ex;
+  }
   for (const ex of ALL_CLINICAL_EXERCISES) {
     if (ex.id === q || ex.exerciseId === q) return ex;
     if (ex.nameTh.toLowerCase().includes(q) || q.includes(ex.nameTh.toLowerCase())) return ex;
     if (ex.nameEn.toLowerCase().includes(q) || q.includes(ex.nameEn.toLowerCase())) return ex;
     if (ex.nameCn && (ex.nameCn.includes(q) || q.includes(ex.nameCn))) return ex;
   }
+  if (q.includes("cervical-rotation") || q.includes("\u0E2B\u0E31\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30") || q.includes("\u0E2B\u0E21\u0E38\u0E19\u0E04\u0E2D") || q.includes("\u9888\u90E8\u65CB\u8F6C")) return CLINICAL_EXERCISES_CONFIG["seated-cervical-rotation"];
+  if (q.includes("cervical-side") || q.includes("\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E28\u0E35\u0E23\u0E29\u0E30") || q.includes("\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E04\u0E2D") || q.includes("\u9888\u90E8\u4FA7\u5C48")) return CLINICAL_EXERCISES_CONFIG["cervical-side-bend"];
+  if (q.includes("shrug") || q.includes("\u0E22\u0E31\u0E01\u0E44\u0E2B\u0E25\u0E48") || q.includes("\u8038\u80A9")) return CLINICAL_EXERCISES_CONFIG["shoulder-shrug"];
+  if (q.includes("trapezius") || q.includes("\u0E22\u0E37\u0E14\u0E1A\u0E48\u0E32") || q.includes("\u0E22\u0E37\u0E14\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E1A\u0E48\u0E32") || q.includes("\u4E0A\u659C\u65B9\u808C")) return CLINICAL_EXERCISES_CONFIG["upper-trapezius-stretch"];
+  if (q.includes("trunk-rotation") || q.includes("\u0E2B\u0E21\u0E38\u0E19\u0E25\u0E33\u0E15\u0E31\u0E27") || q.includes("\u0E01\u0E2D\u0E14\u0E2D\u0E01") || q.includes("\u8EAF\u5E72\u65CB\u8F6C")) return CLINICAL_EXERCISES_CONFIG["seated-trunk-rotation"];
+  if (q.includes("side-bend") || q.includes("\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27") || q.includes("\u8EAF\u5E72\u4FA7\u5C48")) return CLINICAL_EXERCISES_CONFIG["seated-side-bend"];
+  if (q.includes("cross-body") || q.includes("\u0E02\u0E49\u0E32\u0E21\u0E25\u0E33\u0E15\u0E31\u0E27") || q.includes("\u4EA4\u53C9\u81C2")) return CLINICAL_EXERCISES_CONFIG["cross-body-shoulder-stretch"];
+  if (q.includes("horizontal") || q.includes("\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E2D\u0E01") || q.includes("\u6C34\u5E73\u80A9\u5916\u5C55")) return CLINICAL_EXERCISES_CONFIG["seated-horizontal-abduction"];
+  if (q.includes("wrist") || q.includes("\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D") || q.includes("\u8155\u5C48\u4F38")) return CLINICAL_EXERCISES_CONFIG["wrist-flexion-extension"];
   if (q.includes("elbow") || q.includes("\u0E28\u0E2D\u0E01") || q.includes("\u5C48\u4F38")) return CLINICAL_EXERCISES_CONFIG["elbow-flexion"];
   if (q.includes("pendulum") || q.includes("\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19") || q.includes("\u949F\u6446") || q.includes("codman")) return CLINICAL_EXERCISES_CONFIG["shoulder-pendulum"];
   if (q.includes("flexion") || q.includes("\u0E22\u0E01\u0E41\u0E02\u0E19") || q.includes("\u524D\u5C48")) return CLINICAL_EXERCISES_CONFIG["shoulder-flexion"];
@@ -3073,6 +3088,8 @@ var init_exercises_config = __esm({
       "active-shoulder-flexion": {
         id: "active-shoulder-flexion",
         exerciseId: "e1000000-0000-0000-0000-000000000001",
+        is_active: true,
+        camera_framing: "upper_body",
         mode: "camera",
         nameTh: "\u0E22\u0E01\u0E41\u0E02\u0E19\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32 (Active Shoulder Flexion)",
         nameEn: "Active Shoulder Flexion",
@@ -3159,6 +3176,8 @@ var init_exercises_config = __esm({
       "shoulder-abduction": {
         id: "shoulder-abduction",
         exerciseId: "e1000000-0000-0000-0000-000000000002",
+        is_active: true,
+        camera_framing: "upper_body",
         mode: "camera",
         nameTh: "\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07 (Shoulder Abduction)",
         nameEn: "Shoulder Abduction",
@@ -3243,6 +3262,8 @@ var init_exercises_config = __esm({
       "shoulder-er-band": {
         id: "shoulder-er-band",
         exerciseId: "e1000000-0000-0000-0000-000000000003",
+        is_active: true,
+        camera_framing: "upper_body",
         mode: "camera",
         nameTh: "\u0E2B\u0E21\u0E38\u0E19\u0E41\u0E02\u0E19\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E19\u0E2D\u0E01\u0E14\u0E49\u0E27\u0E22\u0E22\u0E32\u0E07\u0E22\u0E37\u0E14 (Shoulder External Rotation with Band)",
         nameEn: "Shoulder External Rotation with Band",
@@ -3319,6 +3340,8 @@ var init_exercises_config = __esm({
       "scapular-retraction": {
         id: "scapular-retraction",
         exerciseId: "e1000000-0000-0000-0000-000000000004",
+        is_active: true,
+        camera_framing: "upper_body",
         mode: "camera",
         nameTh: "\u0E14\u0E36\u0E07\u0E2A\u0E30\u0E1A\u0E31\u0E01\u0E0A\u0E34\u0E14\u0E01\u0E31\u0E19 (Scapular Retraction / Pinch)",
         nameEn: "Scapular Retraction",
@@ -3393,6 +3416,8 @@ var init_exercises_config = __esm({
       "elbow-flexion-extension": {
         id: "elbow-flexion-extension",
         exerciseId: "e1000000-0000-0000-0000-000000000005",
+        is_active: true,
+        camera_framing: "upper_body",
         mode: "camera",
         nameTh: "\u0E07\u0E2D\u0E41\u0E25\u0E30\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01 (Elbow Flexion & Extension)",
         nameEn: "Elbow Flexion & Extension",
@@ -3469,6 +3494,7 @@ var init_exercises_config = __esm({
       "seated-knee-extension": {
         id: "seated-knee-extension",
         exerciseId: "e1000000-0000-0000-0000-000000000006",
+        is_active: false,
         mode: "camera",
         nameTh: "\u0E40\u0E15\u0E30\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E40\u0E02\u0E48\u0E32\u0E17\u0E48\u0E32\u0E19\u0E31\u0E48\u0E07 (Seated Knee Extension)",
         nameEn: "Seated Knee Extension",
@@ -3546,6 +3572,7 @@ var init_exercises_config = __esm({
       "mini-squat": {
         id: "mini-squat",
         exerciseId: "e1000000-0000-0000-0000-000000000007",
+        is_active: false,
         mode: "camera",
         nameTh: "\u0E22\u0E48\u0E2D\u0E40\u0E02\u0E48\u0E32\u0E21\u0E34\u0E19\u0E34\u0E2A\u0E04\u0E27\u0E2D\u0E17 (Mini Squat 0\u201360\xB0)",
         nameEn: "Mini Squat (0\u201360\xB0)",
@@ -3622,6 +3649,7 @@ var init_exercises_config = __esm({
       "sit-to-stand": {
         id: "sit-to-stand",
         exerciseId: "e1000000-0000-0000-0000-000000000008",
+        is_active: false,
         mode: "camera",
         nameTh: "\u0E25\u0E38\u0E01\u0E02\u0E36\u0E49\u0E19\u0E22\u0E37\u0E19\u0E08\u0E32\u0E01\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 (Sit-to-Stand)",
         nameEn: "Chair Sit-to-Stand",
@@ -3698,6 +3726,7 @@ var init_exercises_config = __esm({
       "straight-leg-raise": {
         id: "straight-leg-raise",
         exerciseId: "e1000000-0000-0000-0000-000000000009",
+        is_active: false,
         mode: "camera",
         nameTh: "\u0E22\u0E01\u0E02\u0E32\u0E15\u0E23\u0E07\u0E17\u0E48\u0E32\u0E19\u0E2D\u0E19/\u0E19\u0E31\u0E48\u0E07 (Straight Leg Raise - SLR)",
         nameEn: "Straight Leg Raise (SLR)",
@@ -3775,6 +3804,7 @@ var init_exercises_config = __esm({
       "standing-hip-abduction": {
         id: "standing-hip-abduction",
         exerciseId: "e1000000-0000-0000-0000-000000000010",
+        is_active: false,
         mode: "camera",
         nameTh: "\u0E01\u0E32\u0E07\u0E2A\u0E30\u0E42\u0E1E\u0E01\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07\u0E17\u0E48\u0E32\u0E22\u0E37\u0E19 (Standing Hip Abduction)",
         nameEn: "Standing Hip Abduction",
@@ -3850,6 +3880,7 @@ var init_exercises_config = __esm({
       "calf-raise": {
         id: "calf-raise",
         exerciseId: "e1000000-0000-0000-0000-000000000011",
+        is_active: false,
         mode: "camera",
         nameTh: "\u0E40\u0E02\u0E22\u0E48\u0E07\u0E1B\u0E25\u0E32\u0E22\u0E40\u0E17\u0E49\u0E32\u0E17\u0E48\u0E32\u0E22\u0E37\u0E19 (Standing Calf Raise / Heel Raise)",
         nameEn: "Standing Calf Raise",
@@ -3914,6 +3945,7 @@ var init_exercises_config = __esm({
       "single-leg-balance": {
         id: "single-leg-balance",
         exerciseId: "e1000000-0000-0000-0000-000000000012",
+        is_active: false,
         mode: "camera",
         nameTh: "\u0E22\u0E37\u0E19\u0E17\u0E23\u0E07\u0E15\u0E31\u0E27\u0E02\u0E32\u0E40\u0E14\u0E35\u0E22\u0E27 (Single-Leg Stance Balance)",
         nameEn: "Single-Leg Stance Balance",
@@ -3979,6 +4011,7 @@ var init_exercises_config = __esm({
       "calf-stretch": {
         id: "calf-stretch",
         exerciseId: "e1000000-0000-0000-0000-000000000013",
+        is_active: false,
         mode: "camera",
         nameTh: "\u0E22\u0E37\u0E14\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E19\u0E48\u0E2D\u0E07\u0E17\u0E48\u0E32\u0E22\u0E37\u0E19\u0E14\u0E31\u0E19\u0E1C\u0E19\u0E31\u0E07 (Standing Gastrocnemius Calf Stretch)",
         nameEn: "Standing Calf Stretch",
@@ -4044,6 +4077,8 @@ var init_exercises_config = __esm({
       "chin-tuck": {
         id: "chin-tuck",
         exerciseId: "e1000000-0000-0000-0000-000000000014",
+        is_active: true,
+        camera_framing: "upper_body",
         mode: "timer",
         nameTh: "\u0E40\u0E01\u0E47\u0E1A\u0E40\u0E2B\u0E19\u0E35\u0E22\u0E07\u0E40\u0E2A\u0E23\u0E34\u0E21\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E04\u0E2D\u0E14\u0E49\u0E32\u0E19\u0E25\u0E36\u0E01 (Cervical Retraction / Chin Tuck)",
         nameEn: "Cervical Retraction (Chin Tuck)",
@@ -4096,6 +4131,7 @@ var init_exercises_config = __esm({
       "shoulder-pendulum": {
         id: "shoulder-pendulum",
         exerciseId: "e1000000-0000-0000-0000-000000000015",
+        is_active: false,
         mode: "timer",
         nameTh: "\u0E41\u0E01\u0E27\u0E48\u0E07\u0E41\u0E02\u0E19\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 (Codman Pendulum Exercise)",
         nameEn: "Codman Shoulder Pendulum",
@@ -4274,6 +4310,666 @@ var init_exercises_config = __esm({
           stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E21\u0E36\u0E19\u0E07\u0E07 \u0E0A\u0E32\u0E25\u0E07\u0E41\u0E02\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E1B\u0E27\u0E14\u0E41\u0E1B\u0E25\u0E1A \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
           maxSafeAngleCapDeg: 40
         }
+      },
+      // 16. Seated Cervical Rotation
+      "seated-cervical-rotation": {
+        id: "seated-cervical-rotation",
+        exerciseId: "e1000000-0000-0000-0000-000000000016",
+        is_active: true,
+        camera_framing: "upper_body",
+        mode: "camera",
+        nameTh: "\u0E2B\u0E31\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30\u0E0B\u0E49\u0E32\u0E22-\u0E02\u0E27\u0E32 (Seated Cervical Rotation)",
+        nameEn: "Seated Cervical Rotation",
+        nameCn: "\u5750\u59FF\u9888\u90E8\u65CB\u8F6C",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07\u0E1A\u0E19\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 \u0E40\u0E17\u0E49\u0E32\u0E27\u0E32\u0E07\u0E23\u0E32\u0E1A\u0E01\u0E31\u0E1A\u0E1E\u0E37\u0E49\u0E19 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E2B\u0E31\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30\u0E44\u0E1B\u0E17\u0E32\u0E07\u0E0B\u0E49\u0E32\u0E22\u0E08\u0E19\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E15\u0E36\u0E07\u0E1E\u0E2D\u0E14\u0E35 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49 2 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35 \u0E41\u0E25\u0E49\u0E27\u0E2B\u0E21\u0E38\u0E19\u0E01\u0E25\u0E31\u0E1A\u0E21\u0E32\u0E15\u0E23\u0E07\u0E01\u0E25\u0E32\u0E07 \u0E08\u0E32\u0E01\u0E19\u0E31\u0E49\u0E19\u0E2A\u0E25\u0E31\u0E1A\u0E2B\u0E31\u0E19\u0E44\u0E1B\u0E17\u0E32\u0E07\u0E02\u0E27\u0E32",
+        descriptionEn: "Sit upright in chair with feet flat. Slowly rotate head to the left until comfortable stretch, hold 2s, return to center, then rotate right.",
+        descriptionCn: "\u7AEF\u5750\u4E8E\u6905\u5B50\u4E0A\uFF0C\u53CC\u811A\u5E73\u653E\u5730\u9762\u3002\u7F13\u6162\u5411\u5DE6\u8F6C\u5934\u81F3\u8212\u9002\u62C9\u4F38\u611F\uFF0C\u4FDD\u63012\u79D2\u540E\u56DE\u5230\u4E2D\u4F4D\uFF0C\u518D\u5411\u53F3\u8F6C\u3002",
+        framing: "upper_body",
+        evaluationMode: "neck_tilt",
+        side: "bilateral",
+        targetJoint: "neck",
+        mediaUrl: "/assets/exercises/seated-cervical-rotation.svg",
+        clinicalSource: "AAOS Cervical Spine Protocol / McKenzie Method",
+        clinicalDisclaimerTh: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E41\u0E19\u0E30\u0E19\u0E33 \u2014 \u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A\u0E1B\u0E23\u0E31\u0E1A\u0E15\u0E32\u0E21\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A)",
+        calibration_notes: "\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E04\u0E23\u0E36\u0E48\u0E07\u0E15\u0E31\u0E27\u0E1A\u0E19 | \u0E2D\u0E07\u0E28\u0E32\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22 45\xB0\u201360\xB0 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E08\u0E23\u0E34\u0E07)",
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultHoldSec: 2,
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E2B\u0E31\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E43\u0E1A\u0E2B\u0E39 \u0E41\u0E25\u0E30\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19",
+          instructionTextEn: "Sit upright facing camera, ensuring head, ears, and both shoulders are visible.",
+          instructionTextCn: "\u7AEF\u5750\u9762\u5411\u6444\u50CF\u5934\uFF0C\u786E\u4FDD\u5934\u90E8\u3001\u53CC\u8033\u53CA\u53CC\u80A9\u6E05\u6670\u53EF\u89C1\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 7, vertex: 11, pointB: 12 },
+            right: { pointA: 8, vertex: 12, pointB: 11 }
+          },
+          direction: "increase",
+          startAngleDeg: 0,
+          targetMinDeg: 45,
+          targetMaxDeg: 60,
+          toleranceDeg: 8,
+          holdDurationSec: 2
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "cervical_shoulder_hike",
+            type: "shoulder_shrug",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E2D\u0E22\u0E48\u0E32\u0E40\u0E01\u0E23\u0E47\u0E07\u0E22\u0E01\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19\u0E15\u0E32\u0E21 \u0E43\u0E2B\u0E49\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E44\u0E27\u0E49",
+            warningMessageEn: "Keep shoulders relaxed and down, do not shrug",
+            warningMessageCn: "\u8BF7\u653E\u677E\u53CC\u80A9\uFF0C\u5207\u52FF\u8038\u80A9",
+            severity: "warning"
+          },
+          {
+            ruleId: "cervical_trunk_lean",
+            type: "trunk_lean",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E23\u0E31\u0E01\u0E29\u0E32\u0E25\u0E33\u0E15\u0E31\u0E27\u0E43\u0E2B\u0E49\u0E15\u0E23\u0E07 \u0E2D\u0E22\u0E48\u0E32\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E15\u0E31\u0E27\u0E0A\u0E48\u0E27\u0E22\u0E2B\u0E31\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30",
+            warningMessageEn: "Keep torso upright, avoid leaning body to rotate neck",
+            warningMessageCn: "\u4FDD\u6301\u8EAF\u5E72\u6B63\u76F4\uFF0C\u907F\u514D\u503E\u659C\u8EAB\u4F53\u501F\u529B",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E40\u0E27\u0E35\u0E22\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E21\u0E36\u0E19\u0E07\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E0A\u0E32\u0E40\u0E2A\u0E35\u0E22\u0E27\u0E23\u0E49\u0E32\u0E27\u0E25\u0E07\u0E41\u0E02\u0E19 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if dizziness, numbness, or tingling down arm occurs",
+          stopOnPainMessageCn: "\u82E5\u51FA\u73B0\u5934\u6655\u76EE\u7729\u6216\u624B\u81C2\u9EBB\u6728\u653E\u5C04\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62",
+          maxSafeAngleCapDeg: 75
+        },
+        requiredLandmarks: {
+          bilateral: [0, 7, 8, 11, 12],
+          left: [0, 7, 11],
+          right: [0, 8, 12]
+        },
+        minLandmarkVisibility: {
+          0: 0.5,
+          7: 0.4,
+          8: 0.4,
+          11: 0.5,
+          12: 0.5
+        }
+      },
+      // 17. Cervical Side Bend
+      "cervical-side-bend": {
+        id: "cervical-side-bend",
+        exerciseId: "e1000000-0000-0000-0000-000000000017",
+        is_active: true,
+        camera_framing: "upper_body",
+        mode: "camera",
+        nameTh: "\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E28\u0E35\u0E23\u0E29\u0E30\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E44\u0E2B\u0E25\u0E48 (Cervical Side Bend)",
+        nameEn: "Cervical Side Bend",
+        nameCn: "\u9888\u90E8\u4FA7\u5C48",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07\u0E1A\u0E19\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 \u0E40\u0E17\u0E49\u0E32\u0E27\u0E32\u0E07\u0E23\u0E32\u0E1A\u0E01\u0E31\u0E1A\u0E1E\u0E37\u0E49\u0E19 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E40\u0E2D\u0E35\u0E22\u0E07\u0E28\u0E35\u0E23\u0E29\u0E30\u0E19\u0E33\u0E43\u0E1A\u0E2B\u0E39\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E0A\u0E49\u0E32\u0E46 \u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E22\u0E01\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19\u0E21\u0E32\u0E23\u0E31\u0E1A \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49 2 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35 \u0E41\u0E25\u0E49\u0E27\u0E01\u0E25\u0E31\u0E1A\u0E2A\u0E39\u0E48\u0E17\u0E48\u0E32\u0E15\u0E23\u0E07",
+        descriptionEn: "Sit upright. Gently tilt head to bring ear toward shoulder without lifting the shoulder, hold 2s, return upright.",
+        descriptionCn: "\u7AEF\u5750\u6905\u5B50\u4E0A\u3002\u5E73\u7F13\u4FA7\u5C48\u5934\u90E8\u4F7F\u8033\u6735\u9760\u8FD1\u540C\u4FA7\u80A9\u90E8\uFF0C\u5207\u52FF\u8038\u80A9\uFF0C\u4FDD\u63012\u79D2\u540E\u56DE\u6B63\u3002",
+        framing: "upper_body",
+        evaluationMode: "neck_tilt",
+        side: "bilateral",
+        targetJoint: "neck",
+        mediaUrl: "/assets/exercises/cervical-side-bend.svg",
+        clinicalSource: "AAOS Cervical Standards / JOSPT Neck Pain CPG",
+        clinicalDisclaimerTh: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E41\u0E19\u0E30\u0E19\u0E33 \u2014 \u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A\u0E1B\u0E23\u0E31\u0E1A\u0E15\u0E32\u0E21\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A)",
+        calibration_notes: "\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E04\u0E23\u0E36\u0E48\u0E07\u0E15\u0E31\u0E27\u0E1A\u0E19 | \u0E2D\u0E07\u0E28\u0E32\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22 20\xB0\u201335\xB0 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E08\u0E23\u0E34\u0E07)",
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultHoldSec: 2,
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E2B\u0E31\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E43\u0E1A\u0E2B\u0E39 \u0E41\u0E25\u0E30\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19",
+          instructionTextEn: "Sit upright facing camera, showing head, ears, and shoulders clearly.",
+          instructionTextCn: "\u7AEF\u5750\u9762\u5411\u6444\u50CF\u5934\uFF0C\u786E\u4FDD\u5934\u90E8\u3001\u53CC\u8033\u53CA\u53CC\u80A9\u6E05\u6670\u53EF\u89C1\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 7, vertex: 11, pointB: 12 },
+            right: { pointA: 8, vertex: 12, pointB: 11 }
+          },
+          direction: "increase",
+          startAngleDeg: 0,
+          targetMinDeg: 20,
+          targetMaxDeg: 35,
+          toleranceDeg: 6,
+          holdDurationSec: 2
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "sidebend_shoulder_hike",
+            type: "shoulder_shrug",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E2D\u0E22\u0E48\u0E32\u0E40\u0E01\u0E23\u0E47\u0E07\u0E22\u0E01\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E2B\u0E39 \u0E43\u0E2B\u0E49\u0E1C\u0E48\u0E2D\u0E19\u0E04\u0E25\u0E32\u0E22\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E44\u0E27\u0E49",
+            warningMessageEn: "Do not hike shoulder to meet ear, keep shoulders relaxed",
+            warningMessageCn: "\u8BF7\u52FF\u8038\u80A9\u8D34\u8033\uFF0C\u4FDD\u6301\u80A9\u90E8\u81EA\u7136\u4E0B\u6C89",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E21\u0E36\u0E19\u0E07\u0E07 \u0E40\u0E2A\u0E35\u0E22\u0E27\u0E41\u0E1B\u0E25\u0E1A\u0E25\u0E07\u0E41\u0E02\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E1B\u0E27\u0E14\u0E23\u0E49\u0E32\u0E27 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if dizziness, radiating pain, or tingling occurs",
+          stopOnPainMessageCn: "\u82E5\u51FA\u73B0\u7729\u6655\u6216\u624B\u81C2\u653E\u5C04\u523A\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62",
+          maxSafeAngleCapDeg: 45
+        },
+        requiredLandmarks: {
+          bilateral: [7, 8, 11, 12],
+          left: [7, 11],
+          right: [8, 12]
+        },
+        minLandmarkVisibility: {
+          7: 0.4,
+          8: 0.4,
+          11: 0.5,
+          12: 0.5
+        }
+      },
+      // 18. Shoulder Shrug
+      "shoulder-shrug": {
+        id: "shoulder-shrug",
+        exerciseId: "e1000000-0000-0000-0000-000000000018",
+        is_active: true,
+        camera_framing: "upper_body",
+        mode: "camera",
+        nameTh: "\u0E22\u0E31\u0E01\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19-\u0E25\u0E07 (Shoulder Shrug)",
+        nameEn: "Shoulder Shrug",
+        nameCn: "\u8038\u80A9\u8BAD\u7EC3",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E41\u0E02\u0E19\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E1B\u0E25\u0E48\u0E2D\u0E22\u0E41\u0E19\u0E1A\u0E25\u0E33\u0E15\u0E31\u0E27 \u0E22\u0E01\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E02\u0E36\u0E49\u0E19\u0E15\u0E23\u0E07\u0E46 \u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E43\u0E1A\u0E2B\u0E39 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49 2 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35 \u0E41\u0E25\u0E49\u0E27\u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E1C\u0E48\u0E2D\u0E19\u0E44\u0E2B\u0E25\u0E48\u0E25\u0E07\u0E2A\u0E39\u0E48\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07\u0E40\u0E14\u0E34\u0E21\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E0A\u0E49\u0E32\u0E46",
+        descriptionEn: "Sit upright with arms at sides. Shrug both shoulders straight up toward ears, hold 2s, then lower smoothly.",
+        descriptionCn: "\u7AEF\u5750\u59FF\u52BF\uFF0C\u53CC\u81C2\u81EA\u7136\u4E0B\u5782\u3002\u53CC\u80A9\u5782\u76F4\u5411\u4E0A\u8038\u5411\u8033\u6735\uFF0C\u4FDD\u63012\u79D2\u540E\u5E73\u7F13\u4E0B\u843D\u3002",
+        framing: "upper_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "scapula",
+        mediaUrl: "/assets/exercises/shoulder-shrug.svg",
+        clinicalSource: "ACSM Exercise Testing and Prescription",
+        clinicalDisclaimerTh: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E41\u0E19\u0E30\u0E19\u0E33 \u2014 \u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A\u0E1B\u0E23\u0E31\u0E1A\u0E15\u0E32\u0E21\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A)",
+        calibration_notes: "\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E04\u0E23\u0E36\u0E48\u0E07\u0E15\u0E31\u0E27\u0E1A\u0E19 | \u0E23\u0E30\u0E22\u0E30\u0E22\u0E01\u0E44\u0E2B\u0E25\u0E48\u0E2A\u0E31\u0E21\u0E1E\u0E31\u0E19\u0E18\u0E4C 0.08\u20130.12 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E08\u0E23\u0E34\u0E07)",
+        defaultSets: 3,
+        defaultReps: 12,
+        defaultHoldSec: 2,
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30\u0E41\u0E25\u0E30\u0E25\u0E33\u0E15\u0E31\u0E27\u0E0A\u0E48\u0E27\u0E07\u0E1A\u0E19\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E40\u0E2D\u0E27\u0E02\u0E36\u0E49\u0E19\u0E44\u0E1B",
+          instructionTextEn: "Sit upright facing camera, showing head and upper torso clearly.",
+          instructionTextCn: "\u6B63\u9762\u7AEF\u5750\uFF0C\u786E\u4FDD\u5934\u90E8\u53CA\u8170\u90E8\u4EE5\u4E0A\u8EAF\u5E72\u6E05\u6670\u53EF\u89C1\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 7, vertex: 11, pointB: 23 },
+            right: { pointA: 8, vertex: 12, pointB: 24 }
+          },
+          direction: "decrease",
+          startAngleDeg: 165,
+          targetMinDeg: 130,
+          targetMaxDeg: 145,
+          toleranceDeg: 10,
+          holdDurationSec: 2
+        },
+        defaultPrescription: {
+          repsPerSet: 12,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "shrug_head_poke",
+            type: "trunk_lean",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E2B\u0E49\u0E32\u0E21\u0E22\u0E37\u0E48\u0E19\u0E04\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E01\u0E49\u0E21\u0E28\u0E35\u0E23\u0E29\u0E30\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32 \u0E43\u0E2B\u0E49\u0E22\u0E01\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19\u0E15\u0E23\u0E07\u0E46",
+            warningMessageEn: "Do not poke neck forward, elevate shoulders vertically",
+            warningMessageCn: "\u8BF7\u52FF\u5411\u524D\u63A2\u9888\uFF0C\u4FDD\u6301\u53CC\u80A9\u5782\u76F4\u5411\u4E0A\u63D0\u8D77",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E40\u0E2A\u0E35\u0E22\u0E27\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E01\u0E23\u0E30\u0E14\u0E39\u0E01\u0E04\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E30\u0E1A\u0E31\u0E01 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if sharp neck or scapular pain occurs",
+          stopOnPainMessageCn: "\u82E5\u611F\u5230\u9888\u690E\u6216\u80A9\u80DB\u5904\u523A\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62",
+          maxSafeAngleCapDeg: 180
+        },
+        requiredLandmarks: {
+          bilateral: [7, 8, 11, 12, 23, 24],
+          left: [7, 11, 23],
+          right: [8, 12, 24]
+        },
+        minLandmarkVisibility: {
+          7: 0.4,
+          8: 0.4,
+          11: 0.5,
+          12: 0.5,
+          23: 0.35,
+          24: 0.35
+        }
+      },
+      // 19. Upper Trapezius Stretch (Timer Mode)
+      "upper-trapezius-stretch": {
+        id: "upper-trapezius-stretch",
+        exerciseId: "e1000000-0000-0000-0000-000000000019",
+        is_active: true,
+        camera_framing: "upper_body",
+        mode: "timer",
+        nameTh: "\u0E22\u0E37\u0E14\u0E01\u0E25\u0E49\u0E32\u0E21\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E1A\u0E48\u0E32 (Upper Trapezius Stretch)",
+        nameEn: "Upper Trapezius Stretch",
+        nameCn: "\u4E0A\u659C\u65B9\u808C\u62C9\u4F38",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E21\u0E37\u0E2D\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E36\u0E48\u0E07\u0E08\u0E31\u0E1A\u0E43\u0E15\u0E49\u0E02\u0E2D\u0E1A\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E15\u0E23\u0E36\u0E07\u0E2A\u0E30\u0E1A\u0E31\u0E01 \u0E40\u0E2D\u0E35\u0E22\u0E07\u0E28\u0E35\u0E23\u0E29\u0E30\u0E44\u0E1B\u0E14\u0E49\u0E32\u0E19\u0E15\u0E23\u0E07\u0E02\u0E49\u0E32\u0E21 \u0E21\u0E37\u0E2D\u0E2D\u0E35\u0E01\u0E02\u0E49\u0E32\u0E07\u0E0A\u0E48\u0E27\u0E22\u0E1B\u0E23\u0E30\u0E04\u0E2D\u0E07\u0E28\u0E35\u0E23\u0E29\u0E30\u0E40\u0E1A\u0E32\u0E46 \u0E08\u0E19\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E15\u0E36\u0E07\u0E2A\u0E1A\u0E32\u0E22 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49 20\u201330 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35",
+        descriptionEn: "Sit upright holding chair base with one hand. Tilt head to opposite side with gentle hand support until mild stretch, hold 20-30s.",
+        descriptionCn: "\u7AEF\u5750\u6293\u7A33\u5EA7\u6905\u8FB9\u7F18\u4EE5\u56FA\u5B9A\u80A9\u80DB\u3002\u5934\u90E8\u7F13\u6162\u5411\u5BF9\u4FA7\u503E\u659C\u5E76\u8F7B\u67D4\u6276\u5934\uFF0C\u611F\u53D7\u5230\u8212\u9002\u62C9\u4F38\u540E\u4FDD\u630120-30\u79D2\u3002",
+        framing: "upper_body",
+        evaluationMode: "timer",
+        side: "bilateral",
+        targetJoint: "neck",
+        mediaUrl: "/assets/exercises/upper-trapezius-stretch.svg",
+        clinicalSource: "ACSM Flexibility Guidelines / JOSPT Neck Pain CPG",
+        clinicalDisclaimerTh: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E41\u0E19\u0E30\u0E19\u0E33 \u2014 \u0E42\u0E2B\u0E21\u0E14\u0E08\u0E31\u0E1A\u0E40\u0E27\u0E25\u0E32\u0E19\u0E33\u0E17\u0E32\u0E07 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A)",
+        calibration_notes: "\u0E42\u0E2B\u0E21\u0E14\u0E08\u0E31\u0E1A\u0E40\u0E27\u0E25\u0E32\u0E19\u0E33\u0E17\u0E32\u0E07 (Timer Mode: 20\u201330 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35/\u0E23\u0E2D\u0E1A) | \u0E01\u0E25\u0E49\u0E2D\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E04\u0E23\u0E36\u0E48\u0E07\u0E15\u0E31\u0E27\u0E1A\u0E19 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E08\u0E23\u0E34\u0E07)",
+        defaultSets: 3,
+        defaultReps: 3,
+        defaultHoldSec: 25,
+        defaultDurationSec: 30,
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E21\u0E37\u0E2D\u0E08\u0E31\u0E1A\u0E02\u0E2D\u0E1A\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 \u0E40\u0E2D\u0E35\u0E22\u0E07\u0E28\u0E35\u0E23\u0E29\u0E30\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E46 \u0E43\u0E2B\u0E49\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E15\u0E36\u0E07\u0E2A\u0E1A\u0E32\u0E22\u0E17\u0E35\u0E48\u0E1A\u0E48\u0E32",
+          instructionTextEn: "Hold chair seat, gently tilt head to opposite side, hold comfortably.",
+          instructionTextCn: "\u624B\u6293\u6905\u6CBF\u56FA\u5B9A\uFF0C\u5934\u90E8\u5411\u5BF9\u4FA7\u503E\u659C\u5E76\u4FDD\u6301\u62C9\u4F38\u3002"
+        },
+        defaultPrescription: {
+          repsPerSet: 3,
+          totalSets: 3,
+          restBetweenSetsSec: 30,
+          durationSec: 30,
+          holdDurationSec: 25
+        },
+        compensationRules: [],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E0A\u0E32\u0E41\u0E1B\u0E25\u0E1A\u0E25\u0E07\u0E41\u0E02\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E27\u0E35\u0E22\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if numbness down arm or dizziness occurs",
+          stopOnPainMessageCn: "\u82E5\u51FA\u73B0\u624B\u9EBB\u6216\u7729\u6655\u611F\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62",
+          maxSafeAngleCapDeg: 45
+        },
+        requiredLandmarks: {
+          bilateral: [7, 8, 11, 12],
+          left: [7, 11],
+          right: [8, 12]
+        },
+        minLandmarkVisibility: {
+          7: 0.4,
+          8: 0.4,
+          11: 0.5,
+          12: 0.5
+        }
+      },
+      // 20. Seated Trunk Rotation
+      "seated-trunk-rotation": {
+        id: "seated-trunk-rotation",
+        exerciseId: "e1000000-0000-0000-0000-000000000020",
+        is_active: true,
+        camera_framing: "upper_body",
+        mode: "camera",
+        nameTh: "\u0E2B\u0E21\u0E38\u0E19\u0E25\u0E33\u0E15\u0E31\u0E27\u0E17\u0E48\u0E32\u0E19\u0E31\u0E48\u0E07\u0E01\u0E2D\u0E14\u0E2D\u0E01 (Seated Trunk Rotation)",
+        nameEn: "Seated Trunk Rotation",
+        nameCn: "\u5750\u59FF\u8EAF\u5E72\u65CB\u8F6C",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07\u0E1A\u0E19\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 \u0E40\u0E17\u0E49\u0E32\u0E27\u0E32\u0E07\u0E23\u0E32\u0E1A\u0E01\u0E31\u0E1A\u0E1E\u0E37\u0E49\u0E19 \u0E22\u0E01\u0E41\u0E02\u0E19\u0E01\u0E2D\u0E14\u0E2D\u0E01\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E2D\u0E01 \u0E2A\u0E30\u0E42\u0E1E\u0E01\u0E15\u0E23\u0E36\u0E07\u0E41\u0E19\u0E48\u0E19\u0E01\u0E31\u0E1A\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E2B\u0E21\u0E38\u0E19\u0E25\u0E33\u0E15\u0E31\u0E27\u0E2A\u0E48\u0E27\u0E19\u0E1A\u0E19\u0E44\u0E1B\u0E17\u0E32\u0E07\u0E0B\u0E49\u0E32\u0E22 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49 2 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35 \u0E41\u0E25\u0E49\u0E27\u0E2B\u0E21\u0E38\u0E19\u0E01\u0E25\u0E31\u0E1A\u0E21\u0E32\u0E15\u0E23\u0E07\u0E01\u0E25\u0E32\u0E07 \u0E08\u0E32\u0E01\u0E19\u0E31\u0E49\u0E19\u0E2B\u0E21\u0E38\u0E19\u0E44\u0E1B\u0E17\u0E32\u0E07\u0E02\u0E27\u0E32",
+        descriptionEn: "Sit upright with arms crossed over chest. Keep hips flat on chair, slowly rotate upper trunk left, hold 2s, center, then rotate right.",
+        descriptionCn: "\u7AEF\u5750\u4E8E\u6905\uFF0C\u53CC\u624B\u62B1\u80F8\u3002\u81C0\u90E8\u7D27\u8D34\u6905\u9762\uFF0C\u7F13\u6162\u5411\u5DE6\u65CB\u8F6C\u4E0A\u534A\u8EAB\u8EAF\u5E72\uFF0C\u4FDD\u63012\u79D2\u540E\u56DE\u4E2D\uFF0C\u518D\u8F6C\u5411\u53F3\u4FA7\u3002",
+        framing: "upper_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "trunk",
+        mediaUrl: "/assets/exercises/seated-trunk-rotation.svg",
+        clinicalSource: "Spine Biomechanics / McGill Trunk Protocols",
+        clinicalDisclaimerTh: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E41\u0E19\u0E30\u0E19\u0E33 \u2014 \u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A\u0E1B\u0E23\u0E31\u0E1A\u0E15\u0E32\u0E21\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A)",
+        calibration_notes: "\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E04\u0E23\u0E36\u0E48\u0E07\u0E15\u0E31\u0E27\u0E1A\u0E19 | \u0E2D\u0E07\u0E28\u0E32\u0E01\u0E32\u0E23\u0E2B\u0E21\u0E38\u0E19 20\xB0\u201335\xB0 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E08\u0E23\u0E34\u0E07)",
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultHoldSec: 2,
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E40\u0E17\u0E49\u0E32\u0E41\u0E19\u0E1A\u0E1E\u0E37\u0E49\u0E19 \u0E22\u0E01\u0E41\u0E02\u0E19\u0E01\u0E2D\u0E14\u0E2D\u0E01\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07",
+          instructionTextEn: "Sit upright with feet flat, cross arms over chest, facing camera.",
+          instructionTextCn: "\u53CC\u811A\u5E73\u653E\u5730\u9762\uFF0C\u7AEF\u5750\u5E76\u53CC\u624B\u62B1\u80F8\u9762\u5BF9\u6444\u50CF\u5934\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 11, vertex: 12, pointB: 24 },
+            right: { pointA: 12, vertex: 11, pointB: 23 }
+          },
+          direction: "increase",
+          startAngleDeg: 10,
+          targetMinDeg: 20,
+          targetMaxDeg: 35,
+          toleranceDeg: 8,
+          holdDurationSec: 2
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "trunk_pelvic_lift",
+            type: "trunk_lean",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E2A\u0E30\u0E42\u0E1E\u0E01\u0E41\u0E25\u0E30\u0E01\u0E49\u0E19\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E34\u0E14\u0E40\u0E1A\u0E32\u0E30\u0E15\u0E25\u0E2D\u0E14\u0E40\u0E27\u0E25\u0E32 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E15\u0E31\u0E27\u0E0A\u0E48\u0E27\u0E22\u0E2B\u0E21\u0E38\u0E19",
+            warningMessageEn: "Keep pelvis flat on seat, do not lift hip to rotate",
+            warningMessageCn: "\u8BF7\u4FDD\u6301\u9AA8\u76C6\u7D27\u8D34\u6905\u9762\uFF0C\u5207\u52FF\u62AC\u8D77\u81C0\u90E8\u501F\u529B",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E41\u0E1B\u0E25\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E2B\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E48\u0E32\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E49\u0E32\u0E27\u0E25\u0E07\u0E2A\u0E30\u0E42\u0E1E\u0E01 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if sharp lower back or radiating pain occurs",
+          stopOnPainMessageCn: "\u82E5\u8170\u90E8\u6216\u4E0B\u80A2\u51FA\u73B0\u653E\u5C04\u6027\u523A\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62",
+          maxSafeAngleCapDeg: 45
+        },
+        requiredLandmarks: {
+          bilateral: [11, 12, 23, 24],
+          left: [11, 23],
+          right: [12, 24]
+        },
+        minLandmarkVisibility: {
+          11: 0.5,
+          12: 0.5,
+          23: 0.35,
+          24: 0.35
+        }
+      },
+      // 21. Seated Side Bend
+      "seated-side-bend": {
+        id: "seated-side-bend",
+        exerciseId: "e1000000-0000-0000-0000-000000000021",
+        is_active: true,
+        camera_framing: "upper_body",
+        mode: "camera",
+        nameTh: "\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07\u0E17\u0E48\u0E32\u0E19\u0E31\u0E48\u0E07 (Seated Side Bend)",
+        nameEn: "Seated Side Bend",
+        nameCn: "\u5750\u59FF\u8EAF\u5E72\u4FA7\u5C48",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E40\u0E17\u0E49\u0E32\u0E27\u0E32\u0E07\u0E23\u0E32\u0E1A\u0E01\u0E31\u0E1A\u0E1E\u0E37\u0E49\u0E19 \u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E40\u0E2D\u0E35\u0E22\u0E07\u0E25\u0E33\u0E15\u0E31\u0E27\u0E44\u0E1B\u0E17\u0E32\u0E07\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07 \u0E1B\u0E25\u0E32\u0E22\u0E19\u0E34\u0E49\u0E27\u0E40\u0E25\u0E37\u0E48\u0E2D\u0E19\u0E25\u0E07\u0E15\u0E32\u0E21\u0E41\u0E19\u0E27\u0E02\u0E32\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49 \u0E42\u0E14\u0E22\u0E01\u0E49\u0E19\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E44\u0E21\u0E48\u0E25\u0E2D\u0E22\u0E08\u0E32\u0E01\u0E40\u0E1A\u0E32\u0E30 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49 2 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35 \u0E41\u0E25\u0E49\u0E27\u0E14\u0E36\u0E07\u0E15\u0E31\u0E27\u0E01\u0E25\u0E31\u0E1A\u0E21\u0E32\u0E15\u0E23\u0E07",
+        descriptionEn: "Sit upright with feet flat. Slowly bend trunk to side sliding fingertips down chair leg without lifting hips, hold 2s, return upright.",
+        descriptionCn: "\u7AEF\u5750\u59FF\u52BF\u53CC\u811A\u5E73\u653E\u3002\u4E0A\u534A\u8EAB\u5E73\u7F13\u5411\u4FA7\u9762\u5F2F\u66F2\uFF0C\u6307\u5C16\u6CBF\u6905\u817F\u4E0B\u6ED1\uFF0C\u81C0\u90E8\u4E0D\u79BB\u6905\u9762\uFF0C\u4FDD\u63012\u79D2\u540E\u56DE\u6B63\u3002",
+        framing: "upper_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "trunk",
+        mediaUrl: "/assets/exercises/seated-side-bend.svg",
+        clinicalSource: "Kendall Muscle Testing / Spine Rehabilitation CPG",
+        clinicalDisclaimerTh: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E41\u0E19\u0E30\u0E19\u0E33 \u2014 \u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A\u0E1B\u0E23\u0E31\u0E1A\u0E15\u0E32\u0E21\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A)",
+        calibration_notes: "\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E04\u0E23\u0E36\u0E48\u0E07\u0E15\u0E31\u0E27\u0E1A\u0E19 | \u0E2D\u0E07\u0E28\u0E32\u0E40\u0E2D\u0E35\u0E22\u0E07 15\xB0\u201325\xB0 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E08\u0E23\u0E34\u0E07)",
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultHoldSec: 2,
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30 \u0E44\u0E2B\u0E25\u0E48 \u0E41\u0E25\u0E30\u0E2A\u0E30\u0E42\u0E1E\u0E01\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E2A\u0E21\u0E14\u0E38\u0E25",
+          instructionTextEn: "Sit upright facing camera, showing head, shoulders, and hips.",
+          instructionTextCn: "\u6B63\u5750\u9762\u5411\u955C\u5934\uFF0C\u786E\u4FDD\u5934\u90E8\u3001\u53CC\u80A9\u53CA\u9ACB\u90E8\u6E05\u6670\u5BF9\u79F0\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 11, vertex: 23, pointB: 24 },
+            right: { pointA: 12, vertex: 24, pointB: 23 }
+          },
+          direction: "decrease",
+          startAngleDeg: 90,
+          targetMinDeg: 65,
+          targetMaxDeg: 75,
+          toleranceDeg: 6,
+          holdDurationSec: 2
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "sidebend_hip_lift",
+            type: "trunk_lateral_flexion",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E01\u0E49\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E15\u0E49\u0E2D\u0E07\u0E41\u0E19\u0E1A\u0E15\u0E34\u0E14\u0E40\u0E1A\u0E32\u0E30\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E15\u0E25\u0E2D\u0E14\u0E40\u0E27\u0E25\u0E32 \u0E2B\u0E49\u0E32\u0E21\u0E01\u0E49\u0E19\u0E25\u0E2D\u0E22",
+            warningMessageEn: "Keep both hips firmly on chair, do not lift off seat",
+            warningMessageCn: "\u8BF7\u53CC\u81C0\u5E73\u7A33\u5750\u7D27\u6905\u5B50\uFF0C\u907F\u514D\u5355\u4FA7\u79BB\u5EA7\u501F\u529B",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E1B\u0E27\u0E14\u0E41\u0E1B\u0E25\u0E1A\u0E17\u0E35\u0E48\u0E2B\u0E25\u0E31\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2D\u0E27 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if sharp flank or back pain occurs",
+          stopOnPainMessageCn: "\u82E5\u4FA7\u8170\u6216\u8170\u80CC\u90E8\u51FA\u73B0\u5267\u70C8\u523A\u75DB\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62",
+          maxSafeAngleCapDeg: 45
+        },
+        requiredLandmarks: {
+          bilateral: [11, 12, 23, 24],
+          left: [11, 23],
+          right: [12, 24]
+        },
+        minLandmarkVisibility: {
+          11: 0.5,
+          12: 0.5,
+          23: 0.35,
+          24: 0.35
+        }
+      },
+      // 22. Cross-Body Shoulder Stretch (Timer Mode)
+      "cross-body-shoulder-stretch": {
+        id: "cross-body-shoulder-stretch",
+        exerciseId: "e1000000-0000-0000-0000-000000000022",
+        is_active: true,
+        camera_framing: "upper_body",
+        mode: "timer",
+        nameTh: "\u0E22\u0E37\u0E14\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E49\u0E32\u0E21\u0E25\u0E33\u0E15\u0E31\u0E27 (Cross-Body Shoulder Stretch)",
+        nameEn: "Cross-Body Shoulder Stretch",
+        nameCn: "\u4EA4\u53C9\u81C2\u80A9\u90E8\u62C9\u4F38",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E22\u0E01\u0E41\u0E02\u0E19\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E36\u0E48\u0E07\u0E1E\u0E32\u0E14\u0E02\u0E27\u0E32\u0E07\u0E02\u0E49\u0E32\u0E21\u0E2B\u0E19\u0E49\u0E32\u0E2D\u0E01 \u0E43\u0E0A\u0E49\u0E21\u0E37\u0E2D\u0E2D\u0E35\u0E01\u0E02\u0E49\u0E32\u0E07\u0E1B\u0E23\u0E30\u0E04\u0E2D\u0E07\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E41\u0E25\u0E49\u0E27\u0E14\u0E36\u0E07\u0E41\u0E02\u0E19\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E25\u0E33\u0E15\u0E31\u0E27\u0E40\u0E1A\u0E32\u0E46 \u0E08\u0E19\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E15\u0E36\u0E07\u0E14\u0E49\u0E32\u0E19\u0E2B\u0E25\u0E31\u0E07\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49 20\u201330 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35",
+        descriptionEn: "Sit upright, bring one arm across chest horizontally. Use opposite hand to gently pull elbow toward chest, hold 20-30s.",
+        descriptionCn: "\u7AEF\u5750\u59FF\u52BF\uFF0C\u5C06\u4E00\u4FA7\u624B\u81C2\u6C34\u5E73\u6A2A\u8DE8\u80F8\u524D\u3002\u53E6\u4E00\u624B\u6276\u4F4F\u8098\u90E8\u5411\u5185\u8F7B\u62C9\uFF0C\u611F\u53D7\u80A9\u540E\u90E8\u62C9\u4F38\u5E76\u4FDD\u630120-30\u79D2\u3002",
+        framing: "upper_body",
+        evaluationMode: "timer",
+        side: "bilateral",
+        targetJoint: "shoulder",
+        mediaUrl: "/assets/exercises/cross-body-shoulder-stretch.svg",
+        clinicalSource: "Wilk KE et al., Shoulder Posterior Capsule Stretching Protocol",
+        clinicalDisclaimerTh: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E41\u0E19\u0E30\u0E19\u0E33 \u2014 \u0E42\u0E2B\u0E21\u0E14\u0E08\u0E31\u0E1A\u0E40\u0E27\u0E25\u0E32\u0E19\u0E33\u0E17\u0E32\u0E07 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A)",
+        calibration_notes: "\u0E42\u0E2B\u0E21\u0E14\u0E08\u0E31\u0E1A\u0E40\u0E27\u0E25\u0E32\u0E19\u0E33\u0E17\u0E32\u0E07 (Timer Mode: 20\u201330 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35/\u0E23\u0E2D\u0E1A) | \u0E01\u0E25\u0E49\u0E2D\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E04\u0E23\u0E36\u0E48\u0E07\u0E15\u0E31\u0E27\u0E1A\u0E19 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E08\u0E23\u0E34\u0E07)",
+        defaultSets: 3,
+        defaultReps: 3,
+        defaultHoldSec: 25,
+        defaultDurationSec: 30,
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E22\u0E01\u0E41\u0E02\u0E19\u0E1E\u0E32\u0E14\u0E02\u0E49\u0E32\u0E21\u0E2B\u0E19\u0E49\u0E32\u0E2D\u0E01 \u0E43\u0E0A\u0E49\u0E21\u0E37\u0E2D\u0E2D\u0E35\u0E01\u0E02\u0E49\u0E32\u0E07\u0E0A\u0E48\u0E27\u0E22\u0E14\u0E36\u0E07\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E0A\u0E49\u0E32\u0E46",
+          instructionTextEn: "Sit upright, pull arm across chest gently with other hand.",
+          instructionTextCn: "\u4FDD\u6301\u4E0A\u8EAB\u633A\u62D4\uFF0C\u7528\u53E6\u4E00\u53EA\u624B\u8F7B\u67D4\u5C06\u624B\u81C2\u6A2A\u62C9\u8D34\u5411\u80F8\u53E3\u3002"
+        },
+        defaultPrescription: {
+          repsPerSet: 3,
+          totalSets: 3,
+          restBetweenSetsSec: 30,
+          durationSec: 30,
+          holdDurationSec: 25
+        },
+        compensationRules: [],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E40\u0E2A\u0E35\u0E22\u0E27\u0E41\u0E1B\u0E25\u0E1A\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E14\u0E49\u0E32\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E44\u0E2B\u0E25\u0E48 \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if sharp anterior shoulder pain occurs",
+          stopOnPainMessageCn: "\u82E5\u80A9\u5173\u8282\u524D\u4FA7\u51FA\u73B0\u523A\u75DB\u611F\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62",
+          maxSafeAngleCapDeg: 120
+        },
+        requiredLandmarks: {
+          bilateral: [11, 12, 13, 14, 15, 16],
+          left: [11, 13, 15],
+          right: [12, 14, 16]
+        },
+        minLandmarkVisibility: {
+          11: 0.5,
+          12: 0.5,
+          13: 0.4,
+          14: 0.4
+        }
+      },
+      // 23. Seated Horizontal Abduction
+      "seated-horizontal-abduction": {
+        id: "seated-horizontal-abduction",
+        exerciseId: "e1000000-0000-0000-0000-000000000023",
+        is_active: true,
+        camera_framing: "upper_body",
+        mode: "camera",
+        nameTh: "\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E2D\u0E01 (Seated Horizontal Abduction)",
+        nameEn: "Seated Horizontal Abduction",
+        nameCn: "\u5750\u59FF\u6C34\u5E73\u80A9\u5916\u5C55",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E22\u0E37\u0E48\u0E19\u0E41\u0E02\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E2D\u0E01 \u0E07\u0E2D\u0E28\u0E2D\u0E01\u0E40\u0E25\u0E47\u0E01\u0E19\u0E49\u0E2D\u0E22 \u0E08\u0E32\u0E01\u0E19\u0E31\u0E49\u0E19\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E2D\u0E2D\u0E01\u0E14\u0E49\u0E32\u0E19\u0E02\u0E49\u0E32\u0E07\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E1A\u0E35\u0E1A\u0E2A\u0E30\u0E1A\u0E31\u0E01\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E31\u0E19\u0E0A\u0E49\u0E32\u0E46 \u0E08\u0E19\u0E41\u0E02\u0E19\u0E02\u0E19\u0E32\u0E19\u0E23\u0E30\u0E19\u0E32\u0E1A\u0E44\u0E2B\u0E25\u0E48 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49 2 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35 \u0E41\u0E25\u0E49\u0E27\u0E01\u0E25\u0E31\u0E1A\u0E2A\u0E39\u0E48\u0E17\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19",
+        descriptionEn: "Sit upright with arms extended forward at chest height. Open arms horizontally to sides while pinching scapulae, hold 2s, then return.",
+        descriptionCn: "\u7AEF\u5750\u59FF\u52BF\uFF0C\u53CC\u81C2\u524D\u5E73\u4E3E\u4E0E\u80F8\u540C\u9AD8\u3002\u5411\u8EAB\u4F53\u4E24\u4FA7\u6C34\u5E73\u5C55\u5F00\u624B\u81C2\u540C\u65F6\u6536\u7D27\u540E\u80CC\u80A9\u80DB\uFF0C\u4FDD\u63012\u79D2\u540E\u8FD8\u539F\u3002",
+        framing: "upper_body",
+        evaluationMode: "angle_rep_hold",
+        side: "bilateral",
+        targetJoint: "shoulder",
+        mediaUrl: "/assets/exercises/seated-horizontal-abduction.svg",
+        clinicalSource: "AAOS / ACSM Shoulder Conditioning Protocol",
+        clinicalDisclaimerTh: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E41\u0E19\u0E30\u0E19\u0E33 \u2014 \u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A\u0E1B\u0E23\u0E31\u0E1A\u0E15\u0E32\u0E21\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A)",
+        calibration_notes: "\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E04\u0E23\u0E36\u0E48\u0E07\u0E15\u0E31\u0E27\u0E1A\u0E19 | \u0E2D\u0E07\u0E28\u0E32\u0E01\u0E32\u0E23\u0E01\u0E32\u0E07 70\xB0\u201390\xB0 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E08\u0E23\u0E34\u0E07)",
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultHoldSec: 2,
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E2D\u0E2D\u0E01\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E2D\u0E01 \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E41\u0E02\u0E19\u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E04\u0E23\u0E1A\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07",
+          instructionTextEn: "Sit upright, open arms horizontally at chest level, showing shoulders and arms.",
+          instructionTextCn: "\u4FDD\u6301\u5750\u59FF\u6B63\u76F4\uFF0C\u5728\u80F8\u90E8\u6C34\u5E73\u7EBF\u5411\u4E24\u4FA7\u5C55\u5F00\u53CC\u81C2\uFF0C\u786E\u4FDD\u53CC\u81C2\u6E05\u6670\u5165\u955C\u3002"
+        },
+        angleMechanics: {
+          landmarks: {
+            left: { pointA: 12, vertex: 11, pointB: 13 },
+            right: { pointA: 11, vertex: 12, pointB: 14 }
+          },
+          direction: "increase",
+          startAngleDeg: 10,
+          targetMinDeg: 70,
+          targetMaxDeg: 90,
+          toleranceDeg: 10,
+          holdDurationSec: 2
+        },
+        defaultPrescription: {
+          repsPerSet: 10,
+          totalSets: 3,
+          restBetweenSetsSec: 30
+        },
+        compensationRules: [
+          {
+            ruleId: "horizontal_abd_trunk_lean",
+            type: "trunk_lean",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E2D\u0E22\u0E48\u0E32\u0E41\u0E2D\u0E48\u0E19\u0E2B\u0E25\u0E31\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2D\u0E19\u0E15\u0E31\u0E27\u0E44\u0E1B\u0E02\u0E49\u0E32\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E02\u0E13\u0E30\u0E01\u0E32\u0E07\u0E41\u0E02\u0E19",
+            warningMessageEn: "Keep core tight, do not arch or lean back while opening arms",
+            warningMessageCn: "\u8BF7\u6536\u7D27\u6838\u5FC3\uFF0C\u5C55\u81C2\u65F6\u5207\u52FF\u540E\u4EF0\u62F1\u8170",
+            severity: "warning"
+          },
+          {
+            ruleId: "horizontal_abd_shrug",
+            type: "scapular_hiking",
+            thresholdValue: 0.15,
+            warningMessageTh: "\u0E2D\u0E22\u0E48\u0E32\u0E40\u0E01\u0E23\u0E47\u0E07\u0E22\u0E01\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19 \u0E01\u0E32\u0E07\u0E41\u0E02\u0E19\u0E43\u0E19\u0E23\u0E30\u0E19\u0E32\u0E1A\u0E2D\u0E01\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19",
+            warningMessageEn: "Do not shrug shoulders up, open arms at chest height",
+            warningMessageCn: "\u8BF7\u52FF\u8038\u8D77\u80A9\u8180\uFF0C\u4FDD\u6301\u624B\u81C2\u5728\u80F8\u90E8\u9AD8\u5EA6\u5C55\u5F00",
+            severity: "warning"
+          }
+        ],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E44\u0E2B\u0E25\u0E48\u0E2B\u0E23\u0E37\u0E2D\u0E01\u0E23\u0E30\u0E14\u0E39\u0E01\u0E04\u0E2D \u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35",
+          stopOnPainMessageEn: "Stop immediately if anterior shoulder or neck pain occurs",
+          stopOnPainMessageCn: "\u82E5\u80A9\u524D\u6216\u9888\u690E\u4EA7\u751F\u523A\u75DB\u611F\uFF0C\u8BF7\u7ACB\u5373\u505C\u6B62",
+          maxSafeAngleCapDeg: 110
+        },
+        requiredLandmarks: {
+          bilateral: [11, 12, 13, 14, 15, 16],
+          left: [11, 13, 15],
+          right: [12, 14, 16]
+        },
+        minLandmarkVisibility: {
+          11: 0.5,
+          12: 0.5,
+          13: 0.45,
+          14: 0.45,
+          15: 0.4,
+          16: 0.4
+        }
+      },
+      // 24. Wrist Flexion/Extension (Timer Mode)
+      "wrist-flexion-extension": {
+        id: "wrist-flexion-extension",
+        exerciseId: "e1000000-0000-0000-0000-000000000024",
+        is_active: true,
+        camera_framing: "upper_body",
+        mode: "timer",
+        nameTh: "\u0E07\u0E2D-\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D (Wrist Flexion/Extension)",
+        nameEn: "Wrist Flexion/Extension",
+        nameCn: "\u8155\u5C48\u4F38\u8BAD\u7EC3",
+        descriptionTh: "\u0E19\u0E31\u0E48\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E07 \u0E27\u0E32\u0E07\u0E1B\u0E25\u0E32\u0E22\u0E41\u0E02\u0E19\u0E23\u0E32\u0E1A\u0E1A\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01\u0E41\u0E02\u0E19\u0E02\u0E2D\u0E07\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E2B\u0E23\u0E37\u0E2D\u0E42\u0E15\u0E4A\u0E30 \u0E43\u0E2B\u0E49\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D\u0E1E\u0E49\u0E19\u0E02\u0E2D\u0E1A\u0E2D\u0E2D\u0E01\u0E21\u0E32 \u0E01\u0E23\u0E30\u0E14\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D\u0E02\u0E36\u0E49\u0E19\u0E0A\u0E49\u0E32\u0E46 \u0E04\u0E49\u0E32\u0E07\u0E44\u0E27\u0E49 2 \u0E27\u0E34\u0E19\u0E32\u0E17\u0E35 \u0E41\u0E25\u0E49\u0E27\u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E07\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D\u0E25\u0E07\u0E14\u0E49\u0E32\u0E19\u0E25\u0E48\u0E32\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E19\u0E38\u0E48\u0E21\u0E19\u0E27\u0E25 (\u0E42\u0E2B\u0E21\u0E14\u0E08\u0E31\u0E1A\u0E40\u0E27\u0E25\u0E32\u0E19\u0E33\u0E17\u0E32\u0E07)",
+        descriptionEn: "Sit upright with forearm supported on armrest or table. Slowly extend wrist up, hold 2s, then flex wrist down smoothly.",
+        descriptionCn: "\u7AEF\u5750\u59FF\u52BF\uFF0C\u524D\u81C2\u5E73\u653E\u5728\u6276\u624B\u6216\u684C\u9762\u4E0A\uFF0C\u624B\u8155\u4F38\u51FA\u8FB9\u7F18\u3002\u7F13\u6162\u5411\u4E0A\u80CC\u4F38\u8155\u90E8\uFF0C\u4FDD\u63012\u79D2\uFF0C\u518D\u67D4\u548C\u5411\u4E0B\u5C48\u66F2\u3002",
+        framing: "upper_body",
+        evaluationMode: "timer",
+        side: "bilateral",
+        targetJoint: "wrist",
+        mediaUrl: "/assets/exercises/wrist-flexion-extension.svg",
+        clinicalSource: "American Society for Surgery of the Hand (ASSH) / Wrist Rehab",
+        clinicalDisclaimerTh: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E41\u0E19\u0E30\u0E19\u0E33 \u2014 \u0E42\u0E2B\u0E21\u0E14\u0E08\u0E31\u0E1A\u0E40\u0E27\u0E25\u0E32\u0E19\u0E33\u0E17\u0E32\u0E07\u0E1A\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01\u0E41\u0E02\u0E19 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A)",
+        calibration_notes: "\u0E42\u0E2B\u0E21\u0E14\u0E08\u0E31\u0E1A\u0E40\u0E27\u0E25\u0E32\u0E19\u0E33\u0E17\u0E32\u0E07 (Timer Mode: 10\u201312 \u0E04\u0E23\u0E31\u0E49\u0E07/\u0E40\u0E0B\u0E47\u0E15) | \u0E27\u0E32\u0E07\u0E41\u0E02\u0E19\u0E1A\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01\u0E41\u0E02\u0E19 (\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2B\u0E49\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E08\u0E23\u0E34\u0E07)",
+        defaultSets: 3,
+        defaultReps: 12,
+        defaultHoldSec: 2,
+        defaultDurationSec: 30,
+        cameraGuide: {
+          recommendedView: "front",
+          recommendedDistanceMeters: [1.5, 2.5],
+          instructionTextTh: "\u0E27\u0E32\u0E07\u0E1B\u0E25\u0E32\u0E22\u0E41\u0E02\u0E19\u0E1A\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01\u0E41\u0E02\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E42\u0E15\u0E4A\u0E30 \u0E2B\u0E31\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E01\u0E25\u0E49\u0E2D\u0E07",
+          instructionTextEn: "Rest forearm on armrest/table facing camera.",
+          instructionTextCn: "\u524D\u81C2\u7A33\u56FA\u653E\u7F6E\u5728\u684C\u6905\u6276\u624B\u4E0A\u5E76\u9762\u5BF9\u955C\u5934\u3002"
+        },
+        defaultPrescription: {
+          repsPerSet: 12,
+          totalSets: 3,
+          restBetweenSetsSec: 30,
+          durationSec: 30
+        },
+        compensationRules: [],
+        safetyContraindications: {
+          stopOnPainMessageTh: "\u0E1B\u0E25\u0E32\u0E22\u0E41\u0E02\u0E19\u0E15\u0E49\u0E2D\u0E07\u0E41\u0E19\u0E1A\u0E15\u0E34\u0E14\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01\u0E41\u0E02\u0E19\u0E15\u0E25\u0E2D\u0E14\u0E40\u0E27\u0E25\u0E32 \u0E2B\u0E22\u0E38\u0E14\u0E17\u0E31\u0E19\u0E17\u0E35\u0E2B\u0E32\u0E01\u0E21\u0E35\u0E2D\u0E32\u0E01\u0E32\u0E23\u0E0A\u0E32\u0E1B\u0E25\u0E32\u0E22\u0E19\u0E34\u0E49\u0E27\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E27\u0E41\u0E1B\u0E25\u0E1A",
+          stopOnPainMessageEn: "Keep forearm on armrest, stop immediately if numbness in fingers occurs",
+          stopOnPainMessageCn: "\u524D\u81C2\u5FC5\u987B\u59CB\u7EC8\u7D27\u8D34\u6276\u624B\uFF0C\u82E5\u6307\u5C16\u9EBB\u6728\u523A\u75DB\u8BF7\u7ACB\u5373\u505C\u6B62",
+          maxSafeAngleCapDeg: 90
+        },
+        requiredLandmarks: {
+          bilateral: [11, 12, 13, 14, 15, 16],
+          left: [13, 15],
+          right: [14, 16]
+        },
+        minLandmarkVisibility: {
+          11: 0.4,
+          12: 0.4,
+          13: 0.4,
+          14: 0.4,
+          15: 0.35,
+          16: 0.35
+        }
       }
     };
     CLINICAL_EXERCISES_CONFIG["shoulder-flexion"] = {
@@ -4306,16 +5002,16 @@ var init_exercises_config = __esm({
       CLINICAL_EXERCISES_CONFIG["shoulder-er-band"],
       CLINICAL_EXERCISES_CONFIG["scapular-retraction"],
       CLINICAL_EXERCISES_CONFIG["elbow-flexion-extension"],
-      CLINICAL_EXERCISES_CONFIG["seated-knee-extension"],
-      CLINICAL_EXERCISES_CONFIG["mini-squat"],
-      CLINICAL_EXERCISES_CONFIG["sit-to-stand"],
-      CLINICAL_EXERCISES_CONFIG["straight-leg-raise"],
-      CLINICAL_EXERCISES_CONFIG["standing-hip-abduction"],
-      CLINICAL_EXERCISES_CONFIG["calf-raise"],
-      CLINICAL_EXERCISES_CONFIG["single-leg-balance"],
-      CLINICAL_EXERCISES_CONFIG["calf-stretch"],
       CLINICAL_EXERCISES_CONFIG["chin-tuck"],
-      CLINICAL_EXERCISES_CONFIG["shoulder-pendulum"]
+      CLINICAL_EXERCISES_CONFIG["seated-cervical-rotation"],
+      CLINICAL_EXERCISES_CONFIG["cervical-side-bend"],
+      CLINICAL_EXERCISES_CONFIG["shoulder-shrug"],
+      CLINICAL_EXERCISES_CONFIG["upper-trapezius-stretch"],
+      CLINICAL_EXERCISES_CONFIG["seated-trunk-rotation"],
+      CLINICAL_EXERCISES_CONFIG["seated-side-bend"],
+      CLINICAL_EXERCISES_CONFIG["cross-body-shoulder-stretch"],
+      CLINICAL_EXERCISES_CONFIG["seated-horizontal-abduction"],
+      CLINICAL_EXERCISES_CONFIG["wrist-flexion-extension"]
     ];
   }
 });
@@ -10980,9 +11676,7 @@ function activateLocalPersistenceEngine() {
   console.log("------------------------------------------------------------------------");
   console.log("\u2713 LOCAL PERSISTENCE ENGINE ACTIVE (Docker-Bypass Mode Enabled)");
   console.log("  Data storage: data/local_db.json");
-  console.log("  Admin Account: director / Admin12345678!");
-  console.log("  Admin Account: admin / Admin12345678!");
-  console.log("  PT Account:    pt_somchai / CorrectPassword123!");
+  console.log("  Default Accounts: [director, admin, pt_somchai] (Credentials Secured)");
   console.log("  Kiosk:         kiosk-01 (Paired & Ready)");
   console.log("------------------------------------------------------------------------");
 }
@@ -12267,9 +12961,10 @@ var init_service10 = __esm({
           if (frontalVec && Array.isArray(frontalVec) && frontalVec.length === 512) {
             candidateVectors.push(frontalVec);
           }
-          const extraFrames = record.enrolled_frames;
+          const extraFrames = record.enrolled_frames || record.history?.frames;
           if (extraFrames && Array.isArray(extraFrames)) {
             for (const ef of extraFrames) {
+              if (ef.pose && ef.pose !== "front") continue;
               if (ef.embedding && Array.isArray(ef.embedding) && ef.embedding.length === 512) {
                 candidateVectors.push(ef.embedding);
               }
@@ -12363,6 +13058,15 @@ var init_service10 = __esm({
           };
         }
         if (nearestCandidate && nearestCandidate.sim >= 0.7 && nearestCandidate.sim < BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY) {
+          if (isSingleUserInDb) {
+            logger.info(
+              `[FACE-AUTH] Single-user DB guard: nearest candidate ${nearestCandidate.name} sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} does not meet strict threshold (${BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE}). Failing closed.`
+            );
+            return {
+              matched: false,
+              message: "\u26A0\uFE0F \u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A (\u0E04\u0E27\u0E32\u0E21\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33\u0E44\u0E21\u0E48\u0E16\u0E36\u0E07\u0E40\u0E01\u0E13\u0E11\u0E4C 80%) \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E14\u0E49\u0E27\u0E22 PIN"
+            };
+          }
           logger.info(
             `[FACE-AUTH] Borderline candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} - Requesting PIN confirmation`
           );
@@ -12380,7 +13084,7 @@ var init_service10 = __esm({
         );
         return {
           matched: false,
-          message: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E04\u0E19\u0E44\u0E02\u0E49\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E14\u0E49\u0E27\u0E22 PIN"
+          message: "\u26A0\uFE0F \u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A (\u0E04\u0E27\u0E32\u0E21\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33\u0E44\u0E21\u0E48\u0E16\u0E36\u0E07\u0E40\u0E01\u0E13\u0E11\u0E4C 80%) \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E14\u0E49\u0E27\u0E22 PIN"
         };
       }
       /**

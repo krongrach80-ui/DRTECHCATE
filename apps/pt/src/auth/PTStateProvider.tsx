@@ -192,6 +192,12 @@ export const PTStateProvider: React.FC<PTStateProviderProps> = ({
     try {
       await defaultApiClient.auth.logout();
     } finally {
+      try {
+        localStorage.removeItem('drtech_user_profile');
+        localStorage.removeItem('drtech_auth_token');
+        sessionStorage.removeItem('drtech_user_profile');
+        sessionStorage.removeItem('drtech_auth_token');
+      } catch {}
       setCurrentUser(null);
       setIsLockedDueToInactivity(false);
       if (timerRef.current) {

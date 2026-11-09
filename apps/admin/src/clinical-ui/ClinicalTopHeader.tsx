@@ -3,7 +3,7 @@
  * Master Prompt v5 Section 4.1: Clean White Top Header Bar with Clinical Actions
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   UserPlus,
   Zap,
@@ -15,12 +15,14 @@ import {
 } from 'lucide-react';
 import { SmoothButton } from '../../../../packages/hospital-ui-kit/src/index.js';
 import { LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
+import { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../../../packages/api-client/src/index.js';
 
 interface ClinicalTopHeaderProps {
   title: string;
   subtitleEn: string;
   userName?: string;
   userRoleTitle?: string;
+  avatarUrl?: string | null;
   onOpenNewPatientModal: () => void;
   onFastCheckIn: () => void;
   onLogout: () => void;
@@ -35,6 +37,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
   subtitleEn,
   userName = 'ผู้ใช้งานระบบ',
   userRoleTitle = 'เจ้าหน้าที่โรงพยาบาล (Hospital Staff)',
+  avatarUrl = null,
   onOpenNewPatientModal,
   onFastCheckIn,
   onLogout,
@@ -43,6 +46,32 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
   onToggleMobileMenu,
   isLoggingOut = false,
 }) => {
+  const [supabaseOnline, setSupabaseOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkSupabase = async () => {
+      try {
+        const res = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/exercises?select=id&limit=1`, {
+          headers: {
+            apikey: DEFAULT_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+          },
+        });
+        if (isMounted) setSupabaseOnline(res.ok);
+      } catch {
+        if (isMounted) setSupabaseOnline(false);
+      }
+    };
+
+    checkSupabase();
+    const timer = setInterval(checkSupabase, 30000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, []);
+
   return (
     <header className="min-h-16 py-3 px-4 sm:px-6 md:px-8 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 shrink-0 z-20">
       {/* Left Title with English Subtitle & Mobile Hamburger */}
@@ -75,10 +104,32 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
           <LanguageSwitcher />
         </div>
 
-        {/* Supabase Status Pill */}
-        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-[11px] font-bold text-emerald-800 select-none whitespace-nowrap shrink-0 hover:shadow-md hover:-translate-y-0.5 transition-all">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>● Supabase Cloud</span>
+        {/* Dynamic Supabase Status Pill */}
+        <div
+          className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold select-none whitespace-nowrap shrink-0 transition-all ${
+            supabaseOnline === true
+              ? 'bg-emerald-50 border border-emerald-200/80 text-emerald-800'
+              : supabaseOnline === false
+              ? 'bg-rose-50 border border-rose-200 text-rose-800'
+              : 'bg-slate-50 border border-slate-200 text-slate-600'
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              supabaseOnline === true
+                ? 'bg-emerald-500 animate-pulse'
+                : supabaseOnline === false
+                ? 'bg-rose-500'
+                : 'bg-slate-400'
+            }`}
+          />
+          <span>
+            {supabaseOnline === true
+              ? '● Supabase Cloud'
+              : supabaseOnline === false
+              ? '○ ออฟไลน์'
+              : 'กำลังตรวจสอบ...'}
+          </span>
         </div>
 
         {/* Primary Action Button: + ต้อนรับ & สแกนหน้า */}
@@ -119,8 +170,21 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
 
         {/* User Profile Badge */}
         <div className="flex items-center gap-2.5 pl-2.5 border-l border-slate-200 shrink-0">
-          <div className="w-9 h-9 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shadow-sm ring-2 ring-emerald-500/30 shrink-0">
-            {isPtMode ? <User className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
+          <div className="w-9 h-9 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shadow-sm ring-2 ring-emerald-500/30 shrink-0 overflow-hidden">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={userName}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : isPtMode ? (
+              <span>{userName?.charAt(0) || 'P'}</span>
+            ) : (
+              <ShieldCheck className="w-4 h-4" />
+            )}
           </div>
           <div className="hidden lg:block text-left select-none max-w-[150px]">
             <div className="text-xs font-bold text-slate-800 truncate">

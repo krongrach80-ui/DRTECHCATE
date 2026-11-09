@@ -234,10 +234,10 @@ export class RepStateMachine {
       if (!hasShoulder) {
         const def = this.createDefaultResult(
           landmarks,
-          '📷 ไม่พบหัวไหล่ในภาพ กรุณาถอยห่างจากกล้องประมาณ 1.5–2 เมตร'
+          '📷 ปรับตำแหน่งให้เห็นไหล่สองข้างและแขน'
         );
-        def.coachingMessageEn = '📷 Shoulder not detected. Please step back 1.5–2 meters.';
-        def.coachingMessageCn = '📷 未检测到肩部，请后退1.5-2米。';
+        def.coachingMessageEn = '📷 Please adjust position to show both shoulders and arms';
+        def.coachingMessageCn = '📷 请调整位置以清晰展示双肩与双臂';
         def.readinessStatus = 'missing_shoulder';
         def.formRating = 'warning';
         return def;
@@ -1569,6 +1569,7 @@ export class RepStateMachine {
       totalSets: this.config.defaultPrescription?.totalSets || 3,
       isSetCompleted: this.isSetCompleted,
       isExerciseCompleted: this.isExerciseCompleted,
+      coachingMessage: message,
       coachingMessageTh: message,
       activeWarnings: [],
       formRating: 'good',

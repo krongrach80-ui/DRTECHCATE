@@ -37,24 +37,18 @@
     5. งอ-เหยียดข้อศอก (Elbow Flexion/Extension)
   </text>
 
-      <!-- Side profile -->
       <circle cx="170" cy="100" r="20" fill="#475569" />
       <path d="M170,120 L170,230" fill="none" stroke="#64748b" stroke-width="16" stroke-linecap="round" />
-      <!-- Upper arm pinned -->
       <line x1="170" y1="135" x2="170" y2="215" stroke="#64748b" stroke-width="14" stroke-linecap="round" />
-      <!-- Straight arm (start/extension) -->
       <line x1="170" y1="215" x2="170" y2="305" stroke="#334155" stroke-width="10" stroke-dasharray="6,4" stroke-linecap="round" />
-      <!-- Flexed arm (finish) -->
       <line x1="170" y1="215" x2="235" y2="155" stroke="url(#accentCyan)" stroke-width="12" stroke-linecap="round" filter="url(#glow)" />
-      <!-- Elbow pivot dot -->
       <circle cx="170" cy="215" r="9" fill="#0d9488" stroke="#22d3ee" stroke-width="3" />
-      <!-- Flexion arrow -->
       <path d="M190,290 A80,80 0 0,0 235,185" fill="none" stroke="#14b8a6" stroke-width="3.5" marker-end="url(#arrowTeal)" stroke-dasharray="5,3" />
-      <text x="235" y="240" fill="#2dd4bf" font-family="system-ui" font-size="12" font-weight="bold">Flexion ⤹</text>
+      <text x="235" y="220" fill="#2dd4bf" font-family="system-ui" font-size="12" font-weight="bold">งอขึ้น 45°</text>
     
   <!-- Bottom Clinical Badge -->
   <g transform="translate(200, 365)">
-    <rect x="-120" y="-14" width="240" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
+    <rect x="-135" y="-14" width="270" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
     <text x="0" y="3" fill="#5eead4" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-anchor="middle">
       มุมข้อศอก: 160° (เหยียด) ↔ 45° (งอ)
     </text>

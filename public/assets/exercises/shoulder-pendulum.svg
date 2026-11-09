@@ -34,29 +34,12 @@
   <!-- Title Badge -->
   <rect x="20" y="20" width="360" height="36" rx="10" fill="#0f172a" fill-opacity="0.8" stroke="#1e293b" />
   <text x="200" y="43" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">
-    15. แกว่งแขนผ่อนคลาย (Codman's Shoulder Pendulum)
+    แกว่งแขนผ่อนคลาย (Codman's Shoulder Pendulum)
   </text>
-
-      <!-- Table support -->
-      <path d="M90,190 L160,190 L160,330" fill="none" stroke="#334155" stroke-width="8" stroke-linecap="round" />
-      <!-- Supported hand -->
-      <circle cx="160" cy="190" r="8" fill="#475569" />
-      <!-- Inclined Torso Profile -->
-      <circle cx="210" cy="120" r="20" fill="#475569" />
-      <path d="M160,190 L210,140 L280,185 L260,330" fill="none" stroke="#64748b" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
-      <!-- Hanging Affected Arm (Passive under gravity) -->
-      <path d="M210,140 L210,250" fill="none" stroke="url(#accentCyan)" stroke-width="12" stroke-linecap="round" filter="url(#glow)" />
-      <circle cx="210" cy="140" r="9" fill="#0d9488" stroke="#22d3ee" stroke-width="3" />
-      <!-- Circular Pendulum Motion Loop -->
-      <ellipse cx="210" cy="275" rx="35" ry="16" fill="none" stroke="#14b8a6" stroke-width="3.5" stroke-dasharray="6,4" />
-      <!-- Arrowheads on ellipse -->
-      <polygon points="245,275 252,267 252,283" fill="#14b8a6" />
-      <polygon points="175,275 168,267 168,283" fill="#14b8a6" />
-      <text x="210" y="315" fill="#2dd4bf" font-family="system-ui" font-size="12" font-weight="bold" text-anchor="middle">แกว่งเป็นวงกลมผ่อนคลาย ↻</text>
-    
+<circle cx="210" cy="120" r="20" fill="#475569" /><path d="M160,190 L210,140 L280,185 L260,330 M210,140 L210,250" stroke="#64748b" stroke-width="14" fill="none" />
   <!-- Bottom Clinical Badge -->
   <g transform="translate(200, 365)">
-    <rect x="-120" y="-14" width="240" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
+    <rect x="-135" y="-14" width="270" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
     <text x="0" y="3" fill="#5eead4" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-anchor="middle">
       ⏱️ โหมดจับเวลา: แกว่งแขนตามแรงโน้มถ่วง 30–60s
     </text>

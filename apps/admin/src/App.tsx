@@ -94,6 +94,12 @@ export const AdminApp: React.FC = () => {
       }
     } finally {
       setIsLoggingOut(false);
+      try {
+        localStorage.removeItem('drtech_user_profile');
+        localStorage.removeItem('drtech_auth_token');
+        sessionStorage.removeItem('drtech_user_profile');
+        sessionStorage.removeItem('drtech_auth_token');
+      } catch {}
       if (!hadError) {
         if (typeof window !== 'undefined') {
           sessionStorage.setItem('drtech_admin_logged_out', 'true');

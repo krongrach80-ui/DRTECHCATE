@@ -34,28 +34,14 @@
   <!-- Title Badge -->
   <rect x="20" y="20" width="360" height="36" rx="10" fill="#0f172a" fill-opacity="0.8" stroke="#1e293b" />
   <text x="200" y="43" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">
-    8. ลุกยืนจากเก้าอี้ (Sit-to-Stand)
+    ลุกขึ้นยืนจากเก้าอี้ (Sit-to-Stand)
   </text>
-
-      <!-- Chair -->
-      <path d="M90,210 L90,280 L160,280 L160,340 M90,280 L90,340" fill="none" stroke="#334155" stroke-width="7" stroke-linecap="round" />
-      <!-- Seated Silhouette (faded) -->
-      <circle cx="115" cy="165" r="16" fill="#334155" />
-      <path d="M115,185 L120,265 L175,265 L175,340" fill="none" stroke="#334155" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
-      <!-- Standing Silhouette (active) -->
-      <circle cx="260" cy="95" r="20" fill="#475569" />
-      <path d="M260,115 L260,220 L260,340" fill="none" stroke="url(#accentCyan)" stroke-width="14" stroke-linecap="round" filter="url(#glow)" />
-      <circle cx="260" cy="220" r="8" fill="#0d9488" stroke="#22d3ee" stroke-width="2.5" />
-      <!-- Upward motion arc -->
-      <path d="M140,240 Q180,180 230,150" fill="none" stroke="#14b8a6" stroke-width="4" marker-end="url(#arrowTeal)" stroke-dasharray="6,3" />
-      <text x="180" y="165" fill="#2dd4bf" font-family="system-ui" font-size="12" font-weight="bold">ลุกขึ้นยืน ⤤</text>
-      <text x="260" y="300" fill="#94a3b8" font-family="system-ui" font-size="10" text-anchor="middle">เข่าเหยียดตรง > 160°</text>
-    
+<circle cx="190" cy="90" r="22" fill="#475569" /><path d="M190,115 L190,220 L190,340" stroke="#64748b" stroke-width="14" fill="none" />
   <!-- Bottom Clinical Badge -->
   <g transform="translate(200, 365)">
-    <rect x="-120" y="-14" width="240" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
+    <rect x="-135" y="-14" width="270" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
     <text x="0" y="3" fill="#5eead4" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-anchor="middle">
-      ตรวจจับ 2 เงื่อนไข: เข่าเหยียด > 160° & Hip Y ลอยขึ้น
+      ลุกยืนเต็มตัว (เข่า > 165°)
     </text>
   </g>
 </svg>

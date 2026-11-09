@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="primaryTeal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#14b8a6" />
+    </linearGradient>
+    <linearGradient id="accentCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#22d3ee" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <marker id="arrowTeal" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#14b8a6" />
+    </marker>
+    <marker id="arrowCyan" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#22d3ee" />
+    </marker>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="400" height="400" rx="32" fill="url(#bgGrad)" stroke="#334155" stroke-width="2" />
+  
+  <!-- Subtle Clinical Grid -->
+  <circle cx="200" cy="200" r="160" fill="none" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,6" />
+  <circle cx="200" cy="200" r="100" fill="none" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,6" />
+  
+  <!-- Title Badge -->
+  <rect x="20" y="20" width="360" height="36" rx="10" fill="#0f172a" fill-opacity="0.8" stroke="#1e293b" />
+  <text x="200" y="43" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">
+    10. ยืดกล้ามเนื้อบ่า (Upper Trapezius Stretch)
+  </text>
+
+      <!-- Chair base -->
+      <path d="M130,290 L270,290 M140,290 L140,340 M260,290 L260,340" stroke="#334155" stroke-width="5" stroke-linecap="round" />
+      <rect x="175" y="195" width="50" height="95" rx="10" fill="#1e293b" stroke="#475569" stroke-width="8" />
+      <!-- Left arm gripping chair edge to depress scapula -->
+      <line x1="150" y1="195" x2="140" y2="295" stroke="#64748b" stroke-width="10" stroke-linecap="round" />
+      <circle cx="140" cy="295" r="7" fill="#f59e0b" />
+      <text x="95" y="270" fill="#f59e0b" font-family="system-ui" font-size="9" font-weight="bold">จับขอบเก้าอี้</text>
+      <!-- Head Tilted Right with Stretch Band -->
+      <circle cx="230" cy="140" r="26" fill="url(#accentCyan)" filter="url(#glow)" />
+      <!-- Right hand gently over head -->
+      <path d="M250,195 Q275,150 240,115" fill="none" stroke="#14b8a6" stroke-width="8" stroke-linecap="round" />
+      <!-- Muscle stretch tension indicator on Left Upper Trap -->
+      <path d="M165,190 Q185,160 215,150" fill="none" stroke="#f59e0b" stroke-width="4" stroke-dasharray="4,2" />
+      <text x="145" y="155" fill="#f59e0b" font-family="system-ui" font-size="11" font-weight="bold">ตึงสบายที่บ่า ⚡</text>
+      <!-- Hold Duration Badge -->
+      <g transform="translate(200, 75)">
+        <rect x="-65" y="-14" width="130" height="24" rx="8" fill="#0f766e" stroke="#2dd4bf" stroke-width="1.5" />
+        <text x="0" y="3" fill="#ffffff" font-family="system-ui" font-size="11" font-weight="bold" text-anchor="middle">⏱️ ค้าง 20–30s</text>
+      </g>
+    
+  <!-- Bottom Clinical Badge -->
+  <g transform="translate(200, 365)">
+    <rect x="-135" y="-14" width="270" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
+    <text x="0" y="3" fill="#5eead4" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-anchor="middle">
+      ⏱️ โหมดจับเวลา: ค้างท่า 20–30 วินาที/ข้าง
+    </text>
+  </g>
+</svg>

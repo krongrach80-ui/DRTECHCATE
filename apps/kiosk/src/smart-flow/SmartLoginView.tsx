@@ -19,6 +19,9 @@ import {
   purgeAllLocalBiometricCaches,
   reconcileBiometricCacheWithLivePatients,
   removePatientFromLocalCache,
+  computeLaplacianVariance,
+  FaceLandmarks,
+  Point2D,
 } from '../../../../packages/face-client/src/index.js';
 import { useRaiseBothHandsConfirm } from '../hooks/useRaiseBothHandsConfirm';
 import {
@@ -84,6 +87,265 @@ interface CachedPatientBiometric {
   hn: string;
   name: string;
   vectors: number[][];
+}
+
+export interface LockedFaceTarget {
+  box: { x: number; y: number; width: number; height: number };
+  centerX: number;
+  centerY: number;
+  lastSeenTimestamp: number;
+  lockedAt: number;
+}
+
+/**
+ * การตั้งค่ามาตรฐานระยะกล้องและสัดส่วนใบหน้าสำหรับตู้ Kiosk (Camera Standardization Config)
+ * เพื่อให้สัดส่วนใบหน้าคงที่ 45% บนกล้องทุกรุ่น (เว็บแคมโน้ตบุ๊ก, USB, มือถือ)
+ */
+export const KIOSK_CAMERA_STANDARDIZATION_CONFIG = {
+  // สัดส่วนความสูงของใบหน้าต่อความสูงภาพเป้าหมายที่ป้อนเข้าโมเดล (45% เหมาะสมที่สุดสำหรับ ArcFace 112x112)
+  FACE_HEIGHT_RATIO_TARGET: 0.45,
+  // สัดส่วนภาพมาตรฐาน (4:3 เพื่อความคมชัดสูงสุดและไม่บิดเบือนสัดส่วน)
+  TARGET_ASPECT_RATIO: 4 / 3,
+  // ขนาดความสูงของใบหน้าขั้นต่ำในหน่วยพิกเซล (ต่ำกว่านี้ถือว่าอยู่ไกลเกินไป)
+  MIN_FACE_SIZE: 80,
+  // องศาการหันศีรษะซ้าย-ขวาสูงสุดที่ยอมรับได้ (องศา)
+  MAX_YAW: 18,
+  // องศาการก้ม-เงยศีรษะสูงสุดที่ยอมรับได้ (องศา)
+  MAX_PITCH: 18,
+  // ความคมชัดขั้นต่ำ (Laplacian Variance ต่ำกว่านี้คือภาพเบลอจากการเคลื่อนไหว)
+  MIN_SHARPNESS: 15.0,
+  // ความสว่างเฉลี่ยขั้นต่ำของใบหน้า (0 - 255 ป้องกันภาพมืด)
+  MIN_BRIGHTNESS: 35,
+  // ความสว่างเฉลี่ยสูงสุดของใบหน้า (0 - 255 ป้องกันแสงจ้า/ย้อนแสง)
+  MAX_BRIGHTNESS: 225,
+  // ขนาดความกว้างและความสูงคงที่ (พิกเซล) สำหรับป้อนเข้าโมเดล ArcFace / AdaFace
+  INPUT_SIZE: 112,
+  // ระยะเวลาที่ยอมให้เป้าหมายเดิมหลุดจากกล้องก่อนรีเซ็ต (มิลลิวินาที)
+  FACE_LOST_TIMEOUT_MS: 1000,
+  // อัตราการขยับจุดกึ่งกลางสูงสุดข้ามเฟรมสำหรับเป้าหมายเดิม (18% ของขนาดภาพ)
+  MAX_CENTER_SHIFT_RATIO: 0.18,
+  // อัตราการเปลี่ยนแปลงขนาดใบหน้าสูงสุดข้ามเฟรม (35%)
+  MAX_SIZE_CHANGE_RATIO: 0.35,
+} as const;
+
+export interface FaceImageQualityResult {
+  brightness: number;
+  sharpness: number;
+  passed: boolean;
+  reason?: string;
+  statusMessageThai: string;
+}
+
+/**
+ * คำนวณความสว่าง (Luminance) และความคมชัด (Laplacian Variance) ของพื้นที่ใบหน้า
+ */
+export function computeFaceImageQuality(
+  canvas: HTMLCanvasElement,
+  box: { x: number; y: number; width: number; height: number }
+): FaceImageQualityResult {
+  if (!canvas || !box || box.width < 10 || box.height < 10) {
+    return { brightness: 0, sharpness: 0, passed: false, reason: 'INVALID_BOX', statusMessageThai: 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น' };
+  }
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return { brightness: 120, sharpness: 20, passed: true, statusMessageThai: 'คุณภาพภาพพร้อมสำหรับการสแกน' };
+  }
+
+  try {
+    const bx = Math.max(0, Math.floor(box.x));
+    const by = Math.max(0, Math.floor(box.y));
+    const bw = Math.min(canvas.width - bx, Math.floor(box.width));
+    const bh = Math.min(canvas.height - by, Math.floor(box.height));
+
+    if (bw < 10 || bh < 10) {
+      return { brightness: 0, sharpness: 0, passed: false, reason: 'BOX_TOO_SMALL', statusMessageThai: 'กรุณาขยับเข้าใกล้กล้องอีกนิด' };
+    }
+
+    const imgData = ctx.getImageData(bx, by, bw, bh);
+    const data = imgData.data;
+
+    // 1. ความสว่างเฉลี่ย (Luminance)
+    let sumLum = 0;
+    const totalPixels = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) {
+      sumLum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+    const brightness = totalPixels > 0 ? sumLum / totalPixels : 120;
+
+    // 2. ความคมชัด (Laplacian Variance)
+    const sharpness = computeLaplacianVariance(data, bw, bh);
+
+    if (brightness < KIOSK_CAMERA_STANDARDIZATION_CONFIG.MIN_BRIGHTNESS) {
+      return { brightness, sharpness, passed: false, reason: 'TOO_DARK', statusMessageThai: 'แสงสว่างน้อยเกินไป กรุณาเพิ่มแสง' };
+    }
+    if (brightness > KIOSK_CAMERA_STANDARDIZATION_CONFIG.MAX_BRIGHTNESS) {
+      return { brightness, sharpness, passed: false, reason: 'TOO_BRIGHT', statusMessageThai: 'แสงสว่างจ้าเกินไป กรุณาปรับแสง' };
+    }
+    if (sharpness < KIOSK_CAMERA_STANDARDIZATION_CONFIG.MIN_SHARPNESS) {
+      return { brightness, sharpness, passed: false, reason: 'BLURRY', statusMessageThai: 'ภาพเบลอ กรุณายืนนิ่งๆ มองตรงที่กล้อง' };
+    }
+
+    return { brightness, sharpness, passed: true, statusMessageThai: 'คุณภาพภาพพร้อมสำหรับการสแกน' };
+  } catch {
+    return { brightness: 120, sharpness: 20, passed: true, statusMessageThai: 'คุณภาพภาพพร้อมสำหรับการสแกน' };
+  }
+}
+
+export interface StandardizedCropOutput {
+  cropCanvas: HTMLCanvasElement;
+  scaledLandmarks?: FaceLandmarks;
+  originalFaceHeightRatio: number;
+  standardizedFaceHeightRatio: number;
+}
+
+/**
+ * ปรับมาตรฐานสัดส่วนใบหน้า (ROI Crop) ให้มีขนาดและระยะภาพคงที่ (45% face height ratio)
+ * เพื่อป้อนเข้าโมเดล ArcFace 112x112 โดยไม่บิดเบือนหรือเปลี่ยนภาพที่แสดงให้ผู้ใช้เห็น
+ */
+export function createStandardizedROICrop(
+  sourceCanvas: HTMLCanvasElement,
+  box: { x: number; y: number; width: number; height: number },
+  landmarks?: FaceLandmarks
+): StandardizedCropOutput {
+  const fw = sourceCanvas.width;
+  const fh = sourceCanvas.height;
+  const originalFaceHeightRatio = box.height / (fh || 1);
+
+  // คำนวณขนาดกรอบครอปเพื่อให้ความสูงใบหน้าคิดเป็น 45% ของกรอบครอปพอดี
+  const targetRatio = KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_HEIGHT_RATIO_TARGET;
+  const cropH = Math.max(1, Math.round(box.height / targetRatio));
+  const cropW = cropH; // กรอบสี่เหลี่ยมจัตุรัส 1:1 สอดคล้องกับโมเดล 112x112
+
+  const faceCenterX = box.x + box.width / 2;
+  const faceCenterY = box.y + box.height * 0.48; // จุดกึ่งกลางศีรษะที่สมมาตร
+
+  const cropX = Math.round(faceCenterX - cropW / 2);
+  const cropY = Math.round(faceCenterY - cropH / 2);
+
+  const cropCanvas = document.createElement('canvas');
+  const targetSize = KIOSK_CAMERA_STANDARDIZATION_CONFIG.INPUT_SIZE; // 112x112
+  cropCanvas.width = targetSize;
+  cropCanvas.height = targetSize;
+
+  const ctx = cropCanvas.getContext('2d', { willReadFrequently: true });
+  if (ctx) {
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, targetSize, targetSize);
+
+    const sx = Math.max(0, cropX);
+    const sy = Math.max(0, cropY);
+    const sw = Math.min(fw - sx, cropW + Math.min(0, cropX));
+    const sh = Math.min(fh - sy, cropH + Math.min(0, cropY));
+
+    const scale = targetSize / cropW;
+    const dx = Math.round((sx - cropX) * scale);
+    const dy = Math.round((sy - cropY) * scale);
+    const dw = Math.round(sw * scale);
+    const dh = Math.round(sh * scale);
+
+    if (sw > 0 && sh > 0 && dw > 0 && dh > 0) {
+      ctx.drawImage(sourceCanvas, sx, sy, sw, sh, dx, dy, dw, dh);
+    }
+  }
+
+  // ปรับพิกัดจุด Landmark ทั้ง 5 จุดให้สอดคล้องกับ cropCanvas
+  let scaledLandmarks: FaceLandmarks | undefined;
+  if (landmarks) {
+    const scale = targetSize / cropW;
+    const transformPt = (p: Point2D): Point2D => ({
+      x: (p.x - cropX) * scale,
+      y: (p.y - cropY) * scale,
+    });
+    scaledLandmarks = {
+      leftEye: transformPt(landmarks.leftEye),
+      rightEye: transformPt(landmarks.rightEye),
+      noseTip: transformPt(landmarks.noseTip),
+      leftMouth: transformPt(landmarks.leftMouth),
+      rightMouth: transformPt(landmarks.rightMouth),
+    };
+  }
+
+  return {
+    cropCanvas,
+    scaledLandmarks,
+    originalFaceHeightRatio,
+    standardizedFaceHeightRatio: targetRatio,
+  };
+}
+
+export function checkKioskFaceQuality(
+  detection: any,
+  frameWidth: number = 640,
+  frameHeight: number = 480,
+  imageQuality?: FaceImageQualityResult
+): { passed: boolean; reason?: string; statusMessageThai: string } {
+  if (!detection || !detection.hasFace || !detection.box) {
+    return { passed: false, reason: 'NO_FACE', statusMessageThai: 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น' };
+  }
+
+  const fh = frameHeight > 0 ? frameHeight : 480;
+  const faceHeight = detection.box.height;
+  const heightRatio = faceHeight / fh;
+
+  if (faceHeight < KIOSK_CAMERA_STANDARDIZATION_CONFIG.MIN_FACE_SIZE && heightRatio < 0.15) {
+    return { passed: false, reason: 'FACE_TOO_SMALL', statusMessageThai: 'กรุณาขยับเข้าใกล้กล้องอีกนิด' };
+  }
+
+  const pose = detection.pose;
+  if (pose) {
+    if (Math.abs(pose.yaw) > KIOSK_CAMERA_STANDARDIZATION_CONFIG.MAX_YAW) {
+      return { passed: false, reason: 'HEAD_TURNED', statusMessageThai: 'กรุณามองตรงที่กล้อง' };
+    }
+    if (Math.abs(pose.pitch) > KIOSK_CAMERA_STANDARDIZATION_CONFIG.MAX_PITCH) {
+      return { passed: false, reason: 'HEAD_TILTED', statusMessageThai: 'กรุณามองตรงที่กล้อง' };
+    }
+  }
+
+  if (imageQuality && !imageQuality.passed) {
+    return { passed: false, reason: imageQuality.reason, statusMessageThai: imageQuality.statusMessageThai };
+  }
+
+  return { passed: true, statusMessageThai: 'ใบหน้าพร้อมสำหรับการสแกน' };
+}
+
+export function isTargetContinuityMatch(
+  currentBox: { x: number; y: number; width: number; height: number },
+  locked: LockedFaceTarget,
+  frameWidth: number = 640,
+  frameHeight: number = 480
+): boolean {
+  const fw = frameWidth > 0 ? frameWidth : 640;
+  const fh = frameHeight > 0 ? frameHeight : 480;
+
+  const currentCenterX = currentBox.x + currentBox.width / 2;
+  const currentCenterY = currentBox.y + currentBox.height / 2;
+
+  const dx = Math.abs(currentCenterX - locked.centerX) / fw;
+  const dy = Math.abs(currentCenterY - locked.centerY) / fh;
+  const centerShift = Math.sqrt(dx * dx + dy * dy);
+
+  const sizeChange = Math.abs(currentBox.width - locked.box.width) / (locked.box.width || 1);
+
+  if (centerShift <= KIOSK_CAMERA_STANDARDIZATION_CONFIG.MAX_CENTER_SHIFT_RATIO && sizeChange <= KIOSK_CAMERA_STANDARDIZATION_CONFIG.MAX_SIZE_CHANGE_RATIO) {
+    return true;
+  }
+
+  // Fallback check: 2D Bounding Box IoU >= 0.40
+  const x1 = Math.max(currentBox.x, locked.box.x);
+  const y1 = Math.max(currentBox.y, locked.box.y);
+  const x2 = Math.min(currentBox.x + currentBox.width, locked.box.x + locked.box.width);
+  const y2 = Math.min(currentBox.y + currentBox.height, locked.box.y + locked.box.height);
+
+  const interW = Math.max(0, x2 - x1);
+  const interH = Math.max(0, y2 - y1);
+  const interArea = interW * interH;
+  const currentArea = currentBox.width * currentBox.height;
+  const lockedArea = locked.box.width * locked.box.height;
+  const unionArea = currentArea + lockedArea - interArea;
+  const iou = unionArea > 0 ? interArea / unionArea : 0;
+
+  return iou >= 0.40;
 }
 
 const CornerOrnament: React.FC<{ position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' }> = ({ position }) => {
@@ -163,6 +425,23 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     top2?: { name: string; hn: string; score: number };
   } | null>(null);
 
+  // Multi-camera & device management
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [activeCameraLabel, setActiveCameraLabel] = useState<string>('กล้องเริ่มต้น');
+  const [activeSettings, setActiveSettings] = useState<MediaTrackSettings | null>(null);
+  const [activeCapabilities, setActiveCapabilities] = useState<any>(null);
+  const [currentTelemetry, setCurrentTelemetry] = useState<{
+    faceHeightRatio: number;
+    sharpness: number;
+    brightness: number;
+    zoomLevel?: number;
+  }>({
+    faceHeightRatio: 0,
+    sharpness: 0,
+    brightness: 0,
+  });
+
   // Rate Limiting (5 failures/minute -> 30s cooldown)
   const [rateLimitCooldownSec, setRateLimitCooldownSec] = useState<number>(0);
   const failedScanTimestampsRef = useRef<number[]>([]);
@@ -173,6 +452,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const countdownStartTimeRef = useRef<number>(0);
   const isCountingDownRef = useRef<boolean>(false);
   const cachedPatientsRef = useRef<CachedPatientBiometric[]>([]);
+  const lockedTargetRef = useRef<LockedFaceTarget | null>(null);
+  const isDetectingRef = useRef<boolean>(false);
 
   const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(350));
   const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -181,6 +462,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const pendingRegistrationBiometricsRef = useRef<PendingRegistrationBiometrics | null>(null);
   const scanFailureCountRef = useRef<number>(0);
   const consecutiveSteadyFramesRef = useRef<number>(0);
+  const lowSimFramesRef = useRef<number>(0);
   const isProcessingScanRef = useRef<boolean>(false);
 
   // Modals inside Kiosk Screen
@@ -291,6 +573,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           if (h.frontal_centroid && h.frontal_centroid.length === 512) vecs.push(h.frontal_centroid);
           if (Array.isArray(h.frames)) {
             for (const f of h.frames) {
+              // Live kiosk scan is frontal: strictly filter out tilted/nodding frames (pose !== 'front')
+              if (f.pose && f.pose !== 'front') continue;
               if (f.embedding && f.embedding.length === 512) vecs.push(f.embedding);
             }
           }
@@ -356,16 +640,23 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setPresenceDetected(false);
   }, []);
 
-  // Request & Initialize Camera
-  const startCamera = useCallback(async () => {
-    if (isCameraStartingRef.current || isCameraStartedRef.current) return;
+  // Request & Initialize Camera with Kiosk Hardware Constraints (Zoom Lock & Focus Stability)
+  const startCamera = useCallback(async (deviceIdToUse?: string) => {
+    if (isCameraStartingRef.current) return;
     isCameraStartingRef.current = true;
     try {
       const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
       const { camera } = services;
 
       if (videoRef.current) {
-        await camera.start(videoRef.current);
+        const devId = deviceIdToUse || selectedCameraId || undefined;
+        await camera.start(videoRef.current, {
+          kioskLockConstraints: true,
+          width: 640,
+          height: 480,
+          aspectRatio: KIOSK_CAMERA_STANDARDIZATION_CONFIG.TARGET_ASPECT_RATIO,
+          deviceId: devId,
+        });
         // Ensure hardware exposure compensation is applied (+1.2 EV)
         try {
           if (typeof (camera as any).applyHardwareExposure === 'function') {
@@ -374,6 +665,28 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         } catch {
           // non-blocking
         }
+        // Ensure hardware zoom lock & focus stabilization is applied
+        try {
+          if (typeof (camera as any).applyHardwareKioskLock === 'function') {
+            await (camera as any).applyHardwareKioskLock();
+          }
+        } catch {
+          // non-blocking
+        }
+        // Query active track telemetry & capabilities
+        try {
+          const track = (camera as any).getVideoTrack?.();
+          if (track) {
+            setActiveCameraLabel(track.label || 'Default Camera');
+            setActiveSettings((camera as any).getSettings?.());
+            setActiveCapabilities((camera as any).getCapabilities?.());
+          }
+          const devices = await (camera as any).getAvailableVideoDevices?.();
+          if (Array.isArray(devices) && devices.length > 0 && isMountedRef.current) {
+            setAvailableCameras(devices);
+          }
+        } catch {}
+
         isCameraStartedRef.current = true;
         if (isMountedRef.current) {
           setCameraReady(true);
@@ -387,7 +700,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     } finally {
       isCameraStartingRef.current = false;
     }
-  }, []);
+  }, [selectedCameraId]);
 
   // Cancel running countdown immediately if face leaves or liveness fails
   const cancelCountdown = useCallback((reason?: string) => {
@@ -396,6 +709,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       countdownIntervalRef.current = null;
     }
     isCountingDownRef.current = false;
+    isDetectingRef.current = false;
+    lockedTargetRef.current = null;
     setCountdownValue(null);
     setRealtimeScore(null);
     sampleFramesRef.current = [];
@@ -790,6 +1105,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     isCountingDownRef.current = true;
     countdownStartTimeRef.current = Date.now();
     sampleFramesRef.current = [];
+    lowSimFramesRef.current = 0;
     setCountdownValue(3);
     setRealtimeScore(null);
     setStatusText(
@@ -823,60 +1139,118 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      // Periodic 250ms feature extraction & local matching
+      // Periodic 250ms feature extraction & local matching with Target Face Lock
       if (videoRef.current && videoRef.current.readyState >= 2) {
+        if (isDetectingRef.current) return;
+        isDetectingRef.current = true;
         try {
           const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
           const { camera, detector, aligner, embeddingModel } = services;
           const rawFrame = camera.captureRotatedFrame(videoRef.current);
-          const detection = await detector.detect(rawFrame);
 
-          if (!detection.hasFace) {
-            cancelCountdown(lang === 'zh-CN' ? '请将面部对准圆框' : lang === 'en-US' ? 'Align face inside circle' : 'กรุณาจัดใบหน้าให้อยู่ในกรอบวงกลม');
+          // Downscale to 480px width detectCanvas to eliminate inference lag (25-35ms instead of 120ms+)
+          let dCanvas = detectCanvasRef.current;
+          if (!dCanvas) {
+            dCanvas = document.createElement('canvas');
+            detectCanvasRef.current = dCanvas;
+          }
+          const targetW = 480;
+          const scale = Math.min(1.0, targetW / (rawFrame.width || 640));
+          const dw = Math.round((rawFrame.width || 640) * scale);
+          const dh = Math.round((rawFrame.height || 480) * scale);
+          if (dCanvas.width !== dw || dCanvas.height !== dh) {
+            dCanvas.width = dw;
+            dCanvas.height = dh;
+          }
+          const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
+          if (dctx) {
+            dctx.drawImage(rawFrame, 0, 0, dw, dh);
+          }
+
+          const detection = await detector.detect(dCanvas);
+
+          if (!detection.hasFace || !detection.box) {
+            if (lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+              lockedTargetRef.current = null;
+              cancelCountdown(lang === 'zh-CN' ? '未检测到人脸，已重置' : lang === 'en-US' ? 'Face lost, reset' : 'ไม่พบใบหน้า ระบบได้รีเซ็ตการสแกน');
+            }
             return;
           }
 
-          const roi = checkFaceROIInCircle(detection, rawFrame.width, rawFrame.height, {
-            maxCenterDistance: 0.32,
-            minFaceWidthRatio: 0.10,
-            minBorderMargin: 0.05,
+          // Compute Image Quality (Sharpness & Luminance) on Face Region
+          const imageQuality = computeFaceImageQuality(dCanvas, detection.box);
+          setCurrentTelemetry({
+            faceHeightRatio: detection.box.height / dh,
+            sharpness: imageQuality.sharpness,
+            brightness: imageQuality.brightness,
           });
 
-          if (!roi.inCircle) {
-            cancelCountdown(lang === 'zh-CN' ? '面部离开圆框，已取消' : lang === 'en-US' ? 'Face left circle, cancelled' : 'ใบหน้าออกจากกรอบวงกลม ระบบได้รีเซ็ตการสแกน');
+          const quality = checkKioskFaceQuality(detection, dw, dh, imageQuality);
+          if (!quality.passed) {
+            if (lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+              lockedTargetRef.current = null;
+              cancelCountdown(quality.statusMessageThai);
+            }
             return;
+          }
+
+          // Strict Target Face Lock & Spatial Continuity Verification
+          const now = Date.now();
+          if (!lockedTargetRef.current) {
+            lockedTargetRef.current = {
+              box: { ...detection.box },
+              centerX: detection.box.x + detection.box.width / 2,
+              centerY: detection.box.y + detection.box.height / 2,
+              lastSeenTimestamp: now,
+              lockedAt: now,
+            };
+          } else {
+            const isMatch = isTargetContinuityMatch(detection.box, lockedTargetRef.current, dw, dh);
+            if (isMatch) {
+              lockedTargetRef.current.box = { ...detection.box };
+              lockedTargetRef.current.centerX = detection.box.x + detection.box.width / 2;
+              lockedTargetRef.current.centerY = detection.box.y + detection.box.height / 2;
+              lockedTargetRef.current.lastSeenTimestamp = now;
+            } else {
+              // Different face appeared in frame (e.g. background face or passerby)
+              if (now - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+                lockedTargetRef.current = null;
+                cancelCountdown('เป้าหมายหลุดจากกล้อง ระบบได้รีเซ็ตการสแกน');
+                return;
+              }
+              // Ignore passerby, do not collect probe embedding from non-locked subject
+              return;
+            }
           }
 
           const liv = fastLivenessVerifierRef.current.evaluate(detection);
           setLivenessResult(liv);
           if (liv.state === 'spoof_blocked' || (!liv.isLive && liv.depthScore < 0.20)) {
+            lockedTargetRef.current = null;
             cancelCountdown(t('kiosk_spoof_blocked'));
             return;
           }
 
-          // Extract 512-D embedding
+          // Software & Hardware Camera Standardization:
+          // 1. Hardware Zoom auto-adjustment (if supported by webcam capabilities)
+          try {
+            const currentRatio = detection.box.height / dh;
+            const targetRatio = KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_HEIGHT_RATIO_TARGET;
+            if (currentRatio < 0.35 && typeof (camera as any).applyHardwareZoom === 'function') {
+              const zoomFactor = Math.min(2.5, targetRatio / currentRatio);
+              (camera as any).applyHardwareZoom(zoomFactor);
+            }
+          } catch {}
+
+          // Extract 512-D embedding directly with landmarks alignment to 112x112 ArcFace (zero distortion)
           let vector: number[] | null = null;
           if (detection.landmarks) {
-            const aligned = aligner.align(rawFrame, detection.landmarks);
+            const aligned = aligner.align(dCanvas, detection.landmarks);
             vector = await embeddingModel.embed(aligned);
             const actx = aligned.getContext?.('2d');
             if (actx) actx.clearRect(0, 0, aligned.width, aligned.height);
-          } else if (detection.box && detection.box.width > 20) {
-            const faceCrop = document.createElement('canvas');
-            faceCrop.width = 112;
-            faceCrop.height = 112;
-            const fcCtx = faceCrop.getContext('2d');
-            if (fcCtx) {
-              const fw = rawFrame.width || 640;
-              const fh = rawFrame.height || 480;
-              const pad = detection.box.width * 0.15;
-              const sx = Math.max(0, detection.box.x - pad);
-              const sy = Math.max(0, detection.box.y - pad);
-              const sw = Math.min(fw - sx, detection.box.width + pad * 2);
-              const sh = Math.min(fh - sy, detection.box.height + pad * 2);
-              fcCtx.drawImage(rawFrame, sx, sy, sw, sh, 0, 0, 112, 112);
-              vector = await embeddingModel.embed(faceCrop);
-            }
+          } else {
+            vector = await embeddingModel.embed(dCanvas);
           }
 
           if (vector && vector.length === 512) {
@@ -911,7 +1285,32 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
             const currentPercent = Math.max(0, Math.min(100, Math.round(top1Sim * 100)));
             const currentDist = Math.sqrt(Math.max(0, 2 - 2 * top1Sim));
-            const isCandidateLikely = currentPercent >= 50;
+            const isCandidateLikely = currentPercent >= 70;
+
+            // Early abort if similarity is low or stranger (< 70%)
+            if (currentPercent < 70) {
+              lowSimFramesRef.current++;
+              if (lowSimFramesRef.current >= 2) {
+                lockedTargetRef.current = null;
+                cancelCountdown(
+                  lang === 'zh-CN'
+                    ? '⚠️ 未识别到匹配账户（相似度未达标）'
+                    : lang === 'en-US'
+                    ? '⚠️ Unrecognized face (similarity below threshold)'
+                    : '⚠️ ไม่พบบัญชีผู้ป่วยที่ตรงกับใบหน้านี้ (ความแม่นยำไม่ถึงเกณฑ์ 80%)'
+                );
+                setUnrecognizedAlert(
+                  lang === 'zh-CN'
+                    ? '未找到匹配账户。请重试或使用PIN码登录'
+                    : lang === 'en-US'
+                    ? 'Account not found. Please retry or use PIN login'
+                    : 'ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) กรุณาลองใหม่อีกครั้ง หรือเข้าด้วยรหัส PIN'
+                );
+                return;
+              }
+            } else {
+              lowSimFramesRef.current = 0;
+            }
 
             sampleFramesRef.current.push({
               vector,
@@ -944,7 +1343,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               top2: top2Cand ? { name: top2Cand.name, hn: top2Cand.hn, score: Math.round(top2Sim * 100) } : undefined,
             });
           }
-        } catch {}
+        } catch {} finally {
+          isDetectingRef.current = false;
+        }
       }
     }, 250);
 
@@ -964,12 +1365,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       alert(`กรุณารอระบบคูลดาวน์ ${rateLimitCooldownSec} วินาที`);
       return;
     }
-    if (!faceInCircle) {
-      setStatusText('⚠️ กรุณาจัดใบหน้าให้อยู่ในกรอบวงกลมก่อนเริ่มสแกน');
+    if (!presenceDetected && !lockedTargetRef.current) {
+      setStatusText('⚠️ กรุณาก้าวมายืนหน้ากล้องให้ชัดเจนก่อนเริ่มสแกน');
       return;
     }
     startCountdown();
-  }, [cameraReady, userDisabledCamera, isScanningPaused, faceInCircle, isScanning, rateLimitCooldownSec, startCountdown, startCamera]);
+  }, [cameraReady, userDisabledCamera, isScanningPaused, presenceDetected, isScanning, rateLimitCooldownSec, startCountdown, startCamera]);
 
   // ISOLATED CAMERA LIFECYCLE
   useEffect(() => {
@@ -995,6 +1396,50 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [startCamera, userDisabledCamera]);
+
+  // Multi-camera enumeration & dynamic hotplug listener
+  useEffect(() => {
+    let isSubscribed = true;
+    const fetchDevices = async () => {
+      try {
+        const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+        const devices = await (services.camera as any).getAvailableVideoDevices?.();
+        if (isSubscribed && Array.isArray(devices) && devices.length > 0) {
+          setAvailableCameras(devices);
+        }
+      } catch {}
+    };
+
+    fetchDevices();
+
+    const handleDeviceChange = async () => {
+      try {
+        const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+        const devices = await (services.camera as any).getAvailableVideoDevices?.();
+        if (!isSubscribed || !Array.isArray(devices)) return;
+        setAvailableCameras(devices);
+
+        // If active camera was unplugged/disconnected, fall back to first available camera
+        if (selectedCameraId && !devices.some((d) => d.deviceId === selectedCameraId)) {
+          const fallbackId = devices[0]?.deviceId || '';
+          setSelectedCameraId(fallbackId);
+          if (fallbackId && !userDisabledCamera) {
+            startCamera(fallbackId);
+          }
+        }
+      } catch {}
+    };
+
+    if (navigator?.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    }
+    return () => {
+      isSubscribed = false;
+      if (navigator?.mediaDevices?.removeEventListener) {
+        navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+      }
+    };
+  }, [selectedCameraId, startCamera, userDisabledCamera]);
 
   // PREVIEW CANVAS RENDER LOOP (Runs on requestAnimationFrame)
   useEffect(() => {
@@ -1055,8 +1500,20 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     });
 
     const presenceInterval = setInterval(async () => {
-      if (!isMountedRef.current || isScanningPaused || isScanning || Boolean(matchedPatient)) return;
+      // Guard against overlapping inferences: never run presence detection while counting down or scanning
+      if (
+        !isMountedRef.current ||
+        isScanningPaused ||
+        isScanning ||
+        isCountingDownRef.current ||
+        isDetectingRef.current ||
+        Boolean(matchedPatient)
+      ) {
+        return;
+      }
+
       if (videoRef.current && videoRef.current.readyState >= 2) {
+        isDetectingRef.current = true;
         try {
           const vw = videoRef.current.videoWidth || 640;
           const vh = videoRef.current.videoHeight || 480;
@@ -1082,90 +1539,164 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           const res = await detector.detect(dCanvas);
 
           if (res.hasFace && res.box) {
-            const roi = checkFaceROIInCircle(res, dw, dh, {
-              maxCenterDistance: 0.32,
-              minFaceWidthRatio: 0.10,
-              minBorderMargin: 0.05,
-            });
-
-            if (!roi.inCircle) {
+            // 1. Multi-person rejection at start
+            if (res.multipleFaces && !lockedTargetRef.current) {
               consecutiveSteadyFramesRef.current = 0;
-              if (isCountingDownRef.current) {
-                cancelCountdown('จัดตำแหน่งใบหน้าให้อยู่ในกรอบวงกลม');
-              }
-              if (prevFaceInCircleRef.current !== false) {
-                prevFaceInCircleRef.current = false;
-                setFaceInCircle(false);
-              }
-              if (prevPresenceDetectedRef.current !== false) {
-                prevPresenceDetectedRef.current = false;
-                setPresenceDetected(false);
-              }
-              const msg = t('kiosk_align_face');
+              const msg = '⚠️ กรุณาให้ผู้ใช้ยืนหน้ากล้องทีละคน';
               if (prevStatusTextRef.current !== msg) {
                 prevStatusTextRef.current = msg;
                 setStatusText(msg);
               }
+              return;
+            }
+
+            // Compute Image Quality (Sharpness & Luminance) on Face Region
+            const imageQuality = computeFaceImageQuality(dCanvas, res.box);
+            setCurrentTelemetry({
+              faceHeightRatio: res.box.height / dh,
+              sharpness: imageQuality.sharpness,
+              brightness: imageQuality.brightness,
+            });
+
+            // 2. Automated Pose & Size Quality Gate
+            const quality = checkKioskFaceQuality(res, dw, dh, imageQuality);
+            if (!quality.passed) {
+              consecutiveSteadyFramesRef.current = 0;
+              lockedTargetRef.current = null;
+              if (prevFaceInCircleRef.current !== false) {
+                prevFaceInCircleRef.current = false;
+                setFaceInCircle(false);
+              }
+              if (prevStatusTextRef.current !== quality.statusMessageThai) {
+                prevStatusTextRef.current = quality.statusMessageThai;
+                setStatusText(quality.statusMessageThai);
+              }
               inputManager.processFaceDetection(null, performance.now());
+              return;
+            }
+
+            // 3. Target Face Lock & Spatial Continuity Verification
+            const now = Date.now();
+            if (!lockedTargetRef.current) {
+              lockedTargetRef.current = {
+                box: { ...res.box },
+                centerX: res.box.x + res.box.width / 2,
+                centerY: res.box.y + res.box.height / 2,
+                lastSeenTimestamp: now,
+                lockedAt: now,
+              };
             } else {
-              if (prevFaceInCircleRef.current !== true) {
-                prevFaceInCircleRef.current = true;
-                setFaceInCircle(true);
-              }
-              const liv = fastLivenessVerifierRef.current.evaluate(res);
-              if (prevLivenessStateRef.current !== liv.state) {
-                prevLivenessStateRef.current = liv.state;
-                setLivenessResult(liv);
-              }
-
-              if (liv.state === 'live_verified') {
-                if (prevPresenceDetectedRef.current !== true) {
-                  prevPresenceDetectedRef.current = true;
-                  setPresenceDetected(true);
+              const isMatch = isTargetContinuityMatch(res.box, lockedTargetRef.current, dw, dh);
+              if (isMatch) {
+                lockedTargetRef.current.box = { ...res.box };
+                lockedTargetRef.current.centerX = res.box.x + res.box.width / 2;
+                lockedTargetRef.current.centerY = res.box.y + res.box.height / 2;
+                lockedTargetRef.current.lastSeenTimestamp = now;
+              } else {
+                if (now - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+                  lockedTargetRef.current = null;
+                  consecutiveSteadyFramesRef.current = 0;
+                  return;
                 }
+                // Ignore different face in background
+                return;
+              }
+            }
 
-                // Face is steady & live -> Start 3-second countdown!
-                consecutiveSteadyFramesRef.current++;
-                if (
-                  !isCountingDownRef.current &&
-                  !isScanning &&
-                  !isProcessingScanRef.current &&
-                  !isScanningPaused &&
-                  !matchedPatient &&
-                  rateLimitCooldownSec === 0
-                ) {
+            if (prevFaceInCircleRef.current !== true) {
+              prevFaceInCircleRef.current = true;
+              setFaceInCircle(true);
+            }
+
+            // 4. Liveness Verification
+            const liv = fastLivenessVerifierRef.current.evaluate(res);
+            if (prevLivenessStateRef.current !== liv.state) {
+              prevLivenessStateRef.current = liv.state;
+              setLivenessResult(liv);
+            }
+
+            if (liv.state === 'live_verified') {
+              if (prevPresenceDetectedRef.current !== true) {
+                prevPresenceDetectedRef.current = true;
+                setPresenceDetected(true);
+              }
+
+              // Face locked & live verified -> Pre-verify candidate before auto-starting countdown
+              consecutiveSteadyFramesRef.current++;
+              if (
+                consecutiveSteadyFramesRef.current >= 2 &&
+                !isCountingDownRef.current &&
+                !isScanning &&
+                !isProcessingScanRef.current &&
+                !isScanningPaused &&
+                !matchedPatient &&
+                rateLimitCooldownSec === 0
+              ) {
+                if (cachedPatientsRef.current.length > 0 && res.landmarks) {
+                  try {
+                    const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+                    const aligned = services.aligner.align(dCanvas, res.landmarks);
+                    const vec = await services.embeddingModel.embed(aligned);
+                    let maxSim = 0;
+                    for (const cand of cachedPatientsRef.current) {
+                      for (const cv of cand.vectors) {
+                        if (cv.length === 512) {
+                          let dot = 0;
+                          for (let i = 0; i < 512; i++) dot += vec[i] * cv[i];
+                          const calDot = calibrateCosineSimilarity(dot);
+                          if (calDot > maxSim) maxSim = calDot;
+                        }
+                      }
+                    }
+                    if (maxSim >= 0.70) {
+                      startCountdown();
+                    } else {
+                      const strangerMsg = '👤 ตรวจพบใบหน้า กรุณากด "เริ่มสแกนใบหน้า" หรือเข้าด้วยรหัส PIN';
+                      if (prevStatusTextRef.current !== strangerMsg) {
+                        prevStatusTextRef.current = strangerMsg;
+                        setStatusText(strangerMsg);
+                      }
+                    }
+                  } catch {
+                    startCountdown();
+                  }
+                } else {
                   startCountdown();
                 }
-              } else if (liv.state === 'spoof_blocked') {
-                consecutiveSteadyFramesRef.current = 0;
-                if (isCountingDownRef.current) {
-                  cancelCountdown(t('kiosk_spoof_blocked'));
-                }
-                const msg = t('kiosk_spoof_blocked');
-                if (prevStatusTextRef.current !== msg) {
-                  prevStatusTextRef.current = msg;
-                  setStatusText(msg);
-                }
-              } else {
-                consecutiveSteadyFramesRef.current = 0;
-                const msg = '🟡 กำลังตรวจสอบความมีชีวิต...';
-                if (prevStatusTextRef.current !== msg) {
-                  prevStatusTextRef.current = msg;
-                  setStatusText(msg);
-                }
               }
-
-              inputManager.processFaceDetection(
-                {
-                  x: res.box.x / dw,
-                  y: res.box.y / dh,
-                  width: res.box.width / dw,
-                  height: res.box.height / dh,
-                },
-                performance.now()
-              );
+            } else if (liv.state === 'spoof_blocked') {
+              lockedTargetRef.current = null;
+              consecutiveSteadyFramesRef.current = 0;
+              if (isCountingDownRef.current) {
+                cancelCountdown(t('kiosk_spoof_blocked'));
+              }
+              const msg = t('kiosk_spoof_blocked');
+              if (prevStatusTextRef.current !== msg) {
+                prevStatusTextRef.current = msg;
+                setStatusText(msg);
+              }
+            } else {
+              consecutiveSteadyFramesRef.current = 0;
+              const msg = '🟡 กำลังตรวจสอบความมีชีวิต...';
+              if (prevStatusTextRef.current !== msg) {
+                prevStatusTextRef.current = msg;
+                setStatusText(msg);
+              }
             }
+
+            inputManager.processFaceDetection(
+              {
+                x: res.box.x / dw,
+                y: res.box.y / dh,
+                width: res.box.width / dw,
+                height: res.box.height / dh,
+              },
+              performance.now()
+            );
           } else {
+            if (lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+              lockedTargetRef.current = null;
+            }
             consecutiveSteadyFramesRef.current = 0;
             if (isCountingDownRef.current) {
               cancelCountdown('กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น');
@@ -1178,14 +1709,16 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               prevPresenceDetectedRef.current = false;
               setPresenceDetected(false);
             }
-            const msg = t('kiosk_align_face');
+            const msg = 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น';
             if (prevStatusTextRef.current !== msg) {
               prevStatusTextRef.current = msg;
               setStatusText(msg);
             }
             inputManager.processFaceDetection(null, performance.now());
           }
-        } catch {}
+        } catch {} finally {
+          isDetectingRef.current = false;
+        }
       }
     }, 160);
 
@@ -1200,6 +1733,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   }, [cameraReady, isScanningPaused, customDetector, isScanning, matchedPatient, rateLimitCooldownSec, startCountdown, cancelCountdown, t]);
 
   const handleResetScan = () => {
+    lockedTargetRef.current = null;
+    isDetectingRef.current = false;
     pendingRegistrationBiometricsRef.current = null;
     resetConfirmation();
     setIdentityAnchor(null);
@@ -1259,22 +1794,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       }
     } catch {}
 
-    try {
-      const res = await fetch(`/api/patients?q=${encodeURIComponent(candHn || pin)}`);
-      if (res.ok) {
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : data.data || [];
-        if (list.length > 0) {
-          setAmbiguousCandidate(null);
-          const norm = normalizePatientRecord(list[0]);
-          setIsTransitioning(true);
-          setTimeout(() => {
-            onLoginSuccess(norm);
-          }, 300);
-          return;
-        }
-      }
-    } catch {}
     setUnrecognizedAlert(`ไม่พบข้อมูลผู้ป่วยสำหรับรหัส "${pin}" (กรุณาตรวจสอบรหัส PIN หรือลงทะเบียนคนไข้ใหม่)`);
   };
 
@@ -1315,14 +1834,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       {/* Unified Master Kiosk Shell Card */}
       <div className="w-full max-w-5xl h-full min-h-[calc(100vh-140px)] sm:min-h-[calc(100vh-160px)] md:min-h-[calc(100vh-180px)] bg-white/95 backdrop-blur-md rounded-[32px] border border-blue-100 shadow-2xl p-4 sm:p-6 flex flex-col justify-between gap-3 sm:gap-4 relative z-10">
         
-        {/* 🎥 Hero Camera Scanning Stage (Full Width & Generous Height - Fills Remaining Space) */}
+        {/* 🎥 Hero Camera Scanning Stage (Full Width & Generous Height - Clean Vision Without Frames) */}
         <div className="flex-1 w-full min-h-[460px] md:min-h-[540px] bg-gradient-to-br from-[#07192B] via-[#0B2740] to-[#062826] rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col items-center justify-center cursor-pointer group">
-          {/* 4 Glowing Cyan/Emerald Corner Viewfinder Brackets */}
-          <div className="absolute top-4 left-4 w-8 h-8 sm:w-10 sm:h-10 border-t-4 border-l-4 border-teal-400 rounded-tl-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
-          <div className="absolute top-4 right-4 w-8 h-8 sm:w-10 sm:h-10 border-t-4 border-r-4 border-teal-400 rounded-tr-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
-          <div className="absolute bottom-4 left-4 w-8 h-8 sm:w-10 sm:h-10 border-b-4 border-l-4 border-teal-400 rounded-bl-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
-          <div className="absolute bottom-4 right-4 w-8 h-8 sm:w-10 sm:h-10 border-b-4 border-r-4 border-teal-400 rounded-br-xl pointer-events-none drop-shadow-[0_0_8px_rgba(45,212,191,0.6)] z-20" />
-
           {!cameraReady || userDisabledCamera || isScanningPaused ? (
             /* Standby / Idle State: Center Glowing Scanner Ring */
             <div
@@ -1361,7 +1874,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             >
               <canvas
                 ref={previewCanvasRef}
-                className="w-full h-full object-cover filter brightness-[1.18] contrast-[1.05] transition-all duration-300"
+                className="w-full h-full object-cover filter brightness-[1.18] contrast-[1.05]"
               />
 
               {/* Real-time Liveness Telemetry Badge */}
@@ -1375,92 +1888,62 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 />
               </div>
 
-              {/* Reticle Circle / Face scan guide with 3s Countdown & Live Score % */}
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-                <div
-                  className={`w-44 h-56 sm:w-52 sm:h-64 rounded-full transition-all duration-300 relative flex items-center justify-center ${
-                    countdownValue !== null
-                      ? 'border-4 border-emerald-400 shadow-[0_0_35px_rgba(16,185,129,0.95)] ring-4 ring-emerald-500/40 animate-pulse'
-                      : !faceInCircle
-                      ? 'border-2 border-dashed border-amber-400/90 shadow-[0_0_20px_rgba(245,158,11,0.45)]'
-                      : livenessResult?.state === 'live_verified'
-                      ? 'border-2 border-emerald-400 shadow-[0_0_22px_rgba(16,185,129,0.55)]'
-                      : livenessResult?.state === 'spoof_blocked'
-                      ? 'border-2 border-rose-400 shadow-[0_0_22px_rgba(244,63,94,0.55)]'
-                      : 'border-2 border-dashed border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.35)]'
-                  }`}
-                >
-                  {/* Floating Clean Countdown & Percentage Indicators that do not obscure the face */}
-                  {countdownValue !== null ? (
-                    <>
-                      {/* Top Timer Pill */}
-                      <div className="absolute -top-8 px-3.5 py-1.5 rounded-full bg-emerald-500 text-white font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/50 flex items-center gap-1.5 animate-bounce z-30">
-                        <span>⏱️</span>
-                        <span>{countdownValue}s</span>
-                      </div>
-                      {/* Bottom Live Score Badge */}
-                      {realtimeScore !== null && (
-                        <div className="absolute -bottom-7 px-3 py-1 rounded-full bg-slate-950/90 border border-emerald-400 text-emerald-300 font-extrabold text-xs shadow-lg flex items-center gap-1.5 z-30">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                          <span>{realtimeScore}%</span>
-                        </div>
-                      )}
-                      {/* Gentle central scanning line */}
-                      <div className="w-[85%] h-0.5 bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent animate-pulse" />
-                    </>
-                  ) : (
-                    <div
-                      className={`absolute left-[10%] w-[80%] h-0.5 ${
-                        !faceInCircle
-                          ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent'
-                          : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-bounce'
-                      } top-1/2`}
-                    />
-                  )}
-                </div>
-
-                {/* Status Pill Badge at bottom of camera box */}
-                <div className="absolute bottom-3 px-4 py-1.5 rounded-full bg-[#042924]/90 backdrop-blur-md border border-emerald-500/40 text-xs font-bold text-emerald-300 flex items-center gap-2 shadow-lg max-w-[90%] truncate">
-                  {countdownValue !== null ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-300 shrink-0" />
-                      <span className="text-emerald-300 truncate">
-                        {lang === 'zh-CN' ? `正在识别倒计时 ${countdownValue}...` : lang === 'en-US' ? `Counting down ${countdownValue}...` : `กำลังนับถอยหลัง ${countdownValue} วินาที...`}
+              {/* Clean Floating Countdown & Score Badge (No obscuring frame) */}
+              {countdownValue !== null && (
+                <div className="absolute top-16 inset-x-0 flex justify-center pointer-events-none z-20">
+                  <div className="px-5 py-2.5 rounded-full bg-emerald-600/95 backdrop-blur-md text-white font-black text-base sm:text-lg shadow-2xl border border-emerald-300/80 flex items-center gap-2.5 animate-bounce">
+                    <span className="text-xl">⏱️</span>
+                    <span>นับถอยหลัง {countdownValue} วินาที</span>
+                    {realtimeScore !== null && isCalibrationOpen && (
+                      <span className="ml-1 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-400">
+                        {realtimeScore}%
                       </span>
-                    </>
-                  ) : isScanning ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-300 shrink-0" />
-                      <span className="truncate">{statusText || t('kiosk_verifying_identity')}</span>
-                    </>
-                  ) : matchedPatient ? (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="truncate">{t('kiosk_identity_verified')}: คุณ {matchedPatient.first_name}</span>
-                    </>
-                  ) : rateLimitCooldownSec > 0 ? (
-                    <>
-                      <span className="text-amber-300 font-bold shrink-0">⏳ คูลดาวน์ {rateLimitCooldownSec}s</span>
-                    </>
-                  ) : !presenceDetected || !faceInCircle ? (
-                    <>
-                      <span className="text-amber-300 font-semibold truncate">🟡 {statusText || t('kiosk_align_face')}</span>
-                    </>
-                  ) : livenessResult?.state === 'spoof_blocked' ? (
-                    <>
-                      <span className="text-rose-300 font-semibold truncate">{t('kiosk_spoof_blocked')}</span>
-                    </>
-                  ) : livenessResult?.state === 'live_verified' ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-300 shrink-0" />
-                      <span className="text-emerald-300 font-semibold truncate">พร้อมเริ่มนับถอยหลัง</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-cyan-300 font-medium truncate">🟡 {t('kiosk_checking_liveness')}</span>
-                    </>
-                  )}
+                    )}
+                  </div>
                 </div>
+              )}
+
+              {/* Status Pill Badge at bottom of camera box */}
+              <div className="absolute bottom-4 px-4 py-2 rounded-full bg-slate-950/85 backdrop-blur-md border border-teal-500/40 text-xs sm:text-sm font-bold text-teal-300 flex items-center gap-2 shadow-xl max-w-[90%] truncate z-20 pointer-events-none">
+                {countdownValue !== null ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
+                    <span className="text-emerald-300 truncate">
+                      {lang === 'zh-CN' ? `正在识别人脸 ${countdownValue}...` : lang === 'en-US' ? `Scanning face ${countdownValue}...` : `กำลังบันทึกและล็อกเป้าหมายใบหน้า ${countdownValue}s...`}
+                    </span>
+                  </>
+                ) : isScanning ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-cyan-300 shrink-0" />
+                    <span className="truncate">{statusText || t('kiosk_verifying_identity')}</span>
+                  </>
+                ) : matchedPatient ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="truncate">{t('kiosk_identity_verified')}: คุณ {matchedPatient.first_name}</span>
+                  </>
+                ) : rateLimitCooldownSec > 0 ? (
+                  <>
+                    <span className="text-amber-300 font-bold shrink-0">⏳ คูลดาวน์ {rateLimitCooldownSec}s</span>
+                  </>
+                ) : !presenceDetected ? (
+                  <>
+                    <span className="text-amber-300 font-semibold truncate">🟡 {statusText || 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น'}</span>
+                  </>
+                ) : livenessResult?.state === 'spoof_blocked' ? (
+                  <>
+                    <span className="text-rose-300 font-semibold truncate">{t('kiosk_spoof_blocked')}</span>
+                  </>
+                ) : livenessResult?.state === 'live_verified' ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
+                    <span className="text-emerald-300 font-semibold truncate">{statusText || 'ล็อกเป้าหมายแล้ว พร้อมเริ่มสแกน'}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-cyan-300 font-medium truncate">🟡 {statusText || t('kiosk_checking_liveness')}</span>
+                  </>
+                )}
               </div>
 
               {/* Calibration Mode HUD Overlay */}
@@ -1471,7 +1954,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 >
                   <div className="flex items-center justify-between border-b border-cyan-500/30 pb-1">
                     <span className="font-bold text-white flex items-center gap-1.5">
-                      🎯 Staff Biometric HUD (Supabase Live)
+                      🎯 Staff Biometric & Camera Standardization HUD
                     </span>
                     <button
                       type="button"
@@ -1481,8 +1964,16 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                       ✕
                     </button>
                   </div>
-                  <div className="text-[10px] text-cyan-300 pb-0.5 border-b border-slate-800">
-                    Host: <b className="text-white">mctegvnrvmglbibuuczi.supabase.co</b> | Cache: <b className="text-emerald-400">0 records (Sovereign)</b>
+                  <div className="text-[10px] text-cyan-300 pb-0.5 border-b border-slate-800 flex items-center justify-between">
+                    <span>Host: <b className="text-white">mctegvnrvmglbibuuczi.supabase.co</b></span>
+                    <span>Camera: <b className="text-emerald-400 truncate max-w-[150px] inline-block align-bottom">{activeCameraLabel}</b></span>
+                  </div>
+                  <div className="text-[10px] text-slate-300 pb-0.5 border-b border-slate-800 grid grid-cols-2 gap-x-2 gap-y-0.5">
+                    <div>Stream: <b className="text-white">{activeSettings?.width || 640}x{activeSettings?.height || 480} (4:3)</b></div>
+                    <div>Face Ratio: <b className="text-cyan-300">{(currentTelemetry.faceHeightRatio * 100).toFixed(1)}%</b> <span className="text-[9px] text-slate-400">(Std: 45%)</span></div>
+                    <div>Sharpness: <b className={currentTelemetry.sharpness >= 15 ? 'text-emerald-400' : 'text-amber-400'}>{currentTelemetry.sharpness.toFixed(1)}</b> <span className="text-[9px] text-slate-400">(min 15)</span></div>
+                    <div>Brightness: <b className={currentTelemetry.brightness >= 35 && currentTelemetry.brightness <= 225 ? 'text-emerald-400' : 'text-amber-400'}>{currentTelemetry.brightness.toFixed(0)}</b> <span className="text-[9px] text-slate-400">(35-225)</span></div>
+                    <div className="col-span-2">HW Zoom: <b className="text-white">{activeCapabilities?.zoom ? `${activeCapabilities.zoom.min}-${activeCapabilities.zoom.max}x` : 'N/A (Active 112px ROI Lock)'}</b></div>
                   </div>
                   <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                     <div>cos(θ): <b className="text-white">{calibrationStats?.currentCos.toFixed(3) ?? '0.000'}</b></div>
@@ -1510,6 +2001,24 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
               {/* Camera Orientation Controls & Calibration Button */}
               <div className="absolute top-3 left-3 flex items-center gap-1.5 z-20" onClick={(e) => e.stopPropagation()}>
+                {availableCameras.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = availableCameras.findIndex((c) => c.deviceId === selectedCameraId);
+                      const next = availableCameras[(idx + 1) % availableCameras.length];
+                      if (next) {
+                        setSelectedCameraId(next.deviceId);
+                        startCamera(next.deviceId);
+                      }
+                    }}
+                    className="px-2 py-1 rounded-lg bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer"
+                    title={`สลับกล้อง (${activeCameraLabel})`}
+                  >
+                    <Camera className="w-3.5 h-3.5 text-cyan-300" />
+                    <span>กล้อง {availableCameras.findIndex((c) => c.deviceId === selectedCameraId) + 1}/{availableCameras.length}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -1998,9 +2507,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                     pendingRegistrationBiometricsRef.current = null;
                     setUnrecognizedAlert(null);
                     handleResetScan();
-                    if (faceInCircle) {
-                      startCountdown();
-                    }
                   }}
                   className="py-3 px-3 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
                 >

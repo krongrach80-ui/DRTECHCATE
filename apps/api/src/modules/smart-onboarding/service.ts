@@ -1190,9 +1190,10 @@ export class SmartOnboardingService {
       if (frontalVec && Array.isArray(frontalVec) && frontalVec.length === 512) {
         candidateVectors.push(frontalVec);
       }
-      const extraFrames = (record as any).enrolled_frames;
+      const extraFrames = (record as any).enrolled_frames || (record as any).history?.frames;
       if (extraFrames && Array.isArray(extraFrames)) {
         for (const ef of extraFrames) {
+          if (ef.pose && ef.pose !== 'front') continue;
           if (ef.embedding && Array.isArray(ef.embedding) && ef.embedding.length === 512) {
             candidateVectors.push(ef.embedding);
           }
@@ -1311,6 +1312,16 @@ export class SmartOnboardingService {
       nearestCandidate.sim >= 0.70 &&
       nearestCandidate.sim < BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY
     ) {
+      if (isSingleUserInDb) {
+        logger.info(
+          `[FACE-AUTH] Single-user DB guard: nearest candidate ${nearestCandidate.name} sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} does not meet strict threshold (${BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE}). Failing closed.`
+        );
+        return {
+          matched: false,
+          message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่ หรือเข้าสู่ระบบด้วย PIN',
+        };
+      }
+
       logger.info(
         `[FACE-AUTH] Borderline candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} - Requesting PIN confirmation`
       );
@@ -1330,7 +1341,7 @@ export class SmartOnboardingService {
     );
     return {
       matched: false,
-      message: 'ไม่พบข้อมูลใบหน้าตรงกับคนไข้ในระบบ กรุณาลองใหม่อีกครั้ง หรือเข้าสู่ระบบด้วย PIN',
+      message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่ หรือเข้าสู่ระบบด้วย PIN',
     };
   }
 

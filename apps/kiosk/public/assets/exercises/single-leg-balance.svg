@@ -34,30 +34,14 @@
   <!-- Title Badge -->
   <rect x="20" y="20" width="360" height="36" rx="10" fill="#0f172a" fill-opacity="0.8" stroke="#1e293b" />
   <text x="200" y="43" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">
-    12. ยืนขาเดียว (Single-leg Balance)
+    ยืนทรงตัวขาเดียว (Single-Leg Stance Balance)
   </text>
-
-      <!-- Pelvic balance level line -->
-      <line x1="120" y1="210" x2="280" y2="210" stroke="#14b8a6" stroke-width="2.5" stroke-dasharray="4,4" />
-      <!-- Upright figure -->
-      <circle cx="200" cy="90" r="20" fill="#475569" />
-      <path d="M200,110 L200,210" fill="none" stroke="#64748b" stroke-width="14" stroke-linecap="round" />
-      <!-- Stance leg (grounded straight) -->
-      <line x1="185" y1="210" x2="185" y2="335" stroke="url(#accentCyan)" stroke-width="14" stroke-linecap="round" filter="url(#glow)" />
-      <!-- Lifted leg (knee bent 90 deg in air) -->
-      <path d="M215,210 L255,250 L250,300" fill="none" stroke="#64748b" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
-      <!-- Floor line -->
-      <line x1="100" y1="340" x2="300" y2="340" stroke="#334155" stroke-width="6" stroke-linecap="round" />
-      <!-- Balance indicator -->
-      <circle cx="200" cy="210" r="7" fill="#0d9488" stroke="#22d3ee" stroke-width="2" />
-      <text x="200" y="160" fill="#2dd4bf" font-family="system-ui" font-size="13" font-weight="bold" text-anchor="middle">รักษาสมดุล ⚖️</text>
-      <text x="200" y="185" fill="#94a3b8" font-family="system-ui" font-size="11" text-anchor="middle">ค้าง 15–30 วินาที</text>
-    
+<circle cx="200" cy="90" r="20" fill="#475569" /><path d="M200,110 L200,220 L200,330 M200,220 L240,260 L240,300" stroke="#64748b" stroke-width="14" fill="none" />
   <!-- Bottom Clinical Badge -->
   <g transform="translate(200, 365)">
-    <rect x="-120" y="-14" width="240" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
+    <rect x="-135" y="-14" width="270" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
     <text x="0" y="3" fill="#5eead4" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-anchor="middle">
-      ทรงตัวค้าง 15–30 วินาที | สะโพกขนานพื้น ไม่เอียง
+      ยืนทรงตัวขาเดียว ค้าง 15–30 วินาที
     </text>
   </g>
 </svg>

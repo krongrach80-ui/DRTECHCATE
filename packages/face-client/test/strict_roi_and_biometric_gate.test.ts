@@ -167,7 +167,7 @@ describe('Biometric Gate & Strict Circle ROI Verification Suite', () => {
       const probe = new Array(512).fill(0);
       const reference = new Array(512).fill(0);
 
-      // Cosine similarity = 0.79 (< 0.80)
+      // Cosine similarity = 0.79 (< 0.85 threshold)
       probe[0] = 1.0;
       reference[0] = 0.79;
       reference[1] = Math.sqrt(1 - 0.79 * 0.79);
@@ -175,32 +175,32 @@ describe('Biometric Gate & Strict Circle ROI Verification Suite', () => {
       const match = evaluateBiometricMatch(probe, reference);
 
       expect(match.cosineSimilarity).toBe(0.79);
-      expect(match.similarityPercentage).toBe(79);
+      expect(match.similarityPercentage).toBe(67);
       expect(match.isMatch).toBe(false); // MUST be false!
     });
 
     it('B.3: strictly enforces ACCEPTANCE_THRESHOLDS constants', () => {
-      expect(ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY).toBe(0.80);
-      expect(ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE).toBe(0.42);
-      expect(ACCEPTANCE_THRESHOLDS.MIN_SIMILARITY_PERCENTAGE).toBe(80);
+      expect(ACCEPTANCE_THRESHOLDS.MIN_COSINE_SIMILARITY).toBe(0.85);
+      expect(ACCEPTANCE_THRESHOLDS.MAX_EUCLIDEAN_DISTANCE).toBe(0.38);
+      expect(ACCEPTANCE_THRESHOLDS.MIN_SIMILARITY_PERCENTAGE).toBe(85);
     });
   });
 
   describe('Case C: Registered User Inside Circle with Similarity >= 80% (Rule 3)', () => {
-    it('C.1: allows login when similarity >= 80% and distance <= 0.42', () => {
+    it('C.1: allows login when similarity >= 85% and distance <= 0.38', () => {
       const probe = new Array(512).fill(0);
       const reference = new Array(512).fill(0);
 
-      // High similarity face: Cosine = 0.92, Euclidean ~= 0.40
+      // High similarity face: Cosine = 0.94, Euclidean ~= 0.346 <= 0.38
       probe[0] = 1.0;
-      reference[0] = 0.92;
-      reference[1] = Math.sqrt(1 - 0.92 * 0.92);
+      reference[0] = 0.94;
+      reference[1] = Math.sqrt(1 - 0.94 * 0.94);
 
       const match = evaluateBiometricMatch(probe, reference);
 
-      expect(match.similarityPercentage).toBeGreaterThanOrEqual(80);
-      expect(match.cosineSimilarity).toBeGreaterThanOrEqual(0.80);
-      expect(match.euclideanDistance).toBeLessThanOrEqual(0.42);
+      expect(match.similarityPercentage).toBeGreaterThanOrEqual(85);
+      expect(match.cosineSimilarity).toBeGreaterThanOrEqual(0.85);
+      expect(match.euclideanDistance).toBeLessThanOrEqual(0.38);
       expect(match.isMatch).toBe(true);
     });
 

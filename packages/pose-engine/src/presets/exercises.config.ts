@@ -14,6 +14,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'active-shoulder-flexion': {
     id: 'active-shoulder-flexion',
     exerciseId: 'e1000000-0000-0000-0000-000000000001',
+    is_active: true,
+    camera_framing: 'upper_body',
     mode: 'camera',
     nameTh: 'ยกแขนไปข้างหน้า (Active Shoulder Flexion)',
     nameEn: 'Active Shoulder Flexion',
@@ -100,6 +102,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'shoulder-abduction': {
     id: 'shoulder-abduction',
     exerciseId: 'e1000000-0000-0000-0000-000000000002',
+    is_active: true,
+    camera_framing: 'upper_body',
     mode: 'camera',
     nameTh: 'กางแขนออกด้านข้าง (Shoulder Abduction)',
     nameEn: 'Shoulder Abduction',
@@ -184,6 +188,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'shoulder-er-band': {
     id: 'shoulder-er-band',
     exerciseId: 'e1000000-0000-0000-0000-000000000003',
+    is_active: true,
+    camera_framing: 'upper_body',
     mode: 'camera',
     nameTh: 'หมุนแขนออกด้านนอกด้วยยางยืด (Shoulder External Rotation with Band)',
     nameEn: 'Shoulder External Rotation with Band',
@@ -261,6 +267,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'scapular-retraction': {
     id: 'scapular-retraction',
     exerciseId: 'e1000000-0000-0000-0000-000000000004',
+    is_active: true,
+    camera_framing: 'upper_body',
     mode: 'camera',
     nameTh: 'ดึงสะบักชิดกัน (Scapular Retraction / Pinch)',
     nameEn: 'Scapular Retraction',
@@ -336,6 +344,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'elbow-flexion-extension': {
     id: 'elbow-flexion-extension',
     exerciseId: 'e1000000-0000-0000-0000-000000000005',
+    is_active: true,
+    camera_framing: 'upper_body',
     mode: 'camera',
     nameTh: 'งอและเหยียดข้อศอก (Elbow Flexion & Extension)',
     nameEn: 'Elbow Flexion & Extension',
@@ -413,6 +423,7 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'seated-knee-extension': {
     id: 'seated-knee-extension',
     exerciseId: 'e1000000-0000-0000-0000-000000000006',
+    is_active: false,
     mode: 'camera',
     nameTh: 'เตะเหยียดเข่าท่านั่ง (Seated Knee Extension)',
     nameEn: 'Seated Knee Extension',
@@ -490,6 +501,7 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'mini-squat': {
     id: 'mini-squat',
     exerciseId: 'e1000000-0000-0000-0000-000000000007',
+    is_active: false,
     mode: 'camera',
     nameTh: 'ย่อเข่ามินิสควอท (Mini Squat 0–60°)',
     nameEn: 'Mini Squat (0–60°)',
@@ -567,6 +579,7 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'sit-to-stand': {
     id: 'sit-to-stand',
     exerciseId: 'e1000000-0000-0000-0000-000000000008',
+    is_active: false,
     mode: 'camera',
     nameTh: 'ลุกขึ้นยืนจากเก้าอี้ (Sit-to-Stand)',
     nameEn: 'Chair Sit-to-Stand',
@@ -644,6 +657,7 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'straight-leg-raise': {
     id: 'straight-leg-raise',
     exerciseId: 'e1000000-0000-0000-0000-000000000009',
+    is_active: false,
     mode: 'camera',
     nameTh: 'ยกขาตรงท่านอน/นั่ง (Straight Leg Raise - SLR)',
     nameEn: 'Straight Leg Raise (SLR)',
@@ -721,6 +735,7 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'standing-hip-abduction': {
     id: 'standing-hip-abduction',
     exerciseId: 'e1000000-0000-0000-0000-000000000010',
+    is_active: false,
     mode: 'camera',
     nameTh: 'กางสะโพกออกด้านข้างท่ายืน (Standing Hip Abduction)',
     nameEn: 'Standing Hip Abduction',
@@ -796,6 +811,7 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'calf-raise': {
     id: 'calf-raise',
     exerciseId: 'e1000000-0000-0000-0000-000000000011',
+    is_active: false,
     mode: 'camera',
     nameTh: 'เขย่งปลายเท้าท่ายืน (Standing Calf Raise / Heel Raise)',
     nameEn: 'Standing Calf Raise',
@@ -861,6 +877,7 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'single-leg-balance': {
     id: 'single-leg-balance',
     exerciseId: 'e1000000-0000-0000-0000-000000000012',
+    is_active: false,
     mode: 'camera',
     nameTh: 'ยืนทรงตัวขาเดียว (Single-Leg Stance Balance)',
     nameEn: 'Single-Leg Stance Balance',
@@ -927,6 +944,7 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'calf-stretch': {
     id: 'calf-stretch',
     exerciseId: 'e1000000-0000-0000-0000-000000000013',
+    is_active: false,
     mode: 'camera',
     nameTh: 'ยืดกล้ามเนื้อน่องท่ายืนดันผนัง (Standing Gastrocnemius Calf Stretch)',
     nameEn: 'Standing Calf Stretch',
@@ -993,6 +1011,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'chin-tuck': {
     id: 'chin-tuck',
     exerciseId: 'e1000000-0000-0000-0000-000000000014',
+    is_active: true,
+    camera_framing: 'upper_body',
     mode: 'timer',
     nameTh: 'เก็บเหนียงเสริมกล้ามเนื้อคอด้านลึก (Cervical Retraction / Chin Tuck)',
     nameEn: 'Cervical Retraction (Chin Tuck)',
@@ -1046,6 +1066,7 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
   'shoulder-pendulum': {
     id: 'shoulder-pendulum',
     exerciseId: 'e1000000-0000-0000-0000-000000000015',
+    is_active: false,
     mode: 'timer',
     nameTh: 'แกว่งแขนผ่อนคลายหัวไหล่ (Codman Pendulum Exercise)',
     nameEn: 'Codman Shoulder Pendulum',
@@ -1227,6 +1248,675 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
       maxSafeAngleCapDeg: 40,
     },
   },
+  // 16. Seated Cervical Rotation
+  'seated-cervical-rotation': {
+    id: 'seated-cervical-rotation',
+    exerciseId: 'e1000000-0000-0000-0000-000000000016',
+    is_active: true,
+    camera_framing: 'upper_body',
+    mode: 'camera',
+    nameTh: 'หันศีรษะซ้าย-ขวา (Seated Cervical Rotation)',
+    nameEn: 'Seated Cervical Rotation',
+    nameCn: '坐姿颈部旋转',
+    descriptionTh: 'นั่งหลังตรงบนเก้าอี้ เท้าวางราบกับพื้น ค่อยๆ หันศีรษะไปทางซ้ายจนรู้สึกตึงพอดี ค้างไว้ 2 วินาที แล้วหมุนกลับมาตรงกลาง จากนั้นสลับหันไปทางขวา',
+    descriptionEn: 'Sit upright in chair with feet flat. Slowly rotate head to the left until comfortable stretch, hold 2s, return to center, then rotate right.',
+    descriptionCn: '端坐于椅子上，双脚平放地面。缓慢向左转头至舒适拉伸感，保持2秒后回到中位，再向右转。',
+    framing: 'upper_body',
+    evaluationMode: 'neck_tilt',
+    side: 'bilateral',
+    targetJoint: 'neck',
+    mediaUrl: '/assets/exercises/seated-cervical-rotation.svg',
+    clinicalSource: 'AAOS Cervical Spine Protocol / McKenzie Method',
+    clinicalDisclaimerTh: 'ค่าเริ่มต้นแนะนำ — นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย (ต้องให้นักกายภาพตรวจสอบ)',
+    calibration_notes: 'กล้องหน้าตรงครึ่งตัวบน | องศาเป้าหมาย 45°–60° (ต้องให้นักกายภาพตรวจสอบก่อนใช้กับผู้ป่วยจริง)',
+    defaultSets: 3,
+    defaultReps: 10,
+    defaultHoldSec: 2.0,
+    cameraGuide: {
+      recommendedView: 'front',
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: 'นั่งหลังตรง หันหน้าเข้าหากล้อง ให้เห็นศีรษะ ใบหู และหัวไหล่ทั้งสองข้างชัดเจน',
+      instructionTextEn: 'Sit upright facing camera, ensuring head, ears, and both shoulders are visible.',
+      instructionTextCn: '端坐面向摄像头，确保头部、双耳及双肩清晰可见。',
+    },
+    angleMechanics: {
+      landmarks: {
+        left: { pointA: 7, vertex: 11, pointB: 12 },
+        right: { pointA: 8, vertex: 12, pointB: 11 },
+      },
+      direction: 'increase',
+      startAngleDeg: 0,
+      targetMinDeg: 45,
+      targetMaxDeg: 60,
+      toleranceDeg: 8,
+      holdDurationSec: 2.0,
+    },
+    defaultPrescription: {
+      repsPerSet: 10,
+      totalSets: 3,
+      restBetweenSetsSec: 30,
+    },
+    compensationRules: [
+      {
+        ruleId: 'cervical_shoulder_hike',
+        type: 'shoulder_shrug',
+        thresholdValue: 0.15,
+        warningMessageTh: 'อย่าเกร็งยกหัวไหล่ขึ้นตาม ให้ผ่อนคลายหัวไหล่ไว้',
+        warningMessageEn: 'Keep shoulders relaxed and down, do not shrug',
+        warningMessageCn: '请放松双肩，切勿耸肩',
+        severity: 'warning',
+      },
+      {
+        ruleId: 'cervical_trunk_lean',
+        type: 'trunk_lean',
+        thresholdValue: 0.15,
+        warningMessageTh: 'รักษาลำตัวให้ตรง อย่าเอียงตัวช่วยหันศีรษะ',
+        warningMessageEn: 'Keep torso upright, avoid leaning body to rotate neck',
+        warningMessageCn: '保持躯干正直，避免倾斜身体借力',
+        severity: 'warning',
+      },
+    ],
+    safetyContraindications: {
+      stopOnPainMessageTh: 'หากมีอาการเวียนศีรษะ มึนงง หรือมีอาการชาเสียวร้าวลงแขน ให้หยุดทันที',
+      stopOnPainMessageEn: 'Stop immediately if dizziness, numbness, or tingling down arm occurs',
+      stopOnPainMessageCn: '若出现头晕目眩或手臂麻木放射痛，请立即停止',
+      maxSafeAngleCapDeg: 75,
+    },
+    requiredLandmarks: {
+      bilateral: [0, 7, 8, 11, 12],
+      left: [0, 7, 11],
+      right: [0, 8, 12],
+    },
+    minLandmarkVisibility: {
+      0: 0.50,
+      7: 0.40,
+      8: 0.40,
+      11: 0.50,
+      12: 0.50,
+    },
+  },
+
+  // 17. Cervical Side Bend
+  'cervical-side-bend': {
+    id: 'cervical-side-bend',
+    exerciseId: 'e1000000-0000-0000-0000-000000000017',
+    is_active: true,
+    camera_framing: 'upper_body',
+    mode: 'camera',
+    nameTh: 'เอียงศีรษะเข้าหาไหล่ (Cervical Side Bend)',
+    nameEn: 'Cervical Side Bend',
+    nameCn: '颈部侧屈',
+    descriptionTh: 'นั่งหลังตรงบนเก้าอี้ เท้าวางราบกับพื้น ค่อยๆ เอียงศีรษะนำใบหูเข้าหาหัวไหล่ช้าๆ โดยไม่ยกหัวไหล่ขึ้นมารับ ค้างไว้ 2 วินาที แล้วกลับสู่ท่าตรง',
+    descriptionEn: 'Sit upright. Gently tilt head to bring ear toward shoulder without lifting the shoulder, hold 2s, return upright.',
+    descriptionCn: '端坐椅子上。平缓侧屈头部使耳朵靠近同侧肩部，切勿耸肩，保持2秒后回正。',
+    framing: 'upper_body',
+    evaluationMode: 'neck_tilt',
+    side: 'bilateral',
+    targetJoint: 'neck',
+    mediaUrl: '/assets/exercises/cervical-side-bend.svg',
+    clinicalSource: 'AAOS Cervical Standards / JOSPT Neck Pain CPG',
+    clinicalDisclaimerTh: 'ค่าเริ่มต้นแนะนำ — นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย (ต้องให้นักกายภาพตรวจสอบ)',
+    calibration_notes: 'กล้องหน้าตรงครึ่งตัวบน | องศาเป้าหมาย 20°–35° (ต้องให้นักกายภาพตรวจสอบก่อนใช้กับผู้ป่วยจริง)',
+    defaultSets: 3,
+    defaultReps: 10,
+    defaultHoldSec: 2.0,
+    cameraGuide: {
+      recommendedView: 'front',
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: 'นั่งหลังตรง หันหน้าเข้าหากล้อง ให้เห็นศีรษะ ใบหู และหัวไหล่สองข้างชัดเจน',
+      instructionTextEn: 'Sit upright facing camera, showing head, ears, and shoulders clearly.',
+      instructionTextCn: '端坐面向摄像头，确保头部、双耳及双肩清晰可见。',
+    },
+    angleMechanics: {
+      landmarks: {
+        left: { pointA: 7, vertex: 11, pointB: 12 },
+        right: { pointA: 8, vertex: 12, pointB: 11 },
+      },
+      direction: 'increase',
+      startAngleDeg: 0,
+      targetMinDeg: 20,
+      targetMaxDeg: 35,
+      toleranceDeg: 6,
+      holdDurationSec: 2.0,
+    },
+    defaultPrescription: {
+      repsPerSet: 10,
+      totalSets: 3,
+      restBetweenSetsSec: 30,
+    },
+    compensationRules: [
+      {
+        ruleId: 'sidebend_shoulder_hike',
+        type: 'shoulder_shrug',
+        thresholdValue: 0.15,
+        warningMessageTh: 'อย่าเกร็งยกหัวไหล่ขึ้นรับใบหู ให้ผ่อนคลายหัวไหล่ไว้',
+        warningMessageEn: 'Do not hike shoulder to meet ear, keep shoulders relaxed',
+        warningMessageCn: '请勿耸肩贴耳，保持肩部自然下沉',
+        severity: 'warning',
+      },
+    ],
+    safetyContraindications: {
+      stopOnPainMessageTh: 'หากมีอาการมึนงง เสียวแปลบลงแขน หรือปวดร้าว ให้หยุดทันที',
+      stopOnPainMessageEn: 'Stop immediately if dizziness, radiating pain, or tingling occurs',
+      stopOnPainMessageCn: '若出现眩晕或手臂放射刺痛，请立即停止',
+      maxSafeAngleCapDeg: 45,
+    },
+    requiredLandmarks: {
+      bilateral: [7, 8, 11, 12],
+      left: [7, 11],
+      right: [8, 12],
+    },
+    minLandmarkVisibility: {
+      7: 0.40,
+      8: 0.40,
+      11: 0.50,
+      12: 0.50,
+    },
+  },
+
+  // 18. Shoulder Shrug
+  'shoulder-shrug': {
+    id: 'shoulder-shrug',
+    exerciseId: 'e1000000-0000-0000-0000-000000000018',
+    is_active: true,
+    camera_framing: 'upper_body',
+    mode: 'camera',
+    nameTh: 'ยักไหล่ขึ้น-ลง (Shoulder Shrug)',
+    nameEn: 'Shoulder Shrug',
+    nameCn: '耸肩训练',
+    descriptionTh: 'นั่งหลังตรง แขนสองข้างปล่อยแนบลำตัว ยกหัวไหล่ทั้งสองข้างขึ้นตรงๆ เข้าหาใบหู ค้างไว้ 2 วินาที แล้วค่อยๆ ผ่อนไหล่ลงสู่ตำแหน่งเดิมอย่างช้าๆ',
+    descriptionEn: 'Sit upright with arms at sides. Shrug both shoulders straight up toward ears, hold 2s, then lower smoothly.',
+    descriptionCn: '端坐姿势，双臂自然下垂。双肩垂直向上耸向耳朵，保持2秒后平缓下落。',
+    framing: 'upper_body',
+    evaluationMode: 'angle_rep_hold',
+    side: 'bilateral',
+    targetJoint: 'scapula',
+    mediaUrl: '/assets/exercises/shoulder-shrug.svg',
+    clinicalSource: 'ACSM Exercise Testing and Prescription',
+    clinicalDisclaimerTh: 'ค่าเริ่มต้นแนะนำ — นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย (ต้องให้นักกายภาพตรวจสอบ)',
+    calibration_notes: 'กล้องหน้าตรงครึ่งตัวบน | ระยะยกไหล่สัมพันธ์ 0.08–0.12 (ต้องให้นักกายภาพตรวจสอบก่อนใช้กับผู้ป่วยจริง)',
+    defaultSets: 3,
+    defaultReps: 12,
+    defaultHoldSec: 2.0,
+    cameraGuide: {
+      recommendedView: 'front',
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: 'นั่งหลังตรงหน้าตรง ให้เห็นศีรษะและลำตัวช่วงบนตั้งแต่เอวขึ้นไป',
+      instructionTextEn: 'Sit upright facing camera, showing head and upper torso clearly.',
+      instructionTextCn: '正面端坐，确保头部及腰部以上躯干清晰可见。',
+    },
+    angleMechanics: {
+      landmarks: {
+        left: { pointA: 7, vertex: 11, pointB: 23 },
+        right: { pointA: 8, vertex: 12, pointB: 24 },
+      },
+      direction: 'decrease',
+      startAngleDeg: 165,
+      targetMinDeg: 130,
+      targetMaxDeg: 145,
+      toleranceDeg: 10,
+      holdDurationSec: 2.0,
+    },
+    defaultPrescription: {
+      repsPerSet: 12,
+      totalSets: 3,
+      restBetweenSetsSec: 30,
+    },
+    compensationRules: [
+      {
+        ruleId: 'shrug_head_poke',
+        type: 'trunk_lean',
+        thresholdValue: 0.15,
+        warningMessageTh: 'ห้ามยื่นคอหรือก้มศีรษะไปข้างหน้า ให้ยกเฉพาะหัวไหล่ขึ้นตรงๆ',
+        warningMessageEn: 'Do not poke neck forward, elevate shoulders vertically',
+        warningMessageCn: '请勿向前探颈，保持双肩垂直向上提起',
+        severity: 'warning',
+      },
+    ],
+    safetyContraindications: {
+      stopOnPainMessageTh: 'หากรู้สึกเจ็บเสียวบริเวณกระดูกคอหรือสะบัก ให้หยุดพักทันที',
+      stopOnPainMessageEn: 'Stop immediately if sharp neck or scapular pain occurs',
+      stopOnPainMessageCn: '若感到颈椎或肩胛处刺痛，请立即停止',
+      maxSafeAngleCapDeg: 180,
+    },
+    requiredLandmarks: {
+      bilateral: [7, 8, 11, 12, 23, 24],
+      left: [7, 11, 23],
+      right: [8, 12, 24],
+    },
+    minLandmarkVisibility: {
+      7: 0.40,
+      8: 0.40,
+      11: 0.50,
+      12: 0.50,
+      23: 0.35,
+      24: 0.35,
+    },
+  },
+
+  // 19. Upper Trapezius Stretch (Timer Mode)
+  'upper-trapezius-stretch': {
+    id: 'upper-trapezius-stretch',
+    exerciseId: 'e1000000-0000-0000-0000-000000000019',
+    is_active: true,
+    camera_framing: 'upper_body',
+    mode: 'timer',
+    nameTh: 'ยืดกล้ามเนื้อบ่า (Upper Trapezius Stretch)',
+    nameEn: 'Upper Trapezius Stretch',
+    nameCn: '上斜方肌拉伸',
+    descriptionTh: 'นั่งหลังตรง มือข้างหนึ่งจับใต้ขอบเก้าอี้เพื่อตรึงสะบัก เอียงศีรษะไปด้านตรงข้าม มืออีกข้างช่วยประคองศีรษะเบาๆ จนรู้สึกตึงสบาย ค้างไว้ 20–30 วินาที',
+    descriptionEn: 'Sit upright holding chair base with one hand. Tilt head to opposite side with gentle hand support until mild stretch, hold 20-30s.',
+    descriptionCn: '端坐抓稳座椅边缘以固定肩胛。头部缓慢向对侧倾斜并轻柔扶头，感受到舒适拉伸后保持20-30秒。',
+    framing: 'upper_body',
+    evaluationMode: 'timer',
+    side: 'bilateral',
+    targetJoint: 'neck',
+    mediaUrl: '/assets/exercises/upper-trapezius-stretch.svg',
+    clinicalSource: 'ACSM Flexibility Guidelines / JOSPT Neck Pain CPG',
+    clinicalDisclaimerTh: 'ค่าเริ่มต้นแนะนำ — โหมดจับเวลานำทาง (ต้องให้นักกายภาพตรวจสอบ)',
+    calibration_notes: 'โหมดจับเวลานำทาง (Timer Mode: 20–30 วินาที/รอบ) | กล้องหน้าตรงครึ่งตัวบน (ต้องให้นักกายภาพตรวจสอบก่อนใช้กับผู้ป่วยจริง)',
+    defaultSets: 3,
+    defaultReps: 3,
+    defaultHoldSec: 25.0,
+    defaultDurationSec: 30,
+    cameraGuide: {
+      recommendedView: 'front',
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: 'นั่งหลังตรง มือจับขอบเก้าอี้ เอียงศีรษะไปข้างๆ ให้รู้สึกตึงสบายที่บ่า',
+      instructionTextEn: 'Hold chair seat, gently tilt head to opposite side, hold comfortably.',
+      instructionTextCn: '手抓椅沿固定，头部向对侧倾斜并保持拉伸。',
+    },
+    defaultPrescription: {
+      repsPerSet: 3,
+      totalSets: 3,
+      restBetweenSetsSec: 30,
+      durationSec: 30,
+      holdDurationSec: 25.0,
+    },
+    compensationRules: [],
+    safetyContraindications: {
+      stopOnPainMessageTh: 'หากมีอาการชาแปลบลงแขน หรือเวียนศีรษะ ให้หยุดทันที',
+      stopOnPainMessageEn: 'Stop immediately if numbness down arm or dizziness occurs',
+      stopOnPainMessageCn: '若出现手麻或眩晕感，请立即停止',
+      maxSafeAngleCapDeg: 45,
+    },
+    requiredLandmarks: {
+      bilateral: [7, 8, 11, 12],
+      left: [7, 11],
+      right: [8, 12],
+    },
+    minLandmarkVisibility: {
+      7: 0.40,
+      8: 0.40,
+      11: 0.50,
+      12: 0.50,
+    },
+  },
+
+  // 20. Seated Trunk Rotation
+  'seated-trunk-rotation': {
+    id: 'seated-trunk-rotation',
+    exerciseId: 'e1000000-0000-0000-0000-000000000020',
+    is_active: true,
+    camera_framing: 'upper_body',
+    mode: 'camera',
+    nameTh: 'หมุนลำตัวท่านั่งกอดอก (Seated Trunk Rotation)',
+    nameEn: 'Seated Trunk Rotation',
+    nameCn: '坐姿躯干旋转',
+    descriptionTh: 'นั่งหลังตรงบนเก้าอี้ เท้าวางราบกับพื้น ยกแขนกอดอกระดับอก สะโพกตรึงแน่นกับเก้าอี้ ค่อยๆ หมุนลำตัวส่วนบนไปทางซ้าย ค้างไว้ 2 วินาที แล้วหมุนกลับมาตรงกลาง จากนั้นหมุนไปทางขวา',
+    descriptionEn: 'Sit upright with arms crossed over chest. Keep hips flat on chair, slowly rotate upper trunk left, hold 2s, center, then rotate right.',
+    descriptionCn: '端坐于椅，双手抱胸。臀部紧贴椅面，缓慢向左旋转上半身躯干，保持2秒后回中，再转向右侧。',
+    framing: 'upper_body',
+    evaluationMode: 'angle_rep_hold',
+    side: 'bilateral',
+    targetJoint: 'trunk',
+    mediaUrl: '/assets/exercises/seated-trunk-rotation.svg',
+    clinicalSource: 'Spine Biomechanics / McGill Trunk Protocols',
+    clinicalDisclaimerTh: 'ค่าเริ่มต้นแนะนำ — นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย (ต้องให้นักกายภาพตรวจสอบ)',
+    calibration_notes: 'กล้องหน้าตรงครึ่งตัวบน | องศาการหมุน 20°–35° (ต้องให้นักกายภาพตรวจสอบก่อนใช้กับผู้ป่วยจริง)',
+    defaultSets: 3,
+    defaultReps: 10,
+    defaultHoldSec: 2.0,
+    cameraGuide: {
+      recommendedView: 'front',
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: 'นั่งหลังตรง เท้าแนบพื้น ยกแขนกอดอกให้เห็นหัวไหล่ทั้งสองข้าง',
+      instructionTextEn: 'Sit upright with feet flat, cross arms over chest, facing camera.',
+      instructionTextCn: '双脚平放地面，端坐并双手抱胸面对摄像头。',
+    },
+    angleMechanics: {
+      landmarks: {
+        left: { pointA: 11, vertex: 12, pointB: 24 },
+        right: { pointA: 12, vertex: 11, pointB: 23 },
+      },
+      direction: 'increase',
+      startAngleDeg: 10,
+      targetMinDeg: 20,
+      targetMaxDeg: 35,
+      toleranceDeg: 8,
+      holdDurationSec: 2.0,
+    },
+    defaultPrescription: {
+      repsPerSet: 10,
+      totalSets: 3,
+      restBetweenSetsSec: 30,
+    },
+    compensationRules: [
+      {
+        ruleId: 'trunk_pelvic_lift',
+        type: 'trunk_lean',
+        thresholdValue: 0.15,
+        warningMessageTh: 'สะโพกและก้นต้องติดเบาะตลอดเวลา ห้ามเอียงตัวช่วยหมุน',
+        warningMessageEn: 'Keep pelvis flat on seat, do not lift hip to rotate',
+        warningMessageCn: '请保持骨盆紧贴椅面，切勿抬起臀部借力',
+        severity: 'warning',
+      },
+    ],
+    safetyContraindications: {
+      stopOnPainMessageTh: 'หากรู้สึกเจ็บแปลบบริเวณหลังส่วนล่างหรือร้าวลงสะโพก ให้หยุดพักทันที',
+      stopOnPainMessageEn: 'Stop immediately if sharp lower back or radiating pain occurs',
+      stopOnPainMessageCn: '若腰部或下肢出现放射性刺痛，请立即停止',
+      maxSafeAngleCapDeg: 45,
+    },
+    requiredLandmarks: {
+      bilateral: [11, 12, 23, 24],
+      left: [11, 23],
+      right: [12, 24],
+    },
+    minLandmarkVisibility: {
+      11: 0.50,
+      12: 0.50,
+      23: 0.35,
+      24: 0.35,
+    },
+  },
+
+  // 21. Seated Side Bend
+  'seated-side-bend': {
+    id: 'seated-side-bend',
+    exerciseId: 'e1000000-0000-0000-0000-000000000021',
+    is_active: true,
+    camera_framing: 'upper_body',
+    mode: 'camera',
+    nameTh: 'เอียงลำตัวด้านข้างท่านั่ง (Seated Side Bend)',
+    nameEn: 'Seated Side Bend',
+    nameCn: '坐姿躯干侧屈',
+    descriptionTh: 'นั่งหลังตรง เท้าวางราบกับพื้น ค่อยๆ เอียงลำตัวไปทางด้านข้าง ปลายนิ้วเลื่อนลงตามแนวขาเก้าอี้ โดยก้นสองข้างไม่ลอยจากเบาะ ค้างไว้ 2 วินาที แล้วดึงตัวกลับมาตรง',
+    descriptionEn: 'Sit upright with feet flat. Slowly bend trunk to side sliding fingertips down chair leg without lifting hips, hold 2s, return upright.',
+    descriptionCn: '端坐姿势双脚平放。上半身平缓向侧面弯曲，指尖沿椅腿下滑，臀部不离椅面，保持2秒后回正。',
+    framing: 'upper_body',
+    evaluationMode: 'angle_rep_hold',
+    side: 'bilateral',
+    targetJoint: 'trunk',
+    mediaUrl: '/assets/exercises/seated-side-bend.svg',
+    clinicalSource: 'Kendall Muscle Testing / Spine Rehabilitation CPG',
+    clinicalDisclaimerTh: 'ค่าเริ่มต้นแนะนำ — นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย (ต้องให้นักกายภาพตรวจสอบ)',
+    calibration_notes: 'กล้องหน้าตรงครึ่งตัวบน | องศาเอียง 15°–25° (ต้องให้นักกายภาพตรวจสอบก่อนใช้กับผู้ป่วยจริง)',
+    defaultSets: 3,
+    defaultReps: 10,
+    defaultHoldSec: 2.0,
+    cameraGuide: {
+      recommendedView: 'front',
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: 'นั่งหลังตรงหน้าตรง ให้เห็นศีรษะ ไหล่ และสะโพกสองข้างอย่างสมดุล',
+      instructionTextEn: 'Sit upright facing camera, showing head, shoulders, and hips.',
+      instructionTextCn: '正坐面向镜头，确保头部、双肩及髋部清晰对称。',
+    },
+    angleMechanics: {
+      landmarks: {
+        left: { pointA: 11, vertex: 23, pointB: 24 },
+        right: { pointA: 12, vertex: 24, pointB: 23 },
+      },
+      direction: 'decrease',
+      startAngleDeg: 90,
+      targetMinDeg: 65,
+      targetMaxDeg: 75,
+      toleranceDeg: 6,
+      holdDurationSec: 2.0,
+    },
+    defaultPrescription: {
+      repsPerSet: 10,
+      totalSets: 3,
+      restBetweenSetsSec: 30,
+    },
+    compensationRules: [
+      {
+        ruleId: 'sidebend_hip_lift',
+        type: 'trunk_lateral_flexion',
+        thresholdValue: 0.15,
+        warningMessageTh: 'ก้นทั้งสองข้างต้องแนบติดเบาะเก้าอี้ตลอดเวลา ห้ามก้นลอย',
+        warningMessageEn: 'Keep both hips firmly on chair, do not lift off seat',
+        warningMessageCn: '请双臀平稳坐紧椅子，避免单侧离座借力',
+        severity: 'warning',
+      },
+    ],
+    safetyContraindications: {
+      stopOnPainMessageTh: 'หากมีอาการปวดแปลบที่หลังหรือเอว ให้หยุดพักทันที',
+      stopOnPainMessageEn: 'Stop immediately if sharp flank or back pain occurs',
+      stopOnPainMessageCn: '若侧腰或腰背部出现剧烈刺痛，请立即停止',
+      maxSafeAngleCapDeg: 45,
+    },
+    requiredLandmarks: {
+      bilateral: [11, 12, 23, 24],
+      left: [11, 23],
+      right: [12, 24],
+    },
+    minLandmarkVisibility: {
+      11: 0.50,
+      12: 0.50,
+      23: 0.35,
+      24: 0.35,
+    },
+  },
+
+  // 22. Cross-Body Shoulder Stretch (Timer Mode)
+  'cross-body-shoulder-stretch': {
+    id: 'cross-body-shoulder-stretch',
+    exerciseId: 'e1000000-0000-0000-0000-000000000022',
+    is_active: true,
+    camera_framing: 'upper_body',
+    mode: 'timer',
+    nameTh: 'ยืดไหล่ข้ามลำตัว (Cross-Body Shoulder Stretch)',
+    nameEn: 'Cross-Body Shoulder Stretch',
+    nameCn: '交叉臂肩部拉伸',
+    descriptionTh: 'นั่งหลังตรง ยกแขนข้างหนึ่งพาดขวางข้ามหน้าอก ใช้มืออีกข้างประคองบริเวณข้อศอกแล้วดึงแขนเข้าหาลำตัวเบาๆ จนรู้สึกตึงด้านหลังหัวไหล่ ค้างไว้ 20–30 วินาที',
+    descriptionEn: 'Sit upright, bring one arm across chest horizontally. Use opposite hand to gently pull elbow toward chest, hold 20-30s.',
+    descriptionCn: '端坐姿势，将一侧手臂水平横跨胸前。另一手扶住肘部向内轻拉，感受肩后部拉伸并保持20-30秒。',
+    framing: 'upper_body',
+    evaluationMode: 'timer',
+    side: 'bilateral',
+    targetJoint: 'shoulder',
+    mediaUrl: '/assets/exercises/cross-body-shoulder-stretch.svg',
+    clinicalSource: 'Wilk KE et al., Shoulder Posterior Capsule Stretching Protocol',
+    clinicalDisclaimerTh: 'ค่าเริ่มต้นแนะนำ — โหมดจับเวลานำทาง (ต้องให้นักกายภาพตรวจสอบ)',
+    calibration_notes: 'โหมดจับเวลานำทาง (Timer Mode: 20–30 วินาที/รอบ) | กล้องหน้าตรงครึ่งตัวบน (ต้องให้นักกายภาพตรวจสอบก่อนใช้กับผู้ป่วยจริง)',
+    defaultSets: 3,
+    defaultReps: 3,
+    defaultHoldSec: 25.0,
+    defaultDurationSec: 30,
+    cameraGuide: {
+      recommendedView: 'front',
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: 'นั่งหลังตรง ยกแขนพาดข้ามหน้าอก ใช้มืออีกข้างช่วยดึงข้อศอกช้าๆ',
+      instructionTextEn: 'Sit upright, pull arm across chest gently with other hand.',
+      instructionTextCn: '保持上身挺拔，用另一只手轻柔将手臂横拉贴向胸口。',
+    },
+    defaultPrescription: {
+      repsPerSet: 3,
+      totalSets: 3,
+      restBetweenSetsSec: 30,
+      durationSec: 30,
+      holdDurationSec: 25.0,
+    },
+    compensationRules: [],
+    safetyContraindications: {
+      stopOnPainMessageTh: 'หากรู้สึกเจ็บเสียวแปลบบริเวณด้านหน้าข้อต่อไหล่ ให้หยุดทันที',
+      stopOnPainMessageEn: 'Stop immediately if sharp anterior shoulder pain occurs',
+      stopOnPainMessageCn: '若肩关节前侧出现刺痛感，请立即停止',
+      maxSafeAngleCapDeg: 120,
+    },
+    requiredLandmarks: {
+      bilateral: [11, 12, 13, 14, 15, 16],
+      left: [11, 13, 15],
+      right: [12, 14, 16],
+    },
+    minLandmarkVisibility: {
+      11: 0.50,
+      12: 0.50,
+      13: 0.40,
+      14: 0.40,
+    },
+  },
+
+  // 23. Seated Horizontal Abduction
+  'seated-horizontal-abduction': {
+    id: 'seated-horizontal-abduction',
+    exerciseId: 'e1000000-0000-0000-0000-000000000023',
+    is_active: true,
+    camera_framing: 'upper_body',
+    mode: 'camera',
+    nameTh: 'กางแขนระดับอก (Seated Horizontal Abduction)',
+    nameEn: 'Seated Horizontal Abduction',
+    nameCn: '坐姿水平肩外展',
+    descriptionTh: 'นั่งหลังตรง ยื่นแขนทั้งสองข้างไปข้างหน้าระดับอก งอศอกเล็กน้อย จากนั้นกางแขนออกด้านข้างพร้อมบีบสะบักเข้าหากันช้าๆ จนแขนขนานระนาบไหล่ ค้างไว้ 2 วินาที แล้วกลับสู่ท่าเริ่มต้น',
+    descriptionEn: 'Sit upright with arms extended forward at chest height. Open arms horizontally to sides while pinching scapulae, hold 2s, then return.',
+    descriptionCn: '端坐姿势，双臂前平举与胸同高。向身体两侧水平展开手臂同时收紧后背肩胛，保持2秒后还原。',
+    framing: 'upper_body',
+    evaluationMode: 'angle_rep_hold',
+    side: 'bilateral',
+    targetJoint: 'shoulder',
+    mediaUrl: '/assets/exercises/seated-horizontal-abduction.svg',
+    clinicalSource: 'AAOS / ACSM Shoulder Conditioning Protocol',
+    clinicalDisclaimerTh: 'ค่าเริ่มต้นแนะนำ — นักกายภาพผู้รับผิดชอบปรับตามผู้ป่วยแต่ละราย (ต้องให้นักกายภาพตรวจสอบ)',
+    calibration_notes: 'กล้องหน้าตรงครึ่งตัวบน | องศาการกาง 70°–90° (ต้องให้นักกายภาพตรวจสอบก่อนใช้กับผู้ป่วยจริง)',
+    defaultSets: 3,
+    defaultReps: 10,
+    defaultHoldSec: 2.0,
+    cameraGuide: {
+      recommendedView: 'front',
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: 'นั่งหลังตรง กางแขนออกสองข้างระดับอก ให้เห็นแขนและข้อศอกครบทั้งสองข้าง',
+      instructionTextEn: 'Sit upright, open arms horizontally at chest level, showing shoulders and arms.',
+      instructionTextCn: '保持坐姿正直，在胸部水平线向两侧展开双臂，确保双臂清晰入镜。',
+    },
+    angleMechanics: {
+      landmarks: {
+        left: { pointA: 12, vertex: 11, pointB: 13 },
+        right: { pointA: 11, vertex: 12, pointB: 14 },
+      },
+      direction: 'increase',
+      startAngleDeg: 10,
+      targetMinDeg: 70,
+      targetMaxDeg: 90,
+      toleranceDeg: 10,
+      holdDurationSec: 2.0,
+    },
+    defaultPrescription: {
+      repsPerSet: 10,
+      totalSets: 3,
+      restBetweenSetsSec: 30,
+    },
+    compensationRules: [
+      {
+        ruleId: 'horizontal_abd_trunk_lean',
+        type: 'trunk_lean',
+        thresholdValue: 0.15,
+        warningMessageTh: 'อย่าแอ่นหลังหรือเอนตัวไปข้างหลังขณะกางแขน',
+        warningMessageEn: 'Keep core tight, do not arch or lean back while opening arms',
+        warningMessageCn: '请收紧核心，展臂时切勿后仰拱腰',
+        severity: 'warning',
+      },
+      {
+        ruleId: 'horizontal_abd_shrug',
+        type: 'scapular_hiking',
+        thresholdValue: 0.15,
+        warningMessageTh: 'อย่าเกร็งยกหัวไหล่ขึ้น กางแขนในระนาบอกเท่านั้น',
+        warningMessageEn: 'Do not shrug shoulders up, open arms at chest height',
+        warningMessageCn: '请勿耸起肩膀，保持手臂在胸部高度展开',
+        severity: 'warning',
+      },
+    ],
+    safetyContraindications: {
+      stopOnPainMessageTh: 'หากรู้สึกเจ็บหน้าไหล่หรือกระดูกคอ ให้หยุดพักทันที',
+      stopOnPainMessageEn: 'Stop immediately if anterior shoulder or neck pain occurs',
+      stopOnPainMessageCn: '若肩前或颈椎产生刺痛感，请立即停止',
+      maxSafeAngleCapDeg: 110,
+    },
+    requiredLandmarks: {
+      bilateral: [11, 12, 13, 14, 15, 16],
+      left: [11, 13, 15],
+      right: [12, 14, 16],
+    },
+    minLandmarkVisibility: {
+      11: 0.50,
+      12: 0.50,
+      13: 0.45,
+      14: 0.45,
+      15: 0.40,
+      16: 0.40,
+    },
+  },
+
+  // 24. Wrist Flexion/Extension (Timer Mode)
+  'wrist-flexion-extension': {
+    id: 'wrist-flexion-extension',
+    exerciseId: 'e1000000-0000-0000-0000-000000000024',
+    is_active: true,
+    camera_framing: 'upper_body',
+    mode: 'timer',
+    nameTh: 'งอ-เหยียดข้อมือ (Wrist Flexion/Extension)',
+    nameEn: 'Wrist Flexion/Extension',
+    nameCn: '腕屈伸训练',
+    descriptionTh: 'นั่งหลังตรง วางปลายแขนราบบนที่พักแขนของเก้าอี้หรือโต๊ะ ให้ข้อมือพ้นขอบออกมา กระดกข้อมือขึ้นช้าๆ ค้างไว้ 2 วินาที แล้วค่อยๆ งอข้อมือลงด้านล่างอย่างนุ่มนวล (โหมดจับเวลานำทาง)',
+    descriptionEn: 'Sit upright with forearm supported on armrest or table. Slowly extend wrist up, hold 2s, then flex wrist down smoothly.',
+    descriptionCn: '端坐姿势，前臂平放在扶手或桌面上，手腕伸出边缘。缓慢向上背伸腕部，保持2秒，再柔和向下屈曲。',
+    framing: 'upper_body',
+    evaluationMode: 'timer',
+    side: 'bilateral',
+    targetJoint: 'wrist',
+    mediaUrl: '/assets/exercises/wrist-flexion-extension.svg',
+    clinicalSource: 'American Society for Surgery of the Hand (ASSH) / Wrist Rehab',
+    clinicalDisclaimerTh: 'ค่าเริ่มต้นแนะนำ — โหมดจับเวลานำทางบนที่พักแขน (ต้องให้นักกายภาพตรวจสอบ)',
+    calibration_notes: 'โหมดจับเวลานำทาง (Timer Mode: 10–12 ครั้ง/เซ็ต) | วางแขนบนที่พักแขน (ต้องให้นักกายภาพตรวจสอบก่อนใช้กับผู้ป่วยจริง)',
+    defaultSets: 3,
+    defaultReps: 12,
+    defaultHoldSec: 2.0,
+    defaultDurationSec: 30,
+    cameraGuide: {
+      recommendedView: 'front',
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: 'วางปลายแขนบนที่พักแขนหรือโต๊ะ หันหน้าเข้าหากล้อง',
+      instructionTextEn: 'Rest forearm on armrest/table facing camera.',
+      instructionTextCn: '前臂稳固放置在桌椅扶手上并面对镜头。',
+    },
+    defaultPrescription: {
+      repsPerSet: 12,
+      totalSets: 3,
+      restBetweenSetsSec: 30,
+      durationSec: 30,
+    },
+    compensationRules: [],
+    safetyContraindications: {
+      stopOnPainMessageTh: 'ปลายแขนต้องแนบติดที่พักแขนตลอดเวลา หยุดทันทีหากมีอาการชาปลายนิ้วหรือเสียวแปลบ',
+      stopOnPainMessageEn: 'Keep forearm on armrest, stop immediately if numbness in fingers occurs',
+      stopOnPainMessageCn: '前臂必须始终紧贴扶手，若指尖麻木刺痛请立即停止',
+      maxSafeAngleCapDeg: 90,
+    },
+    requiredLandmarks: {
+      bilateral: [11, 12, 13, 14, 15, 16],
+      left: [13, 15],
+      right: [14, 16],
+    },
+    minLandmarkVisibility: {
+      11: 0.40,
+      12: 0.40,
+      13: 0.40,
+      14: 0.40,
+      15: 0.35,
+      16: 0.35,
+    },
+  },
+
 };
 
 // Aliases for Backwards Compatibility
@@ -1255,23 +1945,23 @@ CLINICAL_EXERCISES_CONFIG['heel-raise'] = {
   id: 'heel-raise',
 };
 
-// 15 Canonical Clinical Exercises Array
+// 15 Canonical Seated Upper-Body Clinical Exercises Array
 export const ALL_CLINICAL_EXERCISES: ExerciseDetectionConfig[] = [
   CLINICAL_EXERCISES_CONFIG['active-shoulder-flexion'],
   CLINICAL_EXERCISES_CONFIG['shoulder-abduction'],
   CLINICAL_EXERCISES_CONFIG['shoulder-er-band'],
   CLINICAL_EXERCISES_CONFIG['scapular-retraction'],
   CLINICAL_EXERCISES_CONFIG['elbow-flexion-extension'],
-  CLINICAL_EXERCISES_CONFIG['seated-knee-extension'],
-  CLINICAL_EXERCISES_CONFIG['mini-squat'],
-  CLINICAL_EXERCISES_CONFIG['sit-to-stand'],
-  CLINICAL_EXERCISES_CONFIG['straight-leg-raise'],
-  CLINICAL_EXERCISES_CONFIG['standing-hip-abduction'],
-  CLINICAL_EXERCISES_CONFIG['calf-raise'],
-  CLINICAL_EXERCISES_CONFIG['single-leg-balance'],
-  CLINICAL_EXERCISES_CONFIG['calf-stretch'],
   CLINICAL_EXERCISES_CONFIG['chin-tuck'],
-  CLINICAL_EXERCISES_CONFIG['shoulder-pendulum'],
+  CLINICAL_EXERCISES_CONFIG['seated-cervical-rotation'],
+  CLINICAL_EXERCISES_CONFIG['cervical-side-bend'],
+  CLINICAL_EXERCISES_CONFIG['shoulder-shrug'],
+  CLINICAL_EXERCISES_CONFIG['upper-trapezius-stretch'],
+  CLINICAL_EXERCISES_CONFIG['seated-trunk-rotation'],
+  CLINICAL_EXERCISES_CONFIG['seated-side-bend'],
+  CLINICAL_EXERCISES_CONFIG['cross-body-shoulder-stretch'],
+  CLINICAL_EXERCISES_CONFIG['seated-horizontal-abduction'],
+  CLINICAL_EXERCISES_CONFIG['wrist-flexion-extension'],
 ];
 
 export function getClinicalExerciseConfig(idOrName?: string | null): ExerciseDetectionConfig | null {
@@ -1286,12 +1976,32 @@ export function getClinicalExerciseConfig(idOrName?: string | null): ExerciseDet
   if (q === 'ดันผนัง' || q === 'wall-pushup') return CLINICAL_EXERCISES_CONFIG['wall-pushup'];
   if (q.includes('侧倾') || q === 'neck-side-tilt') return CLINICAL_EXERCISES_CONFIG['neck-side-tilt'];
 
+  // Lookup across all configs (including legacy/deactivated exercises) by exerciseId, id, or name (TH/EN/CN)
+  for (const ex of Object.values(CLINICAL_EXERCISES_CONFIG)) {
+    if (ex.exerciseId === q || ex.id === q) return ex;
+    if (ex.nameTh && (ex.nameTh.toLowerCase().includes(q) || q.includes(ex.nameTh.toLowerCase()))) return ex;
+    if (ex.nameEn && (ex.nameEn.toLowerCase().includes(q) || q.includes(ex.nameEn.toLowerCase()))) return ex;
+    if (ex.nameCn && (ex.nameCn.includes(q) || q.includes(ex.nameCn))) return ex;
+  }
+
   for (const ex of ALL_CLINICAL_EXERCISES) {
     if (ex.id === q || ex.exerciseId === q) return ex;
     if (ex.nameTh.toLowerCase().includes(q) || q.includes(ex.nameTh.toLowerCase())) return ex;
     if (ex.nameEn.toLowerCase().includes(q) || q.includes(ex.nameEn.toLowerCase())) return ex;
     if (ex.nameCn && (ex.nameCn.includes(q) || q.includes(ex.nameCn))) return ex;
   }
+
+  
+  // New Seated Upper Body Exercises
+  if (q.includes('cervical-rotation') || q.includes('หันศีรษะ') || q.includes('หมุนคอ') || q.includes('颈部旋转')) return CLINICAL_EXERCISES_CONFIG['seated-cervical-rotation'];
+  if (q.includes('cervical-side') || q.includes('เอียงศีรษะ') || q.includes('เอียงคอ') || q.includes('颈部侧屈')) return CLINICAL_EXERCISES_CONFIG['cervical-side-bend'];
+  if (q.includes('shrug') || q.includes('ยักไหล่') || q.includes('耸肩')) return CLINICAL_EXERCISES_CONFIG['shoulder-shrug'];
+  if (q.includes('trapezius') || q.includes('ยืดบ่า') || q.includes('ยืดกล้ามเนื้อบ่า') || q.includes('上斜方肌')) return CLINICAL_EXERCISES_CONFIG['upper-trapezius-stretch'];
+  if (q.includes('trunk-rotation') || q.includes('หมุนลำตัว') || q.includes('กอดอก') || q.includes('躯干旋转')) return CLINICAL_EXERCISES_CONFIG['seated-trunk-rotation'];
+  if (q.includes('side-bend') || q.includes('เอียงลำตัว') || q.includes('躯干侧屈')) return CLINICAL_EXERCISES_CONFIG['seated-side-bend'];
+  if (q.includes('cross-body') || q.includes('ข้ามลำตัว') || q.includes('交叉臂')) return CLINICAL_EXERCISES_CONFIG['cross-body-shoulder-stretch'];
+  if (q.includes('horizontal') || q.includes('กางแขนระดับอก') || q.includes('水平肩外展')) return CLINICAL_EXERCISES_CONFIG['seated-horizontal-abduction'];
+  if (q.includes('wrist') || q.includes('ข้อมือ') || q.includes('腕屈伸')) return CLINICAL_EXERCISES_CONFIG['wrist-flexion-extension'];
 
   // Fallback Keyword Matchers (Specific joint matching before generic motions)
   if (q.includes('elbow') || q.includes('ศอก') || q.includes('屈伸')) return CLINICAL_EXERCISES_CONFIG['elbow-flexion'];
@@ -1409,6 +2119,77 @@ export function evaluateContraindications(
         warningMessage:
           '⚠️ คำเตือนระวัง: ผู้ป่วยมีประวัติเกี่ยวกับกระดูกสันหลังระดับคอ/มึนงง ให้ควบคุมจังหวะและหยุดทันทีหากมีอาการเวียนศีรษะหรือชาลงแขน',
         reason: 'cervical_spine_warning',
+      };
+    }
+  }
+
+  
+  // 5. Cervical / Neck constraints (Rotation, Side Bend, Upper Trap Stretch)
+  if (
+    exerciseId === 'seated-cervical-rotation' ||
+    exerciseId === 'cervical-side-bend' ||
+    exerciseId === 'upper-trapezius-stretch' ||
+    exJoint.includes('cervical') ||
+    exJoint.includes('คอ')
+  ) {
+    if (
+      combinedText.includes('กระดูกคอไม่มั่นคง') ||
+      combinedText.includes('cervical instability') ||
+      combinedText.includes('เวียนศีรษะ') ||
+      combinedText.includes('vertigo') ||
+      combinedText.includes('มึนงง') ||
+      combinedText.includes('radiculopathy') ||
+      combinedText.includes('หมอนรองกระดูกคอ')
+    ) {
+      return {
+        hasWarning: true,
+        warningMessage:
+          '⚠️ คำเตือนทางคลินิก: ผู้ป่วยมีประวัติด้านกระดูกคอ/เวียนศีรษะ (Cervical/Vertigo) ต้องหยุดทันทีหากมีอาการมึนงงหรือชาลงแขน และห้ามเริ่มหากมีข้อห้ามด้านกระดูกคอที่นักกายภาพระบุ',
+        reason: 'cervical_instability_vertigo',
+      };
+    }
+  }
+
+  // 6. Trunk / Spine constraints (Seated Trunk Rotation, Seated Side Bend)
+  if (
+    exerciseId === 'seated-trunk-rotation' ||
+    exerciseId === 'seated-side-bend' ||
+    exJoint.includes('trunk') ||
+    exJoint.includes('หลัง') ||
+    exJoint.includes('ลำตัว')
+  ) {
+    if (
+      combinedText.includes('ผ่าตัดกระดูกสันหลัง') ||
+      combinedText.includes('spine surgery') ||
+      combinedText.includes('กระดูกสันหลังคด') ||
+      combinedText.includes('scoliosis') ||
+      combinedText.includes('กระดูกสันหลังเคลื่อน') ||
+      combinedText.includes('spondylolisthesis') ||
+      combinedText.includes('หมอนรองกระดูกทับเส้น')
+    ) {
+      return {
+        hasWarning: true,
+        warningMessage:
+          '⚠️ คำเตือนทางคลินิก: ผู้ป่วยมีประวัติโรคกระดูกสันหลังหรือหลังผ่าตัด ให้จำกัดพิสัยการหมุน/เอียงลำตัว และหยุดทันทีหากมีอาการปวดร้าวลงสะโพกหรือขา',
+        reason: 'trunk_spine_surgery_warning',
+      };
+    }
+  }
+
+  // 7. Wrist constraints (Wrist Flexion/Extension)
+  if (exerciseId === 'wrist-flexion-extension' || exJoint.includes('wrist') || exJoint.includes('ข้อมือ')) {
+    if (
+      combinedText.includes('carpal tunnel') ||
+      combinedText.includes('พังผืดข้อมือ') ||
+      combinedText.includes('ข้อมือหัก') ||
+      combinedText.includes('wrist fracture') ||
+      combinedText.includes('ชาปลายนิ้ว')
+    ) {
+      return {
+        hasWarning: true,
+        warningMessage:
+          '⚠️ คำเตือนทางคลินิก: ผู้ป่วยมีประวัติพังผืดรัดเส้นประสาทข้อมือ (CTS) หรือกระดูกข้อมือ ให้วางแขนราบบนที่พักแขนและหยุดทันทีหากมีอาการชาปลายนิ้ว',
+        reason: 'wrist_carpal_tunnel_warning',
       };
     }
   }

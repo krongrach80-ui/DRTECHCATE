@@ -377,25 +377,29 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return Math.max(-1, Math.min(1, dotProduct));
 }
 
+function euclideanDistance(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 2.0;
+  let sumSq = 0;
+  for (let i = 0; i < a.length; i++) {
+    const diff = a[i] - b[i];
+    sumSq += diff * diff;
+  }
+  return Math.sqrt(sumSq);
+}
+
 function calibrateCosineSimilarity(rawCos: number): number {
+  if (rawCos <= 0) return 0;
   if (rawCos >= 0.85) {
-    // Clinical Biometric Invariant: Natural human facial capture from video sensors has inherent noise.
-    // Cap ceiling strictly at 0.984 (Math.round yields at most 98%, never 100%).
-    const t = Math.min(1.0, Math.max(0, (rawCos - 0.85) / 0.10));
-    return Math.min(0.984, 0.96 + t * 0.024);
+    // 0.85 -> 1.0 maps naturally without artificial ceiling or boost
+    return Math.min(1.0, rawCos);
   }
-  if (rawCos >= 0.55) {
-    // [0.55, 0.85) -> [0.80, 0.96) (80%–96% for genuine patient range)
-    const t = (rawCos - 0.55) / (0.85 - 0.55);
-    return 0.80 + t * (0.96 - 0.80);
+  if (rawCos >= 0.70) {
+    // 0.70 - 0.85 maps to 0.50 - 0.79 (Ambiguous borderline zone)
+    const t = (rawCos - 0.70) / (0.85 - 0.70);
+    return 0.50 + t * 0.29;
   }
-  if (rawCos >= 0.42) {
-    // [0.42, 0.55) -> [0.50, 0.79) (Ambiguous candidate zone)
-    const t = (rawCos - 0.42) / (0.55 - 0.42);
-    return 0.50 + t * (0.79 - 0.50);
-  }
-  // < 0.42 (True impostor / stranger zone, guaranteed <= 49%)
-  return Math.max(0, (Math.max(0, rawCos) / 0.42) * 0.49);
+  // True stranger / impostor (< 0.70): guaranteed strictly < 45% (never reaches 50%)
+  return Math.max(0, (rawCos / 0.70) * 0.45);
 }
 
 function getSafeLocalStorage(): Storage | null {
@@ -577,7 +581,7 @@ export class ApiClient {
         if (!matchedProfile) {
           try {
             const supaRes = await fetch(
-              `${DEFAULT_SUPABASE_URL}/rest/v1/profiles?username=ilike.${encodeURIComponent(unameOnly)}&status=eq.active&select=id,username,full_name,role,status`,
+              `${DEFAULT_SUPABASE_URL}/rest/v1/profiles?username=ilike.${encodeURIComponent(unameOnly)}&status=eq.active&select=id,username,full_name,role,status,phone,bio,avatar_url`,
               {
                 headers: {
                   apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -589,6 +593,23 @@ export class ApiClient {
               const list = await supaRes.json();
               if (Array.isArray(list) && list.length > 0) {
                 const found = list[0] as UserProfile;
+                if (found.role === 'pt') {
+                  try {
+                    const ptRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/pts?user_id=eq.${found.id}`, {
+                      headers: {
+                        apikey: DEFAULT_SUPABASE_ANON_KEY,
+                        Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                      },
+                    });
+                    if (ptRes.ok) {
+                      const ptRows = await ptRes.json();
+                      if (Array.isArray(ptRows) && ptRows.length > 0) {
+                        found.specialty = ptRows[0].specialty;
+                        found.pt_details = ptRows[0];
+                      }
+                    }
+                  } catch {}
+                }
                 if (isDirector || isAdmin || isPt) {
                   matchedProfile = found;
                 } else if (password && password.length >= 12) {
@@ -658,6 +679,48 @@ export class ApiClient {
         if (!stored || !token) {
           throw new Error('401 Unauthorized: ไม่มีเซสชันบุคลากรที่ใช้งานได้');
         }
+        // Fetch fresh profile from Supabase Cloud to ensure persistence on page reload/refresh
+        try {
+          const freshRes = await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/profiles?id=eq.${stored.id}&select=id,username,full_name,role,status,phone,bio,avatar_url`,
+            {
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              },
+            }
+          );
+          if (freshRes.ok) {
+            const list = await freshRes.json();
+            if (Array.isArray(list) && list.length > 0) {
+              const freshProf = list[0] as UserProfile;
+              if (freshProf.role === 'pt') {
+                try {
+                  const ptRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/pts?user_id=eq.${freshProf.id}`, {
+                    headers: {
+                      apikey: DEFAULT_SUPABASE_ANON_KEY,
+                      Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    },
+                  });
+                  if (ptRes.ok) {
+                    const ptList = await ptRes.json();
+                    if (Array.isArray(ptList) && ptList.length > 0) {
+                      freshProf.specialty = ptList[0].specialty;
+                      freshProf.pt_details = ptList[0];
+                    }
+                  }
+                } catch {}
+              }
+              const merged = { ...stored, ...freshProf };
+              this.setUserProfile(merged);
+              return {
+                ok: true,
+                user: merged,
+                data: merged,
+              } as T;
+            }
+          }
+        } catch {}
         return {
           ok: true,
           user: stored,
@@ -1861,16 +1924,21 @@ export class ApiClient {
         const body = parseSafeBody(options.body);
         const probe: number[] = body.probe || [];
 
-        let bestMatch: any = null;
-        let bestRawScore = 0;
-        let bestCalScore = 0;
+        interface ScoredPatient {
+          patient: any;
+          rawCos: number;
+          calSim: number;
+          dist: number;
+        }
+
+        const scoredPatients: ScoredPatient[] = [];
         const livePatientsMap = new Map<string, any>();
         const liveHnMap = new Map<string, any>();
 
         if (probe.length > 0) {
           const normProbe = l2Normalize(probe);
 
-          const evaluateCandidate = (p: any) => {
+          const evaluateCandidate = (p: any): ScoredPatient | null => {
             const vectors: number[][] = [];
             if (Array.isArray(p.frontal_centroid) && p.frontal_centroid.length === probe.length) {
               vectors.push(p.frontal_centroid);
@@ -1886,22 +1954,42 @@ export class ApiClient {
             }
             const frames: any[] = p.frames || p.history?.frames || [];
             for (const f of frames) {
+              // Live kiosk probe is frontal: strictly filter out tilted/nodding enrollment frames
+              // to prevent cross-pose false correlation artifact
+              if (f?.pose && f.pose !== 'front') {
+                continue;
+              }
               const vec = f?.embedding || f?.vector || (Array.isArray(f) ? f : null);
               if (Array.isArray(vec) && vec.length === probe.length) {
                 vectors.push(vec);
               }
             }
 
+            let candBestRaw = 0;
+            let candBestCal = 0;
+            let candBestDist = 2.0;
+
             for (const v of vectors) {
               const normV = l2Normalize(v);
               const rawCos = cosineSimilarity(normProbe, normV);
               const calSim = calibrateCosineSimilarity(rawCos);
-              if (calSim > bestCalScore) {
-                bestCalScore = calSim;
-                bestRawScore = rawCos;
-                bestMatch = p;
+              const eucDist = euclideanDistance(normProbe, normV);
+              if (rawCos > candBestRaw) {
+                candBestRaw = rawCos;
+                candBestCal = calSim;
+                candBestDist = eucDist;
               }
             }
+
+            if (candBestRaw > 0) {
+              return {
+                patient: p,
+                rawCos: candBestRaw,
+                calSim: candBestCal,
+                dist: candBestDist,
+              };
+            }
+            return null;
           };
 
           // 1. Authoritative Supabase Cloud RPC Match (Direct pgvector Cosine Evaluation)
@@ -1984,7 +2072,10 @@ export class ApiClient {
                 for (const sp of supaPatients) {
                   livePatientsMap.set(sp.id, sp);
                   if (sp.hn) liveHnMap.set(sp.hn, sp);
-                  evaluateCandidate(sp);
+                  const scored = evaluateCandidate(sp);
+                  if (scored) {
+                    scoredPatients.push(scored);
+                  }
                 }
               }
             } else {
@@ -2019,71 +2110,139 @@ export class ApiClient {
           }
         }
 
-        // 3. Strict Pre-Decision Verification: Candidate MUST exist in live Supabase patients
-        const targetId = bestMatch?.id || bestMatch?.patient_id;
-        const targetHn = bestMatch?.hn;
-        const isAuthoritativeLive = Boolean(
-          targetId && (livePatientsMap.has(targetId) || (targetHn && liveHnMap.has(targetHn)))
-        );
+        // Sort scored candidates descending by raw cosine similarity
+        scoredPatients.sort((a, b) => b.rawCos - a.rawCos);
+        const top1 = scoredPatients[0] || null;
+        const top2 = scoredPatients[1] || null;
+        const isSingleUserInDb = livePatientsMap.size === 1;
 
-        if (bestMatch && !isAuthoritativeLive) {
-          // Candidate is a ghost from stale cache - purge immediately and refuse match
-          const storage = getSafeLocalStorage();
-          if (storage) {
-            try {
-              storage.removeItem('drtech_resilient_patients');
-              storage.removeItem('drtech_cached_patients');
-              if (targetId) storage.removeItem(`drtech_patient_record_${targetId}`);
-              if (targetHn) storage.removeItem(`drtech_patient_record_${targetHn}`);
-            } catch {}
+        if (top1) {
+          const targetId = top1.patient?.id || top1.patient?.patient_id;
+          const targetHn = top1.patient?.hn;
+          const isAuthoritativeLive = Boolean(
+            targetId && (livePatientsMap.has(targetId) || (targetHn && liveHnMap.has(targetHn)))
+          );
+
+          if (!isAuthoritativeLive) {
+            const storage = getSafeLocalStorage();
+            if (storage) {
+              try {
+                storage.removeItem('drtech_resilient_patients');
+                storage.removeItem('drtech_cached_patients');
+                if (targetId) storage.removeItem(`drtech_patient_record_${targetId}`);
+                if (targetHn) storage.removeItem(`drtech_patient_record_${targetHn}`);
+              } catch {}
+            }
+            return {
+              ok: true,
+              matched: false,
+              patient: null,
+              candidate: null,
+              similarityPercentage: 0,
+              cosineSimilarity: 0,
+              rawCosineSimilarity: 0,
+              distance: 2.0,
+              message: '⚠️ ไม่พบบัญชีในระบบ กรุณาติดต่อเจ้าหน้าที่',
+            } as T;
           }
-          bestMatch = null;
-          bestCalScore = 0;
-          bestRawScore = 0;
-        }
 
-        // Overlay authoritative live data onto normalized match
-        const liveSource = (targetId && livePatientsMap.get(targetId)) || (targetHn && liveHnMap.get(targetHn)) || bestMatch;
-        const normalizedMatch = liveSource ? normalizePatientRecord(liveSource) : null;
-        // Unbiased percentage based on authentic calibrated similarity
-        const finalPercentage = Math.min(100, Math.round(bestCalScore * 100));
+          const liveSource = (targetId && livePatientsMap.get(targetId)) || (targetHn && liveHnMap.get(targetHn)) || top1.patient;
+          const normalizedMatch = liveSource ? normalizePatientRecord(liveSource) : null;
+          const finalPercentage = Math.min(100, Math.round(top1.calSim * 100));
 
-        // Case A: High Match (genuine match strictly requires rawCos >= 0.85 AND verified in live Supabase)
-        if (normalizedMatch && isAuthoritativeLive && bestRawScore >= 0.85) {
-          return {
-            ok: true,
-            matched: true,
-            patient: normalizedMatch,
-            similarityPercentage: finalPercentage,
-            cosineSimilarity: Number(bestCalScore.toFixed(4)),
-            rawCosineSimilarity: Number(bestRawScore.toFixed(4)),
-            distance: Math.max(0, 1 - bestCalScore),
-            data: {
+          // Guard 1: Single User Database Strict Guard
+          // When exactly 1 patient is in the DB, strangers must NEVER be suggested as ambiguous candidates (no PIN prompt)
+          // Genuine match strictly requires rawCos >= 0.85 AND dist <= 0.32
+          if (isSingleUserInDb) {
+            if (normalizedMatch && top1.rawCos >= 0.85 && top1.dist <= 0.32) {
+              return {
+                ok: true,
+                matched: true,
+                patient: normalizedMatch,
+                similarityPercentage: finalPercentage,
+                cosineSimilarity: Number(top1.calSim.toFixed(4)),
+                rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
+                distance: top1.dist,
+                data: {
+                  matched: true,
+                  patient: normalizedMatch,
+                },
+              } as T;
+            } else {
+              // Below strict threshold in single-user DB -> FAIL CLOSED STRANGER REJECTION
+              return {
+                ok: true,
+                matched: false,
+                patient: null,
+                candidate: null,
+                candidateName: undefined,
+                candidateHn: undefined,
+                similarityPercentage: finalPercentage < 50 ? finalPercentage : 0,
+                cosineSimilarity: Number(top1.calSim.toFixed(4)),
+                rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
+                distance: top1.dist,
+                message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 85%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่',
+              } as T;
+            }
+          }
+
+          // Guard 2: Multi-User Database Margin Verification
+          const margin = top2 ? (top1.rawCos - top2.rawCos) : 1.0;
+
+          // Case A: High Match (genuine match strictly requires rawCos >= 0.85, dist <= 0.38, and margin >= 0.08)
+          if (normalizedMatch && top1.rawCos >= 0.85 && top1.dist <= 0.38) {
+            if (margin < 0.08) {
+              return {
+                ok: true,
+                matched: false,
+                requirePin: true,
+                candidate: normalizedMatch,
+                patient: null,
+                candidateName: `${normalizedMatch.first_name} ${normalizedMatch.last_name}`.trim(),
+                candidateHn: normalizedMatch.hn,
+                similarityPercentage: finalPercentage,
+                cosineSimilarity: Number(top1.calSim.toFixed(4)),
+                rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
+                distance: top1.dist,
+                message: `ความคล้ายคลึงระหว่างผู้ป่วยใกล้เคียงกัน (${finalPercentage}%) เพื่อความปลอดภัย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก`,
+              } as T;
+            }
+
+            return {
+              ok: true,
               matched: true,
               patient: normalizedMatch,
-            },
-          } as T;
+              similarityPercentage: finalPercentage,
+              cosineSimilarity: Number(top1.calSim.toFixed(4)),
+              rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
+              distance: top1.dist,
+              data: {
+                matched: true,
+                patient: normalizedMatch,
+              },
+            } as T;
+          }
+
+          // Case B: Ambiguous candidate match (0.70 <= rawCos < 0.85) -> Require PIN
+          if (normalizedMatch && top1.rawCos >= 0.70 && top1.rawCos < 0.85) {
+            return {
+              ok: true,
+              matched: false,
+              requirePin: true,
+              candidate: normalizedMatch,
+              patient: null,
+              candidateName: `${normalizedMatch.first_name} ${normalizedMatch.last_name}`.trim(),
+              candidateHn: normalizedMatch.hn,
+              similarityPercentage: finalPercentage,
+              cosineSimilarity: Number(top1.calSim.toFixed(4)),
+              rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
+              distance: top1.dist,
+              message: `ความแม่นยำ ${finalPercentage}% (ก้ำกึ่ง) เพื่อความปลอดภัย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก`,
+            } as T;
+          }
         }
 
-        // Case B: Ambiguous candidate match (0.70 <= rawCos < 0.85) -> Require PIN
-        if (normalizedMatch && isAuthoritativeLive && bestRawScore >= 0.70 && bestRawScore < 0.85) {
-          return {
-            ok: true,
-            matched: false,
-            requirePin: true,
-            candidate: normalizedMatch,
-            patient: null,
-            candidateName: `${normalizedMatch.first_name} ${normalizedMatch.last_name}`.trim(),
-            candidateHn: normalizedMatch.hn,
-            similarityPercentage: finalPercentage,
-            cosineSimilarity: Number(bestCalScore.toFixed(4)),
-            rawCosineSimilarity: Number(bestRawScore.toFixed(4)),
-            distance: Math.max(0, 1 - bestCalScore),
-            message: `ความแม่นยำ ${finalPercentage}% (ก้ำกึ่ง) เพื่อความปลอดภัย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก`,
-          } as T;
-        }
-
-        // Case C: Below threshold / Impostor / Stranger (rawCos < 0.70)
+        // Case C: Below threshold / Impostor / Stranger (rawCos < 0.70 or no candidate)
         return {
           ok: true,
           matched: false,
@@ -2091,11 +2250,11 @@ export class ApiClient {
           candidate: null,
           candidateName: undefined,
           candidateHn: undefined,
-          similarityPercentage: finalPercentage < 50 ? finalPercentage : 0,
-          cosineSimilarity: Number(bestCalScore.toFixed(4)),
-          rawCosineSimilarity: Number(bestRawScore.toFixed(4)),
-          distance: Math.max(0, 1 - bestCalScore),
-          message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่',
+          similarityPercentage: 0,
+          cosineSimilarity: 0,
+          rawCosineSimilarity: 0,
+          distance: 2.0,
+          message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 85%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่',
         } as T;
       }
 
@@ -2225,11 +2384,19 @@ export class ApiClient {
 
         let matchedPatient: any = null;
 
+        if (!pin || pin.length < 4) {
+          return {
+            ok: false,
+            matched: false,
+            message: 'กรุณากรอกรหัส PIN 4 หลักให้ครบถ้วน',
+          } as T;
+        }
+
         // Query Supabase live dataset directly (registration_status != 'archived')
         try {
           const queryUrl = hn
             ? `${DEFAULT_SUPABASE_URL}/rest/v1/patients?registration_status=neq.archived&or=(hn.ilike.*${encodeURIComponent(hn)}*,id.eq.${encodeURIComponent(hn)})&limit=5`
-            : `${DEFAULT_SUPABASE_URL}/rest/v1/patients?registration_status=neq.archived&order=created_at.desc&limit=50`;
+            : `${DEFAULT_SUPABASE_URL}/rest/v1/patients?registration_status=neq.archived&limit=50`;
           const supaRes = await fetch(queryUrl, {
             headers: {
               apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -2240,8 +2407,8 @@ export class ApiClient {
             const list = await supaRes.json();
             if (Array.isArray(list)) {
               matchedPatient = list.find((p: any) => {
-                const storedPin = String(p.history?.pin || '1234').trim();
-                return storedPin === pin || pin === '1234';
+                const storedPin = String(p.history?.pin || '').trim();
+                return storedPin !== '' && storedPin === pin;
               });
             }
           }
@@ -2407,7 +2574,9 @@ export class ApiClient {
           const isSovereignToken = !rawToken || rawToken.includes('drtechcare') || rawToken.includes('offline');
           const supaBearerToken = isSovereignToken ? DEFAULT_SUPABASE_ANON_KEY : rawToken;
 
+          const currentProfile = this.getUserProfile();
           const rpcPayload = {
+            p_caller_id: currentProfile?.id || null,
             p_username: cleanUsername,
             p_password: cleanPassword,
             p_full_name: cleanFullName,
@@ -2499,18 +2668,178 @@ export class ApiClient {
           return { ok: true, message: 'ลบเจ้าหน้าที่สำเร็จ' } as T;
         }
         if ((options.method === 'PATCH' || options.method === 'PUT') && id) {
+          let payload: Record<string, any> = {};
+          if (typeof options.body === 'string') {
+            try { payload = JSON.parse(options.body); } catch { payload = {}; }
+          } else if (typeof options.body === 'object' && options.body !== null) {
+            payload = options.body;
+          }
+
+          const currentLoggedIn = this.getUserProfile();
+          const isCallingSelf = currentLoggedIn?.id === id;
+          const isCallerAdmin = currentLoggedIn?.role === 'admin';
+
+          // 1. Strict Privilege Escalation Guardrail (Test #8 & Master Invariant)
+          // Non-admin PT is strictly forbidden from changing role, username, status, or license_no
+          if (!isCallerAdmin) {
+            if (payload.role !== undefined && payload.role !== currentLoggedIn?.role) {
+              throw new Error('403 Forbidden: สิทธิ์ไม่เพียงพอ ไม่อนุญาตให้แก้ไขบทบาท (Role)');
+            }
+            if (payload.username !== undefined && payload.username !== currentLoggedIn?.username) {
+              throw new Error('403 Forbidden: สิทธิ์ไม่เพียงพอ ไม่อนุญาตให้แก้ไขชื่อผู้ใช้ (Username)');
+            }
+            if (payload.status !== undefined && payload.status !== currentLoggedIn?.status) {
+              throw new Error('403 Forbidden: สิทธิ์ไม่เพียงพอ ไม่อนุญาตให้แก้ไขสถานะบัญชี (Status)');
+            }
+            if (payload.license_no !== undefined) {
+              throw new Error('403 Forbidden: สิทธิ์ไม่เพียงพอ เลขที่ใบประกอบวิชาชีพเป็น Read-Only');
+            }
+          }
+
+          // 2. Cross-User Modification Guardrail (Test #9)
+          if (!isCallerAdmin && currentLoggedIn?.id && currentLoggedIn.id !== id) {
+            throw new Error('403 Forbidden: สิทธิ์ไม่เพียงพอ คุณสามารถแก้ไขได้เฉพาะโปรไฟล์ของตนเองเท่านั้น');
+          }
+
+          // 3. Strict Input Validation (Test #6)
+          if (payload.phone !== undefined && payload.phone !== null && String(payload.phone).trim().length > 0) {
+            const cleanPhone = String(payload.phone).trim();
+            if (!/^[0-9]{10}$/.test(cleanPhone)) {
+              throw new Error('เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก');
+            }
+          }
+          if (payload.full_name !== undefined && String(payload.full_name).trim().length === 0) {
+            throw new Error('กรุณาระบุชื่อ-นามสกุลจริง');
+          }
+
+          let updatedUserResult: UserProfile | null = null;
+
+          // 4. Try Atomic RPC update_own_pt_profile first
           try {
-            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/profiles?id=eq.${id}`, {
-              method: 'PATCH',
+            const rpcRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/rpc/update_own_pt_profile`, {
+              method: 'POST',
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
                 Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
                 'Content-Type': 'application/json',
               },
-              body: options.body,
+              body: JSON.stringify({
+                p_user_id: id,
+                p_full_name: payload.full_name !== undefined ? payload.full_name.trim() : (currentLoggedIn?.full_name || ''),
+                p_phone: payload.phone !== undefined ? (payload.phone ? payload.phone.trim() : null) : (currentLoggedIn?.phone || null),
+                p_bio: payload.bio !== undefined ? (payload.bio ? payload.bio.trim() : null) : (currentLoggedIn?.bio || null),
+                p_specialty: payload.specialty !== undefined ? (payload.specialty ? payload.specialty.trim() : null) : (currentLoggedIn?.specialty || null),
+                p_avatar_url: payload.avatar_url !== undefined ? payload.avatar_url : (currentLoggedIn?.avatar_url || null),
+              }),
             });
-          } catch {}
-          return { ok: true, message: 'อัปเดตข้อมูลสำเร็จ' } as T;
+            if (rpcRes.ok) {
+              const rpcData = await rpcRes.json();
+              if (rpcData && (rpcData.user || rpcData.ok)) {
+                updatedUserResult = rpcData.user;
+              }
+            }
+          } catch {
+            // RPC not deployed yet or network error, proceed to direct REST fallback
+          }
+
+          // 5. Direct Supabase Cloud REST Fallback with Table Splitting
+          if (!updatedUserResult) {
+            // 5.1 Update profiles (only full_name, phone, bio, avatar_url - NO specialty)
+            const profilePatch: Record<string, any> = {
+              updated_at: new Date().toISOString(),
+            };
+            if (payload.full_name !== undefined) profilePatch.full_name = payload.full_name.trim();
+            if (payload.phone !== undefined) profilePatch.phone = payload.phone?.trim() || null;
+            if (payload.bio !== undefined) profilePatch.bio = payload.bio?.trim() || null;
+            if (payload.avatar_url !== undefined) profilePatch.avatar_url = payload.avatar_url || null;
+
+            const profRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/profiles?id=eq.${id}`, {
+              method: 'PATCH',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation',
+              },
+              body: JSON.stringify(profilePatch),
+            });
+
+            if (!profRes.ok) {
+              const errBody = await profRes.text();
+              throw new Error(`อัปเดตข้อมูลโปรไฟล์ไม่สำเร็จ: ${profRes.status} ${errBody}`);
+            }
+
+            const profRows = await profRes.json();
+            if (!Array.isArray(profRows) || profRows.length === 0) {
+              throw new Error('ไม่พบแถวข้อมูลโปรไฟล์ที่จะอัปเดต หรือถูกปฏิเสธโดยระบบรักษาความปลอดภัย (0 แถว)');
+            }
+            const updatedProf = profRows[0];
+
+            // 5.2 Update or UPSERT pts table if specialty provided (Test #10: new account support)
+            let updatedPtDetails: any = null;
+            if (payload.specialty !== undefined) {
+              const cleanSpecialty = payload.specialty?.trim() || 'เวชศาสตร์ฟื้นฟูกายภาพบำบัด';
+              const ptPatchRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/pts?user_id=eq.${id}`, {
+                method: 'PATCH',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'return=representation',
+                },
+                body: JSON.stringify({ specialty: cleanSpecialty, updated_at: new Date().toISOString() }),
+              });
+              let ptRows = ptPatchRes.ok ? await ptPatchRes.json() : [];
+              if (!Array.isArray(ptRows) || ptRows.length === 0) {
+                // Upsert pts row if not exists
+                const ptUpsertRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/pts`, {
+                  method: 'POST',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'resolution=merge-duplicates,return=representation',
+                  },
+                  body: JSON.stringify({
+                    user_id: id,
+                    specialty: cleanSpecialty,
+                    license_no: 'ก.ภ. รอระบุ',
+                    age: 35,
+                    sex: 'male',
+                  }),
+                });
+                if (ptUpsertRes.ok) {
+                  ptRows = await ptUpsertRes.json();
+                }
+              }
+              if (Array.isArray(ptRows) && ptRows.length > 0) {
+                updatedPtDetails = ptRows[0];
+              }
+            }
+
+            updatedUserResult = {
+              ...(currentLoggedIn || {}),
+              ...updatedProf,
+              specialty: updatedPtDetails?.specialty || currentLoggedIn?.specialty || payload.specialty,
+              pt_details: {
+                ...(currentLoggedIn?.pt_details || {}),
+                ...(updatedPtDetails || {}),
+                specialty: updatedPtDetails?.specialty || currentLoggedIn?.pt_details?.specialty || payload.specialty,
+              },
+            } as UserProfile;
+          }
+
+          // 6. Update local session state and localStorage cache
+          if (updatedUserResult && isCallingSelf) {
+            this.setUserProfile(updatedUserResult);
+          }
+
+          return {
+            ok: true,
+            user: updatedUserResult,
+            data: updatedUserResult,
+            message: 'บันทึกข้อมูลส่วนตัวเรียบร้อย',
+          } as T;
         }
 
         // Handle PT listing (/pts or /directory/pts)
@@ -4310,11 +4639,11 @@ export class ApiClient {
           if (fallback !== undefined) {
             return fallback;
           }
-        } catch {
-          // Fall through to standard fallback safety
+        } catch (fbErr: any) {
+          if (fbErr?.message) throw fbErr;
         }
         if (options.method && options.method.toUpperCase() !== 'GET') {
-          return { ok: true, message: 'ดำเนินการสำเร็จ (Resilient Edge Fallback)' } as T;
+          throw new Error(`ไม่สามารถดำเนินการ ${options.method.toUpperCase()} บน ${cleanEndpoint} ได้เนื่องจากการเชื่อมต่อเครือข่ายหรือฐานข้อมูลล้มเหลว`);
         }
         return { ok: true, data: [] } as T;
       }
@@ -4559,10 +4888,11 @@ export class ApiClient {
     },
 
     update: async (id: string, data: Partial<UserProfile>) => {
-      return this.request<UserProfile>(`/staff/${id}`, {
+      const res = await this.request<any>(`/staff/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
       });
+      return (res?.user || res?.data || res) as UserProfile;
     },
 
     suspend: async (id: string, reason?: string) => {
@@ -4583,20 +4913,152 @@ export class ApiClient {
     },
 
     uploadAvatar: async (id: string, file: File | Blob) => {
-      const formData = new FormData();
-      formData.append('avatar', file);
-      const url = `${this.baseUrl}/staff/${id}/avatar`;
-      const token = this.getAuthToken();
-      const res = await fetch(url, {
-        method: 'POST',
+      // 1. Cross-user modification check (Test #9)
+      const currentLoggedIn = this.getUserProfile();
+      if (currentLoggedIn && currentLoggedIn.role !== 'admin' && currentLoggedIn.id !== id) {
+        throw new Error('403 Forbidden: สิทธิ์ไม่เพียงพอ ไม่อนุญาตให้อัปโหลดรูปโปรไฟล์แทนผู้อื่น');
+      }
+
+      // 2. Validate file size (Test #3: limit 2 MB = 2,097,152 bytes)
+      const MAX_SIZE = 2 * 1024 * 1024;
+      if (file.size > MAX_SIZE) {
+        throw new Error('ขนาดไฟล์ภาพเกิน 2 MB กรุณาเลือกไฟล์ภาพที่มีขนาดไม่เกิน 2 MB');
+      }
+
+      // 3. Validate Magic Bytes / Genuine Image Header (Test #2: reject .exe, .pdf renamed as .jpg)
+      const arrayBuffer = await file.arrayBuffer();
+      const header = new Uint8Array(arrayBuffer.slice(0, 16));
+      let detectedMime: 'image/jpeg' | 'image/png' | 'image/webp' | null = null;
+      let ext = 'jpg';
+
+      // JPEG magic: FF D8 FF
+      if (header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) {
+        detectedMime = 'image/jpeg';
+        ext = 'jpg';
+      }
+      // PNG magic: 89 50 4E 47 (\x89PNG)
+      else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47) {
+        detectedMime = 'image/png';
+        ext = 'png';
+      }
+      // WebP magic: RIFF (52 49 46 46) ... WEBP (57 45 42 50)
+      else if (
+        header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46 &&
+        header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50
+      ) {
+        detectedMime = 'image/webp';
+        ext = 'webp';
+      }
+
+      if (!detectedMime) {
+        throw new Error('ชนิดไฟล์ไม่ถูกต้อง อนุญาตเฉพาะไฟล์ภาพ JPEG, PNG หรือ WebP เท่านั้น');
+      }
+
+      const fileName = `avatar_${Date.now()}.${ext}`;
+      const filePath = `${id}/${fileName}`;
+      let finalAvatarUrl: string | null = null;
+
+      // 4. Attempt uploading to Supabase Storage Bucket 'avatars'
+      try {
+        const storageRes = await fetch(`${DEFAULT_SUPABASE_URL}/storage/v1/object/avatars/${filePath}`, {
+          method: 'POST',
+          headers: {
+            apikey: DEFAULT_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+            'Content-Type': detectedMime,
+            'x-upsert': 'true',
+          },
+          body: arrayBuffer,
+        });
+
+        if (storageRes.ok) {
+          finalAvatarUrl = `${DEFAULT_SUPABASE_URL}/storage/v1/object/public/avatars/${filePath}`;
+
+          // Clean up older avatar files in this user's folder to prevent storage accumulation
+          try {
+            const listRes = await fetch(`${DEFAULT_SUPABASE_URL}/storage/v1/object/list/avatars`, {
+              method: 'POST',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ prefix: `${id}/`, limit: 10 }),
+            });
+            if (listRes.ok) {
+              const filesList = await listRes.json();
+              if (Array.isArray(filesList)) {
+                const oldFiles = filesList.filter((f: any) => f.name && f.name !== fileName).map((f: any) => `${id}/${f.name}`);
+                if (oldFiles.length > 0) {
+                  await fetch(`${DEFAULT_SUPABASE_URL}/storage/v1/object/avatars`, {
+                    method: 'DELETE',
+                    headers: {
+                      apikey: DEFAULT_SUPABASE_ANON_KEY,
+                      Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prefixes: oldFiles }),
+                  }).catch(() => {});
+                }
+              }
+            }
+          } catch {}
+        }
+      } catch {
+        // Storage upload network fallback
+      }
+
+      // If storage bucket is not available, convert the validated image to Base64 Data URL as zero-failure fallback
+      if (!finalAvatarUrl) {
+        let binary = '';
+        const bytes = new Uint8Array(arrayBuffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const b64 = typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+        finalAvatarUrl = `data:${detectedMime};base64,${b64}`;
+      }
+
+      // 5. Save updated avatar_url to public.profiles table
+      const patchRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/profiles?id=eq.${id}`, {
+        method: 'PATCH',
         headers: {
-          'X-Requested-With': 'XMLHttpRequest',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          apikey: DEFAULT_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation',
         },
-        credentials: 'include',
-        body: formData,
+        body: JSON.stringify({
+          avatar_url: finalAvatarUrl,
+          updated_at: new Date().toISOString(),
+        }),
       });
-      return res.json();
+
+      if (!patchRes.ok) {
+        const errText = await patchRes.text();
+        throw new Error(`ไม่สามารถบันทึกรูปโปรไฟล์ลงฐานข้อมูลได้: ${patchRes.status} ${errText}`);
+      }
+
+      const rows = await patchRes.json();
+      if (!Array.isArray(rows) || rows.length === 0) {
+        throw new Error('ไม่พบแถวโปรไฟล์ที่บันทึกรูปภาพ (0 แถว)');
+      }
+
+      // 6. Update local session cache with cache-busting timestamp
+      if (currentLoggedIn && currentLoggedIn.id === id) {
+        const updated = {
+          ...currentLoggedIn,
+          avatar_url: finalAvatarUrl,
+        };
+        this.setUserProfile(updated);
+      }
+
+      return {
+        ok: true,
+        avatar_url: finalAvatarUrl,
+        message: 'อัปโหลดรูปโปรไฟล์เรียบร้อย',
+      };
     },
 
     delete: async (id: string) => {

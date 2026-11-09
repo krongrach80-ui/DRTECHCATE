@@ -814,7 +814,22 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
       }
       if (activeCatalogFilter === 'upper') {
         const j = ex.targetJoint.toLowerCase();
-        return j.includes('ไหล่') || j.includes('ศอก') || j.includes('คอ') || j.includes('สะบัก') || j.includes('shoulder') || j.includes('elbow') || j.includes('neck') || j.includes('scapula') || j.includes('cervical');
+        return (
+          j.includes('ไหล่') ||
+          j.includes('ศอก') ||
+          j.includes('คอ') ||
+          j.includes('สะบัก') ||
+          j.includes('ข้อมือ') ||
+          j.includes('ลำตัว') ||
+          j.includes('หลัง') ||
+          j.includes('shoulder') ||
+          j.includes('elbow') ||
+          j.includes('neck') ||
+          j.includes('scapula') ||
+          j.includes('cervical') ||
+          j.includes('wrist') ||
+          j.includes('trunk')
+        );
       }
       if (activeCatalogFilter === 'lower') {
         const j = ex.targetJoint.toLowerCase();

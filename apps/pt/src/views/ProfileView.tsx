@@ -34,16 +34,54 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onNavigateToTab,
 }) => {
   // Section 1: My Profile Form State
-  const [formData, setFormData] = useState({
+  const [initialFormData, setInitialFormData] = useState({
     full_name: currentUser.full_name || '',
     phone: currentUser.phone || '',
     bio: currentUser.bio || '',
-    specialty: currentUser.pt_details?.specialty || '',
+    specialty: currentUser.specialty || currentUser.pt_details?.specialty || '',
   });
+
+  const [formData, setFormData] = useState(initialFormData);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [avatarCacheBuster, setAvatarCacheBuster] = useState(Date.now());
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Sync state when currentUser is reloaded from session / database
+  useEffect(() => {
+    const nextData = {
+      full_name: currentUser.full_name || '',
+      phone: currentUser.phone || '',
+      bio: currentUser.bio || '',
+      specialty: currentUser.specialty || currentUser.pt_details?.specialty || '',
+    };
+    setInitialFormData(nextData);
+    setFormData(nextData);
+    setAvatarCacheBuster(Date.now());
+  }, [currentUser]);
+
+  // Track unsaved form changes (dirty state)
+  const isDirty =
+    formData.full_name !== initialFormData.full_name ||
+    formData.phone !== initialFormData.phone ||
+    formData.bio !== initialFormData.bio ||
+    formData.specialty !== initialFormData.specialty;
+
+  // Unsaved changes browser warning (Test #7)
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = 'คุณมีข้อมูลส่วนตัวที่แก้ไขแต่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   // Section 2: Case Delegation State
   const [myPatients, setMyPatients] = useState<PatientRecord[]>([]);
@@ -103,20 +141,43 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setNameError(null);
+    setPhoneError(null);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    // 1. Validation: Name must not be empty
+    if (!formData.full_name.trim()) {
+      setNameError('กรุณากรอกชื่อ-นามสกุลจริง');
+      return;
+    }
+
+    // 2. Validation: Phone number must be 10 digits if entered (Test #6)
+    const cleanPhone = formData.phone.trim();
+    if (cleanPhone && !/^[0-9]{10}$/.test(cleanPhone)) {
+      setPhoneError('เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก (เช่น 0812345678)');
+      return;
+    }
+
     try {
       setLoading(true);
-      setErrorMsg(null);
       await defaultApiClient.staff.update(currentUser.id, {
         full_name: formData.full_name.trim(),
-        phone: formData.phone.trim() || undefined,
+        phone: cleanPhone || undefined,
         bio: formData.bio.trim() || undefined,
         specialty: formData.specialty.trim() || undefined,
       });
 
+      setInitialFormData({
+        full_name: formData.full_name.trim(),
+        phone: cleanPhone,
+        bio: formData.bio.trim(),
+        specialty: formData.specialty.trim(),
+      });
       setSuccessMsg('บันทึกข้อมูลส่วนตัวเรียบร้อย');
       onProfileUpdated();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถอัปเดตข้อมูลส่วนตัวได้');
+      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถบันทึกข้อมูลส่วนตัวได้');
     } finally {
       setLoading(false);
     }
@@ -126,14 +187,68 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reset input value so user can re-trigger on the same file if needed
+    e.target.value = '';
+
+    setAvatarError(null);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    // 1. File size check: limit to 2 MB (Test #3)
+    if (file.size > 2 * 1024 * 1024) {
+      const msg = 'ขนาดไฟล์ภาพเกินกำหนด (สูงสุด 2 MB)';
+      setErrorMsg(msg);
+      setAvatarError(msg);
+      return;
+    }
+
+    // 2. Magic Bytes validation: check genuine JPEG, PNG, or WebP binary header (Test #2)
+    try {
+      const buffer = await file.slice(0, 16).arrayBuffer();
+      const header = new Uint8Array(buffer);
+      let isValidMime = false;
+
+      // JPEG: FF D8 FF
+      if (header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) {
+        isValidMime = true;
+      }
+      // PNG: 89 50 4E 47
+      else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47) {
+        isValidMime = true;
+      }
+      // WebP: 52 49 46 46 (RIFF) ... 57 45 42 50 (WEBP)
+      else if (
+        header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46 &&
+        header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50
+      ) {
+        isValidMime = true;
+      }
+
+      if (!isValidMime) {
+        const msg = 'ชนิดไฟล์ไม่ถูกต้อง อนุญาตเฉพาะไฟล์ภาพ JPEG, PNG หรือ WebP เท่านั้น';
+        setErrorMsg(msg);
+        setAvatarError(msg);
+        return;
+      }
+    } catch {
+      setErrorMsg('ไม่สามารถอ่านไฟล์ได้');
+      return;
+    }
+
     try {
       setLoading(true);
-      setErrorMsg(null);
-      await defaultApiClient.staff.uploadAvatar(currentUser.id, file);
-      setSuccessMsg('อัปโหลดรูปโปรไฟล์เรียบร้อย');
-      onProfileUpdated();
+      const res = await defaultApiClient.staff.uploadAvatar(currentUser.id, file);
+      if (res && res.ok !== false) {
+        setSuccessMsg('อัปโหลดรูปโปรไฟล์เรียบร้อย');
+        setAvatarCacheBuster(Date.now());
+        onProfileUpdated();
+      } else {
+        throw new Error(res?.message || 'การอัปโหลดรูปโปรไฟล์ไม่สำเร็จ');
+      }
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถอัปโหลดรูปโปรไฟล์ได้');
+      const msg = err instanceof Error ? err.message : 'ไม่สามารถอัปโหลดรูปโปรไฟล์ได้';
+      setErrorMsg(msg);
+      setAvatarError(msg);
     } finally {
       setLoading(false);
     }
@@ -236,9 +351,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="w-24 h-24 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-md shadow-blue-500/20 overflow-hidden border border-blue-200">
               {currentUser.avatar_url ? (
                 <img
-                  src={currentUser.avatar_url}
+                  src={
+                    currentUser.avatar_url.startsWith('data:')
+                      ? currentUser.avatar_url
+                      : `${currentUser.avatar_url}${currentUser.avatar_url.includes('?') ? '&' : '?'}v=${avatarCacheBuster}`
+                  }
                   alt={currentUser.full_name}
                   className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
                 />
               ) : (
                 <span>{currentUser.full_name?.charAt(0) || 'P'}</span>
@@ -253,6 +375,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 onChange={handleAvatarUpload}
+                disabled={loading}
                 className="hidden"
               />
             </label>
@@ -268,6 +391,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="text-xs text-slate-500 font-mono">
               ชื่อผู้ใช้ในระบบ: @{currentUser.username}
             </div>
+            {avatarError && (
+              <p className="text-xs text-rose-600 font-medium">{avatarError}</p>
+            )}
 
             <div className="flex flex-wrap gap-3 pt-2 text-xs">
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
@@ -278,7 +404,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
                 <Award className="w-4 h-4 text-emerald-600" />
-                <span>แผนก (Read-Only): <strong className="text-emerald-900">{currentUser.pt_details?.specialty || 'Musculoskeletal PT'}</strong></span>
+                <span>แผนก (Read-Only): <strong className="text-emerald-900">{currentUser.specialty || currentUser.pt_details?.specialty || 'Musculoskeletal PT'}</strong></span>
               </div>
             </div>
           </div>
@@ -289,26 +415,44 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                ชื่อ-นามสกุลจริง
+                ชื่อ-นามสกุลจริง <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 required
                 value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
+                onChange={(e) => {
+                  setFormData({ ...formData, full_name: e.target.value });
+                  if (nameError) setNameError(null);
+                }}
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white ${
+                  nameError ? 'border-rose-400 focus:border-rose-500' : 'border-slate-200 focus:border-blue-500'
+                }`}
               />
+              {nameError && (
+                <p className="text-xs text-rose-600 mt-1 font-medium">{nameError}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                เบอร์โทรศัพท์ติดต่อ
+                เบอร์โทรศัพท์ติดต่อ (10 หลัก)
               </label>
               <input
                 type="tel"
+                maxLength={10}
+                placeholder="เช่น 0812345678"
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
+                onChange={(e) => {
+                  setFormData({ ...formData, phone: e.target.value });
+                  if (phoneError) setPhoneError(null);
+                }}
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-sm text-slate-800 focus:outline-none focus:bg-white ${
+                  phoneError ? 'border-rose-400 focus:border-rose-500' : 'border-slate-200 focus:border-blue-500'
+                }`}
               />
+              {phoneError && (
+                <p className="text-xs text-rose-600 mt-1 font-medium">{phoneError}</p>
+              )}
             </div>
           </div>
 
@@ -338,13 +482,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             />
           </div>
 
-          <div className="flex justify-end pt-2">
+          <div className="flex items-center justify-between pt-2">
+            <div>
+              {isDirty && (
+                <span className="text-xs text-amber-700 font-semibold flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                  <span>มีข้อมูลที่ยังไม่ได้บันทึก</span>
+                </span>
+              )}
+            </div>
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition shadow-md shadow-blue-950/20 cursor-pointer active:scale-95"
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition shadow-md ${
+                loading
+                  ? 'bg-blue-400 text-white cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-950/20 cursor-pointer active:scale-95'
+              }`}
             >
-              <Save className="w-4 h-4" />
+              {loading ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
               <span>{loading ? 'กำลังบันทึก...' : 'บันทึกข้อมูลส่วนตัว'}</span>
             </button>
           </div>

@@ -132,6 +132,9 @@ export interface ExerciseDetectionConfig {
   defaultHoldSec?: number;
   defaultDurationSec?: number;
   framing?: FramingRequirement;
+  camera_framing?: FramingRequirement;
+  is_active?: boolean;
+  calibration_notes?: string;
   mediaUrl?: string;
   evaluationMode: EvaluationMode;
   side: BodySide;
@@ -203,6 +206,7 @@ export interface RepEvaluationResult {
   totalSets: number;
   isSetCompleted: boolean;
   isExerciseCompleted: boolean;
+  coachingMessage?: string;
   coachingMessageTh: string;
   coachingMessageEn?: string;
   coachingMessageCn?: string;

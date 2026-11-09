@@ -78,16 +78,16 @@ describe('15 Standard Clinical Exercises Single Source of Truth', () => {
     'shoulder-er-band',
     'scapular-retraction',
     'elbow-flexion-extension',
-    'seated-knee-extension',
-    'mini-squat',
-    'sit-to-stand',
-    'straight-leg-raise',
-    'standing-hip-abduction',
-    'calf-raise',
-    'single-leg-balance',
-    'calf-stretch',
     'chin-tuck',
-    'shoulder-pendulum',
+    'seated-cervical-rotation',
+    'cervical-side-bend',
+    'shoulder-shrug',
+    'upper-trapezius-stretch',
+    'seated-trunk-rotation',
+    'seated-side-bend',
+    'cross-body-shoulder-stretch',
+    'seated-horizontal-abduction',
+    'wrist-flexion-extension',
   ];
 
   it('1. Exactly 15 Canonical Clinical Exercises in ALL_CLINICAL_EXERCISES catalog', () => {
@@ -96,6 +96,7 @@ describe('15 Standard Clinical Exercises Single Source of Truth', () => {
     for (const key of CANONICAL_15_KEYS) {
       expect(ids).toContain(key);
       expect(CLINICAL_EXERCISES_CONFIG[key]).toBeDefined();
+      expect(CLINICAL_EXERCISES_CONFIG[key].is_active).toBe(true);
     }
   });
 
@@ -114,17 +115,19 @@ describe('15 Standard Clinical Exercises Single Source of Truth', () => {
     }
   });
 
-  it('3. Verifies separation of 13 camera mode vs 2 timer mode exercises', () => {
+  it('3. Verifies separation of 11 camera mode vs 4 timer mode exercises', () => {
     const timerExercises = ALL_CLINICAL_EXERCISES.filter(
       (e) => e.mode === 'timer' || e.evaluationMode === 'timer'
     );
-    expect(timerExercises.length).toBe(2);
+    expect(timerExercises.length).toBe(4);
     const timerIds = timerExercises.map((e) => e.id);
     expect(timerIds).toContain('chin-tuck');
-    expect(timerIds).toContain('shoulder-pendulum');
+    expect(timerIds).toContain('upper-trapezius-stretch');
+    expect(timerIds).toContain('cross-body-shoulder-stretch');
+    expect(timerIds).toContain('wrist-flexion-extension');
 
     const cameraExercises = ALL_CLINICAL_EXERCISES.filter((e) => e.mode === 'camera');
-    expect(cameraExercises.length).toBe(13);
+    expect(cameraExercises.length).toBe(11);
   });
 
   it('4. Backwards-compatibility aliases resolve seamlessly to canonical exercises', () => {

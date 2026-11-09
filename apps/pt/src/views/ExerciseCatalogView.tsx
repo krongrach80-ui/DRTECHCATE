@@ -37,7 +37,20 @@ const DEMO_EXERCISES: ExerciseRecord[] = ALL_CLINICAL_EXERCISES.map((ex) => ({
   title: `${ex.nameTh} (${ex.nameEn} / ${ex.nameCn})`,
   description: ex.descriptionTh || '',
   target_joint: ex.targetJoint,
-  target_muscle: ex.targetJoint === 'shoulder' ? 'Deltoid, Rotator Cuff' : ex.targetJoint === 'knee' ? 'Quadriceps, Hamstrings' : ex.targetJoint === 'hip' ? 'Gluteus, Hip Flexors' : ex.targetJoint === 'ankle' ? 'Gastrocnemius, Soleus' : ex.targetJoint === 'neck' ? 'Deep Neck Flexors' : 'Musculoskeletal',
+  target_muscle:
+    ex.targetJoint === 'shoulder'
+      ? 'Deltoid, Rotator Cuff'
+      : ex.targetJoint === 'scapula'
+      ? 'Trapezius, Rhomboids, Levator Scapulae'
+      : ex.targetJoint === 'elbow'
+      ? 'Biceps, Triceps, Brachialis'
+      : ex.targetJoint === 'neck'
+      ? 'Sternocleidomastoid, Deep Neck Flexors'
+      : ex.targetJoint === 'trunk'
+      ? 'Erector Spinae, Obliques, Rotatores'
+      : ex.targetJoint === 'wrist'
+      ? 'Wrist Flexors & Extensors'
+      : 'Musculoskeletal',
   suitable_for: 'ผู้ป่วยฟื้นฟูสมรรถภาพทางกายภาพบำบัด',
   warnings: ex.safetyContraindications.stopOnPainMessageTh || 'หยุดทันทีเมื่อรู้สึกเจ็บ',
   default_sets: ex.defaultPrescription?.totalSets || 3,

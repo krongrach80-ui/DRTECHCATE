@@ -37,22 +37,17 @@
     1. ยกแขนไปด้านหน้า (Active Shoulder Flexion)
   </text>
 
-      <!-- Head & Torso Profile -->
       <circle cx="160" cy="110" r="22" fill="#475569" />
       <path d="M160,135 L160,240 L150,340" fill="none" stroke="#64748b" stroke-width="16" stroke-linecap="round" />
-      <!-- Resting Arm (faded start position) -->
       <path d="M160,150 L160,250" fill="none" stroke="#334155" stroke-width="10" stroke-dasharray="6,4" stroke-linecap="round" />
-      <!-- Active Flexed Arm (Target position) -->
       <path d="M160,150 L270,100" fill="none" stroke="url(#accentCyan)" stroke-width="12" stroke-linecap="round" filter="url(#glow)" />
-      <!-- Joint highlight -->
       <circle cx="160" cy="150" r="9" fill="#0d9488" stroke="#22d3ee" stroke-width="3" />
-      <!-- Movement Arc & Arrow -->
       <path d="M185,230 A90,90 0 0,0 260,130" fill="none" stroke="#14b8a6" stroke-width="3.5" marker-end="url(#arrowTeal)" stroke-dasharray="5,3" />
       <text x="250" y="195" fill="#2dd4bf" font-family="system-ui" font-size="12" font-weight="bold">Flexion ↑</text>
     
   <!-- Bottom Clinical Badge -->
   <g transform="translate(200, 365)">
-    <rect x="-120" y="-14" width="240" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
+    <rect x="-135" y="-14" width="270" height="24" rx="8" fill="#134e4a" stroke="#14b8a6" stroke-width="1" />
     <text x="0" y="3" fill="#5eead4" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-anchor="middle">
       เป้าหมาย: ไหล่ 0° → 170° (AAOS)
     </text>
