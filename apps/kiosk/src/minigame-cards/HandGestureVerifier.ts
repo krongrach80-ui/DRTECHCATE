@@ -853,3 +853,84 @@ export function drawAllMinigameHands(
 
   ctx.restore();
 }
+
+/**
+ * Linear Interpolation (Lerp) for multi-hand skeletal landmarks:
+ * Smooths landmark coordinates at native 60 FPS: pos = prev + (target - prev) * alpha
+ */
+export function interpolateHands<T extends MinigameHandEvaluation | HandLandmarkPoint[]>(
+  prev: T[] | null | undefined,
+  target: T[] | null | undefined,
+  alpha: number = 0.45
+): T[] {
+  if (!target || target.length === 0) return [];
+  if (!prev || prev.length === 0) return target;
+
+  const isEvaluation = 'landmarks' in (target[0] as any);
+
+  if (isEvaluation) {
+    const prevHands = prev as unknown as MinigameHandEvaluation[];
+    const targetHands = target as unknown as MinigameHandEvaluation[];
+
+    const result = targetHands.map((tgt) => {
+      const prevHand = prevHands.find(
+        (p) => p.anatomicalSide === tgt.anatomicalSide || p.handIndex === tgt.handIndex
+      );
+      if (!prevHand || !prevHand.landmarks || prevHand.landmarks.length < 21) {
+        return tgt;
+      }
+
+      const smoothedLandmarks: HandLandmarkPoint[] = tgt.landmarks.map((pt, idx) => {
+        const prevPt = prevHand.landmarks[idx];
+        if (!prevPt) return pt;
+        return {
+          x: prevPt.x + (pt.x - prevPt.x) * alpha,
+          y: prevPt.y + (pt.y - prevPt.y) * alpha,
+          z:
+            typeof pt.z === 'number' && typeof prevPt.z === 'number'
+              ? prevPt.z + (pt.z - prevPt.z) * alpha
+              : pt.z,
+        };
+      });
+
+      const prevPalm = prevHand.palmCenter;
+      const tgtPalm = tgt.palmCenter;
+      const smoothedPalm = {
+        x: prevPalm.x + (tgtPalm.x - prevPalm.x) * alpha,
+        y: prevPalm.y + (tgtPalm.y - prevPalm.y) * alpha,
+        mirroredX: prevPalm.mirroredX + (tgtPalm.mirroredX - prevPalm.mirroredX) * alpha,
+        mirroredY: prevPalm.mirroredY + (tgtPalm.mirroredY - prevPalm.mirroredY) * alpha,
+      };
+
+      return {
+        ...tgt,
+        landmarks: smoothedLandmarks,
+        palmCenter: smoothedPalm,
+      };
+    });
+
+    return result as unknown as T[];
+  }
+
+  const prevList = prev as unknown as HandLandmarkPoint[][];
+  const targetList = target as unknown as HandLandmarkPoint[][];
+
+  const result = targetList.map((tgtHand, hIdx) => {
+    const prevHand = prevList[hIdx];
+    if (!prevHand) return tgtHand;
+    return tgtHand.map((pt, idx) => {
+      const prevPt = prevHand[idx];
+      if (!prevPt) return pt;
+      return {
+        x: prevPt.x + (pt.x - prevPt.x) * alpha,
+        y: prevPt.y + (pt.y - prevPt.y) * alpha,
+        z:
+          typeof pt.z === 'number' && typeof prevPt.z === 'number'
+            ? prevPt.z + (pt.z - prevPt.z) * alpha
+            : pt.z,
+      };
+    });
+  });
+
+  return result as unknown as T[];
+}

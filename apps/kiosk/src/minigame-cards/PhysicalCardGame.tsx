@@ -33,6 +33,7 @@ import {
   MinigameFrameResult,
   evaluateMinigameFrame,
   drawAllMinigameHands,
+  interpolateHands,
   HandLandmarkPoint,
 } from './HandGestureVerifier.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
@@ -155,9 +156,17 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const detectContextRef = useRef<CanvasRenderingContext2D | null>(null);
   const handLandmarkerRef = useRef<any>(null);
   const neutralGateRef = useRef<boolean>(false);
   const lastTimestampRef = useRef<number>(0);
+  const isDetectingRef = useRef<boolean>(false);
+  const latestLandmarksRef = useRef<MinigameHandEvaluation[]>([]);
+  const prevLandmarksRef = useRef<MinigameHandEvaluation[]>([]);
+  const targetActiveHandRef = useRef<MinigameHandEvaluation | null>(null);
+  const currentDwellProgressRef = useRef<number>(0);
+  const isBothHandsWarningRef = useRef<boolean>(false);
+  const rafIdRef = useRef<number>(0);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [isModelLoading, setIsModelLoading] = useState<boolean>(true);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -633,7 +642,6 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     const TARGET_INTERVAL_MS = 40; // ~25 FPS detection rate
     const HOLD_DWELL_MS = 600; // 0.6 seconds continuous hold requirement
     const GRACE_PERIOD_MS = 200; // 200ms grace period tolerance for frame drops
-    const LERP_FACTOR = 0.55; // Quick responsive smoothing for 60 FPS overlay
 
     let activeSide: 'left' | 'right' | null = null;
     let sideHoldStart = 0;
@@ -643,11 +651,6 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     let candidateCount = 0;
     let currentDwellProgress = 0;
     let isBothHandsWarningActive = false;
-
-    // Smoothed hands for 60 FPS rendering
-    let targetHands: MinigameHandEvaluation[] = [];
-    let targetActiveHand: MinigameHandEvaluation | null = null;
-    let smoothedHands: MinigameHandEvaluation[] = [];
 
     const frameLoop = (timestamp: number) => {
       const video = videoRef.current;
@@ -668,27 +671,26 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
       }
 
       // -------------------------------------------------------------
-      // PART A: INFERENCE CYCLE (~25 FPS Throttle, Decoupled from Render)
+      // PART A: INFERENCE CYCLE (~25 FPS Throttle, Fixed 320x180 GPU Canvas)
       // -------------------------------------------------------------
-      if (landmarker && timestamp - lastDetectTime >= TARGET_INTERVAL_MS) {
+      if (landmarker && !isDetectingRef.current && timestamp - lastDetectTime >= TARGET_INTERVAL_MS) {
         lastDetectTime = timestamp;
+        isDetectingRef.current = true;
 
         try {
-          // Downscale input frame to 480px width canvas to keep ML inference smooth
+          // Downscale input frame to fixed 320x180 canvas with willReadFrequently: false (GPU accelerated)
           let dCanvas = detectCanvasRef.current;
+          let dctx = detectContextRef.current;
           if (!dCanvas) {
             dCanvas = document.createElement('canvas');
+            dCanvas.width = 320;
+            dCanvas.height = 180;
             detectCanvasRef.current = dCanvas;
+            dctx = dCanvas.getContext('2d', { willReadFrequently: false });
+            detectContextRef.current = dctx;
           }
-          const targetW = 480;
-          const targetH = Math.round((targetW * vh) / vw);
-          if (dCanvas.width !== targetW || dCanvas.height !== targetH) {
-            dCanvas.width = targetW;
-            dCanvas.height = targetH;
-          }
-          const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
           if (dctx) {
-            dctx.drawImage(video, 0, 0, targetW, targetH);
+            dctx.drawImage(video, 0, 0, 320, 180);
           }
 
           // Strict monotonic timestamp guard
@@ -891,11 +893,15 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             }
           }
 
-          // Target hands for 60 FPS interpolation
-          targetHands = frameResult.allHands;
-          targetActiveHand = frameResult.activeHand;
+          // Target hands for continuous 60 FPS interpolation
+          latestLandmarksRef.current = frameResult.allHands;
+          targetActiveHandRef.current = frameResult.activeHand;
+          currentDwellProgressRef.current = currentDwellProgress;
+          isBothHandsWarningRef.current = isBothHandsWarningActive;
         } catch {
           // Frame skip safe
+        } finally {
+          isDetectingRef.current = false;
         }
       }
 
@@ -906,33 +912,18 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Smooth landmarks between prev position and target position
-        if (targetHands.length > 0) {
-          smoothedHands = targetHands.map((tgt) => {
-            const prev = smoothedHands.find((p) => p.anatomicalSide === tgt.anatomicalSide);
-            if (!prev || !prev.landmarks || prev.landmarks.length < 21) {
-              return tgt;
-            }
-            const interpolatedLandmarks: HandLandmarkPoint[] = tgt.landmarks.map((pt, idx) => {
-              const prevPt = prev.landmarks[idx];
-              if (!prevPt) return pt;
-              return {
-                x: prevPt.x + (pt.x - prevPt.x) * LERP_FACTOR,
-                y: prevPt.y + (pt.y - prevPt.y) * LERP_FACTOR,
-                z: typeof pt.z === 'number' && typeof prevPt.z === 'number'
-                  ? prevPt.z + (pt.z - prevPt.z) * LERP_FACTOR
-                  : pt.z,
-              };
-            });
-            return {
-              ...tgt,
-              landmarks: interpolatedLandmarks,
-            };
-          });
+        // Smooth multi-hand landmarks at display refresh rate using polymorphic Lerp
+        const currentTargets = latestLandmarksRef.current;
+        if (currentTargets && currentTargets.length > 0) {
+          const smoothedHands = interpolateHands(
+            prevLandmarksRef.current,
+            currentTargets,
+            0.45
+          );
+          prevLandmarksRef.current = smoothedHands;
 
-          // Draw all smoothed hands onto overlay canvas at 60 FPS
-          const activeHandToDraw = targetActiveHand
-            ? smoothedHands.find((h) => h.anatomicalSide === targetActiveHand?.anatomicalSide) || targetActiveHand
+          const activeHandToDraw = targetActiveHandRef.current
+            ? smoothedHands.find((h) => h.anatomicalSide === targetActiveHandRef.current?.anatomicalSide) || targetActiveHandRef.current
             : null;
 
           drawAllMinigameHands(
@@ -941,12 +932,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             canvas.width,
             canvas.height,
             activeHandToDraw,
-            currentDwellProgress,
-            isBothHandsWarningActive,
+            currentDwellProgressRef.current,
+            isBothHandsWarningRef.current,
             isMirrored
           );
         } else {
-          smoothedHands = [];
+          prevLandmarksRef.current = [];
         }
       }
 
