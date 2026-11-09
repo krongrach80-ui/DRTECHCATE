@@ -116,8 +116,11 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
       // non-blocking
     }
 
-    // Fallback sync polling every 12 seconds
-    const syncInterval = setInterval(fetchCalls, 12000);
+    // Fallback sync polling (20 seconds when active, paused when tab is hidden)
+    const syncInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchCalls();
+    }, 20000);
 
     return () => {
       unsubSse?.();

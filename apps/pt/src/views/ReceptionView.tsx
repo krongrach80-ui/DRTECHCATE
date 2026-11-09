@@ -147,12 +147,20 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
     window.addEventListener('patients-updated', handleRefresh);
     window.addEventListener('drtech:patients_reconciled', handleRefresh);
     window.addEventListener('focus', handleRefresh);
+
+    // Background sync polling: 25 seconds when active, paused when tab is hidden
+    const pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void fetchData();
+    }, 25000);
+
     return () => {
       window.removeEventListener('schedule-updated', handleRefresh);
       window.removeEventListener('patient-updated', handleRefresh);
       window.removeEventListener('patients-updated', handleRefresh);
       window.removeEventListener('drtech:patients_reconciled', handleRefresh);
       window.removeEventListener('focus', handleRefresh);
+      clearInterval(pollInterval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);

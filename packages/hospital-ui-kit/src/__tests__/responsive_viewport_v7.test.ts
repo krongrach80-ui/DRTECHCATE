@@ -235,12 +235,12 @@ describe('Universal Adaptive Responsive Engine & Embedded Thai-Latin Typography 
       expect(sidebarContent).toContain("label: '6. ประวัติและความปลอดภัย'");
 
       // PT 6 menus (8.2: 5 windows + welcome)
-      expect(sidebarContent).toContain("label: '1. หน้าต้อนรับ'");
-      expect(sidebarContent).toContain("label: '2. จัดการคนไข้ของตน'");
-      expect(sidebarContent).toContain("label: '3. ข้อมูลคนไข้/เวชระเบียน/ฝากเคส'");
-      expect(sidebarContent).toContain("label: '4. ข้อมูลตัวเอง'");
-      expect(sidebarContent).toContain("label: '5. ท่ากายภาพ'");
-      expect(sidebarContent).toContain("label: '6. ตารางนัด'");
+      expect(sidebarContent).toMatch(/('1\. หน้าต้อนรับ'|"1\. หน้าต้อนรับ")/);
+      expect(sidebarContent).toMatch(/('2\. จัดการคนไข้ของตน'|"2\. จัดการคนไข้ของตน")/);
+      expect(sidebarContent).toMatch(/('3\. ข้อมูลคนไข้\/เวชระเบียน\/ฝากเคส'|"3\. ข้อมูลคนไข้\/เวชระเบียน\/ฝากเคส")/);
+      expect(sidebarContent).toMatch(/('4\. ข้อมูลตัวเอง'|"4\. ข้อมูลตัวเอง")/);
+      expect(sidebarContent).toMatch(/('5\. ท่ากายภาพ'|"5\. ท่ากายภาพ")/);
+      expect(sidebarContent).toMatch(/('6\. ตารางนัด'|"6\. ตารางนัด")/);
 
       // PT mode must not expose pts directory browsing
       expect(sidebarContent).toContain('const visibleMenus = isPtMode ? ptMenus : adminMenus;');

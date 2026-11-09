@@ -194,6 +194,77 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
+  // Client-side image compression & standardization (max 256x256, WebP 0.8 / JPEG 0.8, < 35 KB)
+  const compressImageToAvatarSpec = async (sourceFile: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(sourceFile);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 256;
+        let w = img.width;
+        let h = img.height;
+        if (w > h) {
+          if (w > MAX_DIM) {
+            h = Math.round((h * MAX_DIM) / w);
+            w = MAX_DIM;
+          }
+        } else {
+          if (h > MAX_DIM) {
+            w = Math.round((w * MAX_DIM) / h);
+            h = MAX_DIM;
+          }
+        }
+        canvas.width = Math.max(1, w);
+        canvas.height = Math.max(1, h);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas 2D context unavailable'));
+          return;
+        }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
+
+        // Try WebP at quality 0.8 first
+        canvas.toBlob(
+          (webpBlob) => {
+            if (webpBlob && webpBlob.size > 0 && webpBlob.size <= 35 * 1024) {
+              resolve(webpBlob);
+            } else if (webpBlob && webpBlob.size > 0) {
+              // Re-encode at 0.6 if > 35 KB
+              canvas.toBlob(
+                (lowWebp) => {
+                  resolve(lowWebp || webpBlob);
+                },
+                'image/webp',
+                0.6
+              );
+            } else {
+              // Fallback to JPEG 0.8
+              canvas.toBlob(
+                (jpegBlob) => {
+                  if (jpegBlob) resolve(jpegBlob);
+                  else reject(new Error('ไม่สามารถบีบอัดรูปภาพได้'));
+                },
+                'image/jpeg',
+                0.8
+              );
+            }
+          },
+          'image/webp',
+          0.8
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('ไม่สามารถโหลดภาพเข้าสู่หน่วยความจำได้'));
+      };
+      img.src = objectUrl;
+    });
+  };
+
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -248,7 +319,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
     try {
       setLoading(true);
-      const res = await defaultApiClient.staff.uploadAvatar(currentUser.id, file);
+
+      // 3. Client-side compress/resize to max 256x256 (WebP/JPEG quality 0.8, < 35 KB)
+      let uploadPayload: Blob = file;
+      try {
+        uploadPayload = await compressImageToAvatarSpec(file);
+      } catch (cErr) {
+        console.warn('Client-side compression fallback to original file:', cErr);
+      }
+
+      const res = await defaultApiClient.staff.uploadAvatar(currentUser.id, uploadPayload);
       if (res && res.ok !== false) {
         setSuccessMsg('อัปโหลดรูปโปรไฟล์เรียบร้อย');
         setAvatarCacheBuster(Date.now());

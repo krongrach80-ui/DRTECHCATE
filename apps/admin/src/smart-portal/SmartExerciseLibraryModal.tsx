@@ -40,11 +40,42 @@ export const SmartExerciseLibraryModal: React.FC<SmartExerciseLibraryModalProps>
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setDemoFileBase64(reader.result as string);
+    // Client-side compress/resize demonstration image (max 256x256, WebP 0.8, < 30 KB)
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const canvas = document.createElement('canvas');
+      const MAX_DIM = 256;
+      let w = img.width;
+      let h = img.height;
+      if (w > h) {
+        if (w > MAX_DIM) {
+          h = Math.round((h * MAX_DIM) / w);
+          w = MAX_DIM;
+        }
+      } else {
+        if (h > MAX_DIM) {
+          w = Math.round((w * MAX_DIM) / h);
+          h = MAX_DIM;
+        }
+      }
+      canvas.width = Math.max(1, w);
+      canvas.height = Math.max(1, h);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/webp', 0.8);
+        setDemoFileBase64(compressed);
+      }
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      setErrorMsg('ไม่สามารถอ่านไฟล์รูปภาพได้');
+    };
+    img.src = objectUrl;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

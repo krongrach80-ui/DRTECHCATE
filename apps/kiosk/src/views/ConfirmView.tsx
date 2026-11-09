@@ -69,7 +69,7 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
         }
 
         const checkNod = async () => {
-          if (!loopActive || !isMountedRef.current || hasConfirmedRef.current) return;
+          if (!loopActive || !isMountedRef.current || hasConfirmedRef.current || (typeof document !== 'undefined' && document.hidden)) return;
           const video = videoRef.current;
           if (video && video.readyState >= 2) {
             try {

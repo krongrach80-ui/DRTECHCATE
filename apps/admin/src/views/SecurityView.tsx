@@ -159,6 +159,14 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
 
   useEffect(() => {
     fetchSecurityData();
+
+    // Background refresh: 25 seconds when active, paused when tab is hidden
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchSecurityData();
+    }, 25000);
+
+    return () => clearInterval(interval);
   }, []);
 
   // 10-Minute Countdown timer for generated pairing code

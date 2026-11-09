@@ -3026,7 +3026,9 @@ export class ApiClient {
                 p_phone: payload.phone !== undefined ? (payload.phone ? payload.phone.trim() : null) : (currentLoggedIn?.phone || null),
                 p_bio: payload.bio !== undefined ? (payload.bio ? payload.bio.trim() : null) : (currentLoggedIn?.bio || null),
                 p_specialty: payload.specialty !== undefined ? (payload.specialty ? payload.specialty.trim() : null) : (currentLoggedIn?.specialty || null),
-                p_avatar_url: payload.avatar_url !== undefined ? payload.avatar_url : (currentLoggedIn?.avatar_url || null),
+                p_avatar_url: payload.avatar_url !== undefined
+                  ? (typeof payload.avatar_url === 'string' && payload.avatar_url.startsWith('data:') ? null : payload.avatar_url)
+                  : (currentLoggedIn?.avatar_url || null),
               }),
             });
             if (rpcRes.ok) {
@@ -3048,7 +3050,13 @@ export class ApiClient {
             if (payload.full_name !== undefined) profilePatch.full_name = payload.full_name.trim();
             if (payload.phone !== undefined) profilePatch.phone = payload.phone?.trim() || null;
             if (payload.bio !== undefined) profilePatch.bio = payload.bio?.trim() || null;
-            if (payload.avatar_url !== undefined) profilePatch.avatar_url = payload.avatar_url || null;
+            if (payload.avatar_url !== undefined) {
+              if (typeof payload.avatar_url === 'string' && payload.avatar_url.startsWith('data:')) {
+                console.warn('[Security Guard] Base64 avatar_url rejected to prevent PostgreSQL database bloat and egress leakage.');
+              } else {
+                profilePatch.avatar_url = payload.avatar_url || null;
+              }
+            }
 
             const profRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/profiles?id=eq.${id}`, {
               method: 'PATCH',
@@ -5571,13 +5579,13 @@ export class ApiClient {
         throw new Error('ชนิดไฟล์ไม่ถูกต้อง อนุญาตเฉพาะไฟล์ภาพ JPEG, PNG หรือ WebP เท่านั้น');
       }
 
-      const fileName = `avatar_${Date.now()}.${ext}`;
-      const filePath = `${id}/${fileName}`;
+      // 4. Primary storage path: staff/${userId}-${Date.now()}.webp per Master Hardening Spec
+      const fileName = `${id}-${Date.now()}.${ext}`;
+      let targetPath = `staff/${fileName}`;
       let finalAvatarUrl: string | null = null;
 
-      // 4. Attempt uploading to Supabase Storage Bucket 'avatars'
       try {
-        const storageRes = await fetch(`${DEFAULT_SUPABASE_URL}/storage/v1/object/avatars/${filePath}`, {
+        let storageRes = await fetch(`${DEFAULT_SUPABASE_URL}/storage/v1/object/avatars/${targetPath}`, {
           method: 'POST',
           headers: {
             apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -5588,8 +5596,27 @@ export class ApiClient {
           body: arrayBuffer,
         });
 
+        // Folder owner fallback if bucket policy is scoped to userId
+        if (!storageRes.ok && (storageRes.status === 403 || storageRes.status === 400 || storageRes.status === 404)) {
+          const userFolderPath = `${id}/${fileName}`;
+          const retryRes = await fetch(`${DEFAULT_SUPABASE_URL}/storage/v1/object/avatars/${userFolderPath}`, {
+            method: 'POST',
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              'Content-Type': detectedMime,
+              'x-upsert': 'true',
+            },
+            body: arrayBuffer,
+          });
+          if (retryRes.ok) {
+            storageRes = retryRes;
+            targetPath = userFolderPath;
+          }
+        }
+
         if (storageRes.ok) {
-          finalAvatarUrl = `${DEFAULT_SUPABASE_URL}/storage/v1/object/public/avatars/${filePath}`;
+          finalAvatarUrl = `${DEFAULT_SUPABASE_URL}/storage/v1/object/public/avatars/${targetPath}`;
 
           // Clean up older avatar files in this user's folder to prevent storage accumulation
           try {
@@ -5625,16 +5652,11 @@ export class ApiClient {
         // Storage upload network fallback
       }
 
-      // If storage bucket is not available, convert the validated image to Base64 Data URL as zero-failure fallback
+      // STRICT RULE: Never store raw Base64 data URLs in PostgreSQL columns (Egress Leak Hardening)
       if (!finalAvatarUrl) {
-        let binary = '';
-        const bytes = new Uint8Array(arrayBuffer);
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        const b64 = typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
-        finalAvatarUrl = `data:${detectedMime};base64,${b64}`;
+        throw new Error(
+          'ไม่สามารถอัปโหลดรูปภาพไปยัง Supabase Storage Bucket "avatars" ได้ เพื่อความปลอดภัยและป้องกันฐานข้อมูลช้า จึงไม่อนุญาตให้บันทึก Base64 ลงในฐานข้อมูล กรุณาตรวจสอบว่า Storage Bucket "avatars" เปิดใช้งานและเป็น Public'
+        );
       }
 
       // 5. Save updated avatar_url to public.profiles table

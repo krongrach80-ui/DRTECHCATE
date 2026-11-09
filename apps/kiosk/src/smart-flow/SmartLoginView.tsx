@@ -1710,9 +1710,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     });
 
     const presenceInterval = setInterval(async () => {
-      // Guard against overlapping inferences: never run presence detection while counting down or scanning
+      // Guard against overlapping inferences: never run presence detection while counting down, scanning, or hidden
       if (
         !isMountedRef.current ||
+        (typeof document !== 'undefined' && document.hidden) ||
         isScanningPaused ||
         isScanning ||
         isCountingDownRef.current ||

@@ -69,7 +69,7 @@ export const IdleView: React.FC<IdleViewProps> = ({
 
         // Real-time detection loop (evaluates bounding box only, NO image capture)
         const checkFace = async () => {
-          if (!loopActive || !isMountedRef.current) return;
+          if (!loopActive || !isMountedRef.current || (typeof document !== 'undefined' && document.hidden)) return;
           const video = videoRef.current;
           if (video && video.readyState >= 2) {
             try {
