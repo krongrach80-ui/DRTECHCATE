@@ -333,22 +333,34 @@ export function checkKioskFaceQuality(
     return { passed: false, reason: 'NO_FACE', statusMessageThai: 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น' };
   }
 
+  const fw = frameWidth > 0 ? frameWidth : 640;
   const fh = frameHeight > 0 ? frameHeight : 480;
-  const faceHeight = detection.box.height;
-  const heightRatio = faceHeight / fh;
+  const faceWidth = detection.box.width;
+  const faceWidthRatio = faceWidth / fw;
 
-  if (faceHeight < KIOSK_CAMERA_STANDARDIZATION_CONFIG.MIN_FACE_SIZE && heightRatio < 0.15) {
+  // 1. faceWidthRatio >= 0.10 (ขนาดใบหน้าไม่ต่ำกว่า 10% ของจอ เพื่อรองรับทั้งนั่งใกล้และไกล)
+  if (faceWidthRatio < 0.10) {
     return { passed: false, reason: 'FACE_TOO_SMALL', statusMessageThai: 'กรุณาขยับเข้าใกล้กล้องอีกนิด' };
   }
 
+  // 2. Frontal Pose: |yaw| <= 22° and |pitch| <= 20°
   const pose = detection.pose;
   if (pose) {
-    if (Math.abs(pose.yaw) > KIOSK_CAMERA_STANDARDIZATION_CONFIG.MAX_YAW) {
+    if (Math.abs(pose.yaw) > 22) {
       return { passed: false, reason: 'HEAD_TURNED', statusMessageThai: 'กรุณามองตรงที่กล้อง' };
     }
-    if (Math.abs(pose.pitch) > KIOSK_CAMERA_STANDARDIZATION_CONFIG.MAX_PITCH) {
+    if (Math.abs(pose.pitch) > 20) {
       return { passed: false, reason: 'HEAD_TILTED', statusMessageThai: 'กรุณามองตรงที่กล้อง' };
     }
+  }
+
+  // 3. Face bounding box fully inside frame boundaries (no edge clipping)
+  const minX = detection.box.x;
+  const minY = detection.box.y;
+  const maxX = detection.box.x + detection.box.width;
+  const maxY = detection.box.y + detection.box.height;
+  if (minX < 0 || minY < 0 || maxX > fw || maxY > fh) {
+    return { passed: false, reason: 'FACE_CLIPPED', statusMessageThai: 'กรุณาจัดใบหน้าให้อยู่ในกรอบภาพ' };
   }
 
   if (imageQuality && !imageQuality.passed) {
@@ -520,6 +532,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   // Rate Limiting (5 failures/minute -> 30s cooldown)
   const [rateLimitCooldownSec, setRateLimitCooldownSec] = useState<number>(0);
+  const [isAutoScanCoolingDown, setIsAutoScanCoolingDown] = useState<boolean>(false);
+  const isCoolingDownRef = useRef<boolean>(false);
   const failedScanTimestampsRef = useRef<number[]>([]);
 
   // Periodic Sampling Refs
@@ -860,24 +874,36 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setIsScanning(true);
     setStatusText(
       lang === 'zh-CN'
-        ? '正在计算中位数并验证身份...'
+        ? '⚡ 正在验证生物特征身份...'
         : lang === 'en-US'
-        ? 'Computing median & verifying identity...'
-        : 'กำลังประมวลผลค่ามัธยฐานและตรวจสอบสิทธิ์...'
+        ? '⚡ Verifying biometric identity...'
+        : '⚡ กำลังตรวจสอบอัตลักษณ์ชีวมาตร...'
     );
 
     try {
       const samples = sampleFramesRef.current.slice();
       if (samples.length < 6) {
-        setStatusText(
+        const motionMsg =
           lang === 'zh-CN'
-            ? '人脸稳定性不足，请保持稳定'
+            ? '🔄 未找到人脸数据，正在自动重新扫描...'
             : lang === 'en-US'
-            ? 'Face motion detected, please stay still'
-            : 'การตรวจจับใบหน้ายังไม่นิ่งพอ กรุณาวางใบหน้านิ่งๆ ตรงกลางกรอบ'
-        );
+            ? '🔄 No matching face found. Auto-scanning again...'
+            : '🔄 ไม่พบข้อมูลใบหน้า กำลังสแกนใหม่อัตโนมัติ...';
+        setStatusText(motionMsg);
+        setIsAutoScanCoolingDown(true);
+        isCoolingDownRef.current = true;
+        consecutiveSteadyFramesRef.current = 0;
+        sampleFramesRef.current = [];
+        lockedTargetRef.current = null;
         isProcessingScanRef.current = false;
         setIsScanning(false);
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            isCoolingDownRef.current = false;
+            setIsAutoScanCoolingDown(false);
+            fastLivenessVerifierRef.current.start();
+          }
+        }, 1200);
         return;
       }
 
@@ -1184,14 +1210,19 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      const displayScore = typeof res?.similarityPercentage === 'number' ? res.similarityPercentage : 0;
-      const failMsg = lang === 'zh-CN'
-        ? `⚠️ 未找到匹配账户（相似度 ${displayScore}% 未达85%）。请将面部对准圆框重试，或使用PIN码登录`
-        : lang === 'en-US'
-        ? `⚠️ Account not found (${displayScore}% match <85% threshold). Please center face in circle or use PIN`
-        : `⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำ ${displayScore}% ไม่ถึงเกณฑ์ 85%) กรุณาวางใบหน้าให้อยู่ในกรอบวงกลมแล้วลองใหม่อีกครั้ง หรือเข้าด้วยรหัส PIN`;
-      setStatusText(failMsg);
-      setUnrecognizedAlert(failMsg);
+      const autoRetryMsg =
+        lang === 'zh-CN'
+          ? '🔄 未找到人脸数据，正在自动重新扫描...'
+          : lang === 'en-US'
+          ? '🔄 No matching face found. Auto-scanning again...'
+          : '🔄 ไม่พบข้อมูลใบหน้า กำลังสแกนใหม่อัตโนมัติ...';
+
+      setStatusText(autoRetryMsg);
+      setIsAutoScanCoolingDown(true);
+      isCoolingDownRef.current = true;
+      consecutiveSteadyFramesRef.current = 0;
+      sampleFramesRef.current = [];
+      lockedTargetRef.current = null;
 
       // Ephemeral Biometric Invariant: Hold in-memory probe embedding and snapshot only (zero persistent storage)
       if (lastProbeVectorRef.current && lastProbeVectorRef.current.length > 0) {
@@ -1202,7 +1233,17 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         };
       }
 
-      if (scanFailureCountRef.current >= 2) {
+      // Automatically resume detection after 1.2s without requiring user click
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          isCoolingDownRef.current = false;
+          setIsAutoScanCoolingDown(false);
+          setUnrecognizedAlert(null);
+          fastLivenessVerifierRef.current.start();
+        }
+      }, 1200);
+
+      if (scanFailureCountRef.current >= 3) {
         setTimeout(() => {
           if (isMountedRef.current && !matchedPatient) {
             setIsPinModalOpen(true);
@@ -1229,6 +1270,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       isScanning ||
       isProcessingScanRef.current ||
       isScanningPaused ||
+      isCoolingDownRef.current ||
       matchedPatient ||
       rateLimitCooldownSec > 0
     ) {
@@ -1243,10 +1285,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setRealtimeScore(null);
     setStatusText(
       lang === 'zh-CN'
-        ? '正在倒计时识别人脸... 请保持稳定'
+        ? '⏱️ 正在自动扫描 3...'
         : lang === 'en-US'
-        ? 'Scanning face... Please stay still'
-        : 'กำลังนับถอยหลังและสแกนใบหน้า... กรุณามองตรงที่กล้อง'
+        ? '⏱️ Auto-scanning in 3...'
+        : '⏱️ กำลังสแกนอัตโนมัติใน 3...'
     );
 
     const interval = setInterval(async () => {
@@ -1260,10 +1302,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       // Update countdown numbers 3 -> 2 -> 1
       if (elapsed < 1000) {
         setCountdownValue(3);
+        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 3...' : lang === 'en-US' ? '⏱️ Auto-scanning in 3...' : '⏱️ กำลังสแกนอัตโนมัติใน 3...');
       } else if (elapsed < 2000) {
         setCountdownValue(2);
+        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 2...' : lang === 'en-US' ? '⏱️ Auto-scanning in 2...' : '⏱️ กำลังสแกนอัตโนมัติใน 2...');
       } else if (elapsed < 3000) {
         setCountdownValue(1);
+        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 1...' : lang === 'en-US' ? '⏱️ Auto-scanning in 1...' : '⏱️ กำลังสแกนอัตโนมัติใน 1...');
       } else {
         clearInterval(interval);
         countdownIntervalRef.current = null;
@@ -1818,7 +1863,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 setPresenceDetected(true);
               }
 
-              // Face locked & live verified -> Pre-verify candidate before auto-starting countdown
+              // Face locked & live verified -> Autonomous Zero-Touch Auto-Scan
               consecutiveSteadyFramesRef.current++;
               if (
                 consecutiveSteadyFramesRef.current >= 2 &&
@@ -1826,39 +1871,21 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 !isScanning &&
                 !isProcessingScanRef.current &&
                 !isScanningPaused &&
+                !isCoolingDownRef.current &&
                 !matchedPatient &&
                 rateLimitCooldownSec === 0
               ) {
-                if (cachedPatientsRef.current.length > 0 && res.landmarks) {
-                  try {
-                    const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
-                    const aligned = services.aligner.align(dCanvas, res.landmarks);
-                    const vec = await services.embeddingModel.embed(aligned);
-                    let maxSim = 0;
-                    for (const cand of cachedPatientsRef.current) {
-                      for (const cv of cand.vectors) {
-                        if (cv.length === 512) {
-                          let dot = 0;
-                          for (let i = 0; i < 512; i++) dot += vec[i] * cv[i];
-                          const calDot = calibrateCosineSimilarity(dot);
-                          if (calDot > maxSim) maxSim = calDot;
-                        }
-                      }
-                    }
-                    if (maxSim >= 0.70) {
-                      startCountdown();
-                    } else {
-                      const strangerMsg = '👤 ตรวจพบใบหน้า กรุณากด "เริ่มสแกนใบหน้า" หรือเข้าด้วยรหัส PIN';
-                      if (prevStatusTextRef.current !== strangerMsg) {
-                        prevStatusTextRef.current = strangerMsg;
-                        setStatusText(strangerMsg);
-                      }
-                    }
-                  } catch {
-                    startCountdown();
-                  }
-                } else {
-                  startCountdown();
+                startCountdown();
+              } else if (!isCountingDownRef.current && !isScanning && !isCoolingDownRef.current) {
+                const detectingMsg =
+                  lang === 'zh-CN'
+                    ? '🔍 已检测到人脸，请直视摄像头...'
+                    : lang === 'en-US'
+                    ? '🔍 Face detected. Please look straight at camera...'
+                    : '🔍 ตรวจพบใบหน้า กรุณามองตรงที่กล้อง...';
+                if (prevStatusTextRef.current !== detectingMsg) {
+                  prevStatusTextRef.current = detectingMsg;
+                  setStatusText(detectingMsg);
                 }
               }
             } else if (liv.state === 'spoof_blocked') {
@@ -1874,10 +1901,15 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               }
             } else {
               consecutiveSteadyFramesRef.current = 0;
-              const msg = '🟡 กำลังตรวจสอบความมีชีวิต...';
-              if (prevStatusTextRef.current !== msg) {
-                prevStatusTextRef.current = msg;
-                setStatusText(msg);
+              const detectingMsg =
+                lang === 'zh-CN'
+                  ? '🔍 已检测到人脸，请直视摄像头...'
+                  : lang === 'en-US'
+                  ? '🔍 Face detected. Please look straight at camera...'
+                  : '🔍 ตรวจพบใบหน้า กรุณามองตรงที่กล้อง...';
+              if (prevStatusTextRef.current !== detectingMsg && !isCoolingDownRef.current) {
+                prevStatusTextRef.current = detectingMsg;
+                setStatusText(detectingMsg);
               }
             }
 
@@ -1895,8 +1927,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               lockedTargetRef.current = null;
             }
             consecutiveSteadyFramesRef.current = 0;
+            const noFaceMsg =
+              lang === 'zh-CN'
+                ? '👤 请站在摄像头前以自动登录'
+                : lang === 'en-US'
+                ? '👤 Please stand in front of camera for auto-login'
+                : '👤 กรุณาก้าวยืนหน้ากล้องเพื่อเข้าสู่ระบบอัตโนมัติ';
             if (isCountingDownRef.current) {
-              cancelCountdown('กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น');
+              cancelCountdown(noFaceMsg);
             }
             if (prevFaceInCircleRef.current !== false) {
               prevFaceInCircleRef.current = false;
@@ -1906,10 +1944,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               prevPresenceDetectedRef.current = false;
               setPresenceDetected(false);
             }
-            const msg = 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น';
-            if (prevStatusTextRef.current !== msg) {
-              prevStatusTextRef.current = msg;
-              setStatusText(msg);
+            if (prevStatusTextRef.current !== noFaceMsg && !isCoolingDownRef.current) {
+              prevStatusTextRef.current = noFaceMsg;
+              setStatusText(noFaceMsg);
             }
             inputManager.processFaceDetection(null, performance.now());
           }
@@ -2122,7 +2159,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 <div className="absolute top-16 inset-x-0 flex justify-center pointer-events-none z-20">
                   <div className="px-5 py-2.5 rounded-full bg-emerald-600/95 backdrop-blur-md text-white font-black text-base sm:text-lg shadow-2xl border border-emerald-300/80 flex items-center gap-2.5 animate-bounce">
                     <span className="text-xl">⏱️</span>
-                    <span>นับถอยหลัง {countdownValue} วินาที</span>
+                    <span>
+                      {lang === 'zh-CN' ? `正在自动扫描 ${countdownValue}...` : lang === 'en-US' ? `Auto-scanning in ${countdownValue}...` : `กำลังสแกนอัตโนมัติใน ${countdownValue}...`}
+                    </span>
                     {realtimeScore !== null && isCalibrationOpen && (
                       <span className="ml-1 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-400">
                         {realtimeScore}%
@@ -2133,23 +2172,32 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               )}
 
               {/* Status Pill Badge at bottom of camera box */}
-              <div className="absolute bottom-4 px-4 py-2 rounded-full bg-slate-950/85 backdrop-blur-md border border-teal-500/40 text-xs sm:text-sm font-bold text-teal-300 flex items-center gap-2 shadow-xl max-w-[90%] truncate z-20 pointer-events-none">
-                {isCameraAdjustingLight ? (
+              <div className="absolute bottom-4 px-4 py-2.5 rounded-full bg-slate-950/85 backdrop-blur-md border border-teal-500/40 text-xs sm:text-sm font-bold text-teal-300 flex items-center gap-2 shadow-xl max-w-[90%] truncate z-20 pointer-events-none">
+                {isAutoScanCoolingDown ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-amber-300 shrink-0" />
+                    <span className="text-amber-200 truncate font-semibold">
+                      {lang === 'zh-CN' ? '🔄 未找到人脸数据，正在自动重新扫描...' : lang === 'en-US' ? '🔄 No matching face found. Auto-scanning again...' : '🔄 ไม่พบข้อมูลใบหน้า กำลังสแกนใหม่อัตโนมัติ...'}
+                    </span>
+                  </>
+                ) : isCameraAdjustingLight ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-amber-300 shrink-0" />
                     <span className="text-amber-200 truncate font-semibold">กำลังปรับแสงกล้อง...</span>
                   </>
-                ) : countdownValue !== null ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
-                    <span className="text-emerald-300 truncate">
-                      {lang === 'zh-CN' ? `正在识别人脸 ${countdownValue}...` : lang === 'en-US' ? `Scanning face ${countdownValue}...` : `กำลังบันทึกและล็อกเป้าหมายใบหน้า ${countdownValue}s...`}
-                    </span>
-                  </>
                 ) : isScanning ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-cyan-300 shrink-0" />
-                    <span className="truncate">{statusText || t('kiosk_verifying_identity')}</span>
+                    <span className="text-cyan-200 truncate font-bold">
+                      {lang === 'zh-CN' ? '⚡ 正在验证生物特征身份...' : lang === 'en-US' ? '⚡ Verifying biometric identity...' : '⚡ กำลังตรวจสอบอัตลักษณ์ชีวมาตร...'}
+                    </span>
+                  </>
+                ) : countdownValue !== null ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
+                    <span className="text-emerald-300 truncate font-bold">
+                      {lang === 'zh-CN' ? `⏱️ 正在自动扫描 ${countdownValue}...` : lang === 'en-US' ? `⏱️ Auto-scanning in ${countdownValue}...` : `⏱️ กำลังสแกนอัตโนมัติใน ${countdownValue}...`}
+                    </span>
                   </>
                 ) : matchedPatient ? (
                   <>
@@ -2160,22 +2208,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   <>
                     <span className="text-amber-300 font-bold shrink-0">⏳ คูลดาวน์ {rateLimitCooldownSec}s</span>
                   </>
-                ) : !presenceDetected ? (
-                  <>
-                    <span className="text-amber-300 font-semibold truncate">🟡 {statusText || 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น'}</span>
-                  </>
                 ) : livenessResult?.state === 'spoof_blocked' ? (
                   <>
                     <span className="text-rose-300 font-semibold truncate">{t('kiosk_spoof_blocked')}</span>
                   </>
-                ) : livenessResult?.state === 'live_verified' ? (
+                ) : presenceDetected ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
-                    <span className="text-emerald-300 font-semibold truncate">{statusText || 'ล็อกเป้าหมายแล้ว พร้อมเริ่มสแกน'}</span>
+                    <span className="text-emerald-300 font-semibold truncate">
+                      {lang === 'zh-CN' ? '🔍 已检测到人脸，请直视摄像头...' : lang === 'en-US' ? '🔍 Face detected. Please look straight at camera...' : '🔍 ตรวจพบใบหน้า กรุณามองตรงที่กล้อง...'}
+                    </span>
                   </>
                 ) : (
                   <>
-                    <span className="text-cyan-300 font-medium truncate">🟡 {statusText || t('kiosk_checking_liveness')}</span>
+                    <span className="text-slate-300 font-medium truncate">
+                      {lang === 'zh-CN' ? '👤 请站在摄像头前以自动登录' : lang === 'en-US' ? '👤 Please stand in front of camera for auto-login' : '👤 กรุณาก้าวยืนหน้ากล้องเพื่อเข้าสู่ระบบอัตโนมัติ'}
+                    </span>
                   </>
                 )}
               </div>
@@ -2349,38 +2397,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
         {/* 🧭 Action Dock Below Camera */}
         <div className="w-full flex flex-col gap-3 shrink-0">
-          {/* Giant Primary Button */}
-          <button
-            type="button"
-            id="kiosk-scan-face-btn"
-            data-testid="kiosk-scan-face-btn"
-            disabled={isScanning || countdownValue !== null}
-            onClick={() => executeScanLogin()}
-            className="w-full py-4 sm:py-5 px-6 rounded-2xl text-xl sm:text-2xl font-bold text-white bg-gradient-to-r from-[#059669] via-[#0D9488] to-[#1D4ED8] hover:brightness-105 active:scale-[0.99] transition shadow-lg shadow-teal-900/15 flex items-center justify-center gap-3 whitespace-nowrap cursor-pointer"
-          >
-            {countdownValue !== null ? (
-              <>
-                <RefreshCw className="w-6 h-6 animate-spin text-white shrink-0" />
-                <span className="whitespace-nowrap">กำลังนับถอยหลัง {countdownValue}...</span>
-              </>
-            ) : isScanning ? (
-              <>
-                <RefreshCw className="w-6 h-6 animate-spin text-white shrink-0" />
-                <span className="whitespace-nowrap">{t('kiosk_verifying_identity')}</span>
-              </>
-            ) : cameraReady && !userDisabledCamera && !isScanningPaused ? (
-              <>
-                <RefreshCw className="w-6 h-6 text-emerald-100 shrink-0" />
-                <span className="whitespace-nowrap">เริ่มสแกนใบหน้าใหม่อีกครั้ง</span>
-              </>
-            ) : (
-              <>
-                <Camera className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-100 shrink-0" />
-                <span className="whitespace-nowrap">สแกนใบหน้าเข้าใช้งานทันที</span>
-              </>
-            )}
-          </button>
-
           {/* 2 Secondary Buttons Side-by-Side */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
             <button

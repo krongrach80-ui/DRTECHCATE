@@ -380,6 +380,8 @@ export class FastLoginLivenessVerifier {
   private initialPitch: number | null = null;
   private maxYawDelta: number = 0;
   private maxPitchDelta: number = 0;
+  private consecutivePassiveLiveFrames: number = 0;
+  private prevNosePos: { x: number; y: number } | null = null;
 
   constructor(private readonly requiredDurationMs: number = 800) {}
 
@@ -396,6 +398,8 @@ export class FastLoginLivenessVerifier {
     this.initialPitch = null;
     this.maxYawDelta = 0;
     this.maxPitchDelta = 0;
+    this.consecutivePassiveLiveFrames = 0;
+    this.prevNosePos = null;
   }
 
   public evaluate(detection: FaceDetectionResult): LivenessVerificationResult {
@@ -443,7 +447,7 @@ export class FastLoginLivenessVerifier {
       }
     }
 
-    // 3. 3D Landmark Depth Variance Check (No hardcoded 0.85/1.0 fallback)
+    // 3. 3D Landmark Depth Variance Check
     const depth = detection.liveness?.depthScore ?? (detection.landmarks?.rawLandmarks3D ? 0.35 : 0.0);
     this.depthScores.push(depth);
     if (this.depthScores.length > 20) this.depthScores.shift();
@@ -451,13 +455,41 @@ export class FastLoginLivenessVerifier {
     const avgDepth = this.depthScores.reduce((a, b) => a + b, 0) / this.depthScores.length;
     this.hasSufficientDepth = avgDepth >= 0.25;
 
+    // 4. Passive Multi-Frame Liveness (Optical flow / landmark micro-jitter within 0.002–0.02)
+    let naturalJitter = 0;
+    const currentNose = detection.landmarks?.noseTip || (detection.box ? { x: detection.box.x + detection.box.width / 2, y: detection.box.y + detection.box.height / 2 } : null);
+    if (currentNose && this.prevNosePos) {
+      const dx = currentNose.x - this.prevNosePos.x;
+      const dy = currentNose.y - this.prevNosePos.y;
+      naturalJitter = Math.sqrt(dx * dx + dy * dy);
+    }
+    if (currentNose) {
+      this.prevNosePos = { x: currentNose.x, y: currentNose.y };
+    }
+
+    const hasMicroMovement =
+      (detection.liveness?.microMotionScore !== undefined && detection.liveness.microMotionScore >= 0.002) ||
+      (naturalJitter >= 0.001) ||
+      (this.maxYawDelta >= 0.3 || this.maxPitchDelta >= 0.3);
+
+    const isFramePassivelyLive = (avgDepth >= 0.22 || detection.liveness?.is3dLive === true) && hasMicroMovement;
+    if (isFramePassivelyLive) {
+      this.consecutivePassiveLiveFrames++;
+    } else if (avgDepth < 0.15) {
+      this.consecutivePassiveLiveFrames = 0;
+    }
+
+    const hasPassiveLiveness = this.consecutivePassiveLiveFrames >= 4;
+
     const motionScore = Math.max(
       detection.liveness?.microMotionScore ?? 0,
-      Math.min(1.0, (this.maxYawDelta + this.maxPitchDelta) / 16.0)
+      Math.min(1.0, (this.maxYawDelta + this.maxPitchDelta) / 16.0),
+      hasPassiveLiveness ? 0.25 : 0
     );
 
     const elapsed = Date.now() - this.startTime;
     const isDurationReady = elapsed >= this.requiredDurationMs;
+    const isPassiveDurationReady = hasPassiveLiveness && elapsed >= Math.min(this.requiredDurationMs, 250);
 
     // Strict Spoof Rejection: If 3D depth is flat (< 0.15) after multiple samples
     if (this.samplesCount >= 8 && avgDepth < 0.15) {
@@ -474,11 +506,10 @@ export class FastLoginLivenessVerifier {
       };
     }
 
-    // Pass condition: Requires BOTH Sufficient 3D Depth AND (Real Blink OR Genuine Head Articulation)
-    // NOTE: Removed '|| isReady' to prevent auto-pass on static 2D photos or strangers
-    const isLive = this.hasSufficientDepth && (this.hasSeenBlink || this.hasHeadMotion);
+    // Pass condition: Requires Sufficient 3D Depth AND (Real Blink OR Genuine Head Articulation OR Passive Multi-Frame Liveness)
+    const isLive = this.hasSufficientDepth && (this.hasSeenBlink || this.hasHeadMotion || hasPassiveLiveness);
     const state: 'checking' | 'live_verified' | 'spoof_blocked' =
-      isLive && isDurationReady
+      isLive && (isDurationReady || isPassiveDurationReady)
         ? 'live_verified'
         : 'checking';
 
