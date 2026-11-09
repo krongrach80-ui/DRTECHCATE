@@ -606,7 +606,7 @@ export class SmartOnboardingService {
           pose: f.pose,
           embedding: f.embedding,
         })),
-        pin: payload.pin?.trim() || '1234',
+        pin: payload.pin?.trim() || '',
         liveness_passed: payload.liveness_passed ?? true,
         liveness_score: payload.liveness_score ?? 0.98,
         target_joint: payload.target_joint?.trim() || 'เข่า',
@@ -837,7 +837,7 @@ export class SmartOnboardingService {
           for (const p of dbPatients) {
             const pRecord: PatientRecordFile | undefined = p.history?.patient_record ? { ...p.history.patient_record } : undefined;
             const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
-            const storedPin = p.history?.pin || '1234';
+            const storedPin = p.history?.pin || '';
             const builtRecord: PatientRecordFile = pRecord || {
               patient_id: p.id,
               hn: p.hn,
@@ -886,17 +886,17 @@ export class SmartOnboardingService {
 
     const matched = records.find((r) => {
       if (!r) return false;
-      const storedPin = (r.clinical as any)?.pin || (r as any).pin || '1234';
+      const storedPin = (r.clinical as any)?.pin || (r as any).pin || '';
       const rHn = r.hn ? String(r.hn).trim() : '';
       const rId = r.patient_id ? String(r.patient_id).trim() : '';
       const rPhone = r.phone ? String(r.phone).trim() : '';
 
       if (hn) {
         const cleanHn = hn.trim();
-        return (rHn === cleanHn || rId === cleanHn) && (storedPin === cleanPin || (Boolean(rHn) && rHn.endsWith(cleanPin)));
+        return (rHn === cleanHn || rId === cleanHn) && ((Boolean(storedPin) && storedPin === cleanPin) || (Boolean(rHn) && rHn.endsWith(cleanPin)));
       }
       return (
-        storedPin === cleanPin ||
+        (Boolean(storedPin) && storedPin === cleanPin) ||
         (Boolean(rHn) && (rHn === cleanPin || rHn.endsWith(cleanPin))) ||
         (Boolean(rId) && rId === cleanPin) ||
         (Boolean(rPhone) && (rPhone === cleanPin || rPhone.endsWith(cleanPin)))
