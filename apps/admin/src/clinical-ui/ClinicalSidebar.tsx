@@ -21,6 +21,7 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import { hospitalTheme } from '../../../../packages/hospital-ui-kit/src/index.js';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 
 export type ClinicalMenuId =
   | 'users'
@@ -61,6 +62,8 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
   onToggleCollapse,
   onOpenMinigames,
 }) => {
+  const { t } = useClinicalI18n();
+
   // Master Prompt v3 Spec 8.1: Admin 6 Main Windows
   const adminMenus: Array<{ id: ClinicalMenuId; label: string; icon: React.ReactNode; badge?: number }> = [
     {
@@ -101,32 +104,32 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
   const ptMenus: Array<{ id: ClinicalMenuId; label: string; icon: React.ReactNode; badge?: number }> = [
     {
       id: 'reception',
-      label: '1. หน้าต้อนรับ',
+      label: t('menu_reception', '1. หน้าต้อนรับ'),
       icon: <HeartPulse className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'patients',
-      label: '2. จัดการคนไข้ของตน',
+      label: t('menu_my_patients', '2. จัดการคนไข้ของตน'),
       icon: <Activity className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'records',
-      label: '3. ข้อมูลคนไข้/เวชระเบียน/ฝากเคส',
+      label: t('menu_records', '3. ข้อมูลคนไข้/เวชระเบียน/ฝากเคส'),
       icon: <ClipboardList className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'profile',
-      label: '4. ข้อมูลตัวเอง',
+      label: t('menu_profile', '4. ข้อมูลตัวเอง'),
       icon: <User className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'exercises',
-      label: '5. ท่ากายภาพ',
+      label: t('menu_exercises', '5. ท่ากายภาพ'),
       icon: <Dumbbell className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'schedule',
-      label: '6. ตารางนัด',
+      label: t('menu_schedule', '6. ตารางนัด'),
       icon: <Calendar className="w-4 h-4 shrink-0" />,
       badge: queueBadgeCount > 0 ? queueBadgeCount : undefined,
     },
@@ -157,7 +160,7 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
                 </h1>
                 <div className="inline-flex items-center gap-1.5 px-2 py-0.5 mt-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 whitespace-nowrap">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>{isPtMode ? 'นักกายภาพ (PT)' : 'ผู้อำนวยการ (Admin)'}</span>
+                  <span>{isPtMode ? t('pt_role_badge', 'นักกายภาพ (PT)') : t('admin_role_badge', 'ผู้อำนวยการ (Admin)')}</span>
                 </div>
               </div>
             )}
@@ -269,7 +272,7 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
             className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2' : 'justify-center gap-2 py-2 px-3'} rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 hover:text-white text-xs font-semibold shadow-sm transition active:scale-95 cursor-pointer whitespace-nowrap`}
           >
             <Monitor className="w-4 h-4 text-emerald-300 shrink-0" />
-            {!isCollapsed && <span>← หน้าตู้ Kiosk</span>}
+            {!isCollapsed && <span>← {t('return_to_kiosk', 'หน้าตู้ Kiosk')}</span>}
           </button>
         )}
 
@@ -278,7 +281,7 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
           type="button"
           onClick={onLogout}
           disabled={isLoggingOut}
-          title="ออกจากระบบ"
+          title={t('logout', 'ออกจากระบบ')}
           className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2' : 'justify-center gap-2 py-2 px-3'} rounded-xl border text-xs font-bold shadow-sm transition active:scale-95 whitespace-nowrap ${
             isLoggingOut
               ? 'bg-rose-500/10 border-rose-400/20 text-rose-300/50 cursor-not-allowed'
@@ -293,7 +296,7 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
           ) : (
             <>
               <LogOut className="w-4 h-4 text-rose-300 shrink-0" />
-              {!isCollapsed && <span>ออกจากระบบ</span>}
+              {!isCollapsed && <span>{t('logout', 'ออกจากระบบ')}</span>}
             </>
           )}
         </button>

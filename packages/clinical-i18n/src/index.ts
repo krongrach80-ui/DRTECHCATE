@@ -64,6 +64,62 @@ export function setSavedLanguage(lang: ClinicalLanguage): void {
  * Standard Clinical Medical Lexicon
  */
 export const CLINICAL_DICTIONARY = {
+  // PT Navigation Menus
+  menu_reception: {
+    'zh-CN': '1. 接待台',
+    'th-TH': '1. หน้าต้อนรับ',
+    'en-US': '1. Reception Desk',
+  },
+  menu_my_patients: {
+    'zh-CN': '2. 我的患者',
+    'th-TH': '2. จัดการคนไข้ของตน',
+    'en-US': '2. My Patients',
+  },
+  menu_records: {
+    'zh-CN': '3. 病历与转介',
+    'th-TH': '3. ข้อมูลคนไข้/เวชระเบียน/ฝากเคส',
+    'en-US': '3. Clinical Records & Delegations',
+  },
+  menu_profile: {
+    'zh-CN': '4. 个人信息',
+    'th-TH': '4. ข้อมูลตัวเอง',
+    'en-US': '4. My Profile',
+  },
+  menu_exercises: {
+    'zh-CN': '5. 动作库',
+    'th-TH': '5. ท่ากายภาพ',
+    'en-US': '5. Exercise Catalog',
+  },
+  menu_schedule: {
+    'zh-CN': '6. 预约排班',
+    'th-TH': '6. ตารางนัด',
+    'en-US': '6. Schedule',
+  },
+  pt_role_badge: {
+    'zh-CN': '物理治疗师 (PT)',
+    'th-TH': 'นักกายภาพ (PT)',
+    'en-US': 'Physical Therapist (PT)',
+  },
+  admin_role_badge: {
+    'zh-CN': '院长 / 管理员 (Admin)',
+    'th-TH': 'ผู้อำนวยการ (Admin)',
+    'en-US': 'Director / Admin',
+  },
+  logout: {
+    'zh-CN': '退出登录',
+    'th-TH': 'ออกจากระบบ',
+    'en-US': 'Log Out',
+  },
+  return_to_kiosk: {
+    'zh-CN': '返回自助终端',
+    'th-TH': 'กลับสู่หน้าตู้ Kiosk',
+    'en-US': 'Return to Kiosk',
+  },
+  delegated_badge: {
+    'zh-CN': '转介患者 / Delegated',
+    'th-TH': 'ฝากเคสชั่วคราว / Delegated',
+    'en-US': 'Delegated Case',
+  },
   // Biomechanical & Kinematic Terms
   rom: {
     'zh-CN': '关节活动度 (ROM)',

@@ -21,6 +21,7 @@ import {
   CaseTransferRecord,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 
 interface ProfileViewProps {
   currentUser: UserProfile;
@@ -33,6 +34,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onProfileUpdated,
   onNavigateToTab,
 }) => {
+  const { lang, t } = useClinicalI18n();
+  const isEn = lang === 'en-US';
+  const isZh = lang === 'zh-CN';
+
   // Section 1: My Profile Form State
   const [initialFormData, setInitialFormData] = useState({
     full_name: currentUser.full_name || '',
@@ -51,18 +56,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Sync state when currentUser is reloaded from session / database
+  const initialLoadedUserIdRef = React.useRef<string | null>(null);
+
+  // Sync state ONLY when switching to a different user session, not on background poll/re-render
   useEffect(() => {
-    const nextData = {
-      full_name: currentUser.full_name || '',
-      phone: currentUser.phone || '',
-      bio: currentUser.bio || '',
-      specialty: currentUser.specialty || currentUser.pt_details?.specialty || '',
-    };
-    setInitialFormData(nextData);
-    setFormData(nextData);
-    setAvatarCacheBuster(Date.now());
-  }, [currentUser]);
+    if (!currentUser) return;
+    if (initialLoadedUserIdRef.current !== currentUser.id) {
+      initialLoadedUserIdRef.current = currentUser.id;
+      const nextData = {
+        full_name: currentUser.full_name || '',
+        phone: currentUser.phone || '',
+        bio: currentUser.bio || '',
+        specialty: currentUser.specialty || currentUser.pt_details?.specialty || '',
+      };
+      setInitialFormData(nextData);
+      setFormData(nextData);
+      setAvatarCacheBuster(Date.now());
+    }
+  }, [currentUser?.id]);
 
   // Track unsaved form changes (dirty state)
   const isDirty =
@@ -609,7 +620,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => onNavigateToTab?.('schedule', p.id)}
+                      onClick={() => {
+                        sessionStorage.setItem('drtech_pt_schedule_target_patient_id', p.id);
+                        onNavigateToTab?.('schedule', p.id);
+                        window.dispatchEvent(new CustomEvent('clinical-navigate', { detail: { tab: 'schedule', patientId: p.id } }));
+                      }}
                       className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
                     >
                       <Calendar className="w-3.5 h-3.5 text-emerald-600" />

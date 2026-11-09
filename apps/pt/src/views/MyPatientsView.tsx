@@ -21,8 +21,10 @@ import {
   PatientRecord,
   CaseTransferRecord,
   PtDirectoryRecord,
+  isPatientVisibleToPt,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 import { SmartPendingPatientsBanner } from '../smart-portal/index.js';
 import {
   ClinicalExecutiveDashboardModal,
@@ -341,15 +343,18 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
     }
   };
 
-  const activeTransferredIds = new Set(
-    (Array.isArray(delegatedTransfers) ? delegatedTransfers : [])
-      .filter((t) => t.status === 'active' && t.to_pt_id === currentUserId)
-      .map((t) => t.patient_id)
-  );
+  const transferredCount = React.useMemo(() => {
+    return (Array.isArray(patients) ? patients : []).filter((p) => {
+      const { isVisible, isDelegated } = isPatientVisibleToPt(p, currentUserId, delegatedTransfers);
+      return isVisible && isDelegated;
+    }).length;
+  }, [patients, currentUserId, delegatedTransfers]);
 
   const filteredList = (Array.isArray(patients) ? patients : []).filter((p) => {
-    if (filterType === 'direct') return p.responsible_pt_id === currentUserId;
-    if (filterType === 'transferred') return activeTransferredIds.has(p.id);
+    const { isVisible, isDelegated } = isPatientVisibleToPt(p, currentUserId, delegatedTransfers);
+    if (!isVisible) return false;
+    if (filterType === 'direct') return !isDelegated;
+    if (filterType === 'transferred') return isDelegated;
     return true;
   });
 
@@ -501,7 +506,7 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            เคสฝากชั่วคราว ({activeTransferredIds.size})
+            เคสฝากชั่วคราว ({transferredCount})
           </button>
         </div>
       </div>
@@ -536,12 +541,17 @@ export const MyPatientsView: React.FC<MyPatientsViewProps> = ({
                 </tr>
               ) : (
                 filteredList.map((p) => {
-                  const isDelegated = activeTransferredIds.has(p.id);
+                  const { isDelegated } = isPatientVisibleToPt(p, currentUserId, delegatedTransfers);
                   return (
                     <tr key={p.id} className="hover:bg-emerald-50/40 transition">
                       <td className="px-6 py-4">
-                        <div className="font-semibold text-slate-900">
-                          {p.first_name} {p.last_name}
+                        <div className="font-semibold text-slate-900 flex items-center gap-2">
+                          <span>{p.first_name} {p.last_name}</span>
+                          {isDelegated && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              ฝากเคสชั่วคราว / Delegated
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs font-mono font-bold text-blue-700 mt-1 inline-block bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-lg">{p.hn}</div>
                       </td>

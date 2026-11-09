@@ -33,6 +33,7 @@ import {
   filterActiveStaffCalls,
   defaultApiClient,
 } from '../../../../packages/api-client/src/index.js';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 
 interface ClinicalPtShellProps {
   currentUser: UserProfile | null;
@@ -131,41 +132,46 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
     setActiveTab(tab);
   };
 
+  const { lang, t } = useClinicalI18n();
+
   const getPageMeta = (tab: ClinicalMenuId): { title: string; subtitle: string } => {
+    const isEn = lang === 'en-US';
+    const isZh = lang === 'zh-CN';
+
     switch (tab) {
       case 'reception':
         return {
-          title: 'หน้าต้อนรับและคิวแจ้งเตือนคนไข้',
+          title: isZh ? '接待台与就诊排队' : isEn ? 'Reception & Active Kiosk Queue' : 'หน้าต้อนรับและคิวแจ้งเตือนคนไข้',
           subtitle: 'Reception & Active Kiosk Queue',
         };
       case 'patients':
         return {
-          title: 'คนไข้ในความรับผิดชอบและการวางแผนฟื้นฟู',
+          title: isZh ? '责任患者与康复计划' : isEn ? 'Assigned Patients & Care Plans' : 'คนไข้ในความรับผิดชอบและการวางแผนฟื้นฟู',
           subtitle: 'Assigned Patients & Care Plans',
         };
       case 'records':
         return {
-          title: 'ข้อมูลคนไข้ เวชระเบียน และการฝากเคส',
+          title: isZh ? '患者病历与交接转介' : isEn ? 'Clinical Health Records & Case Handover' : 'ข้อมูลคนไข้ เวชระเบียน และการฝากเคส',
           subtitle: 'Clinical Health Records & Case Handover',
         };
       case 'schedule':
         return {
-          title: 'ตารางฝึกกายภาพและคิวนัดหมายประจำวัน',
+          title: isZh ? '康复排班与每日预约' : isEn ? 'Physical Therapy Schedule & Appointments' : 'ตารางฝึกกายภาพและคิวนัดหมายประจำวัน',
           subtitle: 'Physical Therapy Schedule & Daily Appointments',
         };
       case 'exercises':
         return {
-          title: 'คลังท่ากายภาพบำบัดและการประเมิน',
+          title: isZh ? '康复动作库与处方' : isEn ? 'Exercise Catalog & Prescriptions' : 'คลังท่ากายภาพบำบัดและการประเมิน',
           subtitle: 'Exercise Catalog & Prescriptions',
         };
       case 'profile':
         return {
-          title: 'ข้อมูลส่วนตัวของนักกายภาพบำบัด',
+          title: isZh ? '物理治疗师个人信息' : isEn ? 'Therapist Profile & Credentials' : 'ข้อมูลส่วนตัวของนักกายภาพบำบัด',
           subtitle: 'Therapist Profile & Credentials',
         };
       default:
         return {
-          title: 'ระบบบริหารกายภาพบำบัด Dr.Tech.Care',
+          title: isZh ? 'Dr.Tech.Care 康复管理系统' : isEn ? 'Dr.Tech.Care Physical Therapy Portal' : 'ระบบบริหารกายภาพบำบัด Dr.Tech.Care',
           subtitle: 'Physical Therapy Clinical Portal',
         };
     }
@@ -219,7 +225,13 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
           subtitleEn={pageMeta.subtitle}
           userName={currentUser?.full_name || 'กภ. วิภาวี สุขใจ'}
           avatarUrl={currentUser?.avatar_url}
-          userRoleTitle="นักกายภาพบำบัดวิชาชีพ (Senior Physical Therapist)"
+          userRoleTitle={
+            lang === 'zh-CN'
+              ? '主任物理治疗师 (Senior Physical Therapist)'
+              : lang === 'en-US'
+              ? 'Senior Physical Therapist'
+              : 'นักกายภาพบำบัดวิชาชีพ (Senior Physical Therapist)'
+          }
           onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
           onFastCheckIn={() => {
             setActiveTab('schedule');
@@ -259,7 +271,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
               />
             )}
             {activeTab === 'records' && (
-              <ClinicalRecordsView initialPatientId={activeRecordsPatientId} />
+              <ClinicalRecordsView initialPatientId={activeRecordsPatientId} currentUserId={currentUserId} />
             )}
             {activeTab === 'schedule' && (
               <PtScheduleView
@@ -293,7 +305,13 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
                 }
                 onProfileUpdated={onProfileUpdated || (() => {})}
                 onNavigateToTab={(tab, patientId) => {
-                  if (patientId) setActiveRecordsPatientId(patientId);
+                  if (patientId) {
+                    if (tab === 'schedule') {
+                      setSchedulePreselectedPatientId(patientId);
+                    } else {
+                      setActiveRecordsPatientId(patientId);
+                    }
+                  }
                   setActiveTab(tab);
                 }}
               />

@@ -39,14 +39,16 @@ const DEMO_PATIENTS: PatientRecord[] = [];
 const DEMO_TODAY_COURSES: TodayCourseItem[] = [];
 
 export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
-  currentUserId: _currentUserId,
+  currentUserId,
   preselectedPatientId,
 }) => {
   const [subTab, setSubTab] = useState<'today' | 'calendar' | 'monthly' | 'smart'>('monthly');
 
   useEffect(() => {
-    if (preselectedPatientId) {
+    const target = preselectedPatientId || (typeof window !== 'undefined' ? sessionStorage.getItem('drtech_pt_schedule_target_patient_id') : null);
+    if (target) {
       setSubTab('monthly');
+      setSelectedPatientId(target);
     }
   }, [preselectedPatientId]);
   const [isSmartWizardOpen, setIsSmartWizardOpen] = useState(false);
@@ -320,7 +322,7 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
       </div>
 
       {/* Master Prompt v6: Monthly Clinical Schedule Planner Grid */}
-      {subTab === 'monthly' && <ClinicalScheduleView preselectedPatientId={preselectedPatientId} />}
+      {subTab === 'monthly' && <ClinicalScheduleView preselectedPatientId={preselectedPatientId} currentUserId={currentUserId} />}
 
       {/* Master Prompt v4: Smart Schedule View */}
       {subTab === 'smart' && <SmartScheduleView />}

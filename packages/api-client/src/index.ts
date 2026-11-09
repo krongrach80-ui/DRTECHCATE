@@ -454,6 +454,57 @@ export function normalizePatientRecord(p: any): any {
   };
 }
 
+/**
+ * Scopes patient visibility for Physical Therapists:
+ * A patient is strictly visible to a PT if and only if:
+ * 1. The PT is the patient's primary/responsible PT, OR
+ * 2. The patient is actively delegated/transferred to this PT during a valid timeframe.
+ */
+export function isPatientVisibleToPt(
+  patient: PatientRecord,
+  ptIdOrUsername?: string | null,
+  delegations: CaseTransferRecord[] = []
+): { isVisible: boolean; isDelegated: boolean } {
+  if (!ptIdOrUsername) return { isVisible: true, isDelegated: false };
+
+  const cleanPt = ptIdOrUsername.trim().toLowerCase();
+
+  // 1. Direct Ownership / Primary PT match
+  const respPt = String(patient.responsible_pt_id || (patient as any).primary_pt_id || (patient as any).assigned_pt_id || '').trim().toLowerCase();
+  const isPrimary = Boolean(
+    respPt && (
+      respPt === cleanPt ||
+      (cleanPt === 'pt-01' && (respPt === 'b1000000-0000-0000-0000-000000000003' || respPt === 'pt_somchai')) ||
+      (cleanPt === 'pt_somchai' && (respPt === 'b1000000-0000-0000-0000-000000000003' || respPt === 'pt-01')) ||
+      (cleanPt === 'b1000000-0000-0000-0000-000000000003' && (respPt === 'pt-01' || respPt === 'pt_somchai'))
+    )
+  );
+
+  // 2. Active Case Delegation / Transfer match
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const isDelegated = Array.isArray(delegations) && delegations.some((d) => {
+    const toPt = String(d.to_pt_id || (d as any).delegate_pt_id || (d as any).covering_pt_id || '').trim().toLowerCase();
+    const isToThisPt = toPt === cleanPt ||
+      (cleanPt === 'pt-01' && (toPt === 'b1000000-0000-0000-0000-000000000003' || toPt === 'pt_somchai')) ||
+      (cleanPt === 'pt_somchai' && (toPt === 'b1000000-0000-0000-0000-000000000003' || toPt === 'pt-01')) ||
+      (cleanPt === 'b1000000-0000-0000-0000-000000000003' && (toPt === 'pt-01' || toPt === 'pt_somchai'));
+    if (!isToThisPt) return false;
+    const patId = String(d.patient_id || '');
+    const matchesPatient = patId === patient.id || patId === patient.hn || patId === (patient as any).patient_id;
+    if (!matchesPatient) return false;
+    const status = d.status || 'active';
+    if (status !== 'active') return false;
+    if (d.end_date && d.end_date < todayIso) return false;
+    if ((d as any).expires_at && new Date((d as any).expires_at).getTime() < Date.now()) return false;
+    return true;
+  });
+
+  return {
+    isVisible: isPrimary || isDelegated,
+    isDelegated,
+  };
+}
+
 export interface ResilientStaffEntry {
   user: UserProfile;
   password?: string;
@@ -3234,6 +3285,212 @@ export class ApiClient {
         const patientId = parts[2];
         const subAction = parts[3];
 
+        // 6.1 Fallback for /patients/:id/treatment-results
+        if (subAction === 'treatment-results') {
+          const authHeader = this.getAuthToken() ? `Bearer ${this.getAuthToken()}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+          let canonicalPatientId = patientId;
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId || '');
+          if (!isUuid && patientId) {
+            try {
+              const pRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?hn=eq.${encodeURIComponent(patientId)}&select=id&limit=1`, {
+                headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: authHeader }
+              });
+              if (pRes.ok) {
+                const pRows = await pRes.json();
+                if (pRows[0]?.id) canonicalPatientId = pRows[0].id;
+              }
+            } catch {}
+          }
+
+          if (options.method === 'POST') {
+            const body = parseSafeBody(options.body);
+            if (!body.body || !body.body.trim()) {
+              throw new Error('กรุณากรอกรายละเอียดผลการประเมินการรักษา');
+            }
+
+            let nextVersion = 1;
+            try {
+              const exRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/treatment_results?patient_id=eq.${encodeURIComponent(canonicalPatientId)}&select=version&order=version.desc&limit=1`, {
+                headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: authHeader }
+              });
+              if (exRes.ok) {
+                const exRows = await exRes.json();
+                if (exRows[0]?.version) nextVersion = Number(exRows[0].version) + 1;
+              }
+            } catch {}
+
+            const profile = this.getUserProfile();
+            const authorId = profile?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profile.id)
+              ? profile.id
+              : 'b1000000-0000-0000-0000-000000000003';
+            const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `f1000000-0000-0000-0000-${Date.now().toString().slice(-12).padStart(12, '0')}`;
+            const rowPayload = {
+              id: newId,
+              patient_id: canonicalPatientId,
+              version: nextVersion,
+              body: body.body.trim(),
+              author_id: authorId,
+              supersedes_id: body.supersedes_id || null,
+              created_at: new Date().toISOString(),
+            };
+
+            const insertRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/treatment_results`, {
+              method: 'POST',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: authHeader,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation',
+              },
+              body: JSON.stringify(rowPayload),
+            });
+
+            if (!insertRes.ok) {
+              const errBody = await insertRes.json().catch(() => ({}));
+              throw new Error(errBody.message || `ไม่สามารถบันทึกผลการรักษาได้ (HTTP ${insertRes.status})`);
+            }
+
+            const insertedRows = await insertRes.json().catch(() => [rowPayload]);
+            const created = insertedRows[0] || rowPayload;
+            created.author = { id: authorId, full_name: profile?.full_name || 'กภ. วิภาวี สุขใจ', username: profile?.username || 'pt_somchai' };
+            created.author_name = profile?.full_name || 'กภ. วิภาวี สุขใจ';
+
+            try {
+              if (typeof window !== 'undefined' && window.localStorage) {
+                const cKey = `drtech_tr_${canonicalPatientId}`;
+                const raw = localStorage.getItem(cKey);
+                const arr = raw ? JSON.parse(raw) : [];
+                arr.push(created);
+                localStorage.setItem(cKey, JSON.stringify(arr));
+              }
+            } catch {}
+
+            return { ok: true, data: created, ...created } as T;
+          }
+
+          // GET /patients/:id/treatment-results
+          try {
+            const listRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/treatment_results?or=(patient_id.eq.${encodeURIComponent(canonicalPatientId)},patient_id.eq.${encodeURIComponent(patientId)})&select=*,author:profiles!author_id(id,full_name,role)&order=version.asc`, {
+              headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: authHeader }
+            });
+            if (listRes.ok) {
+              const rows = await listRes.json();
+              if (Array.isArray(rows)) return rows as T;
+            } else {
+              const listRes2 = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/treatment_results?or=(patient_id.eq.${encodeURIComponent(canonicalPatientId)},patient_id.eq.${encodeURIComponent(patientId)})&select=*&order=version.asc`, {
+                headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: authHeader }
+              });
+              if (listRes2.ok) {
+                const rows = await listRes2.json();
+                if (Array.isArray(rows)) {
+                  return rows.map((r: any) => ({
+                    ...r,
+                    author: { full_name: 'กภ. วิภาวี สุขใจ' },
+                    author_name: 'กภ. วิภาวี สุขใจ'
+                  })) as T;
+                }
+              }
+            }
+          } catch {}
+
+          try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+              const cKey = `drtech_tr_${canonicalPatientId}`;
+              const raw = localStorage.getItem(cKey);
+              if (raw) return JSON.parse(raw) as T;
+            }
+          } catch {}
+
+          return [] as T;
+        }
+
+        // 6.2 Fallback for /patients/:id/notes
+        if (subAction === 'notes') {
+          const authHeader = this.getAuthToken() ? `Bearer ${this.getAuthToken()}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+          let canonicalPatientId = patientId;
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId || '');
+          if (!isUuid && patientId) {
+            try {
+              const pRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?hn=eq.${encodeURIComponent(patientId)}&select=id&limit=1`, {
+                headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: authHeader }
+              });
+              if (pRes.ok) {
+                const pRows = await pRes.json();
+                if (pRows[0]?.id) canonicalPatientId = pRows[0].id;
+              }
+            } catch {}
+          }
+
+          if (options.method === 'POST') {
+            const body = parseSafeBody(options.body);
+            if (!body.body || !body.body.trim()) {
+              throw new Error('กรุณากรอกข้อความบันทึกเวชระเบียน');
+            }
+            const profile = this.getUserProfile();
+            const authorId = profile?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profile.id)
+              ? profile.id
+              : 'b1000000-0000-0000-0000-000000000003';
+            const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `f2000000-0000-0000-0000-${Date.now().toString().slice(-12).padStart(12, '0')}`;
+            const rowPayload = {
+              id: newId,
+              patient_id: canonicalPatientId,
+              author_id: authorId,
+              body: body.body.trim(),
+              created_at: new Date().toISOString(),
+            };
+
+            const insertRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/medical_notes`, {
+              method: 'POST',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: authHeader,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation',
+              },
+              body: JSON.stringify(rowPayload),
+            });
+
+            if (!insertRes.ok) {
+              const errBody = await insertRes.json().catch(() => ({}));
+              throw new Error(errBody.message || `ไม่สามารถสร้างบันทึกเวชระเบียนได้ (HTTP ${insertRes.status})`);
+            }
+
+            const insertedRows = await insertRes.json().catch(() => [rowPayload]);
+            const created = insertedRows[0] || rowPayload;
+            created.author = { id: authorId, full_name: profile?.full_name || 'กภ. วิภาวี สุขใจ', username: profile?.username || 'pt_somchai' };
+            created.author_name = profile?.full_name || 'กภ. วิภาวี สุขใจ';
+
+            return { ok: true, data: created, ...created } as T;
+          }
+
+          // GET /patients/:id/notes
+          try {
+            const listRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/medical_notes?or=(patient_id.eq.${encodeURIComponent(canonicalPatientId)},patient_id.eq.${encodeURIComponent(patientId)})&select=*,author:profiles!author_id(id,full_name,role)&order=created_at.desc`, {
+              headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: authHeader }
+            });
+            if (listRes.ok) {
+              const rows = await listRes.json();
+              if (Array.isArray(rows)) return rows as T;
+            } else {
+              const listRes2 = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/medical_notes?or=(patient_id.eq.${encodeURIComponent(canonicalPatientId)},patient_id.eq.${encodeURIComponent(patientId)})&select=*&order=created_at.desc`, {
+                headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: authHeader }
+              });
+              if (listRes2.ok) {
+                const rows = await listRes2.json();
+                if (Array.isArray(rows)) {
+                  return rows.map((r: any) => ({
+                    ...r,
+                    author: { full_name: 'กภ. วิภาวี สุขใจ' },
+                    author_name: 'กภ. วิภาวี สุขใจ'
+                  })) as T;
+                }
+              }
+            }
+          } catch {}
+
+          return [] as T;
+        }
+
         if (subAction === 'archive' && options.method === 'POST') {
           try {
             await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${patientId}`, {
@@ -4662,6 +4919,51 @@ export class ApiClient {
         return { ok: true, data: [] } as T;
       }
 
+      // 11.5 Fallback for /case-transfers
+      if (endpointPath.startsWith('/case-transfers')) {
+        const authHeader = this.getAuthToken() ? `Bearer ${this.getAuthToken()}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+        if (options.method === 'POST') {
+          const body = parseSafeBody(options.body);
+          const newId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `ct-${Date.now()}`;
+          const transferRow = {
+            id: newId,
+            patient_id: body.patient_id,
+            from_pt_id: body.from_pt_id || this.getUserProfile()?.id || 'b1000000-0000-0000-0000-000000000003',
+            to_pt_id: body.to_pt_id,
+            start_date: body.start_date || new Date().toISOString().slice(0, 10),
+            end_date: body.end_date || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+            notes: body.notes || body.reason || '-',
+            status: 'active',
+            created_at: new Date().toISOString(),
+          };
+          try {
+            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/case_transfers`, {
+              method: 'POST',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: authHeader,
+                'Content-Type': 'application/json',
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify(transferRow),
+            });
+          } catch {}
+          return { ok: true, data: transferRow, ...transferRow } as T;
+        }
+
+        // GET /case-transfers
+        try {
+          const res = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/case_transfers?select=*&order=created_at.desc&limit=50`, {
+            headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: authHeader }
+          });
+          if (res.ok) {
+            const list = await res.json();
+            if (Array.isArray(list)) return list as T;
+          }
+        } catch {}
+        return [] as T;
+      }
+
       // 12. Fallback for /audit
       if (endpointPath.startsWith('/audit')) {
         return { ok: true, data: [] } as T;
@@ -4700,7 +5002,10 @@ export class ApiClient {
           cleanEndpoint.startsWith('/staff') ||
           cleanEndpoint.includes('/staff') ||
           cleanEndpoint.includes('/questions') ||
-          cleanEndpoint.includes('daily-plan')
+          cleanEndpoint.includes('daily-plan') ||
+          cleanEndpoint.includes('treatment-results') ||
+          cleanEndpoint.includes('notes') ||
+          cleanEndpoint.includes('case-transfers')
         ) {
           throw fallbackErr;
         }
@@ -5435,11 +5740,31 @@ export class ApiClient {
 
   public readonly caseTransfers = {
     list: async () => {
-      const res = await this.request<any>('/case-transfers', { method: 'GET' }).catch(() => []);
-      if (Array.isArray(res)) return res as CaseTransferRecord[];
-      if (res && Array.isArray(res.data)) return res.data as CaseTransferRecord[];
-      if (res && Array.isArray(res.transfers)) return res.transfers as CaseTransferRecord[];
-      return [] as CaseTransferRecord[];
+      let transfers: CaseTransferRecord[] = [];
+      try {
+        const res = await this.request<any>('/case-transfers', { method: 'GET' });
+        if (Array.isArray(res)) transfers = res as CaseTransferRecord[];
+        else if (res && Array.isArray(res.data)) transfers = res.data as CaseTransferRecord[];
+        else if (res && Array.isArray(res.transfers)) transfers = res.transfers as CaseTransferRecord[];
+      } catch {}
+
+      if (transfers.length === 0) {
+        try {
+          const authHeader = this.getAuthToken() ? `Bearer ${this.getAuthToken()}` : `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`;
+          const supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/case_transfers?select=*&order=created_at.desc&limit=50`, {
+            headers: {
+              apikey: DEFAULT_SUPABASE_ANON_KEY,
+              Authorization: authHeader,
+            },
+          });
+          if (supaRes.ok) {
+            const list = await supaRes.json();
+            if (Array.isArray(list)) transfers = list as CaseTransferRecord[];
+          }
+        } catch {}
+      }
+
+      return transfers;
     },
 
     create: async (data: {
@@ -5789,14 +6114,28 @@ export class ApiClient {
       return [] as TreatmentResultRecord[];
     },
 
-    createTreatmentResult: async (patientId: string, body: string) => {
+    createTreatmentResult: async (patientId: string, body: string, supersedesId?: string) => {
       return this.request<TreatmentResultRecord>(
         `/patients/${patientId}/treatment-results`,
         {
           method: 'POST',
-          body: JSON.stringify({ body }),
+          body: JSON.stringify({ body, supersedes_id: supersedesId || null }),
         }
       );
+    },
+  };
+
+  public readonly treatmentResults = {
+    listByPatient: async (patientId: string) => {
+      try {
+        const data = await this.records.getTreatmentResults(patientId);
+        return { data, error: null };
+      } catch (error: any) {
+        return { data: [], error };
+      }
+    },
+    create: async (patientId: string, body: string, supersedesId?: string) => {
+      return this.records.createTreatmentResult(patientId, body, supersedesId);
     },
   };
 

@@ -18,8 +18,11 @@ import {
   PatientRecord,
   MedicalNoteRecord,
   TreatmentResultRecord,
+  CaseTransferRecord,
+  isPatientVisibleToPt,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 import {
   ClinicalExecutiveDashboardModal,
   HistoricalSessionMetric,
@@ -32,6 +35,7 @@ import {
 
 interface ClinicalRecordsViewProps {
   initialPatientId?: string;
+  currentUserId?: string;
 }
 
 const DEMO_PATIENTS: PatientRecord[] = [];
@@ -77,8 +81,11 @@ const FALLBACK_CLINICAL_SESSION_METRICS: HistoricalSessionMetric[] = [
 
 export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
   initialPatientId,
+  currentUserId,
 }) => {
+  const { lang, t } = useClinicalI18n();
   const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
+  const [caseTransfers, setCaseTransfers] = useState<CaseTransferRecord[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string>(initialPatientId || (DEMO_PATIENTS[0]?.id || ''));
   const [patientSearch, setPatientSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'notes' | 'results'>('notes');
@@ -103,16 +110,29 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
   const [activeReplaySnapshot, setActiveReplaySnapshot] = useState<KinematicReplaySnapshot | null>(null);
   const [isReplayViewerOpen, setIsReplayViewerOpen] = useState(false);
 
-  // Initial load: Fetch patient list
+  // Initial load: Fetch patient list and case transfers
   useEffect(() => {
     const loadPatients = async () => {
       try {
-        const list = await defaultApiClient.patients.list({ limit: 100 }).catch(() => []);
-        const rawPatients = Array.isArray(list) ? list : ((list as any)?.patients || []);
-        const safe = rawPatients.length > 0 ? rawPatients : DEMO_PATIENTS;
+        const [list, transfers] = await Promise.all([
+          defaultApiClient.patients.list({ limit: 100 }).catch(() => []),
+          defaultApiClient.caseTransfers.list().catch(() => []),
+        ]);
+        const rawPatients: PatientRecord[] = Array.isArray(list) ? list : ((list as any)?.patients || []);
+        const rawTransfers: CaseTransferRecord[] = Array.isArray(transfers) ? transfers : [];
+        setCaseTransfers(rawTransfers);
+
+        // Spec #2: Scope patients to only own assigned or delegated cases
+        const scoped = currentUserId
+          ? rawPatients.filter((p) => isPatientVisibleToPt(p, currentUserId, rawTransfers).isVisible)
+          : rawPatients;
+
+        const safe = scoped.length > 0 ? scoped : (currentUserId ? [] : DEMO_PATIENTS);
         setPatients(safe);
         if (!selectedPatientId && safe.length > 0) {
           setSelectedPatientId(safe[0].id);
+        } else if (initialPatientId && safe.some((p) => p.id === initialPatientId)) {
+          setSelectedPatientId(initialPatientId);
         }
       } catch {
         setPatients(DEMO_PATIENTS);
@@ -123,7 +143,7 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
     };
     loadPatients();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentUserId]);
 
   // Fetch clinical records when selected patient changes
   const fetchRecords = async () => {
@@ -159,7 +179,11 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
 
     try {
       setActionLoading(true);
-      await defaultApiClient.records.createNote(selectedPatientId, noteBody.trim());
+      setErrorMsg(null);
+      const res = await defaultApiClient.records.createNote(selectedPatientId, noteBody.trim());
+      if (!res || (res as any).error) {
+        throw new Error((res as any)?.error?.message || (res as any)?.message || 'ไม่สามารถสร้างบันทึกเวชระเบียนได้');
+      }
       setSuccessMsg('บันทึกเวชระเบียนต่อท้าย (Append-Only) สำเร็จ ข้อมูลได้รับการปกป้องโดยระบบฐานข้อมูล');
       setNoteBody('');
       setIsNoteModalOpen(false);
@@ -171,7 +195,7 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
     }
   };
 
-  // Create Versioned Treatment Result
+  // Create Versioned Treatment Result (Spec #4)
   const handleCreateTreatmentResult = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPatientId || !resultBody.trim()) {
@@ -181,11 +205,22 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
 
     try {
       setActionLoading(true);
-      await defaultApiClient.records.createTreatmentResult(selectedPatientId, resultBody.trim());
+      setErrorMsg(null);
+      const res = await defaultApiClient.records.createTreatmentResult(selectedPatientId, resultBody.trim());
+      if (!res || (res as any).error) {
+        throw new Error((res as any)?.error?.message || (res as any)?.message || 'ไม่สามารถบันทึกผลการรักษาได้');
+      }
       setSuccessMsg('บันทึกผลการรักษาเป็นเวอร์ชันใหม่เรียบร้อย (Versioned Record)');
       setResultBody('');
       setIsResultModalOpen(false);
-      await fetchRecords();
+
+      // Immediately re-fetch and set state upon successful insert
+      const { data: newResults, error: fetchErr } = await defaultApiClient.treatmentResults.listByPatient(selectedPatientId);
+      if (!fetchErr && Array.isArray(newResults) && newResults.length > 0) {
+        setTreatmentResults(newResults);
+      } else {
+        await fetchRecords();
+      }
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถบันทึกผลการรักษาได้');
     } finally {
@@ -302,6 +337,7 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
             <div className="divide-y divide-slate-100 max-h-[550px] overflow-y-auto space-y-1">
               {filteredPatients.map((p) => {
                 const isSelected = p.id === selectedPatientId;
+                const { isDelegated } = isPatientVisibleToPt(p, currentUserId, caseTransfers);
                 return (
                   <button
                     key={p.id}
@@ -312,8 +348,13 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
                         : 'hover:bg-slate-50 text-slate-700'
                     }`}
                   >
-                    <div className="font-semibold text-sm">
-                      {p.first_name} {p.last_name}
+                    <div className="font-semibold text-sm flex items-center justify-between">
+                      <span>{p.first_name} {p.last_name}</span>
+                      {isDelegated && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                          ฝากเคส
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-slate-500 flex items-center justify-between mt-1">
                       <span className="font-mono font-bold text-blue-700">{p.hn}</span>
@@ -336,10 +377,15 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
                   <h3 className="text-xl font-bold text-slate-900">
                     {selectedPatient.first_name} {selectedPatient.last_name}
                   </h3>
-                  <div className="text-xs text-slate-600 mt-1 flex items-center gap-3">
+                  <div className="text-xs text-slate-600 mt-1 flex flex-wrap items-center gap-3">
                     <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                       HN: {selectedPatient.hn}
                     </span>
+                    {isPatientVisibleToPt(selectedPatient, currentUserId, caseTransfers).isDelegated && (
+                      <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        📌 ฝากเคสชั่วคราว / Delegated
+                      </span>
+                    )}
                     <span>อายุ {selectedPatient.age} ปี</span>
                     <span>อาการ: {selectedPatient.injury || 'กายภาพบำบัดทั่วไป'}</span>
                   </div>

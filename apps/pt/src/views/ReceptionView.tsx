@@ -22,11 +22,14 @@ import {
   TodayCourseItem,
   KioskRecord,
   StaffCallRecord,
+  CaseTransferRecord,
   filterActiveStaffCalls,
   formatSafeThaiDateTime,
   resolveKioskDisplayName,
+  isPatientVisibleToPt,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 
 interface ReceptionViewProps {
   staffCalls: StaffCallRecord[];
@@ -95,17 +98,31 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
     injury: '',
   });
 
+  const { lang, t } = useClinicalI18n();
+
   const fetchData = async () => {
     try {
       setLoading(true);
       setErrorMsg(null);
-      const [pts, today, kList] = await Promise.all([
+      const [pts, today, kList, transfers] = await Promise.all([
         defaultApiClient.patients.list({ q: search.trim() || undefined, limit: 50 }).catch(() => []),
         defaultApiClient.courses.getToday().catch(() => []),
         defaultApiClient.kiosk.listDevices().catch(() => []),
+        defaultApiClient.caseTransfers.list().catch(() => []),
       ]);
-      const safePts = Array.isArray(pts) ? pts : [];
-      const safeToday = Array.isArray(today) ? today : [];
+      const rawPts: PatientRecord[] = Array.isArray(pts) ? pts : [];
+      const safeTransfers: CaseTransferRecord[] = Array.isArray(transfers) ? transfers : [];
+
+      // Spec #2: Scope patients to only assigned or delegated cases
+      const safePts = currentUserId
+        ? rawPts.filter((p) => isPatientVisibleToPt(p, currentUserId, safeTransfers).isVisible)
+        : rawPts;
+
+      const rawToday = Array.isArray(today) ? today : [];
+      const safeToday = currentUserId
+        ? rawToday.filter((item) => !item.patient || isPatientVisibleToPt(item.patient, currentUserId, safeTransfers).isVisible)
+        : rawToday;
+
       const safeKiosks = Array.isArray(kList) && kList.length > 0 ? kList : DEMO_KIOSKS;
       setPatients(safePts);
       setTodayQueue(safeToday);

@@ -22,7 +22,12 @@ import {
   StatusBadge,
   SmoothButton,
 } from '../../../../packages/hospital-ui-kit/src/index.js';
-import { defaultApiClient, PatientRecord } from '../../../../packages/api-client/src/index.js';
+import {
+  defaultApiClient,
+  PatientRecord,
+  CaseTransferRecord,
+  isPatientVisibleToPt,
+} from '../../../../packages/api-client/src/index.js';
 import { SmartScheduleWizardModal } from '../smart-portal/SmartScheduleWizardModal';
 import { PatientCoursePrescriptionModal } from './PatientCoursePrescriptionModal';
 import { ClinicalMenuId } from './ClinicalSidebar';
@@ -30,6 +35,7 @@ import { ClinicalMenuId } from './ClinicalSidebar';
 interface ClinicalScheduleViewProps {
   onOpenCreateScheduleModal?: (patientId?: string) => void;
   preselectedPatientId?: string;
+  currentUserId?: string;
   autoOpenWizard?: boolean;
   onNavigateToTab?: (tab: ClinicalMenuId, patientId?: string) => void;
 }
@@ -59,6 +65,7 @@ function broadcastScheduleSync(patientId?: string): void {
 export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   onOpenCreateScheduleModal,
   preselectedPatientId,
+  currentUserId,
   autoOpenWizard,
   onNavigateToTab,
 }) => {
@@ -114,11 +121,17 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [list, dossierList] = await Promise.all([
+      const [list, dossierList, transferList] = await Promise.all([
         defaultApiClient.patients.list().catch(() => []),
         defaultApiClient.smartOnboarding.listDossiers().catch(() => []),
+        currentUserId ? defaultApiClient.caseTransfers.list().catch(() => []) : Promise.resolve([]),
       ]);
-      const patientArr = Array.isArray(list) && list.length > 0 ? list : DEMO_PATIENTS;
+      const rawPatients: PatientRecord[] = Array.isArray(list) && list.length > 0 ? list : DEMO_PATIENTS;
+      const transferArr: CaseTransferRecord[] = Array.isArray(transferList) ? transferList : [];
+      const scopedPatients = currentUserId
+        ? rawPatients.filter((p) => isPatientVisibleToPt(p, currentUserId, transferArr).isVisible)
+        : rawPatients;
+      const patientArr = scopedPatients.length > 0 ? scopedPatients : (currentUserId ? [] : DEMO_PATIENTS);
       const dossierArr = Array.isArray(dossierList) && dossierList.length > 0 ? dossierList : DEMO_DOSSIERS;
       setPatients(patientArr);
       setDossiers((prev) => {
@@ -131,9 +144,15 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
           return d;
         });
       });
-      if (preselectedPatientId) {
-        const matched = patientArr.find((p) => p.id === preselectedPatientId || p.hn === preselectedPatientId);
-        setSelectedPatient(matched || patientArr[0] || null);
+      const targetId = preselectedPatientId || (typeof window !== 'undefined' ? sessionStorage.getItem('drtech_pt_schedule_target_patient_id') : null);
+      if (targetId) {
+        const matched = patientArr.find((p) => p.id === targetId || p.hn === targetId);
+        if (matched) {
+          setSelectedPatient(matched);
+          try { sessionStorage.removeItem('drtech_pt_schedule_target_patient_id'); } catch {}
+        } else {
+          setSelectedPatient(patientArr[0] || null);
+        }
       } else {
         setSelectedPatient((prev) => prev ?? patientArr[0]);
       }
@@ -144,7 +163,7 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [preselectedPatientId]);
+  }, [preselectedPatientId, currentUserId]);
 
   useEffect(() => {
     void loadData();
@@ -157,6 +176,17 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       window.removeEventListener('schedule-updated', handleScheduleUpdated);
     };
   }, [loadData]);
+
+  useEffect(() => {
+    const targetId = preselectedPatientId || (typeof window !== 'undefined' ? sessionStorage.getItem('drtech_pt_schedule_target_patient_id') : null);
+    if (targetId && patients.length > 0) {
+      const matched = patients.find((p) => p.id === targetId || p.hn === targetId);
+      if (matched) {
+        setSelectedPatient(matched);
+        try { sessionStorage.removeItem('drtech_pt_schedule_target_patient_id'); } catch {}
+      }
+    }
+  }, [preselectedPatientId, patients]);
 
   const handleOpenWizard = (patientId?: string, dateStr?: string) => {
     const targetId = patientId || selectedPatient?.id;
