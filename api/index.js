@@ -6729,15 +6729,17 @@ var init_repository9 = __esm({
         const createdAt = (/* @__PURE__ */ new Date()).toISOString();
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const targetKioskId = isUuid.test(kioskId) ? kioskId : "cc000000-0000-0000-0000-000000000001";
+        const tenMinutesAgoMs = Date.now() - 10 * 60 * 1e3;
         const existingEphemeral = this.ephemeralStaffCalls.find(
-          (c) => (c.kiosk_id === kioskId || c.kiosk_id === targetKioskId) && !c.handled_at
+          (c) => (c.kiosk_id === kioskId || c.kiosk_id === targetKioskId) && !c.handled_at && new Date(c.created_at).getTime() >= tenMinutesAgoMs
         );
         if (existingEphemeral) {
           return existingEphemeral;
         }
         try {
           const adminClient = getAdminClient();
-          const { data: existingCalls } = await adminClient.from("staff_calls").select("id, kiosk_id, reason, created_at, handled_by, handled_at").eq("kiosk_id", targetKioskId).is("handled_at", null).order("created_at", { ascending: false }).limit(1);
+          const tenMinutesAgoIso = new Date(tenMinutesAgoMs).toISOString();
+          const { data: existingCalls } = await adminClient.from("staff_calls").select("id, kiosk_id, reason, created_at, handled_by, handled_at").eq("kiosk_id", targetKioskId).gte("created_at", tenMinutesAgoIso).is("handled_at", null).order("created_at", { ascending: false }).limit(1);
           if (existingCalls && existingCalls.length > 0) {
             const existingRecord = existingCalls[0];
             return existingRecord;

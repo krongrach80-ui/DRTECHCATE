@@ -13,7 +13,9 @@ import {
   Clock,
   History,
   Check,
-  Plus
+  Plus,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import {
   AuditRecord,
@@ -21,6 +23,9 @@ import {
   KioskRecord,
   StaffCallRecord,
   UserProfile,
+  filterActiveStaffCalls,
+  formatSafeThaiDateTime,
+  resolveKioskDisplayName,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
 
@@ -29,27 +34,6 @@ interface SecurityViewProps {
   onStaffCallHandled: () => void;
   sseConnected?: boolean;
 }
-
-const formatSafeThaiDateTime = (raw?: string | null): string => {
-  if (!raw) return '-';
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return '-';
-  return (
-    d.toLocaleDateString('th-TH', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      timeZone: 'Asia/Bangkok',
-    }) +
-    ' • ' +
-    d.toLocaleTimeString('th-TH', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Bangkok',
-    }) +
-    ' น.'
-  );
-};
 
 const DEMO_AUDITS: AuditRecord[] = [
   {
@@ -118,6 +102,7 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
   const [kiosks, setKiosks] = useState<KioskRecord[]>(DEMO_KIOSKS);
   const [staffUsers, setStaffUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isStaleCollapsed, setIsStaleCollapsed] = useState<boolean>(true);
 
   // Pairing code generator state
   const [pairingModalKiosk, setPairingModalKiosk] = useState<KioskRecord | null>(null);
@@ -305,19 +290,22 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
     }
   };
 
-  // Deduplicate staff calls by unique id
-  const deduplicatedCalls = React.useMemo(() => {
+  // Deduplicate and partition staff calls
+  const { activeCalls, staleCalls, handledCalls } = React.useMemo(() => {
     const seen = new Set<string>();
-    return staffCalls.filter((c) => {
+    const uniqueCalls = staffCalls.filter((c) => {
       const callId = c.id || (c as any).call_id;
       if (!callId) return true;
       if (seen.has(callId)) return false;
       seen.add(callId);
       return true;
     });
+    return filterActiveStaffCalls(uniqueCalls);
   }, [staffCalls]);
 
-  const unhandledCalls = deduplicatedCalls.filter((c) => !c.handled_at);
+  const displayCalls = React.useMemo(() => {
+    return [...activeCalls, ...handledCalls];
+  }, [activeCalls, handledCalls]);
 
   return (
     <div className="p-8 space-y-6">
@@ -338,15 +326,15 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${
               sseConnected
                 ? 'bg-teal-500/10 border-teal-500/30 text-teal-300'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                : 'bg-slate-700 border-slate-600 text-slate-300'
             }`}
           >
             <span
               className={`w-2 h-2 rounded-full ${
-                sseConnected ? 'bg-teal-400 animate-pulse' : 'bg-amber-400'
+                sseConnected ? 'bg-teal-400 animate-pulse' : 'bg-blue-400'
               }`}
             />
-            <span>{sseConnected ? 'Realtime Connected' : 'Connecting SSE...'}</span>
+            <span>{sseConnected ? 'Realtime Connected' : 'Cloud REST Sync (12s)'}</span>
           </div>
           <button
             onClick={fetchSecurityData}
@@ -382,16 +370,16 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
         </div>
       )}
 
-      {/* LIVE EMERGENCY BANNER (If unhandled staff calls exist) */}
-      {unhandledCalls.length > 0 && (
-        <div className="bg-white border-l-4 border-l-blue-600 border border-blue-200 shadow-sm text-slate-800 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+      {/* LIVE EMERGENCY BANNER (If active staff calls exist <= 2 hours) */}
+      {activeCalls.length > 0 && (
+        <div className="bg-white border-l-4 border-l-rose-600 border border-rose-200 shadow-sm text-slate-800 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl flex-shrink-0 shadow-md">
+            <div className="w-12 h-12 rounded-2xl bg-rose-600 flex items-center justify-center text-white font-bold text-xl flex-shrink-0 shadow-md">
               <Bell className="w-6 h-6 animate-bounce" />
             </div>
             <div>
               <h3 className="font-bold text-base md:text-lg text-slate-900">
-                มีคนไข้ต้องการความช่วยเหลือที่ตู้ Kiosk ({unhandledCalls.length} รายการ)!
+                มีคนไข้ต้องการความช่วยเหลือที่ตู้ Kiosk ({activeCalls.length} รายการ)!
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 เกิดจากสแกนหน้าไม่ผ่านครบ 3 ครั้ง หรือคนไข้กดปุ่มเรียกเจ้าหน้าที่บนหน้าจอ
@@ -401,7 +389,7 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
 
           <button
             onClick={() => setSubTab('calls')}
-            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition active:scale-95 cursor-pointer whitespace-nowrap"
+            className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm transition active:scale-95 cursor-pointer whitespace-nowrap"
           >
             ดูรายการเรียกเจ้าหน้าที่ทันที
           </button>
@@ -419,7 +407,7 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
           }`}
         >
           <Bell className="w-4 h-4 shrink-0" />
-          <span>คำเรียกเจ้าหน้าที่ ({unhandledCalls.length})</span>
+          <span>คำเรียกเจ้าหน้าที่ ({activeCalls.length})</span>
         </button>
 
         <button
@@ -491,21 +479,21 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
                 </tr>
               </thead>
               <tbody className="bg-white hover:bg-emerald-50/40 divide-y divide-slate-100 text-slate-800">
-                {deduplicatedCalls.length === 0 ? (
+                {displayCalls.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-12 text-center text-slate-500 whitespace-nowrap">
                       ไม่มีประวัติคำเรียกเจ้าหน้าที่
                     </td>
                   </tr>
                 ) : (
-                  deduplicatedCalls.map((call) => (
+                  displayCalls.map((call) => (
                     <tr key={call.id} className="hover:bg-emerald-50/40 transition">
                       <td className="px-6 py-4 text-xs font-mono text-slate-600 whitespace-nowrap">
                         {formatSafeThaiDateTime((call as any).created_at || (call as any).timestamp || (call as any).requested_at)}
                       </td>
                       <td className="px-6 py-4 font-bold text-blue-900 whitespace-nowrap">
                         <span className="bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1 rounded-lg text-xs font-mono font-bold whitespace-nowrap inline-block">
-                          {call.kiosk_id || (call as any).device_name || 'Kiosk-01 (จุดคัดกรองหลัก)'}
+                          {resolveKioskDisplayName(call)}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-xs text-rose-700 font-medium whitespace-nowrap">
@@ -541,6 +529,83 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* Stale Calls Section (Collapsible, > 2 hours) */}
+          {staleCalls.length > 0 && (
+            <div className="border-t border-slate-200 bg-slate-50/70 p-4">
+              <button
+                type="button"
+                onClick={() => setIsStaleCollapsed(!isStaleCollapsed)}
+                className="w-full flex items-center justify-between text-left cursor-pointer group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                    <Clock className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-sm group-hover:text-amber-800 transition">
+                      ค้างนาน / อาจเป็นรายการเก่า ({staleCalls.length} รายการ)
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      คำเรียกเจ้าหน้าที่ที่สร้างเกิน 2 ชั่วโมงที่ผ่านมา และยังไม่มีการกดรับเรื่อง
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
+                  <span>{isStaleCollapsed ? 'คลิกเพื่อดูรายการ' : 'ซ่อน'}</span>
+                  {isStaleCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                </div>
+              </button>
+
+              {!isStaleCollapsed && (
+                <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-xs">
+                  <table className="w-full text-left text-sm text-slate-700">
+                    <thead className="bg-slate-50 text-slate-700 font-semibold text-xs uppercase tracking-wider border-b border-slate-200">
+                      <tr>
+                        <th className="px-6 py-3 font-semibold whitespace-nowrap">เวลาแจ้ง</th>
+                        <th className="px-6 py-3 font-semibold whitespace-nowrap">ตู้ Kiosk</th>
+                        <th className="px-6 py-3 font-semibold whitespace-nowrap">สาเหตุ</th>
+                        <th className="px-6 py-3 font-semibold whitespace-nowrap">สถานะ</th>
+                        <th className="px-6 py-3 font-semibold text-right whitespace-nowrap">การจัดการ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-800">
+                      {staleCalls.map((call) => (
+                        <tr key={call.id} className="hover:bg-amber-50/40 transition">
+                          <td className="px-6 py-3.5 text-xs font-mono text-slate-600 whitespace-nowrap">
+                            {formatSafeThaiDateTime((call as any).created_at || (call as any).timestamp || (call as any).requested_at)}
+                          </td>
+                          <td className="px-6 py-3.5 font-bold text-slate-800 whitespace-nowrap">
+                            <span className="bg-slate-100 border border-slate-200 text-slate-700 px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold whitespace-nowrap inline-block">
+                              {resolveKioskDisplayName(call)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 text-xs text-slate-600 whitespace-nowrap">
+                            {call.reason || (call as any).message || 'ผู้ป่วยขอความช่วยเหลือจากหน้าตู้ Kiosk'}
+                          </td>
+                          <td className="px-6 py-3.5 whitespace-nowrap">
+                            <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                              <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>ค้างนาน (&gt; 2 ชม.)</span>
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => handleResolveStaffCall(call.id)}
+                              disabled={actionLoading}
+                              className="whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
+                            >
+                              รับเรื่องช่วยเหลือ
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -24,6 +24,7 @@ import {
 import {
   UserProfile,
   StaffCallRecord,
+  filterActiveStaffCalls,
   defaultApiClient,
 } from '../../../../packages/api-client/src/index.js';
 
@@ -50,6 +51,10 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<ClinicalMenuId>('users');
   const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>(initialStaffCalls || []);
+
+  const { activeCalls } = React.useMemo(() => {
+    return filterActiveStaffCalls(staffCalls);
+  }, [staffCalls]);
 
   // Modals state
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -209,7 +214,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
             <ClinicalSidebar
               activeTab={activeTab}
               onSelectTab={handleSelectTab}
-              queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
+              queueBadgeCount={activeCalls.length}
               onLogout={onLogout}
               onReturnToKiosk={onReturnToKiosk}
               isLoggingOut={isLoggingOut}
@@ -227,7 +232,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
         <ClinicalSidebar
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
-          queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
+          queueBadgeCount={activeCalls.length}
           onLogout={onLogout}
           onReturnToKiosk={onReturnToKiosk}
           isLoggingOut={isLoggingOut}
@@ -270,14 +275,14 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
         />
 
         {/* Real-time High-Priority Emergency Pain Alert Banner */}
-        {staffCalls.filter((c) => !c.handled_at && (c.reason?.includes('เจ็บ') || c.reason?.includes('🚨'))).length > 0 && (
+        {activeCalls.filter((c) => c.reason?.includes('เจ็บ') || c.reason?.includes('🚨')).length > 0 && (
           <div className="bg-rose-600 text-white px-6 py-3 flex items-center justify-between shadow-lg animate-pulse z-30">
             <div className="flex items-center gap-3">
               <span className="px-2 py-0.5 rounded bg-white text-rose-700 font-black text-xs uppercase tracking-wider">
                 EMERGENCY PAIN STOP
               </span>
               <span className="text-sm font-bold">
-                {staffCalls.find((c) => !c.handled_at && (c.reason?.includes('เจ็บ') || c.reason?.includes('🚨')))?.reason}
+                {activeCalls.find((c) => c.reason?.includes('เจ็บ') || c.reason?.includes('🚨'))?.reason}
               </span>
             </div>
             <button

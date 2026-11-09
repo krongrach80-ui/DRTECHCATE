@@ -274,7 +274,90 @@ export interface StaffCallRecord {
   handled_by?: string | null;
   handled_at?: string | null;
   kiosk_name?: string;
+  device_name?: string;
+  source?: string;
 }
+
+/**
+ * Standard configuration for Staff Call lifecycle:
+ * - DEDUPE_WINDOW: Within 10 minutes, identical calls on the same kiosk are deduplicated.
+ * - ACTIVE_WINDOW: Calls created within the last 2 hours are treated as active emergencies.
+ *                  Older calls are categorized as stale to avoid alerting on historic data.
+ */
+export const STAFF_CALL_DEDUPE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+export const STAFF_CALL_ACTIVE_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+/**
+ * Formats datetime to standard Thai format (Asia/Bangkok): "8 พ.ย. 2569 15:14"
+ */
+export function formatSafeThaiDateTime(raw?: string | null): string {
+  if (!raw) return '-';
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return '-';
+  const datePart = d.toLocaleDateString('th-TH', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Bangkok',
+  });
+  const timePart = d.toLocaleTimeString('th-TH', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Bangkok',
+  });
+  return `${datePart} ${timePart}`;
+}
+
+/**
+ * Resolves consistent kiosk display name across Admin and PT portals
+ */
+export function resolveKioskDisplayName(
+  call: StaffCallRecord | { kiosk_id?: string | null; device_name?: string | null; kiosk_name?: string | null }
+): string {
+  if (call.device_name) return call.device_name;
+  if (call.kiosk_name) return call.kiosk_name;
+  if (!call.kiosk_id) return 'Kiosk-01 (จุดคัดกรองหลัก)';
+  const kid = call.kiosk_id.toLowerCase();
+  if (kid.startsWith('kiosk-01') || kid.startsWith('cc000000')) {
+    return 'Kiosk-01 (จุดคัดกรองหลัก)';
+  }
+  return call.kiosk_id;
+}
+
+/**
+ * Categorizes staff calls into Active Emergencies (<= 2h) vs Stale Historical Calls (> 2h)
+ */
+export function filterActiveStaffCalls(
+  calls: StaffCallRecord[],
+  activeWindowMs = STAFF_CALL_ACTIVE_WINDOW_MS
+): {
+  activeCalls: StaffCallRecord[];
+  staleCalls: StaffCallRecord[];
+  handledCalls: StaffCallRecord[];
+} {
+  const now = Date.now();
+  const activeCalls: StaffCallRecord[] = [];
+  const staleCalls: StaffCallRecord[] = [];
+  const handledCalls: StaffCallRecord[] = [];
+
+  for (const call of calls) {
+    if (call.handled_at) {
+      handledCalls.push(call);
+      continue;
+    }
+    const callTime = new Date(call.created_at).getTime();
+    if (isNaN(callTime) || now - callTime > activeWindowMs) {
+      staleCalls.push(call);
+    } else {
+      activeCalls.push(call);
+    }
+  }
+
+  return { activeCalls, staleCalls, handledCalls };
+}
+
+export const partitionStaffCalls = filterActiveStaffCalls;
 
 const decodeFallbackString = (b64: string): string => {
   if (typeof atob === 'function') {
@@ -415,6 +498,10 @@ function getSafeSessionStorage(): Storage | null {
   }
   return null;
 }
+
+// In-flight locking to prevent rapid-fire double clicks / StrictMode duplicate requests
+const inflightStaffCalls = new Map<string, Promise<any>>();
+const lastKioskCallTimestamps = new Map<string, { timestamp: number; response: any }>();
 
 export class ApiClient {
   public readonly baseUrl: string;
@@ -4411,48 +4498,78 @@ export class ApiClient {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const kioskUUID = isUuid.test(payload.kiosk_id) ? payload.kiosk_id : 'cc000000-0000-0000-0000-000000000001';
 
-        // Deduplication: check if an unhandled staff call already exists for this kiosk
-        const checkRes = await fetch(
-          `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls?kiosk_id=eq.${kioskUUID}&handled_at=is.null&select=id,created_at&limit=1`,
-          {
-            headers: {
-              apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-            },
-          }
-        );
-        if (checkRes.ok) {
-          const existing = await checkRes.json();
-          if (Array.isArray(existing) && existing.length > 0) {
-            return { ok: true, id: existing[0].id, call_id: existing[0].id, status: 'existing_pending' } as T;
-          }
+        // 1. Check in-flight lock to prevent concurrent double-firing from rapid clicks / effects
+        if (inflightStaffCalls.has(kioskUUID)) {
+          return (await inflightStaffCalls.get(kioskUUID)) as T;
         }
 
-        const newId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `call-${Date.now()}`;
-        const insRes = await fetch(
-          `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls`,
-          {
-            method: 'POST',
-            headers: {
-              apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-              'Content-Type': 'application/json',
-              Prefer: 'return=representation',
-            },
-            body: JSON.stringify({
-              id: newId,
-              kiosk_id: kioskUUID,
-              reason: payload.reason || 'ผู้ป่วยต้องการความช่วยเหลือที่หน้าตู้ Kiosk',
-              created_at: new Date().toISOString(),
-            }),
-          }
-        );
-        if (insRes.ok) {
-          const inserted = await insRes.json();
-          const callId = (inserted && inserted[0]?.id) || newId;
-          return { ok: true, id: callId, call_id: callId } as T;
+        // 2. Check client-side cooldown cache (within STAFF_CALL_DEDUPE_WINDOW_MS = 10 mins)
+        const lastCall = lastKioskCallTimestamps.get(kioskUUID);
+        if (lastCall && Date.now() - lastCall.timestamp < STAFF_CALL_DEDUPE_WINDOW_MS) {
+          return lastCall.response as T;
         }
-        return { ok: true, id: newId, call_id: newId } as T;
+
+        const callPromise = (async () => {
+          // 3. Check Supabase DB for existing unhandled call within 10 minutes
+          const checkRes = await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls?kiosk_id=eq.${kioskUUID}&handled_at=is.null&order=created_at.desc&limit=1`,
+            {
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+              },
+            }
+          );
+          if (checkRes.ok) {
+            const existing = await checkRes.json();
+            if (Array.isArray(existing) && existing.length > 0) {
+              const existingCall = existing[0];
+              const callTime = new Date(existingCall.created_at).getTime();
+              if (!isNaN(callTime) && Date.now() - callTime <= STAFF_CALL_DEDUPE_WINDOW_MS) {
+                const res = { ok: true, id: existingCall.id, call_id: existingCall.id, status: 'existing_pending' };
+                lastKioskCallTimestamps.set(kioskUUID, { timestamp: callTime, response: res });
+                return res;
+              }
+            }
+          }
+
+          const newId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `call-${Date.now()}`;
+          const insRes = await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls`,
+            {
+              method: 'POST',
+              headers: {
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify({
+                id: newId,
+                kiosk_id: kioskUUID,
+                reason: payload.reason || 'ผู้ป่วยต้องการความช่วยเหลือที่หน้าตู้ Kiosk',
+                created_at: new Date().toISOString(),
+              }),
+            }
+          );
+          if (insRes.ok) {
+            const inserted = await insRes.json();
+            const callId = (inserted && inserted[0]?.id) || newId;
+            const res = { ok: true, id: callId, call_id: callId };
+            lastKioskCallTimestamps.set(kioskUUID, { timestamp: Date.now(), response: res });
+            return res;
+          }
+          const fallbackRes = { ok: true, id: newId, call_id: newId };
+          lastKioskCallTimestamps.set(kioskUUID, { timestamp: Date.now(), response: fallbackRes });
+          return fallbackRes;
+        })();
+
+        inflightStaffCalls.set(kioskUUID, callPromise);
+        try {
+          return (await callPromise) as T;
+        } finally {
+          inflightStaffCalls.delete(kioskUUID);
+        }
       }
 
       if (endpointPath.includes('/staff-calls') && endpointPath.includes('/handle')) {

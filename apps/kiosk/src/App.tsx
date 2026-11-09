@@ -419,8 +419,8 @@ export const App: React.FC = () => {
   const handleTriggerStaffCall = useCallback(
     async (reason?: string) => {
       const now = Date.now();
-      // Enforce 30-second cooldown per kiosk and avoid concurrent calls
-      if (isStaffCallPendingRef.current || (now - lastStaffCallTimeRef.current < 30000 && lastStaffCallTimeRef.current > 0)) {
+      // Enforce 10-minute cooldown per kiosk and avoid concurrent calls
+      if (isStaffCallPendingRef.current || (now - lastStaffCallTimeRef.current < 10 * 60 * 1000 && lastStaffCallTimeRef.current > 0)) {
         return;
       }
 

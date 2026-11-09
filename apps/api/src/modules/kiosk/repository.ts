@@ -494,9 +494,13 @@ export class KioskRepository implements IKioskRepository {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const targetKioskId = isUuid.test(kioskId) ? kioskId : 'cc000000-0000-0000-0000-000000000001';
 
-    // 1. Check in-memory ephemeral calls first
+    // 1. Check in-memory ephemeral calls first (deduplicate within 10 minutes)
+    const tenMinutesAgoMs = Date.now() - 10 * 60 * 1000;
     const existingEphemeral = this.ephemeralStaffCalls.find(
-      (c) => (c.kiosk_id === kioskId || c.kiosk_id === targetKioskId) && !c.handled_at
+      (c) =>
+        (c.kiosk_id === kioskId || c.kiosk_id === targetKioskId) &&
+        !c.handled_at &&
+        new Date(c.created_at).getTime() >= tenMinutesAgoMs
     );
     if (existingEphemeral) {
       return existingEphemeral;
@@ -505,11 +509,13 @@ export class KioskRepository implements IKioskRepository {
     try {
       const adminClient = getAdminClient();
 
-      // 2. Check if an active unhandled staff call already exists in DB for this kiosk (Deduplication)
+      // 2. Check if an active unhandled staff call already exists in DB for this kiosk (Deduplication within 10 minutes)
+      const tenMinutesAgoIso = new Date(tenMinutesAgoMs).toISOString();
       const { data: existingCalls } = await adminClient
         .from('staff_calls')
         .select('id, kiosk_id, reason, created_at, handled_by, handled_at')
         .eq('kiosk_id', targetKioskId)
+        .gte('created_at', tenMinutesAgoIso)
         .is('handled_at', null)
         .order('created_at', { ascending: false })
         .limit(1);

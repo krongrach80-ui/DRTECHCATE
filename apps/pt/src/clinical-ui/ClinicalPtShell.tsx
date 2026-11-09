@@ -30,6 +30,7 @@ import {
   UserProfile,
   StaffCallRecord,
   PatientRecord,
+  filterActiveStaffCalls,
   defaultApiClient,
 } from '../../../../packages/api-client/src/index.js';
 
@@ -53,6 +54,10 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
   const [activeTab, setActiveTab] = useState<ClinicalMenuId>('reception');
   const [activeRecordsPatientId, setActiveRecordsPatientId] = useState<string | undefined>(undefined);
   const [staffCalls, setStaffCalls] = useState<StaffCallRecord[]>(initialStaffCalls || []);
+
+  const { activeCalls } = React.useMemo(() => {
+    return filterActiveStaffCalls(staffCalls);
+  }, [staffCalls]);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [prescriptionPatientId, setPrescriptionPatientId] = useState<string | null>(null);
@@ -187,7 +192,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
             <ClinicalSidebar
               activeTab={activeTab}
               onSelectTab={handleSelectTab}
-              queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
+              queueBadgeCount={activeCalls.length}
               onLogout={onLogout}
               onReturnToKiosk={onReturnToKiosk}
               isPtMode={true}
@@ -201,7 +206,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
         <ClinicalSidebar
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
-          queueBadgeCount={staffCalls.filter((c) => !c.handled_at).length}
+          queueBadgeCount={activeCalls.length}
           onLogout={onLogout}
           onReturnToKiosk={onReturnToKiosk}
           isPtMode={true}

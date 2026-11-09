@@ -13,13 +13,18 @@ import {
   Monitor,
   Activity,
   Check,
-  Users
+  Users,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import {
   PatientRecord,
   TodayCourseItem,
   KioskRecord,
   StaffCallRecord,
+  filterActiveStaffCalls,
+  formatSafeThaiDateTime,
+  resolveKioskDisplayName,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
 
@@ -78,6 +83,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
   const [selectedPatientForKiosk, setSelectedPatientForKiosk] = useState<PatientRecord | null>(null);
   const [selectedKioskId, setSelectedKioskId] = useState('');
   const [ticketCountdown, setTicketCountdown] = useState<number | null>(null);
+  const [isStaleCollapsed, setIsStaleCollapsed] = useState(true);
 
   // Patient Creation Form
   const [patientForm, setPatientForm] = useState({
@@ -236,7 +242,17 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
     }
   };
 
-  const unhandledCalls = staffCalls.filter((c) => !c.handled_at);
+  const { activeCalls, staleCalls } = React.useMemo(() => {
+    const seen = new Set<string>();
+    const uniqueCalls = staffCalls.filter((c) => {
+      const callId = c.id || (c as any).call_id;
+      if (!callId) return true;
+      if (seen.has(callId)) return false;
+      seen.add(callId);
+      return true;
+    });
+    return filterActiveStaffCalls(uniqueCalls);
+  }, [staffCalls]);
 
   return (
     <div className="p-8 space-y-6">
@@ -255,14 +271,14 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={fetchData}
-            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
+            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm cursor-pointer"
             title="รีเฟรชข้อมูล"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-400 hover:to-cyan-500 text-white font-medium text-sm shadow-lg shadow-teal-500/20 transition"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-400 hover:to-cyan-500 text-white font-medium text-sm shadow-lg shadow-teal-500/20 transition cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
             <span>สร้างคนไข้ใหม่</span>
@@ -270,35 +286,37 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
         </div>
       </div>
 
-      {/* Emergency Staff Calls Active Banner */}
-      {unhandledCalls.length > 0 && (
+      {/* Emergency Staff Calls Active Banner (Only active calls <= 2 hours) */}
+      {activeCalls.length > 0 && (
         <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 space-y-3 shadow-lg shadow-rose-950/40">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 font-bold text-rose-300">
               <BellRing className="w-5 h-5 text-rose-400 animate-bounce" />
-              <span>คำเรียกเจ้าหน้าที่ฉุกเฉินจากตู้ Kiosk ({unhandledCalls.length} รายการ)</span>
+              <span>คำเรียกเจ้าหน้าที่ฉุกเฉินจากตู้ Kiosk ({activeCalls.length} รายการ)</span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {unhandledCalls.map((call) => (
+            {activeCalls.map((call) => (
               <div
                 key={call.id}
                 className="p-3.5 rounded-xl bg-slate-900/90 border border-rose-500/30 flex items-center justify-between gap-3"
               >
                 <div>
                   <div className="text-xs font-semibold text-rose-300">
-                    ตู้ ID: {call.kiosk_id ? call.kiosk_id.slice(0, 8) : 'Kiosk'}
+                    {resolveKioskDisplayName(call)}
                   </div>
-                  <div className="text-xs text-slate-300 mt-0.5">{call.reason}</div>
-                  <div className="text-[10px] text-slate-400 font-mono mt-1">
-                    {new Date(call.created_at).toLocaleTimeString('th-TH')}
+                  <div className="text-xs text-slate-300 mt-0.5">
+                    {call.reason || 'ผู้ป่วยขอความช่วยเหลือจากหน้าตู้ Kiosk'}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono mt-1">
+                    {formatSafeThaiDateTime(call.created_at)}
                   </div>
                 </div>
                 <button
                   onClick={() => handleResolveStaffCall(call.id)}
                   disabled={actionLoading}
-                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium transition flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shrink-0"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>รับเรื่อง</span>
@@ -306,6 +324,61 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Stale Calls Section (Collapsible, > 2 hours) */}
+      {staleCalls.length > 0 && (
+        <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60 text-slate-300 space-y-3">
+          <button
+            onClick={() => setIsStaleCollapsed(!isStaleCollapsed)}
+            className="w-full flex items-center justify-between text-left cursor-pointer group"
+          >
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <span className="text-sm font-semibold text-slate-200 group-hover:text-white transition">
+                ค้างนาน / อาจเป็นรายการเก่า ({staleCalls.length} รายการ)
+              </span>
+              <span className="text-xs text-slate-400 hidden sm:inline">
+                (รายการที่เรียกเกิน 2 ชั่วโมงที่ผ่านมา)
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-xs text-slate-400 group-hover:text-slate-200">
+              <span>{isStaleCollapsed ? 'คลิกเพื่อดูรายการ' : 'ซ่อน'}</span>
+              {isStaleCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+            </div>
+          </button>
+
+          {!isStaleCollapsed && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2 border-t border-slate-700/50">
+              {staleCalls.map((call) => (
+                <div
+                  key={call.id}
+                  className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700 flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <div className="text-xs font-semibold text-amber-300">
+                      {resolveKioskDisplayName(call)}
+                    </div>
+                    <div className="text-xs text-slate-300 mt-0.5">
+                      {call.reason || 'ผู้ป่วยขอความช่วยเหลือจากหน้าตู้ Kiosk'}
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono mt-1">
+                      {formatSafeThaiDateTime(call.created_at)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleResolveStaffCall(call.id)}
+                    disabled={actionLoading}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>รับเรื่อง</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
