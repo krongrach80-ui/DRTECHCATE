@@ -97,6 +97,7 @@ export default {
     let response = await env.ASSETS.fetch(new Request(new URL(fetchPath, request.url), {
       method: 'GET',
       headers: request.headers,
+      cf: isRootOrHtml ? { cacheTtl: 0, cacheEverything: false } : undefined,
     }));
     if (response.status !== 404 && response.status !== 405) {
       // Never cache HTML entries at Edge or in browser to ensure fresh bundles
@@ -120,6 +121,7 @@ export default {
       new Request(new URL(targetPath, request.url), {
         method: 'GET',
         headers: request.headers,
+        cf: { cacheTtl: 0, cacheEverything: false },
       });
 
     if (url.pathname.startsWith('/admin')) {
