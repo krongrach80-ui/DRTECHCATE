@@ -283,12 +283,10 @@ export class RepStateMachine {
     angle: number;
     readiness: RepEvaluationResult['readinessStatus'];
     isDeskActive: boolean;
-    isElbowMissing: boolean;
   } {
     let currentAngle = angleCfg.startAngleDeg;
     let readinessStatus: RepEvaluationResult['readinessStatus'] = 'ready';
     let isUpperBodyDeskActive = false;
-    let isDistalElbowMissing = false;
 
     if (
       normalizedLandmarks.length > triplet.pointA &&
@@ -432,7 +430,6 @@ export class RepStateMachine {
       angle: currentAngle,
       readiness: readinessStatus,
       isDeskActive: isUpperBodyDeskActive,
-      isElbowMissing: isDistalElbowMissing,
     };
   }
 
@@ -474,7 +471,6 @@ export class RepStateMachine {
     let currentAngle = targetComp.angle;
     let readinessStatus = targetComp.readiness;
     let isUpperBodyDeskActive = targetComp.isDeskActive;
-    let isDistalElbowMissing = targetComp.isElbowMissing;
 
     // Target zone parameters
     const startAngle = angleCfg.startAngleDeg;
@@ -767,11 +763,6 @@ export class RepStateMachine {
           ? startAngle - tolerance - 10
           : startAngle + tolerance + 10,
       });
-    } else if (isDistalElbowMissing) {
-      formRating = 'warning';
-      coachingMessage = '📷 ท่านี้ต้องใช้มุมข้อศอก กรุณาปรับมุมกล้องลงเล็กน้อยหรือถอยห่างให้เห็นข้อศอก';
-      coachingMessageEn = '📷 This exercise requires elbow visibility. Please adjust camera down or step back.';
-      coachingMessageCn = '📷 此动作需要看到手肘，请稍微调低摄像头或后退以露出手肘。';
     } else if (isUpperBodyDeskActive) {
       readinessStatus = 'partial_upper_body';
       formRating = 'good';
@@ -816,7 +807,7 @@ export class RepStateMachine {
           this.holdPauseStartMs = null;
           this.totalHoldPausedDurationMs = 0;
           coachingMessage = `ถึงมุมเป้าหมายแล้ว ค้างไว้ ${holdDurationSec} วินาที`;
-        } else if (!isUpperBodyDeskActive && !isDistalElbowMissing) {
+        } else if (!isUpperBodyDeskActive) {
           if (isAtStartZone) {
             coachingMessage = 'อยู่ในตำแหน่งเริ่มต้น พร้อมแล้วเริ่มเคลื่อนไหวได้เลย';
           } else if (isDecreasing ? currentAngle < startAngle - tolerance : currentAngle > startAngle + tolerance) {
