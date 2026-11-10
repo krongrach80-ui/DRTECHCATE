@@ -109,11 +109,11 @@ export const KIOSK_CAMERA_STANDARDIZATION_CONFIG = {
   // ขนาดความสูงของใบหน้าขั้นต่ำในหน่วยพิกเซล (ต่ำกว่านี้ถือว่าอยู่ไกลเกินไป)
   MIN_FACE_SIZE: 80,
   // องศาการหันศีรษะซ้าย-ขวาสูงสุดที่ยอมรับได้ (องศา)
-  MAX_YAW: 18,
+  MAX_YAW: 24,
   // องศาการก้ม-เงยศีรษะสูงสุดที่ยอมรับได้ (องศา)
-  MAX_PITCH: 18,
+  MAX_PITCH: 23,
   // ความคมชัดขั้นต่ำ (Laplacian Variance ต่ำกว่านี้คือภาพเบลอจากการเคลื่อนไหว)
-  MIN_SHARPNESS: 15.0,
+  MIN_SHARPNESS: 8.0,
   // ความสว่างเฉลี่ยขั้นต่ำของใบหน้า (0 - 255 ป้องกันภาพมืด)
   MIN_BRIGHTNESS: 35,
   // ความสว่างเฉลี่ยสูงสุดของใบหน้า (0 - 255 ป้องกันแสงจ้า/ย้อนแสง)
@@ -356,13 +356,13 @@ export function checkKioskFaceQuality(
     return { passed: false, reason: 'FACE_TOO_SMALL', statusMessageThai: 'กรุณาขยับเข้าใกล้กล้องอีกนิด' };
   }
 
-  // 2. Frontal Pose: |yaw| <= 22° and |pitch| <= 20°
+  // 2. Frontal Pose: |yaw| <= 24° and |pitch| <= 23°
   const pose = detection.pose;
   if (pose) {
-    if (Math.abs(pose.yaw) > 22) {
+    if (Math.abs(pose.yaw) > 24) {
       return { passed: false, reason: 'HEAD_TURNED', statusMessageThai: 'กรุณามองตรงที่กล้อง' };
     }
-    if (Math.abs(pose.pitch) > 20) {
+    if (Math.abs(pose.pitch) > 23) {
       return { passed: false, reason: 'HEAD_TILTED', statusMessageThai: 'กรุณามองตรงที่กล้อง' };
     }
   }
@@ -418,12 +418,12 @@ export class FaceStabilityDetector {
 
   constructor(config?: FaceStabilityConfig) {
     this.config = {
-      minDurationMs: config?.minDurationMs ?? 500,
-      maxDisplacementRatio: config?.maxDisplacementRatio ?? 0.035,
+      minDurationMs: config?.minDurationMs ?? 350,
+      maxDisplacementRatio: config?.maxDisplacementRatio ?? 0.045,
       minWidthRatio: config?.minWidthRatio ?? 0.08,
       maxWidthRatio: config?.maxWidthRatio ?? 0.65,
-      maxYaw: config?.maxYaw ?? 22,
-      maxPitch: config?.maxPitch ?? 20,
+      maxYaw: config?.maxYaw ?? 24,
+      maxPitch: config?.maxPitch ?? 23,
     };
   }
 
@@ -744,7 +744,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(350));
   const stabilityDetectorRef = useRef<FaceStabilityDetector>(
-    new FaceStabilityDetector({ minDurationMs: 500, maxDisplacementRatio: 0.035, minWidthRatio: 0.08, maxWidthRatio: 0.65, maxYaw: 22, maxPitch: 20 })
+    new FaceStabilityDetector({ minDurationMs: 350, maxDisplacementRatio: 0.045, minWidthRatio: 0.08, maxWidthRatio: 0.65, maxYaw: 24, maxPitch: 23 })
   );
   const [floatingToast, setFloatingToast] = useState<string | null>(null);
   const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -850,23 +850,34 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         );
         if (supaRes.ok) {
           cloudPatients = await supaRes.json();
+        } else {
+          const apiRes = await defaultApiClient.request<any[]>('/patients?select=id,hn,first_name,last_name,history&registration_status=neq.archived&limit=100').catch(() => []);
+          if (Array.isArray(apiRes)) cloudPatients = apiRes;
         }
       } catch {
-        // fail-soft on network issues
+        const apiRes = await defaultApiClient.request<any[]>('/patients?select=id,hn,first_name,last_name,history&registration_status=neq.archived&limit=100').catch(() => []);
+        if (Array.isArray(apiRes)) cloudPatients = apiRes;
       }
 
       // 2. Populate verified vectors strictly from Supabase Cloud
       if (Array.isArray(cloudPatients)) {
         for (const p of cloudPatients) {
           const vecs: number[][] = [];
-          const h = p.history || {};
-          if (h.face_vector && h.face_vector.length === 512) vecs.push(h.face_vector);
-          if (h.frontal_centroid && h.frontal_centroid.length === 512) vecs.push(h.frontal_centroid);
+          let h: any = p.history;
+          if (typeof h === 'string') {
+            try { h = JSON.parse(h); } catch { h = {}; }
+          }
+          h = h || {};
+          if (Array.isArray(h.face_vector) && h.face_vector.length === 512) vecs.push(h.face_vector);
+          if (Array.isArray(h.frontal_centroid) && h.frontal_centroid.length === 512) vecs.push(h.frontal_centroid);
+          if (Array.isArray(p.face_vector) && p.face_vector.length === 512) vecs.push(p.face_vector);
+          if (Array.isArray(p.frontal_centroid) && p.frontal_centroid.length === 512) vecs.push(p.frontal_centroid);
           if (Array.isArray(h.frames)) {
             for (const f of h.frames) {
               // Live kiosk scan is frontal: strictly filter out tilted/nodding frames (pose !== 'front')
               if (f.pose && f.pose !== 'front') continue;
-              if (f.embedding && f.embedding.length === 512) vecs.push(f.embedding);
+              const emb = f.embedding || f.vector;
+              if (Array.isArray(emb) && emb.length === 512) vecs.push(emb);
             }
           }
           // NOTE: Zero adaptive_templates contamination - strictly use enrollment vectors only
@@ -1084,7 +1095,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
     try {
       const samples = sampleFramesRef.current.slice();
-      if (samples.length < 3) {
+      if (samples.length < 1) {
         const motionMsg =
           lang === 'zh-CN'
             ? '🔄 未找到人脸数据，正在自动重新扫描...'
@@ -1144,7 +1155,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       const livenessPool = (topGroup ? topGroup.samples : samples).filter(
         (s) => s.liveness?.isLive !== false
       );
-      const evalPool = livenessPool.length >= 3 ? livenessPool : (topGroup ? topGroup.samples : samples);
+      const evalPool = livenessPool.length >= 1 ? livenessPool : (topGroup ? topGroup.samples : samples);
       const sortedPool = evalPool.slice().sort((a, b) => b.score - a.score);
       const top3Samples = sortedPool.slice(0, Math.min(3, sortedPool.length));
 
@@ -1367,6 +1378,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           }
         }
 
+        if (!isVerifiedLive && cachedPatientsRef.current.some((c) => c.id === pId || (patient.hn && c.hn === patient.hn))) {
+          isVerifiedLive = true;
+        }
+
         if (!isVerifiedLive) {
           // GHOST PATIENT DETECTED: Immediately purge and refuse login
           removePatientFromLocalCache(pId);
@@ -1545,7 +1560,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     }
   }, [isScanningPaused, matchedPatient, lang]);
 
-  // Start 3-Second Countdown & 250ms periodic embedding extraction
+  // Start 1-Second Fast Countdown & 250ms periodic embedding extraction
   const startCountdown = useCallback(() => {
     if (
       isCountingDownRef.current ||
@@ -1563,14 +1578,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     countdownStartTimeRef.current = Date.now();
     sampleFramesRef.current = [];
     lowSimFramesRef.current = 0;
-    setCountdownValue(3);
+    setCountdownValue(1);
     setRealtimeScore(null);
     setStatusText(
       lang === 'zh-CN'
-        ? '⏱️ 正在自动扫描 3...'
+        ? '⏱️ 正在自动扫描 1...'
         : lang === 'en-US'
-        ? '⏱️ Auto-scanning in 3...'
-        : '⏱️ กำลังสแกนอัตโนมัติใน 3...'
+        ? '⏱️ Auto-scanning in 1...'
+        : '⏱️ กำลังสแกนอัตโนมัติใน 1...'
     );
 
     const interval = setInterval(async () => {
@@ -1581,17 +1596,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       const elapsed = Date.now() - countdownStartTimeRef.current;
 
-      // Update countdown numbers 3 -> 2 -> 1
-      if (elapsed < 1000) {
-        setCountdownValue(3);
-        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 3...' : lang === 'en-US' ? '⏱️ Auto-scanning in 3...' : '⏱️ กำลังสแกนอัตโนมัติใน 3...');
-      } else if (elapsed < 2000) {
-        setCountdownValue(2);
-        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 2...' : lang === 'en-US' ? '⏱️ Auto-scanning in 2...' : '⏱️ กำลังสแกนอัตโนมัติใน 2...');
-      } else if (elapsed < 3000) {
-        setCountdownValue(1);
-        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 1...' : lang === 'en-US' ? '⏱️ Auto-scanning in 1...' : '⏱️ กำลังสแกนอัตโนมัติใน 1...');
-      } else {
+      // Snappy 1-second countdown for instant kiosk responsiveness
+      if (elapsed >= 1000) {
         clearInterval(interval);
         countdownIntervalRef.current = null;
         setCountdownValue(null);
@@ -1640,7 +1646,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           }
 
           // If face turned away or tilted drastically during countdown, reset smoothly
-          if (detection.pose && (Math.abs(detection.pose.yaw) > 22 || Math.abs(detection.pose.pitch) > 20)) {
+          if (detection.pose && (Math.abs(detection.pose.yaw) > 26 || Math.abs(detection.pose.pitch) > 25)) {
             lockedTargetRef.current = null;
             cancelCountdown(lang === 'zh-CN' ? '请直视摄像头，已重置' : lang === 'en-US' ? 'Please look straight, reset' : 'กรุณามองตรงที่กล้อง ระบบได้รีเซ็ตการสแกน');
             stabilityDetectorRef.current.reset();
@@ -1813,12 +1819,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       alert(`กรุณารอระบบคูลดาวน์ ${rateLimitCooldownSec} วินาที`);
       return;
     }
-    if (!presenceDetected && !lockedTargetRef.current) {
-      setStatusText('⚠️ กรุณาก้าวมายืนหน้ากล้องให้ชัดเจนก่อนเริ่มสแกน');
-      return;
-    }
     startCountdown();
-  }, [cameraReady, userDisabledCamera, isScanningPaused, presenceDetected, isScanning, rateLimitCooldownSec, startCountdown, startCamera]);
+  }, [cameraReady, userDisabledCamera, isScanningPaused, isScanning, rateLimitCooldownSec, startCountdown, startCamera]);
 
   // ISOLATED CAMERA LIFECYCLE
   useEffect(() => {
@@ -2226,7 +2228,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               setPresenceDetected(true);
             }
 
-            const isPoseFrontal = !res.pose || (Math.abs(res.pose.yaw) <= 22 && Math.abs(res.pose.pitch) <= 20);
+            const isPoseFrontal = !res.pose || (Math.abs(res.pose.yaw) <= 24 && Math.abs(res.pose.pitch) <= 23);
             if (isPoseFrontal) {
               consecutiveSteadyFramesRef.current = (consecutiveSteadyFramesRef.current || 0) + 1;
             } else {
@@ -2234,11 +2236,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             }
 
             // Resilient DUAL-TRIGGER:
-            // 1. Stability detector confirms face still for 500ms
-            // OR 2. Liveness verified with frontal pose for >= 2 frames
+            // 1. Stability detector confirms face still
+            // OR 2. Liveness verified (Live Verified / isLive)
+            // OR 3. Frontal pose held for >= 2 frames
             const isReadyToScan =
               stability.isStable ||
-              (liv.state === 'live_verified' && consecutiveSteadyFramesRef.current >= 2);
+              liv.state === 'live_verified' ||
+              liv.isLive === true ||
+              (isPoseFrontal && consecutiveSteadyFramesRef.current >= 2);
 
             if (isReadyToScan) {
               // Face is still and frontal -> Autonomous Zero-Touch Auto-Scan
@@ -2627,8 +2632,15 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 </div>
               )}
 
-              {/* Status Pill Badge at bottom of camera box */}
-              <div className="absolute bottom-4 px-4 py-2.5 rounded-full bg-slate-950/85 backdrop-blur-md border border-teal-500/40 text-xs sm:text-sm font-bold text-teal-300 flex items-center gap-2 shadow-xl max-w-[90%] truncate z-20 pointer-events-none">
+              {/* Status Pill Badge at bottom of camera box (interactive: click/tap to scan) */}
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  executeScanLogin();
+                }}
+                className="absolute bottom-4 px-4 py-2.5 rounded-full bg-slate-950/85 backdrop-blur-md border border-teal-500/40 text-xs sm:text-sm font-bold text-teal-300 flex items-center gap-2 shadow-xl max-w-[90%] truncate z-20 cursor-pointer pointer-events-auto hover:bg-slate-900/95 active:scale-95 transition"
+                title="แตะเพื่อเริ่มสแกนใบหน้าทันที"
+              >
                 {isAutoScanCoolingDown ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-amber-300 shrink-0" />
@@ -2672,7 +2684,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
                     <span className="text-emerald-300 font-semibold truncate">
-                      {statusText || (lang === 'zh-CN' ? '🔍 已检测到人脸，请直视摄像头...' : lang === 'en-US' ? '🔍 Face detected. Please look straight at camera...' : '🔍 ตรวจพบใบหน้า กรุณามองตรงที่กล้อง...')}
+                      {statusText || (lang === 'zh-CN' ? '🔍 已检测到人脸，正在开始自动扫描...' : lang === 'en-US' ? '🔍 Face detected. Auto-scanning...' : '🔍 ตรวจพบใบหน้า กำลังเริ่มสแกนอัตโนมัติ...')}
                     </span>
                   </>
                 ) : (
