@@ -2208,33 +2208,44 @@ export class ApiClient {
         const livePatientsMap = new Map<string, any>();
         const liveHnMap = new Map<string, any>();
 
+        function extractVector(frame: any): number[] | null {
+          if (!frame) return null;
+          if (Array.isArray(frame)) return frame;
+          if (Array.isArray(frame.embedding)) return frame.embedding;
+          if (Array.isArray(frame.descriptor)) return frame.descriptor;
+          if (Array.isArray(frame.vector)) return frame.vector;
+          return null;
+        }
+
         if (probe.length > 0) {
           const normProbe = l2Normalize(probe);
 
           const evaluateCandidate = (p: any): ScoredPatient | null => {
             const vectors: number[][] = [];
+            let h = p.history;
+            if (typeof h === 'string') {
+              try { h = JSON.parse(h); } catch { h = {}; }
+            }
+            h = h || {};
+
             if (Array.isArray(p.frontal_centroid) && p.frontal_centroid.length === probe.length) {
               vectors.push(p.frontal_centroid);
             }
-            if (Array.isArray(p.history?.frontal_centroid) && p.history.frontal_centroid.length === probe.length) {
-              vectors.push(p.history.frontal_centroid);
+            if (Array.isArray(h.frontal_centroid) && h.frontal_centroid.length === probe.length) {
+              vectors.push(h.frontal_centroid);
             }
-            if (Array.isArray(p.history?.face_vector) && p.history.face_vector.length === probe.length) {
-              vectors.push(p.history.face_vector);
+            if (Array.isArray(h.face_vector) && h.face_vector.length === probe.length) {
+              vectors.push(h.face_vector);
             }
             if (Array.isArray(p.face_vector) && p.face_vector.length === probe.length) {
               vectors.push(p.face_vector);
             }
-            const frames: any[] = p.frames || p.history?.frames || [];
-            for (const f of frames) {
-              // Live kiosk probe is frontal: strictly filter out tilted/nodding enrollment frames
-              // to prevent cross-pose false correlation artifact
-              if (f?.pose && f.pose !== 'front') {
-                continue;
-              }
-              const vec = f?.embedding || f?.vector || (Array.isArray(f) ? f : null);
-              if (Array.isArray(vec) && vec.length === probe.length) {
-                vectors.push(vec);
+            const rawFrames: any[] = h.frames || p.frames || [];
+            for (const rawFrame of rawFrames) {
+              const storedVector = extractVector(rawFrame);
+              if (!storedVector || storedVector.length === 0) continue;
+              if (storedVector.length === probe.length) {
+                vectors.push(storedVector);
               }
             }
 
@@ -2458,9 +2469,9 @@ export class ApiClient {
 
           // Guard 1: Single User Database Strict Guard
           // When exactly 1 patient is in the DB, strangers must NEVER be suggested as ambiguous candidates (no PIN prompt)
-          // Normalized acceptance threshold: rawCos >= 0.74 or calSim >= 0.74 AND dist <= 0.58
+          // Normalized acceptance threshold: rawCos >= 0.72 or calSim >= 0.72 AND dist <= 0.65
           if (isSingleUserInDb) {
-            if (normalizedMatch && (top1.rawCos >= 0.74 || top1.calSim >= 0.74) && top1.dist <= 0.58) {
+            if (normalizedMatch && (top1.rawCos >= 0.72 || top1.calSim >= 0.72) && top1.dist <= 0.65) {
               return {
                 ok: true,
                 matched: true,
@@ -2508,8 +2519,8 @@ export class ApiClient {
 
           const margin = runnerUpCand ? (top1.rawCos - runnerUpCand.rawCos) : 1.0;
 
-          // Case A: High Match (normalized genuine match accepts rawCos >= 0.74, dist <= 0.58, and margin >= 0.06)
-          if (normalizedMatch && (top1.rawCos >= 0.74 || top1.calSim >= 0.74) && top1.dist <= 0.58) {
+          // Case A: High Match (normalized genuine match accepts rawCos >= 0.72, dist <= 0.65, and margin >= 0.05)
+          if (normalizedMatch && (top1.rawCos >= 0.72 || top1.calSim >= 0.72) && top1.dist <= 0.65) {
             if (margin < 0.06) {
               return {
                 ok: true,

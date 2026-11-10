@@ -418,7 +418,7 @@ export class FaceStabilityDetector {
 
   constructor(config?: FaceStabilityConfig) {
     this.config = {
-      minDurationMs: config?.minDurationMs ?? 350,
+      minDurationMs: config?.minDurationMs ?? 600,
       maxDisplacementRatio: config?.maxDisplacementRatio ?? 0.045,
       minWidthRatio: config?.minWidthRatio ?? 0.08,
       maxWidthRatio: config?.maxWidthRatio ?? 0.65,
@@ -632,6 +632,18 @@ const CornerOrnament: React.FC<{ position: 'top-left' | 'top-right' | 'bottom-le
   );
 };
 
+/**
+ * Safely extract float embedding array from frame object or vector
+ */
+export function extractVector(frame: any): number[] | null {
+  if (!frame) return null;
+  if (Array.isArray(frame)) return frame;
+  if (Array.isArray(frame.embedding)) return frame.embedding;
+  if (Array.isArray(frame.descriptor)) return frame.descriptor;
+  if (Array.isArray(frame.vector)) return frame.vector;
+  return null;
+}
+
 export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   onLoginSuccess,
   onNavigateToEnroll,
@@ -744,7 +756,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(350));
   const stabilityDetectorRef = useRef<FaceStabilityDetector>(
-    new FaceStabilityDetector({ minDurationMs: 350, maxDisplacementRatio: 0.045, minWidthRatio: 0.08, maxWidthRatio: 0.65, maxYaw: 24, maxPitch: 23 })
+    new FaceStabilityDetector({ minDurationMs: 600, maxDisplacementRatio: 0.045, minWidthRatio: 0.08, maxWidthRatio: 0.65, maxYaw: 24, maxPitch: 23 })
   );
   const [floatingToast, setFloatingToast] = useState<string | null>(null);
   const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -838,7 +850,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       let cloudPatients: any[] = [];
       try {
         const supaRes = await fetch(
-          `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=id,hn,first_name,last_name,history&registration_status=neq.archived&limit=100`,
+          `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=id,hn,first_name,last_name,history,registration_status&registration_status=neq.archived&limit=100`,
           {
             headers: {
               apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -851,11 +863,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         if (supaRes.ok) {
           cloudPatients = await supaRes.json();
         } else {
-          const apiRes = await defaultApiClient.request<any[]>('/patients?select=id,hn,first_name,last_name,history&registration_status=neq.archived&limit=100').catch(() => []);
+          const apiRes = await defaultApiClient.request<any[]>('/patients?select=id,hn,first_name,last_name,history,registration_status&registration_status=neq.archived&limit=100').catch(() => []);
           if (Array.isArray(apiRes)) cloudPatients = apiRes;
         }
       } catch {
-        const apiRes = await defaultApiClient.request<any[]>('/patients?select=id,hn,first_name,last_name,history&registration_status=neq.archived&limit=100').catch(() => []);
+        const apiRes = await defaultApiClient.request<any[]>('/patients?select=id,hn,first_name,last_name,history,registration_status&registration_status=neq.archived&limit=100').catch(() => []);
         if (Array.isArray(apiRes)) cloudPatients = apiRes;
       }
 
@@ -872,20 +884,23 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           if (Array.isArray(h.frontal_centroid) && h.frontal_centroid.length === 512) vecs.push(h.frontal_centroid);
           if (Array.isArray(p.face_vector) && p.face_vector.length === 512) vecs.push(p.face_vector);
           if (Array.isArray(p.frontal_centroid) && p.frontal_centroid.length === 512) vecs.push(p.frontal_centroid);
-          if (Array.isArray(h.frames)) {
-            for (const f of h.frames) {
-              // Live kiosk scan is frontal: strictly filter out tilted/nodding frames (pose !== 'front')
-              if (f.pose && f.pose !== 'front') continue;
-              const emb = f.embedding || f.vector;
-              if (Array.isArray(emb) && emb.length === 512) vecs.push(emb);
+
+          const rawFrames: any[] = Array.isArray(h.frames) ? h.frames : (Array.isArray(p.frames) ? p.frames : []);
+          for (const rawFrame of rawFrames) {
+            const storedVector = extractVector(rawFrame);
+            if (!storedVector || storedVector.length === 0) continue;
+            if (storedVector.length === 512) {
+              vecs.push(storedVector);
             }
           }
+
           // NOTE: Zero adaptive_templates contamination - strictly use enrollment vectors only
+          const patientName = `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.hn || 'ผู้ป่วย';
           if (vecs.length > 0) {
             items.push({
               id: p.id,
               hn: p.hn || '',
-              name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'ผู้ป่วย',
+              name: patientName,
               vectors: vecs,
             });
           }
@@ -1420,13 +1435,19 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           percent: finalPercent,
           distance: finalDistance,
         });
-        setStatusText(
+        const welcomeMsg =
           lang === 'zh-CN'
-            ? `身份验证成功：${authoritativePatient.first_name}（${finalPercent}%）`
+            ? `欢迎，คุณ ${authoritativePatient.first_name} (${finalPercent}%)`
             : lang === 'en-US'
-            ? `Identity Verified: ${authoritativePatient.first_name} (${finalPercent}%)`
-            : `ยืนยันตัวตนสำเร็จ: คุณ ${authoritativePatient.first_name} (${finalPercent}%)`
-        );
+            ? `Welcome, คุณ ${authoritativePatient.first_name} (${finalPercent}%)`
+            : `ยินดีต้อนรับ คุณ ${authoritativePatient.first_name} (${finalPercent}%)`;
+        setStatusText(welcomeMsg);
+        setIsTransitioning(true);
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            onLoginSuccess(authoritativePatient);
+          }
+        }, 600);
         return;
       }
 
@@ -1501,11 +1522,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       }
 
       const scoreToReport = Math.max(0, Math.min(99, reportedPercentage || Math.round(reportedRawCosine * 100)));
-      const toastMsg = lang === 'zh-CN'
-        ? `ความแม่นยำไม่ถึงเกณฑ์ (${scoreToReport}%) 请直视摄像头并保持静止，正在自动重试...`
-        : lang === 'en-US'
-        ? `Similarity below threshold (${scoreToReport}%). Please look straight and hold still, auto-retrying...`
-        : `ความแม่นยำไม่ถึงเกณฑ์ (${scoreToReport}%) กรุณามองตรงและอยู่นิ่งๆ กำลังลองใหม่อัตโนมัติ...`;
+      const toastMsg = `ความแม่นยำ ${scoreToReport}% กรุณามองตรงและอยู่นิ่งๆ กำลังลองใหม่อัตโนมัติ...`;
 
       setStatusText(toastMsg);
       setFloatingToast(toastMsg);
@@ -1560,7 +1577,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     }
   }, [isScanningPaused, matchedPatient, lang]);
 
-  // Start 1-Second Fast Countdown & 250ms periodic embedding extraction
+  // Start Auto Countdown 3..2..1 & 250ms periodic embedding extraction
   const startCountdown = useCallback(() => {
     if (
       isCountingDownRef.current ||
@@ -1578,14 +1595,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     countdownStartTimeRef.current = Date.now();
     sampleFramesRef.current = [];
     lowSimFramesRef.current = 0;
-    setCountdownValue(1);
+    setCountdownValue(3);
     setRealtimeScore(null);
     setStatusText(
       lang === 'zh-CN'
-        ? '⏱️ 正在自动扫描 1...'
+        ? '⏱️ 正在自动扫描 3...'
         : lang === 'en-US'
-        ? '⏱️ Auto-scanning in 1...'
-        : '⏱️ กำลังสแกนอัตโนมัติใน 1...'
+        ? '⏱️ Auto-scanning in 3...'
+        : '⏱️ กำลังสแกนอัตโนมัติใน 3...'
     );
 
     const interval = setInterval(async () => {
@@ -1596,8 +1613,17 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       const elapsed = Date.now() - countdownStartTimeRef.current;
 
-      // Snappy 1-second countdown for instant kiosk responsiveness
-      if (elapsed >= 1000) {
+      // Auto countdown 3..2..1
+      if (elapsed < 1000) {
+        setCountdownValue(3);
+        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 3...' : lang === 'en-US' ? '⏱️ Auto-scanning in 3...' : '⏱️ กำลังสแกนอัตโนมัติใน 3...');
+      } else if (elapsed < 2000) {
+        setCountdownValue(2);
+        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 2...' : lang === 'en-US' ? '⏱️ Auto-scanning in 2...' : '⏱️ กำลังสแกนอัตโนมัติใน 2...');
+      } else if (elapsed < 3000) {
+        setCountdownValue(1);
+        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 1...' : lang === 'en-US' ? '⏱️ Auto-scanning in 1...' : '⏱️ กำลังสแกนอัตโนมัติใน 1...');
+      } else {
         clearInterval(interval);
         countdownIntervalRef.current = null;
         setCountdownValue(null);
@@ -1734,33 +1760,40 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
           if (vector && vector.length === 512) {
             // Match against cached patients
-            let top1Cand: CachedPatientBiometric | null = null;
-            let top1Sim = 0;
+            let bestCandidate: CachedPatientBiometric | null = null;
+            let highestSimilarity = 0;
             let top2Cand: CachedPatientBiometric | null = null;
             let top2Sim = 0;
 
             for (const cand of cachedPatientsRef.current) {
               let candBestSim = 0;
-              for (const cv of cand.vectors) {
-                if (cv.length === 512) {
+              for (const storedVector of cand.vectors) {
+                if (storedVector && storedVector.length === 512) {
                   let dot = 0;
                   for (let i = 0; i < 512; i++) {
-                    dot += vector[i] * cv[i];
+                    dot += vector[i] * storedVector[i];
                   }
                   const calDot = calibrateCosineSimilarity(dot);
                   if (calDot > candBestSim) candBestSim = calDot;
                 }
               }
-              if (candBestSim > top1Sim) {
-                top2Sim = top1Sim;
-                top2Cand = top1Cand;
-                top1Sim = candBestSim;
-                top1Cand = cand;
+              if (candBestSim > highestSimilarity) {
+                top2Sim = highestSimilarity;
+                top2Cand = bestCandidate;
+                highestSimilarity = candBestSim;
+                if (candBestSim >= 0.72) {
+                  bestCandidate = cand;
+                }
               } else if (candBestSim > top2Sim) {
                 top2Sim = candBestSim;
                 top2Cand = cand;
               }
             }
+
+            console.log(`[FaceAuth] Scanned score: ${(highestSimilarity * 100).toFixed(1)}%, Matched: ${bestCandidate?.hn || 'None'}`);
+
+            const top1Cand = bestCandidate || null;
+            const top1Sim = highestSimilarity;
 
             const currentPercent = Math.max(0, Math.min(100, Math.round(top1Sim * 100)));
             const currentDist = Math.sqrt(Math.max(0, 2 - 2 * top1Sim));
