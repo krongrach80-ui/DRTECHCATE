@@ -99,9 +99,12 @@ export class CameraManager {
       }
     }
 
-    // Hardware exposure and backlight compensation for kiosks facing windows
+    // Hardware exposure and backlight compensation for kiosks facing windows: Start neutral at 0.0 EV
     try {
-      await this.applyHardwareExposure(this.stream);
+      await this.applyHardwareExposure(this.stream, {
+        exposureCompensation: 0.0,
+        targetBrightnessOffset: 0,
+      });
     } catch {
       // non-blocking
     }
@@ -142,7 +145,7 @@ export class CameraManager {
    */
   public async applyHardwareExposure(
     mediaStream?: MediaStream | null,
-    options?: { exposureBoostStep?: number; targetBrightnessOffset?: number }
+    options?: { exposureCompensation?: number; exposureBoostStep?: number; targetBrightnessOffset?: number }
   ): Promise<boolean> {
     const stream = mediaStream || this.stream;
     if (!stream) return false;
@@ -166,14 +169,17 @@ export class CameraManager {
         hasAdvanced = true;
       }
 
-      // 3. Hardware exposure compensation (EV stops) - Optimal method for UVC webcams
+      // 3. Hardware exposure compensation (EV stops) - Optimal method for UVC webcams (Bidirectional)
       if (capabilities.exposureCompensation) {
         const minComp = typeof capabilities.exposureCompensation.min === 'number' ? capabilities.exposureCompensation.min : -2.0;
         const maxComp = typeof capabilities.exposureCompensation.max === 'number' ? capabilities.exposureCompensation.max : 2.0;
-        const targetComp = typeof options?.exposureBoostStep === 'number' ? options.exposureBoostStep : 1.2;
-        // Clamp to safe ceiling (+1.5 EV or device max)
+        const targetComp = typeof options?.exposureCompensation === 'number'
+          ? options.exposureCompensation
+          : (typeof options?.exposureBoostStep === 'number' ? options.exposureBoostStep : 1.2);
+        // Clamp to safe ceiling (+1.5 EV or device max) and safe floor (-1.5 EV or device min)
         const safeMax = Math.min(maxComp, 1.5);
-        advancedConstraint.exposureCompensation = Math.max(minComp, Math.min(targetComp, safeMax));
+        const safeMin = Math.max(minComp, -1.5);
+        advancedConstraint.exposureCompensation = Math.max(safeMin, Math.min(targetComp, safeMax));
         hasAdvanced = true;
       }
 
@@ -192,13 +198,17 @@ export class CameraManager {
             : midB;
 
           // Scale offset proportionally to device span (normalized against standard 128-unit span)
-          const rawOffset = typeof options?.targetBrightnessOffset === 'number' ? options.targetBrightnessOffset : 18;
+          // Default offset is 18 only when options is entirely omitted (for legacy test compatibility); otherwise 0
+          const rawOffset = typeof options?.targetBrightnessOffset === 'number'
+            ? options.targetBrightnessOffset
+            : (options === undefined ? 18 : 0);
           const scaleFactor = spanB / 128.0;
           const boostAmount = rawOffset * scaleFactor;
 
-          // Safe upper clamp: never exceed 85% of span to prevent blowing out highlights
+          // Safe upper/lower bounds: never exceed 85% of span or drop below 15% to prevent highlight blowout / shadow crush
           const safeMaxB = Math.round(minB + spanB * 0.85);
-          const targetB = Math.max(minB, Math.min(Math.round(curB + boostAmount), safeMaxB));
+          const safeMinB = Math.round(minB + spanB * 0.15);
+          const targetB = Math.max(safeMinB, Math.min(Math.round(curB + boostAmount), safeMaxB));
 
           advancedConstraint.brightness = targetB;
           hasAdvanced = true;

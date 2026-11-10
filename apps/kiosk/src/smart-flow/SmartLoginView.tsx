@@ -128,6 +128,19 @@ export const KIOSK_CAMERA_STANDARDIZATION_CONFIG = {
   MAX_SIZE_CHANGE_RATIO: 0.35,
 } as const;
 
+export const KIOSK_EXPOSURE_CONTROL_CONFIG = {
+  TARGET_MIN: 95,              // Minimum target face luminance (0-255 scale)
+  TARGET_MAX: 145,             // Maximum target face luminance (0-255 scale)
+  DEADBAND_MIN: 90,            // Deadband lower threshold
+  DEADBAND_MAX: 150,           // Deadband upper threshold
+  MIN_ADJUST_INTERVAL_MS: 700, // Interval between adjustments to prevent oscillation (ms)
+  STEP_EV: 0.33,               // Exposure compensation step (1/3 stop)
+  SAFE_MIN_EV: -1.5,           // Safe minimum hardware exposure compensation
+  SAFE_MAX_EV: 1.5,            // Safe maximum hardware exposure compensation
+  BURNOUT_THRESHOLD_LUM: 250,  // Luminance >= 250 considered blown-out/burned
+  MAX_BURNOUT_RATIO: 0.25,     // Anti-burnout ceiling (25% max frame burnout)
+} as const;
+
 export const KIOSK_CAMERA_STORAGE_KEY = 'kiosk_preferred_camera_id';
 
 /**
@@ -691,22 +704,18 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [isCameraAdjustingLight, setIsCameraAdjustingLight] = useState<boolean>(true);
   const [cameraDisconnectedError, setCameraDisconnectedError] = useState<string | null>(null);
 
-  // Light Boost Mode (Persists across sessions, enhances video stream in dim/backlit rooms)
-  const [boostLighting, setBoostLighting] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('kiosk_boost_lighting') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const boostLightingRef = useRef<boolean>(boostLighting);
+  // Closed-loop bidirectional exposure control
+  // Starts neutral at 0.0 EV (No cross-session persistence to ensure natural adaptation to ambient light)
+  const [boostLighting, setBoostLighting] = useState<boolean>(false);
+  const boostLightingRef = useRef<boolean>(false);
   useEffect(() => {
     boostLightingRef.current = boostLighting;
   }, [boostLighting]);
 
-  const exposureBoostLevelRef = useRef<number>(0);
+  const currentExposureEvRef = useRef<number>(0.0);
   const lastExposureAdjustTimeRef = useRef<number>(0);
-  const lightStabilizedUntilRef = useRef<number>(Date.now() + 2000);
+  const lightStabilizedUntilRef = useRef<number>(Date.now() + 1500);
+  const [exposureAlertMessage, setExposureAlertMessage] = useState<string | null>(null);
   const [currentTelemetry, setCurrentTelemetry] = useState<{
     faceHeightRatio: number;
     sharpness: number;
@@ -929,7 +938,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setCameraDisconnectedError(null);
     setIsCameraAdjustingLight(true);
     lightStabilizedUntilRef.current = Date.now() + 1800;
-    exposureBoostLevelRef.current = 0;
+    currentExposureEvRef.current = 0;
     setStatusText('กำลังปรับแสงกล้อง...');
 
     try {
@@ -988,13 +997,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           };
         }
 
-        // 3. Hardware exposure & backlight compensation (+1.2 EV to +1.5 EV / brightness boost)
+        // 3. Hardware exposure & backlight compensation: Start neutral at 0.0 EV (No artificial pre-boost)
         try {
           if (typeof (camera as any).applyHardwareExposure === 'function') {
             await (camera as any).applyHardwareExposure(stream, {
-              exposureBoostStep: boostLightingRef.current ? 1.5 : 1.2,
-              targetBrightnessOffset: boostLightingRef.current ? 28 : 18,
+              exposureCompensation: 0.0,
+              targetBrightnessOffset: 0,
             });
+            currentExposureEvRef.current = 0.0;
           }
         } catch {
           // non-blocking
@@ -1192,11 +1202,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           tCanvas.height = raw.height || 480;
           const tctx = tCanvas.getContext('2d', { willReadFrequently: true });
           if (tctx) {
-            if (boostLightingRef.current) {
-              tctx.filter = 'brightness(1.15) contrast(1.02)';
-            }
-            tctx.drawImage(raw, 0, 0);
             tctx.filter = 'none';
+            tctx.drawImage(raw, 0, 0);
           }
 
           const det = await detector.detect(tCanvas);
@@ -1617,13 +1624,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           }
           const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
           if (dctx) {
-            if (boostLightingRef.current) {
-              dctx.filter = 'brightness(1.15) contrast(1.02)';
-            } else {
-              dctx.filter = 'none';
-            }
-            dctx.drawImage(rawFrame, 0, 0, dw, dh);
             dctx.filter = 'none';
+            dctx.drawImage(rawFrame, 0, 0, dw, dh);
           }
 
           const detection = await detector.detect(dCanvas);
@@ -2006,13 +2008,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           }
           const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
           if (dctx) {
-            if (boostLightingRef.current) {
-              dctx.filter = 'brightness(1.15) contrast(1.02)';
-            } else {
-              dctx.filter = 'none';
-            }
-            dctx.drawImage(videoRef.current, 0, 0, dw, dh);
             dctx.filter = 'none';
+            dctx.drawImage(videoRef.current, 0, 0, dw, dh);
           }
 
           const res = await detector.detect(dCanvas);
@@ -2037,30 +2034,110 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               brightness: imageQuality.brightness,
             });
 
-            // Dynamic hardware exposure compensation / brightness boost when face is dark (Rule 4)
-            if (imageQuality.brightness < KIOSK_CAMERA_STANDARDIZATION_CONFIG.MIN_BRIGHTNESS) {
+            // Closed-Loop Bidirectional Hardware Exposure Controller & Anti-Burnout Guard
+            const isScanningOrCountingDown =
+              isCountingDownRef.current ||
+              countdownValue !== null ||
+              isScanning ||
+              isProcessingScanRef.current ||
+              isAutoScanCoolingDown ||
+              isCoolingDownRef.current;
+
+            if (!isScanningOrCountingDown) {
               const nowMs = Date.now();
-              // Hysteresis: only step every 800ms, and only up to 3 increments
-              if (nowMs - lastExposureAdjustTimeRef.current > 800 && exposureBoostLevelRef.current < 3) {
-                lastExposureAdjustTimeRef.current = nowMs;
-                exposureBoostLevelRef.current += 1;
-                const baseOffset = boostLightingRef.current ? 28 : 18;
-                const nextOffset = baseOffset + exposureBoostLevelRef.current * 8; // 26, 34... or 36, 44...
-                const baseEv = boostLightingRef.current ? 1.25 : 1.0;
-                const nextEv = baseEv + exposureBoostLevelRef.current * 0.25; // 1.25, 1.50...
+              if (nowMs - lastExposureAdjustTimeRef.current >= KIOSK_EXPOSURE_CONTROL_CONFIG.MIN_ADJUST_INTERVAL_MS) {
+                // 1. Measure frame burnout ratio (pixels >= 250) on downscaled canvas
+                let burnedCount = 0;
+                let sampledCount = 0;
                 try {
-                  const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
-                  services.camera.applyHardwareExposure(null, {
-                    exposureBoostStep: nextEv,
-                    targetBrightnessOffset: nextOffset,
-                  });
+                  const frameData = dctx?.getImageData(0, 0, dw, dh).data;
+                  if (frameData) {
+                    for (let p = 0; p < frameData.length; p += 16) {
+                      const pLum = 0.299 * frameData[p] + 0.587 * frameData[p + 1] + 0.114 * frameData[p + 2];
+                      if (pLum >= KIOSK_EXPOSURE_CONTROL_CONFIG.BURNOUT_THRESHOLD_LUM) burnedCount++;
+                      sampledCount++;
+                    }
+                  }
                 } catch {}
+                const frameBurnoutRatio = sampledCount > 0 ? burnedCount / sampledCount : 0;
+                const faceLum = imageQuality.brightness;
+
+                // 2. Anti-burnout & exposure condition (Face luminance prioritized; deadband: 90 - 150)
+                const isOverexposed =
+                  faceLum > KIOSK_EXPOSURE_CONTROL_CONFIG.TARGET_MAX ||
+                  (faceLum > 125 && frameBurnoutRatio > KIOSK_EXPOSURE_CONTROL_CONFIG.MAX_BURNOUT_RATIO);
+                const isUnderexposed =
+                  faceLum < KIOSK_EXPOSURE_CONTROL_CONFIG.TARGET_MIN;
+
+                if (isOverexposed) {
+                  if (currentExposureEvRef.current > KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV) {
+                    lastExposureAdjustTimeRef.current = nowMs;
+                    const nextEv = Math.max(
+                      KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV,
+                      Math.round((currentExposureEvRef.current - KIOSK_EXPOSURE_CONTROL_CONFIG.STEP_EV) * 100) / 100
+                    );
+                    currentExposureEvRef.current = nextEv;
+                    try {
+                      const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+                      services.camera.applyHardwareExposure(null, {
+                        exposureCompensation: nextEv,
+                        exposureBoostStep: nextEv,
+                        targetBrightnessOffset: Math.round(nextEv * 12),
+                      });
+                    } catch {}
+                  }
+
+                  if (currentExposureEvRef.current <= KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV && faceLum > KIOSK_EXPOSURE_CONTROL_CONFIG.DEADBAND_MAX) {
+                    setExposureAlertMessage(
+                      lang === 'zh-CN'
+                        ? '⚠️ 光线过强，请避开逆光或降低亮度'
+                        : lang === 'en-US'
+                        ? '⚠️ Too bright. Please avoid strong backlight or reduce glare.'
+                        : '⚠️ แสงจ้าเกินไป กรุณาหลีกเลี่ยงแสงจากด้านหลัง/ลดแสง'
+                    );
+                  } else {
+                    setExposureAlertMessage(null);
+                  }
+                } else if (isUnderexposed) {
+                  if (currentExposureEvRef.current < KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV) {
+                    lastExposureAdjustTimeRef.current = nowMs;
+                    const nextEv = Math.min(
+                      KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV,
+                      Math.round((currentExposureEvRef.current + KIOSK_EXPOSURE_CONTROL_CONFIG.STEP_EV) * 100) / 100
+                    );
+                    currentExposureEvRef.current = nextEv;
+                    try {
+                      const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+                      services.camera.applyHardwareExposure(null, {
+                        exposureCompensation: nextEv,
+                        exposureBoostStep: nextEv,
+                        targetBrightnessOffset: Math.round(nextEv * 12),
+                      });
+                    } catch {}
+                  }
+
+                  if (currentExposureEvRef.current >= KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV && faceLum < KIOSK_EXPOSURE_CONTROL_CONFIG.DEADBAND_MIN) {
+                    setExposureAlertMessage(
+                      lang === 'zh-CN'
+                        ? '⚠️ 光线过暗，请增加照明'
+                        : lang === 'en-US'
+                        ? '⚠️ Light is too dim. Please increase ambient light.'
+                        : '⚠️ แสงสว่างน้อยเกินไป กรุณาเพิ่มแสง'
+                    );
+                  } else {
+                    setExposureAlertMessage(null);
+                  }
+                } else {
+                  if (exposureAlertMessage) {
+                    setExposureAlertMessage(null);
+                  }
+                }
               }
             }
 
-            // If camera is still stabilizing light during first ~1.8s, don't prematurely block on TOO_DARK (Rule 5 & 7)
+            // If camera is still stabilizing light during first ~1.5s, don't prematurely block on TOO_DARK or TOO_BRIGHT (Rule 5 & 7)
             const isLightStabilizing = isCameraAdjustingLight || Date.now() < lightStabilizedUntilRef.current;
-            const effectiveQuality = (isLightStabilizing && imageQuality.reason === 'TOO_DARK')
+            const effectiveQuality = (isLightStabilizing && (imageQuality.reason === 'TOO_DARK' || imageQuality.reason === 'TOO_BRIGHT'))
               ? { ...imageQuality, passed: false, statusMessageThai: 'กำลังปรับแสงกล้อง...' }
               : imageQuality;
 
@@ -2229,6 +2306,84 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               prevStatusTextRef.current = noFaceMsg;
               setStatusText(noFaceMsg);
             }
+
+            // Closed-loop center area exposure control when no face is present
+            const isScanningOrCountingDown =
+              isCountingDownRef.current ||
+              countdownValue !== null ||
+              isScanning ||
+              isProcessingScanRef.current ||
+              isAutoScanCoolingDown ||
+              isCoolingDownRef.current;
+
+            if (!isScanningOrCountingDown) {
+              const nowMs = Date.now();
+              if (nowMs - lastExposureAdjustTimeRef.current >= KIOSK_EXPOSURE_CONTROL_CONFIG.MIN_ADJUST_INTERVAL_MS) {
+                let centerLumSum = 0;
+                let centerCount = 0;
+                let burnedCount = 0;
+                let sampledCount = 0;
+                try {
+                  const frameData = dctx?.getImageData(0, 0, dw, dh).data;
+                  if (frameData) {
+                    const cX1 = Math.floor(dw * 0.3);
+                    const cX2 = Math.floor(dw * 0.7);
+                    const cY1 = Math.floor(dh * 0.3);
+                    const cY2 = Math.floor(dh * 0.7);
+                    for (let py = 0; py < dh; py += 4) {
+                      for (let px = 0; px < dw; px += 4) {
+                        const idx = (py * dw + px) * 4;
+                        const pLum = 0.299 * frameData[idx] + 0.587 * frameData[idx + 1] + 0.114 * frameData[idx + 2];
+                        if (px >= cX1 && px <= cX2 && py >= cY1 && py <= cY2) {
+                          centerLumSum += pLum;
+                          centerCount++;
+                        }
+                        if (pLum >= KIOSK_EXPOSURE_CONTROL_CONFIG.BURNOUT_THRESHOLD_LUM) burnedCount++;
+                        sampledCount++;
+                      }
+                    }
+                  }
+                } catch {}
+                const centerLum = centerCount > 0 ? centerLumSum / centerCount : 120;
+                const frameBurnoutRatio = sampledCount > 0 ? burnedCount / sampledCount : 0;
+
+                const isOver = centerLum > KIOSK_EXPOSURE_CONTROL_CONFIG.TARGET_MAX || frameBurnoutRatio > KIOSK_EXPOSURE_CONTROL_CONFIG.MAX_BURNOUT_RATIO;
+                const isUnder = centerLum < KIOSK_EXPOSURE_CONTROL_CONFIG.TARGET_MIN;
+
+                if (isOver && currentExposureEvRef.current > KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV) {
+                  lastExposureAdjustTimeRef.current = nowMs;
+                  const nextEv = Math.max(
+                    KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV,
+                    Math.round((currentExposureEvRef.current - KIOSK_EXPOSURE_CONTROL_CONFIG.STEP_EV) * 100) / 100
+                  );
+                  currentExposureEvRef.current = nextEv;
+                  try {
+                    const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+                    services.camera.applyHardwareExposure(null, {
+                      exposureCompensation: nextEv,
+                      exposureBoostStep: nextEv,
+                      targetBrightnessOffset: Math.round(nextEv * 12),
+                    });
+                  } catch {}
+                } else if (isUnder && currentExposureEvRef.current < KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV) {
+                  lastExposureAdjustTimeRef.current = nowMs;
+                  const nextEv = Math.min(
+                    KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV,
+                    Math.round((currentExposureEvRef.current + KIOSK_EXPOSURE_CONTROL_CONFIG.STEP_EV) * 100) / 100
+                  );
+                  currentExposureEvRef.current = nextEv;
+                  try {
+                    const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+                    services.camera.applyHardwareExposure(null, {
+                      exposureCompensation: nextEv,
+                      exposureBoostStep: nextEv,
+                      targetBrightnessOffset: Math.round(nextEv * 12),
+                    });
+                  } catch {}
+                }
+              }
+            }
+
             inputManager.processFaceDetection(null, performance.now());
           }
         } catch {} finally {
@@ -2420,9 +2575,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 ref={previewCanvasRef}
                 className="w-full h-full object-cover transition-all duration-300"
                 style={{
-                  filter: boostLighting
-                    ? 'brightness(1.28) contrast(1.02) saturate(1.08)'
-                    : 'brightness(1.16) contrast(1.01) saturate(1.05)',
+                  filter: 'none',
                 }}
               />
 
@@ -2436,6 +2589,16 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   isBlinking={livenessResult?.blinkVerified}
                 />
               </div>
+
+              {/* Non-Intrusive Exposure Alert Message (Too Dark / Too Bright) */}
+              {exposureAlertMessage && !countdownValue && !isScanning && (
+                <div className="absolute top-14 inset-x-3 mx-auto max-w-md z-30 pointer-events-none transition-all duration-300">
+                  <div className="px-4 py-2 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-amber-400/80 shadow-[0_8px_30px_rgba(245,158,11,0.25)] flex items-center justify-center gap-2 text-amber-200 text-xs sm:text-sm font-bold">
+                    <span>💡</span>
+                    <span>{exposureAlertMessage}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Clean Floating Countdown & Score Badge (No obscuring frame) */}
               {countdownValue !== null && (
@@ -2639,13 +2802,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   onClick={() => {
                     const next = !boostLighting;
                     setBoostLighting(next);
-                    try {
-                      localStorage.setItem('kiosk_boost_lighting', String(next));
-                    } catch {}
+                    const nextEv = next ? 0.66 : 0.0;
+                    currentExposureEvRef.current = nextEv;
                     const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
                     services.camera.applyHardwareExposure(null, {
-                      exposureBoostStep: next ? 1.5 : 1.2,
-                      targetBrightnessOffset: next ? 28 : 18,
+                      exposureCompensation: nextEv,
+                      exposureBoostStep: nextEv,
+                      targetBrightnessOffset: next ? 12 : 0,
                     });
                   }}
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border cursor-pointer ${

@@ -207,20 +207,20 @@ export const LivenessTelemetryBadge: React.FC<LivenessTelemetryBadgeProps> = ({
   isBlinking,
   className = '',
 }) => {
-  let badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+  let badgeColor = 'bg-slate-950/85 text-amber-200 border-amber-400/60 shadow-[0_4px_16px_rgba(0,0,0,0.6)]';
   let dotColor = 'bg-amber-400 animate-pulse';
   let defaultLabel = '🟡 กำลังตรวจสอบความมีชีวิต (Checking Liveness...)';
 
   if (state === 'face_not_in_circle') {
-    badgeColor = 'bg-amber-500/25 text-amber-300 border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.30)]';
+    badgeColor = 'bg-slate-950/85 text-amber-200 border-amber-400/60 shadow-[0_4px_16px_rgba(0,0,0,0.6)]';
     dotColor = 'bg-amber-400 animate-pulse';
     defaultLabel = '🟡 รอจัดตำแหน่งใบหน้าในวงกลม (Face Not in Circle)';
   } else if (state === 'live_verified') {
-    badgeColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.35)]';
+    badgeColor = 'bg-slate-950/85 text-emerald-300 border-emerald-400/70 shadow-[0_4px_16px_rgba(0,0,0,0.6)]';
     dotColor = 'bg-emerald-400';
-    defaultLabel = '🟢 Liveness: บุคคลจริง (Live Verified)';
+    defaultLabel = '🟢 บุคคลจริง (Live Verified)';
   } else if (state === 'spoof_blocked') {
-    badgeColor = 'bg-rose-500/20 text-rose-300 border-rose-500/60 shadow-[0_0_15px_rgba(244,63,94,0.45)]';
+    badgeColor = 'bg-slate-950/90 text-rose-300 border-rose-500/70 shadow-[0_4px_16px_rgba(0,0,0,0.6)]';
     dotColor = 'bg-rose-500 animate-ping';
     defaultLabel = '🔴 แจ้งเตือน: ไม่ผ่านเกณฑ์บุคคลจริง (Spoof Blocked)';
   }
@@ -232,19 +232,19 @@ export const LivenessTelemetryBadge: React.FC<LivenessTelemetryBadgeProps> = ({
     {
       className: `flex items-center gap-2 px-3 py-1.5 rounded-full border backdrop-blur-md text-xs font-semibold select-none transition-all duration-200 ${badgeColor} ${className}`,
     },
-    React.createElement('span', { className: `w-2 h-2 rounded-full ${dotColor}` }),
-    React.createElement('span', null, label),
+    React.createElement('span', { className: `w-2 h-2 rounded-full shrink-0 ${dotColor}` }),
+    React.createElement('span', { className: 'text-white/95 font-semibold drop-shadow-sm' }, label),
     depthScore !== undefined
       ? React.createElement(
           'span',
-          { className: 'text-[10px] opacity-75 font-mono ml-1' },
+          { className: 'text-[10px] text-emerald-300 font-mono font-bold ml-1 drop-shadow-sm' },
           `3D:${(depthScore * 100).toFixed(0)}%`
         )
       : null,
     ear !== undefined
       ? React.createElement(
           'span',
-          { className: 'text-[10px] opacity-75 font-mono' },
+          { className: 'text-[10px] text-emerald-300 font-mono font-bold drop-shadow-sm' },
           `EAR:${ear.toFixed(2)}${isBlinking ? ' (กะพริบตา)' : ''}`
         )
       : null
