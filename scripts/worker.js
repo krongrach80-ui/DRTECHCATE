@@ -77,26 +77,12 @@ export default {
     }
 
     const addNoCacheHeaders = async (res) => {
-      const contentType = res.headers.get('content-type') || '';
       const newHeaders = new Headers(res.headers);
       newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       newHeaders.set('CDN-Cache-Control', 'no-store');
       newHeaders.set('Cloudflare-CDN-Cache-Control', 'no-store');
       newHeaders.set('Pragma', 'no-cache');
       newHeaders.set('Expires', '0');
-
-      if (contentType.includes('text/html')) {
-        let htmlText = await res.text();
-        htmlText = htmlText
-          .replace(/\/kiosk\/assets\/index-[a-zA-Z0-9_-]+\.js/g, '/kiosk/assets/index-CvOBLXLh.js')
-          .replace(/\/kiosk\/assets\/index-[a-zA-Z0-9_-]+\.css/g, '/kiosk/assets/index-BWgUVDvb.css');
-        return new Response(htmlText, {
-          status: res.status,
-          statusText: res.statusText,
-          headers: newHeaders,
-        });
-      }
-
       return new Response(res.body, {
         status: res.status,
         statusText: res.statusText,
@@ -113,21 +99,27 @@ export default {
       headers: request.headers,
       cf: isRootOrHtml ? { cacheTtl: 0, cacheEverything: false } : undefined,
     }));
+
+    const isStaticAsset = /\.[a-zA-Z0-9]+$/.test(url.pathname);
+    const contentType = response.headers.get('content-type') || '';
+
+    // If a static asset (.js, .css, .wasm) returns 404 or misrouted HTML, reject immediately
+    if (isStaticAsset && !url.pathname.endsWith('.html')) {
+      if (response.status >= 400 || contentType.includes('text/html')) {
+        return new Response(`Asset not found: ${url.pathname}`, {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' },
+        });
+      }
+      return response;
+    }
+
     if (response.status !== 404 && response.status !== 405) {
       // Never cache HTML entries at Edge or in browser to ensure fresh bundles
       if (isRootOrHtml) {
         return await addNoCacheHeaders(response);
       }
       return response;
-    }
-
-    // Do NOT route missing static assets (.js, .css, .wasm, etc.) to index.html
-    const isStaticAsset = /\.[a-zA-Z0-9]+$/.test(url.pathname);
-    if (isStaticAsset) {
-      return new Response(`Asset not found: ${url.pathname}`, {
-        status: 404,
-        headers: { 'Content-Type': 'text/plain' },
-      });
     }
 
     // 4. SPA Deep-linking fallback for clinical portals (always use GET for index.html with fresh no-cache headers)

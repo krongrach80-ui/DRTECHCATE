@@ -23,5 +23,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, '../../dist/apps/kiosk'),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/kiosk-[hash].js',
+        chunkFileNames: 'assets/kiosk-[name]-[hash].js',
+        assetFileNames: 'assets/kiosk-[name]-[hash].[ext]',
+      },
+    },
   },
 });
