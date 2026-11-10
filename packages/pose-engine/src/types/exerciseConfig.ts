@@ -84,6 +84,7 @@ export interface PrescriptionConfig {
   restBetweenSetsSec: number;
   holdDurationSec?: number;
   durationSec?: number;
+  targetMinDeg?: number; // Clinical prescription ROM override
 }
 
 export type CompensationType =
@@ -93,7 +94,8 @@ export type CompensationType =
   | 'shoulder_shrug'
   | 'elbow_flexion'
   | 'excessive_speed'
-  | 'tempo_violation';
+  | 'tempo_violation'
+  | 'wrong_side';
 
 export interface CompensationRule {
   ruleId: string;
@@ -152,6 +154,9 @@ export interface ExerciseDetectionConfig {
   is_active?: boolean;
   calibration_notes?: string;
   mediaUrl?: string;
+  mediaType?: 'svg' | 'image' | 'video';
+  fallbackMediaUrl?: string;
+  targetMinDegOverride?: number; // Clinical prescription override
   evaluationMode: EvaluationMode;
   side: BodySide;
   targetJoint: TargetJoint;
@@ -272,6 +277,7 @@ export interface RepEvaluationResult {
   isOccluded?: boolean;
   occlusionReasonTh?: string;
   elevationPlaneDeg?: number;
+  isPlaneDegraded?: boolean;
   isSubjectLocked?: boolean;
   isFrameDropped?: boolean;
   frameDropReason?: string;

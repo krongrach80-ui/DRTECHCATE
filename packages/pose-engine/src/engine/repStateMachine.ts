@@ -391,9 +391,8 @@ export class RepStateMachine {
 
             const upwardLift = Math.max(0, baselineY - (landmarks[shoulderIdx]?.y ?? 0.35));
             const targetMin =
-              (this.config as any).targetMinDegOverride ??
+              this.config.targetMinDegOverride ??
               this.config.defaultPrescription?.targetMinDeg ??
-              (this.config as any).prescription?.targetMinDeg ??
               angleCfg.targetMinDeg;
             const startAngle = angleCfg.startAngleDeg;
             const liftRatio = Math.min(1.0, upwardLift / 0.1);
@@ -512,9 +511,8 @@ export class RepStateMachine {
     // Target zone parameters with Clinical Prescription Override (Option A)
     const startAngle = angleCfg.startAngleDeg;
     const targetMin =
-      (this.config as any).targetMinDegOverride ??
+      this.config.targetMinDegOverride ??
       this.config.defaultPrescription?.targetMinDeg ??
-      (this.config as any).prescription?.targetMinDeg ??
       angleCfg.targetMinDeg;
     const targetMax = angleCfg.targetMaxDeg;
     const tolerance = angleCfg.toleranceDeg || 10;
@@ -741,7 +739,7 @@ export class RepStateMachine {
       coachingMessageCn = '请调整位置以清晰显示肩部和手臂';
       activeWarnings.unshift({
         ruleId: 'elevation_plane_landmarks_degraded',
-        type: 'trunk_lean' as any,
+        type: 'trunk_lean',
         messageTh: 'ปรับตำแหน่งให้เห็นไหล่และแขนชัด',
         severity: 'warning',
         currentValue: 0,
@@ -754,7 +752,7 @@ export class RepStateMachine {
       coachingMessageCn = elevationPlaneCfg.warningMessageCn;
       activeWarnings.unshift({
         ruleId: 'wrong_elevation_plane',
-        type: 'trunk_lean' as any,
+        type: 'trunk_lean',
         messageTh: elevationPlaneCfg.warningMessageTh,
         severity: 'warning',
         currentValue: Math.round(currentPlaneAngleDeg ?? 0),
@@ -767,7 +765,7 @@ export class RepStateMachine {
       coachingMessageCn = elevationPlaneCfg.scaptionCueCn || '接近达标：请稍微调整手臂方向';
       activeWarnings.unshift({
         ruleId: 'scaption_plane_cue',
-        type: 'trunk_lean' as any,
+        type: 'trunk_lean',
         messageTh: coachingMessage,
         severity: 'warning',
         currentValue: Math.round(currentPlaneAngleDeg ?? 0),
@@ -810,7 +808,7 @@ export class RepStateMachine {
       coachingMessageCn = wrongMsg.cn;
       activeWarnings.unshift({
         ruleId: 'wrong_side_movement',
-        type: 'wrong_side' as any,
+        type: 'wrong_side',
         messageTh: wrongMsg.th,
         severity: 'warning',
         currentValue: Math.round(oppositeAngle),
