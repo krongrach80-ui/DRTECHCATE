@@ -10,6 +10,7 @@ import {
   verifyRealHandGesture,
   HandLandmarkPoint,
   drawHandSkeleton,
+  interpolateHands,
 } from '../HandGestureVerifier.js';
 
 /**
@@ -275,6 +276,78 @@ describe('verifyRealHandGesture — 4-Layer Hand Verification Gate', () => {
       expect(() => {
         drawHandSkeleton(mockCtx, landmarks, 320, 240, 'LEFT', 0.5);
       }).not.toThrow();
+    });
+  });
+
+  describe('interpolateHands velocity-adaptive filter & latency extrapolation', () => {
+    it('uses steady smoothing for stationary hands to eliminate tremor', () => {
+      const hand1 = createMockHandLandmarks({ palmX: 0.50, mcpY: 0.50 });
+      const hand2 = createMockHandLandmarks({ palmX: 0.501, mcpY: 0.501 });
+
+      const eval1 = {
+        handIndex: 0,
+        landmarks: hand1,
+        anatomicalSide: 'right' as const,
+        answerSide: 'yes' as const,
+        isRaised: true,
+        confidence: 0.95,
+        extendedFingers: 4,
+        palmCenter: { x: 0.50, y: 0.50, mirroredX: 0.50, mirroredY: 0.50 },
+        palmSize: 0.2,
+        isNearEdge: false,
+      };
+
+      const eval2 = {
+        ...eval1,
+        landmarks: hand2,
+        palmCenter: { x: 0.501, y: 0.501, mirroredX: 0.499, mirroredY: 0.501 },
+      };
+
+      const interpolated = interpolateHands([eval1], [eval2], 0.45, {
+        adaptive: true,
+        deltaTimeMs: 16.6,
+        extrapolateMs: 40,
+      });
+
+      expect(interpolated.length).toBe(1);
+      // For stationary hands, displacement is small and alpha stays ~0.45 without overshoot
+      expect(interpolated[0].palmCenter.x).toBeCloseTo(0.50045, 4);
+    });
+
+    it('instantly responds and extrapolates forward for fast horizontal hand sweeps', () => {
+      // Hand moving quickly to the right: X shifts from 0.30 to 0.55 in 33ms (speed = ~7.5 screens/s)
+      const handPrev = createMockHandLandmarks({ palmX: 0.30, mcpY: 0.50 });
+      const handCurrent = createMockHandLandmarks({ palmX: 0.55, mcpY: 0.50 });
+
+      const evalPrev = {
+        handIndex: 0,
+        landmarks: handPrev,
+        anatomicalSide: 'right' as const,
+        answerSide: 'yes' as const,
+        isRaised: true,
+        confidence: 0.95,
+        extendedFingers: 4,
+        palmCenter: { x: 0.30, y: 0.50, mirroredX: 0.70, mirroredY: 0.50 },
+        palmSize: 0.2,
+        isNearEdge: false,
+      };
+
+      const evalCurrent = {
+        ...evalPrev,
+        landmarks: handCurrent,
+        palmCenter: { x: 0.55, y: 0.50, mirroredX: 0.45, mirroredY: 0.50 },
+      };
+
+      const interpolated = interpolateHands([evalPrev], [evalCurrent], 0.45, {
+        adaptive: true,
+        deltaTimeMs: 33,
+        extrapolateMs: 40,
+      });
+
+      expect(interpolated.length).toBe(1);
+      // During fast sweep, effective alpha >= 0.98 plus 40ms forward extrapolation ensures
+      // palmCenter.x leads or matches target instead of lagging behind at 0.35 or 0.41
+      expect(interpolated[0].palmCenter.x).toBeGreaterThan(0.54);
     });
   });
 });

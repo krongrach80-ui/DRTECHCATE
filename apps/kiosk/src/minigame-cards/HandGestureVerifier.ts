@@ -775,27 +775,22 @@ export function drawAllMinigameHands(
       jointColor = isRight ? '#6EE7B7' : '#FDBA74';
     }
 
-    // Draw 21-point connections
+    // Batched 21-point connections in a single draw call (GPU accelerated)
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth = isCurrentActive ? 4 : 2.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    ctx.beginPath();
     for (const [startIdx, endIdx] of HAND_CONNECTIONS) {
       const p1 = h.landmarks[startIdx];
       const p2 = h.landmarks[endIdx];
       if (p1 && p2) {
-        const x1 = mapX(p1.x);
-        const y1 = mapY(p1.y);
-        const x2 = mapX(p2.x);
-        const y2 = mapY(p2.y);
-
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
+        ctx.moveTo(mapX(p1.x), mapY(p1.y));
+        ctx.lineTo(mapX(p2.x), mapY(p2.y));
       }
     }
+    ctx.stroke();
 
     // Draw 21 joints
     for (let i = 0; i < h.landmarks.length; i++) {
@@ -854,19 +849,35 @@ export function drawAllMinigameHands(
   ctx.restore();
 }
 
+export interface InterpolateHandsOptions {
+  /** If true, dynamically adjusts alpha based on hand movement velocity */
+  adaptive?: boolean;
+  /** Milliseconds to extrapolate forward based on current velocity (max 80ms) */
+  extrapolateMs?: number;
+  /** Delta time in milliseconds since last update (default ~16ms) */
+  deltaTimeMs?: number;
+}
+
 /**
- * Linear Interpolation (Lerp) for multi-hand skeletal landmarks:
- * Smooths landmark coordinates at native 60 FPS: pos = prev + (target - prev) * alpha
+ * Velocity-Adaptive Linear Interpolation (Lerp) & Latency Compensation for Multi-Hand Landmarks
+ * - Stillness: Low-pass filter (alpha ~0.45) eliminates jitter and tremor.
+ * - Fast motion / horizontal hand sweep: alpha -> 0.98+ for instant zero-lag response.
+ * - Forward extrapolation (Dead Reckoning): projects coordinates 30-50ms ahead to cancel camera latency.
  */
 export function interpolateHands<T extends MinigameHandEvaluation | HandLandmarkPoint[]>(
   prev: T[] | null | undefined,
   target: T[] | null | undefined,
-  alpha: number = 0.45
+  alpha: number = 0.45,
+  options?: InterpolateHandsOptions
 ): T[] {
   if (!target || target.length === 0) return [];
   if (!prev || prev.length === 0) return target;
 
   const isEvaluation = 'landmarks' in (target[0] as any);
+  const isAdaptive = Boolean(options?.adaptive);
+  const dt = Math.max(1, options?.deltaTimeMs || 16.6);
+  const dtSec = dt / 1000;
+  const maxExtrapolateSec = Math.min(0.08, Math.max(0, (options?.extrapolateMs || 0) / 1000));
 
   if (isEvaluation) {
     const prevHands = prev as unknown as MinigameHandEvaluation[];
@@ -880,26 +891,75 @@ export function interpolateHands<T extends MinigameHandEvaluation | HandLandmark
         return tgt;
       }
 
+      // Compute palm displacement and speed (normalized screens per second)
+      const prevPalm = prevHand.palmCenter;
+      const tgtPalm = tgt.palmCenter;
+      const palmDist = Math.hypot(tgtPalm.x - prevPalm.x, tgtPalm.y - prevPalm.y);
+      const palmSpeed = palmDist / dtSec; // e.g. 0.02 (still) to 3.0+ (rapid hand sweep)
+
+      // Velocity-Adaptive Alpha:
+      // Stillness (< 0.08 screen/s): alpha = 0.45 (smooth, zero jitter, tremor-free)
+      // Moderate (0.08 - 0.40 screen/s): alpha smoothly ramps from 0.45 to 0.92
+      // Fast sweep (>= 0.40 screen/s): alpha = 0.98 (instantaneous tracking)
+      let effectiveAlpha = alpha;
+      let extrapHorizon = 0;
+
+      if (isAdaptive) {
+        if (palmSpeed < 0.08) {
+          effectiveAlpha = 0.45;
+          extrapHorizon = 0;
+        } else if (palmSpeed < 0.40) {
+          const ratio = (palmSpeed - 0.08) / (0.40 - 0.08);
+          effectiveAlpha = 0.45 + ratio * 0.47; // 0.45 -> 0.92
+          extrapHorizon = maxExtrapolateSec * ratio;
+        } else {
+          effectiveAlpha = 0.98;
+          extrapHorizon = maxExtrapolateSec;
+        }
+      }
+
+      // Palm velocity vector (units / second)
+      const palmVx = (tgtPalm.x - prevPalm.x) / dtSec;
+      const palmVy = (tgtPalm.y - prevPalm.y) / dtSec;
+
       const smoothedLandmarks: HandLandmarkPoint[] = tgt.landmarks.map((pt, idx) => {
         const prevPt = prevHand.landmarks[idx];
         if (!prevPt) return pt;
-        return {
-          x: prevPt.x + (pt.x - prevPt.x) * alpha,
-          y: prevPt.y + (pt.y - prevPt.y) * alpha,
-          z:
-            typeof pt.z === 'number' && typeof prevPt.z === 'number'
-              ? prevPt.z + (pt.z - prevPt.z) * alpha
-              : pt.z,
-        };
+
+        // Base smoothed coordinates
+        let sx = prevPt.x + (pt.x - prevPt.x) * effectiveAlpha;
+        let sy = prevPt.y + (pt.y - prevPt.y) * effectiveAlpha;
+        let sz =
+          typeof pt.z === 'number' && typeof prevPt.z === 'number'
+            ? prevPt.z + (pt.z - prevPt.z) * effectiveAlpha
+            : pt.z;
+
+        // Predictive Extrapolation: project forward by extrapHorizon to overlay moving hand in video
+        if (extrapHorizon > 0 && palmSpeed >= 0.08) {
+          const ptVx = (pt.x - prevPt.x) / dtSec;
+          const ptVy = (pt.y - prevPt.y) / dtSec;
+          const blendedVx = ptVx * 0.65 + palmVx * 0.35;
+          const blendedVy = ptVy * 0.65 + palmVy * 0.35;
+
+          sx = Math.max(0.01, Math.min(0.99, sx + blendedVx * extrapHorizon));
+          sy = Math.max(0.01, Math.min(0.99, sy + blendedVy * extrapHorizon));
+        }
+
+        return { x: sx, y: sy, z: sz };
       });
 
-      const prevPalm = prevHand.palmCenter;
-      const tgtPalm = tgt.palmCenter;
+      let smoothedPalmX = prevPalm.x + (tgtPalm.x - prevPalm.x) * effectiveAlpha;
+      let smoothedPalmY = prevPalm.y + (tgtPalm.y - prevPalm.y) * effectiveAlpha;
+      if (extrapHorizon > 0 && palmSpeed >= 0.08) {
+        smoothedPalmX = Math.max(0.01, Math.min(0.99, smoothedPalmX + palmVx * extrapHorizon));
+        smoothedPalmY = Math.max(0.01, Math.min(0.99, smoothedPalmY + palmVy * extrapHorizon));
+      }
+
       const smoothedPalm = {
-        x: prevPalm.x + (tgtPalm.x - prevPalm.x) * alpha,
-        y: prevPalm.y + (tgtPalm.y - prevPalm.y) * alpha,
-        mirroredX: prevPalm.mirroredX + (tgtPalm.mirroredX - prevPalm.mirroredX) * alpha,
-        mirroredY: prevPalm.mirroredY + (tgtPalm.mirroredY - prevPalm.mirroredY) * alpha,
+        x: smoothedPalmX,
+        y: smoothedPalmY,
+        mirroredX: 1.0 - smoothedPalmX,
+        mirroredY: smoothedPalmY,
       };
 
       return {
@@ -912,6 +972,7 @@ export function interpolateHands<T extends MinigameHandEvaluation | HandLandmark
     return result as unknown as T[];
   }
 
+  // Raw LandmarkPoint array fallback
   const prevList = prev as unknown as HandLandmarkPoint[][];
   const targetList = target as unknown as HandLandmarkPoint[][];
 

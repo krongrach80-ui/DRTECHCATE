@@ -167,6 +167,13 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const currentDwellProgressRef = useRef<number>(0);
   const isBothHandsWarningRef = useRef<boolean>(false);
   const rafIdRef = useRef<number>(0);
+  const rollingLatencyRef = useRef<number>(35);
+  const [showStaffDebug, setShowStaffDebug] = useState<boolean>(false);
+  const [staffMetrics, setStaffMetrics] = useState<{ fps: number; inferMs: number; latencyMs: number }>({
+    fps: 0,
+    inferMs: 0,
+    latencyMs: 0,
+  });
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [isModelLoading, setIsModelLoading] = useState<boolean>(true);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -214,6 +221,17 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         audioCtxRef.current.close().catch(() => {});
       }
     };
+  }, []);
+
+  // Staff Diagnostic HUD Toggle (Key 'd' or 'D')
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'd' || e.key === 'D') {
+        setShowStaffDebug((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Sound Synthesizer via Web Audio API
@@ -608,8 +626,8 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   }, []);
 
   // 2. High-Performance Decoupled Vision Loop:
-  // - 60 FPS Canvas Overlay Render with Landmark Interpolation (Lerp)
-  // - ~25 FPS Throttled Inference Cycle with Monotonic Timestamps
+  // - Zero-Queue Instant Camera Frame Inference via requestVideoFrameCallback (with rAF fallback)
+  // - Native 60 FPS Canvas Overlay Render with Velocity-Adaptive Lerp & Latency Extrapolation
   // - Persistent DOM Updates (Zero React State Thrashing, Zero 0% Stuck)
   useEffect(() => {
     const resetProgressDom = () => {
@@ -638,8 +656,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     }
 
     let animFrame: number;
-    let lastDetectTime = 0;
-    const TARGET_INTERVAL_MS = 40; // ~25 FPS detection rate
+    let rvfcId: number | null = null;
+    let isLoopRunning = true;
+    let lastRafTime = 0;
     const HOLD_DWELL_MS = 600; // 0.6 seconds continuous hold requirement
     const GRACE_PERIOD_MS = 200; // 200ms grace period tolerance for frame drops
 
@@ -652,9 +671,296 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     let currentDwellProgress = 0;
     let isBothHandsWarningActive = false;
 
-    const frameLoop = (timestamp: number) => {
+    // Rolling telemetry stats for staff diagnostics
+    let frameCount = 0;
+    let lastFpsUpdate = performance.now();
+    let lastInferDuration = 0;
+    let lastTotalLatency = 35;
+
+    const triggerDetection = (nowTimestamp: number, frameCaptureTime: number) => {
       const video = videoRef.current;
       const landmarker = handLandmarkerRef.current;
+      if (!video || video.readyState < 2 || video.paused || !landmarker || isDetectingRef.current) {
+        return;
+      }
+
+      isDetectingRef.current = true;
+      const tInferStart = performance.now();
+
+      try {
+        // Downscale input frame to fixed 320x180 canvas with willReadFrequently: false (GPU accelerated)
+        let dCanvas = detectCanvasRef.current;
+        let dctx = detectContextRef.current;
+        if (!dCanvas) {
+          dCanvas = document.createElement('canvas');
+          dCanvas.width = 320;
+          dCanvas.height = 180;
+          detectCanvasRef.current = dCanvas;
+          dctx = dCanvas.getContext('2d', { willReadFrequently: false });
+          detectContextRef.current = dctx;
+        }
+        if (dctx) {
+          dctx.drawImage(video, 0, 0, 320, 180);
+        }
+
+        // Strict monotonic timestamp guard
+        const monotonicTimestamp = Math.max(nowTimestamp, (lastTimestampRef.current || 0) + 1);
+        lastTimestampRef.current = monotonicTimestamp;
+
+        const result = landmarker.detectForVideo(dCanvas, monotonicTimestamp);
+        const tInferEnd = performance.now();
+        lastInferDuration = tInferEnd - tInferStart;
+        lastTotalLatency = Math.max(0, tInferEnd - frameCaptureTime);
+        rollingLatencyRef.current = lastTotalLatency;
+
+        frameCount++;
+        if (tInferEnd - lastFpsUpdate >= 1000) {
+          const calculatedFps = Math.round((frameCount * 1000) / (tInferEnd - lastFpsUpdate));
+          setStaffMetrics({
+            fps: calculatedFps,
+            inferMs: lastInferDuration,
+            latencyMs: lastTotalLatency,
+          });
+          frameCount = 0;
+          lastFpsUpdate = tInferEnd;
+        }
+
+        const rawHands = result?.landmarks || [];
+        const handednessList = result?.handednesses || [];
+
+        // Multi-hand evaluation using anatomical left/right and inverted mapping
+        const frameResult: MinigameFrameResult = evaluateMinigameFrame(rawHands, handednessList, {
+          isMirrored,
+          minConfidence: 0.45,
+          maxYThreshold: 0.78,
+          raisedTipMargin: 0.03,
+        });
+
+        // Edge detection state (Direct DOM)
+        if (nearEdgeContainerRef.current) {
+          nearEdgeContainerRef.current.style.opacity = frameResult.hasNearEdgeHand ? '1' : '0';
+        }
+
+        // 1. Bilateral Ambiguity Check: Both hands raised simultaneously
+        if (frameResult.isBothHandsRaised) {
+          activeSide = null;
+          candidateSide = null;
+          candidateCount = 0;
+          sideHoldStart = 0;
+          currentDwellProgress = 0;
+          isBothHandsWarningActive = true;
+
+          // Direct DOM updates
+          if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+          if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+          if (popupContainerRef.current) {
+            popupContainerRef.current.style.opacity = '0';
+            popupContainerRef.current.style.pointerEvents = 'none';
+          }
+          if (warningContainerRef.current) {
+            warningContainerRef.current.style.opacity = '1';
+            warningContainerRef.current.style.pointerEvents = 'auto';
+          }
+        } else {
+          isBothHandsWarningActive = false;
+          if (warningContainerRef.current) {
+            warningContainerRef.current.style.opacity = '0';
+            warningContainerRef.current.style.pointerEvents = 'none';
+          }
+
+          // 2. Neutral Hand Reset Gate Check: Must lower hands between questions
+          if (neutralGateRef.current) {
+            const isLowered = frameResult.raisedHands.length === 0;
+            if (isLowered) {
+              handNeutralFrames++;
+              if (handNeutralFrames >= 3) {
+                neutralGateRef.current = false;
+                handNeutralFrames = 0;
+              }
+            } else {
+              handNeutralFrames = 0;
+            }
+
+            activeSide = null;
+            candidateSide = null;
+            candidateCount = 0;
+            sideHoldStart = 0;
+            currentDwellProgress = 0;
+
+            if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+            if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+            if (popupContainerRef.current) {
+              popupContainerRef.current.style.opacity = '0';
+              popupContainerRef.current.style.pointerEvents = 'none';
+            }
+          } else if (frameResult.activeHand) {
+            // 3. One hand raised
+            const currentHand = frameResult.activeHand;
+            const detectedSide = currentHand.anatomicalSide; // 'left' | 'right'
+            lastValidSeenTime = monotonicTimestamp;
+
+            if (activeSide === detectedSide) {
+              const elapsed = monotonicTimestamp - sideHoldStart;
+              currentDwellProgress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
+              const percentStr = `${Math.round(currentDwellProgress * 100)}%`;
+
+              if (popupProgressBarRef.current) {
+                popupProgressBarRef.current.style.width = percentStr;
+              }
+              if (popupProgressPercentRef.current) {
+                popupProgressPercentRef.current.textContent = percentStr;
+              }
+
+              // Show popup container directly
+              if (popupContainerRef.current) {
+                popupContainerRef.current.style.opacity = '1';
+                popupContainerRef.current.style.pointerEvents = 'auto';
+                const isScreenRight = isMirrored
+                  ? detectedSide === 'right'
+                  : detectedSide === 'left';
+                popupContainerRef.current.className = `absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-100 ${
+                  isScreenRight
+                    ? 'top-10 sm:top-11 right-2.5 sm:right-3'
+                    : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
+                } ${
+                  currentHand.answerSide === 'yes'
+                    ? 'bg-emerald-600/95 border-emerald-300'
+                    : 'bg-orange-600/95 border-orange-300'
+                }`;
+              }
+              if (popupTitleRef.current) {
+                popupTitleRef.current.textContent =
+                  currentHand.answerSide === 'yes'
+                    ? t('card_right_hand_yes')
+                    : t('card_left_hand_no');
+              }
+
+              if (currentDwellProgress >= 1.0) {
+                const finalAnswer = currentHand.answerSide; // 'yes' or 'no'
+                activeSide = null;
+                candidateSide = null;
+                candidateCount = 0;
+                sideHoldStart = 0;
+                currentDwellProgress = 0;
+                neutralGateRef.current = true;
+                handNeutralFrames = 0;
+                if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+                if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+                if (popupContainerRef.current) {
+                  popupContainerRef.current.style.opacity = '0';
+                  popupContainerRef.current.style.pointerEvents = 'none';
+                }
+                handleAnswerRef.current(finalAnswer);
+              }
+            } else {
+              // Hysteresis: Require 2 consecutive frames before switching activeSide
+              if (candidateSide === detectedSide) {
+                candidateCount++;
+                if (candidateCount >= 2) {
+                  activeSide = detectedSide;
+                  sideHoldStart = monotonicTimestamp;
+                  candidateCount = 0;
+                  currentDwellProgress = 0.05; // เริ่มต้นที่ 5% ทันที ไม่ค้างที่ 0%
+                  if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '5%';
+                  if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '5%';
+                  if (popupContainerRef.current) {
+                    popupContainerRef.current.style.opacity = '1';
+                    popupContainerRef.current.style.pointerEvents = 'auto';
+                    const isScreenRight = isMirrored
+                      ? activeSide === 'right'
+                      : activeSide === 'left';
+                    popupContainerRef.current.className = `absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-100 ${
+                      isScreenRight
+                        ? 'top-10 sm:top-11 right-2.5 sm:right-3'
+                        : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
+                    } ${
+                      currentHand.answerSide === 'yes'
+                        ? 'bg-emerald-600/95 border-emerald-300'
+                        : 'bg-orange-600/95 border-orange-300'
+                    }`;
+                  }
+                  if (popupTitleRef.current) {
+                    popupTitleRef.current.textContent =
+                      currentHand.answerSide === 'yes'
+                        ? t('card_right_hand_yes')
+                        : t('card_left_hand_no');
+                  }
+                }
+              } else {
+                candidateSide = detectedSide;
+                candidateCount = 1;
+              }
+            }
+          } else {
+            // 4. No hand raised (hands neutral or absent)
+            if (activeSide && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
+              // Grace period tolerance: keep hold dwell timing alive during brief frame drops
+              const elapsed = monotonicTimestamp - sideHoldStart;
+              currentDwellProgress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
+              const percentStr = `${Math.round(currentDwellProgress * 100)}%`;
+              if (popupProgressBarRef.current) {
+                popupProgressBarRef.current.style.width = percentStr;
+              }
+              if (popupProgressPercentRef.current) {
+                popupProgressPercentRef.current.textContent = percentStr;
+              }
+            } else {
+              activeSide = null;
+              candidateSide = null;
+              candidateCount = 0;
+              sideHoldStart = 0;
+              currentDwellProgress = 0;
+              if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
+              if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
+              if (popupContainerRef.current) {
+                popupContainerRef.current.style.opacity = '0';
+                popupContainerRef.current.style.pointerEvents = 'none';
+              }
+            }
+          }
+        }
+
+        // Target hands for continuous 60 FPS interpolation
+        latestLandmarksRef.current = frameResult.allHands;
+        targetActiveHandRef.current = frameResult.activeHand;
+        currentDwellProgressRef.current = currentDwellProgress;
+        isBothHandsWarningRef.current = isBothHandsWarningActive;
+      } catch {
+        // Frame skip safe
+      } finally {
+        isDetectingRef.current = false;
+      }
+    };
+
+    // Sub-loop: Camera frame delivery via requestVideoFrameCallback (zero queue, drops stale frames)
+    const setupVideoFrameCallback = () => {
+      const video = videoRef.current;
+      if (!video || typeof (video as any).requestVideoFrameCallback !== 'function') {
+        return false;
+      }
+
+      const onVideoFrame = (now: number, metadata?: any) => {
+        if (!isLoopRunning) return;
+        const captureTime = metadata?.expectedDisplayTime || metadata?.presentationTime || now;
+        if (!isDetectingRef.current && handLandmarkerRef.current) {
+          triggerDetection(now, captureTime);
+        }
+        if (videoRef.current && typeof (videoRef.current as any).requestVideoFrameCallback === 'function') {
+          rvfcId = (videoRef.current as any).requestVideoFrameCallback(onVideoFrame);
+        }
+      };
+
+      rvfcId = (video as any).requestVideoFrameCallback(onVideoFrame);
+      return true;
+    };
+
+    const hasRvfc = setupVideoFrameCallback();
+
+    // Native 60 FPS Canvas Overlay Render Loop (Independent of video FPS)
+    const frameLoop = (timestamp: number) => {
+      if (!isLoopRunning) return;
+
+      const video = videoRef.current;
       const canvas = overlayCanvasRef.current;
 
       if (!video || video.readyState < 2 || video.paused || !canvas) {
@@ -662,7 +968,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         return;
       }
 
-      // Auto-fit overlay canvas dimensions to video feed (maintaining 100% adaptive camera layout)
+      // Auto-fit overlay canvas dimensions to video feed
       const vw = video.videoWidth || 1280;
       const vh = video.videoHeight || 720;
       if (canvas.width !== vw || canvas.height !== vh) {
@@ -670,255 +976,30 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         canvas.height = vh;
       }
 
-      // -------------------------------------------------------------
-      // PART A: INFERENCE CYCLE (~25 FPS Throttle, Fixed 320x180 GPU Canvas)
-      // -------------------------------------------------------------
-      if (landmarker && !isDetectingRef.current && timestamp - lastDetectTime >= TARGET_INTERVAL_MS) {
-        lastDetectTime = timestamp;
-        isDetectingRef.current = true;
-
-        try {
-          // Downscale input frame to fixed 320x180 canvas with willReadFrequently: false (GPU accelerated)
-          let dCanvas = detectCanvasRef.current;
-          let dctx = detectContextRef.current;
-          if (!dCanvas) {
-            dCanvas = document.createElement('canvas');
-            dCanvas.width = 320;
-            dCanvas.height = 180;
-            detectCanvasRef.current = dCanvas;
-            dctx = dCanvas.getContext('2d', { willReadFrequently: false });
-            detectContextRef.current = dctx;
-          }
-          if (dctx) {
-            dctx.drawImage(video, 0, 0, 320, 180);
-          }
-
-          // Strict monotonic timestamp guard
-          const monotonicTimestamp = Math.max(timestamp, (lastTimestampRef.current || 0) + 1);
-          lastTimestampRef.current = monotonicTimestamp;
-
-          const result = landmarker.detectForVideo(dCanvas, monotonicTimestamp);
-          const rawHands = result?.landmarks || [];
-          const handednessList = result?.handednesses || [];
-
-          // Multi-hand evaluation using anatomical left/right and inverted mapping
-          const frameResult: MinigameFrameResult = evaluateMinigameFrame(rawHands, handednessList, {
-            isMirrored,
-            minConfidence: 0.45,
-            maxYThreshold: 0.78,
-            raisedTipMargin: 0.03,
-          });
-
-          // Edge detection state (Direct DOM)
-          if (nearEdgeContainerRef.current) {
-            nearEdgeContainerRef.current.style.opacity = frameResult.hasNearEdgeHand ? '1' : '0';
-          }
-
-          // 1. Bilateral Ambiguity Check: Both hands raised simultaneously
-          if (frameResult.isBothHandsRaised) {
-            activeSide = null;
-            candidateSide = null;
-            candidateCount = 0;
-            sideHoldStart = 0;
-            currentDwellProgress = 0;
-            isBothHandsWarningActive = true;
-
-            // Direct DOM updates
-            if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
-            if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
-            if (popupContainerRef.current) {
-              popupContainerRef.current.style.opacity = '0';
-              popupContainerRef.current.style.pointerEvents = 'none';
-            }
-            if (warningContainerRef.current) {
-              warningContainerRef.current.style.opacity = '1';
-              warningContainerRef.current.style.pointerEvents = 'auto';
-            }
-          } else {
-            isBothHandsWarningActive = false;
-            if (warningContainerRef.current) {
-              warningContainerRef.current.style.opacity = '0';
-              warningContainerRef.current.style.pointerEvents = 'none';
-            }
-
-            // 2. Neutral Hand Reset Gate Check: Must lower hands between questions
-            if (neutralGateRef.current) {
-              const isLowered = frameResult.raisedHands.length === 0;
-              if (isLowered) {
-                handNeutralFrames++;
-                if (handNeutralFrames >= 3) {
-                  neutralGateRef.current = false;
-                  handNeutralFrames = 0;
-                }
-              } else {
-                handNeutralFrames = 0;
-              }
-
-              activeSide = null;
-              candidateSide = null;
-              candidateCount = 0;
-              sideHoldStart = 0;
-              currentDwellProgress = 0;
-
-              if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
-              if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
-              if (popupContainerRef.current) {
-                popupContainerRef.current.style.opacity = '0';
-                popupContainerRef.current.style.pointerEvents = 'none';
-              }
-            } else if (frameResult.activeHand) {
-              // 3. One hand raised
-              const currentHand = frameResult.activeHand;
-              const detectedSide = currentHand.anatomicalSide; // 'left' | 'right'
-              lastValidSeenTime = monotonicTimestamp;
-
-              if (activeSide === detectedSide) {
-                const elapsed = monotonicTimestamp - sideHoldStart;
-                currentDwellProgress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
-                const percentStr = `${Math.round(currentDwellProgress * 100)}%`;
-
-                if (popupProgressBarRef.current) {
-                  popupProgressBarRef.current.style.width = percentStr;
-                }
-                if (popupProgressPercentRef.current) {
-                  popupProgressPercentRef.current.textContent = percentStr;
-                }
-
-                // Show popup container directly
-                if (popupContainerRef.current) {
-                  popupContainerRef.current.style.opacity = '1';
-                  popupContainerRef.current.style.pointerEvents = 'auto';
-                  const isScreenRight = isMirrored
-                    ? detectedSide === 'right'
-                    : detectedSide === 'left';
-                  popupContainerRef.current.className = `absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-100 ${
-                    isScreenRight
-                      ? 'top-10 sm:top-11 right-2.5 sm:right-3'
-                      : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
-                  } ${
-                    currentHand.answerSide === 'yes'
-                      ? 'bg-emerald-600/95 border-emerald-300'
-                      : 'bg-orange-600/95 border-orange-300'
-                  }`;
-                }
-                if (popupTitleRef.current) {
-                  popupTitleRef.current.textContent =
-                    currentHand.answerSide === 'yes'
-                      ? t('card_right_hand_yes')
-                      : t('card_left_hand_no');
-                }
-
-                if (currentDwellProgress >= 1.0) {
-                  const finalAnswer = currentHand.answerSide; // 'yes' or 'no'
-                  activeSide = null;
-                  candidateSide = null;
-                  candidateCount = 0;
-                  sideHoldStart = 0;
-                  currentDwellProgress = 0;
-                  neutralGateRef.current = true;
-                  handNeutralFrames = 0;
-                  if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
-                  if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
-                  if (popupContainerRef.current) {
-                    popupContainerRef.current.style.opacity = '0';
-                    popupContainerRef.current.style.pointerEvents = 'none';
-                  }
-                  handleAnswerRef.current(finalAnswer);
-                }
-              } else {
-                // Hysteresis: Require 2 consecutive frames before switching activeSide
-                if (candidateSide === detectedSide) {
-                  candidateCount++;
-                  if (candidateCount >= 2) {
-                    activeSide = detectedSide;
-                    sideHoldStart = monotonicTimestamp;
-                    candidateCount = 0;
-                    currentDwellProgress = 0.05; // เริ่มต้นที่ 5% ทันที ไม่ค้างที่ 0%
-                    if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '5%';
-                    if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '5%';
-                    if (popupContainerRef.current) {
-                      popupContainerRef.current.style.opacity = '1';
-                      popupContainerRef.current.style.pointerEvents = 'auto';
-                      const isScreenRight = isMirrored
-                        ? activeSide === 'right'
-                        : activeSide === 'left';
-                      popupContainerRef.current.className = `absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-100 ${
-                        isScreenRight
-                          ? 'top-10 sm:top-11 right-2.5 sm:right-3'
-                          : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
-                      } ${
-                        currentHand.answerSide === 'yes'
-                          ? 'bg-emerald-600/95 border-emerald-300'
-                          : 'bg-orange-600/95 border-orange-300'
-                      }`;
-                    }
-                    if (popupTitleRef.current) {
-                      popupTitleRef.current.textContent =
-                        currentHand.answerSide === 'yes'
-                          ? t('card_right_hand_yes')
-                          : t('card_left_hand_no');
-                    }
-                  }
-                } else {
-                  candidateSide = detectedSide;
-                  candidateCount = 1;
-                }
-              }
-            } else {
-              // 4. No hand raised (hands neutral or absent)
-              if (activeSide && monotonicTimestamp - lastValidSeenTime < GRACE_PERIOD_MS) {
-                // Grace period tolerance: keep hold dwell timing alive during brief frame drops
-                const elapsed = monotonicTimestamp - sideHoldStart;
-                currentDwellProgress = Math.min(1.0, elapsed / HOLD_DWELL_MS);
-                const percentStr = `${Math.round(currentDwellProgress * 100)}%`;
-                if (popupProgressBarRef.current) {
-                  popupProgressBarRef.current.style.width = percentStr;
-                }
-                if (popupProgressPercentRef.current) {
-                  popupProgressPercentRef.current.textContent = percentStr;
-                }
-              } else {
-                activeSide = null;
-                candidateSide = null;
-                candidateCount = 0;
-                sideHoldStart = 0;
-                currentDwellProgress = 0;
-                if (popupProgressBarRef.current) popupProgressBarRef.current.style.width = '0%';
-                if (popupProgressPercentRef.current) popupProgressPercentRef.current.textContent = '0%';
-                if (popupContainerRef.current) {
-                  popupContainerRef.current.style.opacity = '0';
-                  popupContainerRef.current.style.pointerEvents = 'none';
-                }
-              }
-            }
-          }
-
-          // Target hands for continuous 60 FPS interpolation
-          latestLandmarksRef.current = frameResult.allHands;
-          targetActiveHandRef.current = frameResult.activeHand;
-          currentDwellProgressRef.current = currentDwellProgress;
-          isBothHandsWarningRef.current = isBothHandsWarningActive;
-        } catch {
-          // Frame skip safe
-        } finally {
-          isDetectingRef.current = false;
-        }
+      // Fallback detection trigger if requestVideoFrameCallback is unsupported
+      if (!hasRvfc && !isDetectingRef.current && handLandmarkerRef.current) {
+        triggerDetection(timestamp, timestamp);
       }
 
-      // -------------------------------------------------------------
-      // PART B: 60 FPS CANVAS OVERLAY RENDER WITH LERP INTERPOLATION
-      // -------------------------------------------------------------
+      // 60 FPS CANVAS OVERLAY RENDER WITH VELOCITY-ADAPTIVE LERP & LATENCY EXTRAPOLATION
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Smooth multi-hand landmarks at display refresh rate using polymorphic Lerp
         const currentTargets = latestLandmarksRef.current;
         if (currentTargets && currentTargets.length > 0) {
+          const dt = lastRafTime ? Math.max(1, timestamp - lastRafTime) : 16.6;
+          lastRafTime = timestamp;
+
           const smoothedHands = interpolateHands(
             prevLandmarksRef.current,
             currentTargets,
-            0.45
+            0.45,
+            {
+              adaptive: true,
+              extrapolateMs: Math.min(50, rollingLatencyRef.current || 35),
+              deltaTimeMs: dt,
+            }
           );
           prevLandmarksRef.current = smoothedHands;
 
@@ -947,7 +1028,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     animFrame = requestAnimationFrame(frameLoop);
 
     return () => {
+      isLoopRunning = false;
       cancelAnimationFrame(animFrame);
+      const v = videoRef.current as any;
+      if (rvfcId !== null && v && typeof v.cancelVideoFrameCallback === 'function') {
+        v.cancelVideoFrameCallback(rvfcId);
+      }
       resetProgressDom();
       if (overlayCanvasRef.current) {
         const ctx = overlayCanvasRef.current.getContext('2d');
@@ -1166,6 +1252,18 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 <div className="absolute top-14 z-25 px-3.5 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs font-bold flex items-center gap-1.5 shadow-lg max-w-[90%]">
                   <AlertTriangle className="w-4 h-4 text-amber-900 shrink-0" />
                   <span className="truncate">{modelError} (แตะปุ่มด้านล่างเพื่อตอบแทนได้)</span>
+                </div>
+              )}
+
+              {/* Staff Diagnostic Latency & FPS HUD (Toggle with Key 'D' or Staff Mode) */}
+              {showStaffDebug && (
+                <div className="absolute top-3 left-12 z-30 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-emerald-400 text-emerald-300 font-mono text-[11px] font-bold shadow-2xl pointer-events-none flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1.5 text-white text-[10px]">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>STAFF TELEMETRY HUD</span>
+                  </div>
+                  <span>Det FPS: <strong className="text-white">{staffMetrics.fps}</strong> | Infer: <strong className="text-white">{staffMetrics.inferMs.toFixed(1)}ms</strong></span>
+                  <span>Latency (Capture → Draw): <strong className="text-amber-300">{staffMetrics.latencyMs.toFixed(1)}ms</strong></span>
                 </div>
               )}
 
