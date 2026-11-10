@@ -136,11 +136,13 @@ export const KIOSK_CAMERA_STANDARDIZATION_CONFIG = {
 export const KIOSK_NOT_FOUND_CONFIG = {
   /** จำนวนรอบที่ต้องตรวจพบว่าไม่ตรงกับคนไข้ใดๆ (เมื่อภาพผ่านเกณฑ์คุณภาพ) เพื่อยืนยันว่าไม่มีบัญชี (2 รอบ) */
   NOT_FOUND_CONFIRM_ROUNDS: 2,
-  /** หน้าต่างเวลาในการสะสมรอบที่ไม่ตรงกัน (5000 มิลลิวินาที หรือ 5 วินาที) */
-  NOT_FOUND_WINDOW_MS: 5000,
-  /** ระยะเวลาคืนสู่สถานะเริ่มต้นอัตโนมัติเมื่อไม่มีการกดปุ่มใดๆ (30000 มิลลิวินาที หรือ 30 วินาที) */
+  /** หน้าต่างเวลาในการสะสมรอบที่ไม่ตรงกัน (15000 มิลลิวินาที หรือ 15 วินาที เพื่อครอบคลุม 2 รอบการสแกน) */
+  NOT_FOUND_WINDOW_MS: 15000,
+  /** เกณฑ์คะแนนคุณภาพภาพต่ำสุด (ความคมชัด) ที่ยอมรับเพื่อตัดสินว่าไม่มีบัญชี ป้องกันการใช้ภาพเบลอมาตัดสิน */
+  QUALITY_MIN: 4.0,
+  /** ระยะเวลาคืนสู่สถานะเริ่มต้นอัตโนมัติเมื่อไม่มีการกดปุ่มใดๆ ในป็อปอัพ (30000 มิลลิวินาที หรือ 30 วินาที) */
   NOT_FOUND_IDLE_TIMEOUT_MS: 30000,
-  /** ระยะเวลาคูลดาวน์ก่อนที่ปุ่มลองสแกนอีกครั้งจะสามารถใช้งานได้ (1500 มิลลิวินาที หรือ 1.5 วินาที) */
+  /** ระยะเวลาคูลดาวน์ก่อนเริ่มสแกนใหม่ (1500 มิลลิวินาที หรือ 1.5 วินาที) */
   RETRY_COOLDOWN_MS: 1500,
 } as const;
 
@@ -835,6 +837,57 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     return () => clearInterval(timer);
   }, [isAccountNotFound, unrecognizedAlert, lang]);
 
+  // Clean retry scan handler with 1.5s cooldown and state purge for Account Not Found
+  const handleNotFoundRetryScan = useCallback(() => {
+    if (isRetryCooldownActive) return;
+    setIsRetryCooldownActive(true);
+    setIsAccountNotFound(false);
+    setUnrecognizedAlert(null);
+    sampleFramesRef.current = [];
+    lastProbeVectorRef.current = null;
+    pendingRegistrationBiometricsRef.current = null;
+    lockedTargetRef.current = null;
+    consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
+    stabilityDetectorRef.current.reset();
+    isCoolingDownRef.current = true;
+    setIsAutoScanCoolingDown(true);
+    const prepMsg =
+      lang === 'zh-CN'
+        ? '正在准备摄像头...'
+        : lang === 'en-US'
+        ? 'Preparing camera...'
+        : 'กำลังเตรียมความพร้อมของกล้อง...';
+    setStatusText(prepMsg);
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        isCoolingDownRef.current = false;
+        setIsAutoScanCoolingDown(false);
+        setIsRetryCooldownActive(false);
+        stabilityDetectorRef.current.reset();
+        fastLivenessVerifierRef.current.start();
+        setStatusText(
+          lang === 'zh-CN'
+            ? '请站在摄像头前开始扫描'
+            : lang === 'en-US'
+            ? 'Please stand in front of camera to begin'
+            : 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น'
+        );
+      }
+    }, KIOSK_NOT_FOUND_CONFIG.RETRY_COOLDOWN_MS);
+  }, [isRetryCooldownActive, lang]);
+
+  // Handle ESC key to safely exit Not Found modal with retry cooldown
+  useEffect(() => {
+    if (!isAccountNotFound && !unrecognizedAlert) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleNotFoundRetryScan();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAccountNotFound, unrecognizedAlert, handleNotFoundRetryScan]);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Touchless "Raise-Both-Hands" Readiness Confirmation Hook (Reuses active video stream)
@@ -1315,7 +1368,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       const hasValidQualityFrame =
         bestShotFrames.some(
           (f) =>
-            f.sharpness >= KIOSK_CAMERA_STANDARDIZATION_CONFIG.MIN_SHARPNESS &&
+            f.sharpness >= KIOSK_NOT_FOUND_CONFIG.QUALITY_MIN &&
             (!f.detection.pose || (Math.abs(f.detection.pose.yaw) <= 20 && Math.abs(f.detection.pose.pitch) <= 20))
         ) || (samples.length > 0 && samples.some((s) => s.liveness?.isLive !== false));
 
@@ -1641,10 +1694,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
         const notFoundMsg =
           lang === 'zh-CN'
-            ? '未找到用户账户，请联系医护人员办理建档登记。'
+            ? '未找到用户账户，请联系医护人员协助办理登记。'
             : lang === 'en-US'
-            ? 'Account Not Found. Please contact hospital staff for registration.'
-            : 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน';
+            ? 'No matching patient account found. Please contact hospital staff for registration.'
+            : 'ไม่พบบัญชีผู้ใช้ในระบบ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน';
         setStatusText(notFoundMsg);
         setIsAccountNotFound(true);
         return;
@@ -2680,7 +2733,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-amber-300 shrink-0" />
                     <span className="text-amber-200 truncate font-semibold">
-                      {lang === 'zh-CN' ? '🔄 未找到人脸数据，正在自动重新扫描...' : lang === 'en-US' ? '🔄 No matching face found. Auto-scanning again...' : '🔄 ไม่พบข้อมูลใบหน้า กำลังสแกนใหม่อัตโนมัติ...'}
+                      {statusText || (lang === 'zh-CN' ? '🔄 正在准备重新扫描...' : lang === 'en-US' ? '🔄 Preparing to scan again...' : '🔄 กำลังเตรียมสแกนอีกครั้ง...')}
                     </span>
                   </>
                 ) : isScanning ? (
@@ -3219,25 +3272,63 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       {/* Modal: Account Not Found (Dedicated Stranger / Unmatched Screen) */}
       {(isAccountNotFound || unrecognizedAlert) && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white border-2 border-rose-500/50 shadow-2xl p-6 text-center animate-scale-up">
-            <div className="w-16 h-16 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto mb-3">
-              <UserX className="w-8 h-8 text-rose-500" />
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="not-found-dialog-title"
+          aria-describedby="not-found-dialog-desc"
+          onClick={handleNotFoundRetryScan}
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-white border border-slate-200 shadow-2xl p-6 text-center animate-scale-up"
+          >
+            {/* Neutral Clinical Icon */}
+            <div className="w-16 h-16 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center mx-auto mb-3 shadow-inner">
+              <UserCheck className="w-8 h-8 text-teal-600" />
             </div>
-            <h3 className="text-xl font-bold text-slate-900">
+            <h3 id="not-found-dialog-title" className="text-xl font-bold text-slate-900">
               {lang === 'zh-CN' ? '未找到用户账户' : lang === 'en-US' ? 'Account Not Found' : 'ไม่พบบัญชีผู้ใช้'}
             </h3>
-            <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+            <p id="not-found-dialog-desc" className="text-sm text-slate-600 mt-2 leading-relaxed">
               {unrecognizedAlert ||
                 (lang === 'zh-CN'
-                  ? '未找到用户账户，请联系医护人员办理建档登记。'
+                  ? '未找到用户账户，请联系医护人员协助办理建档登记。'
                   : lang === 'en-US'
-                  ? 'Account Not Found. Please contact hospital staff for registration.'
-                  : 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน')}
+                  ? 'No matching patient account found. Please contact hospital staff for registration.'
+                  : 'ไม่พบบัญชีผู้ใช้ในระบบ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน')}
             </p>
 
             <div className="mt-5 flex flex-col gap-2.5">
-              {/* Button 1: Call Staff (เรียกเจ้าหน้าที่) */}
+              {/* Button 1 (Primary): Staff Assisted Registration */}
+              <button
+                type="button"
+                id="kiosk-staff-register-btn"
+                data-testid="kiosk-staff-register-btn"
+                onClick={() => {
+                  setIsAccountNotFound(false);
+                  setUnrecognizedAlert(null);
+                  stopCamera();
+                  if (onStaffAssistedRegister) {
+                    onStaffAssistedRegister(null);
+                  } else if (onOpenStaffLoginModal) {
+                    onOpenStaffLoginModal();
+                  }
+                }}
+                className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-base shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition active:scale-[0.98]"
+              >
+                <UserCheck className="w-5 h-5 text-white shrink-0" />
+                <span>
+                  {lang === 'zh-CN'
+                    ? '👨‍⚕️ 医护人员协助建档登记'
+                    : lang === 'en-US'
+                    ? '👨‍⚕️ Staff-Assisted Registration'
+                    : '👨‍⚕️ เจ้าหน้าที่ลงทะเบียนให้'}
+                </span>
+              </button>
+
+              {/* Button 2: Call Staff (เรียกเจ้าหน้าที่) */}
               <button
                 type="button"
                 id="kiosk-call-staff-btn"
@@ -3250,7 +3341,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   }
                   lastManualCallStaffTimeRef.current = now;
                   setIsCallingStaff(true);
-                  pendingRegistrationBiometricsRef.current = null;
                   defaultApiClient.kiosk
                     .callStaff({ kiosk_id: 'kiosk-01', reason: 'unrecognized_face_kiosk' })
                     .catch(() => {})
@@ -3265,13 +3355,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                       : '🔔 เรียกเจ้าหน้าที่เรียบร้อยแล้ว กรุณารอสักครู่...'
                   );
                 }}
-                className={`w-full py-3.5 px-4 rounded-2xl font-bold text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition active:scale-[0.98] ${
+                className={`w-full py-3 px-4 rounded-2xl font-bold text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer transition active:scale-[0.98] ${
                   isCallingStaff
                     ? 'bg-amber-100 text-amber-900 border border-amber-300 opacity-70 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white shadow-amber-600/20'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 shadow-amber-600/10'
                 }`}
               >
-                <Bell className="w-4 h-4 text-amber-100" />
+                <Bell className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
                   {lang === 'zh-CN'
                     ? '🔔 呼叫医护人员'
@@ -3281,8 +3371,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 </span>
               </button>
 
-              <div className="grid grid-cols-2 gap-2">
-                {/* Button 2: Enter PIN (ใช้รหัส PIN) */}
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {/* Button 3: Enter PIN (ใช้รหัส PIN) */}
                 <button
                   type="button"
                   id="kiosk-not-found-pin-btn"
@@ -3295,7 +3385,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   }}
                   className="py-3 px-3 rounded-xl bg-slate-50 border border-slate-300 hover:bg-slate-100 text-slate-800 font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
                 >
-                  <KeyRound className="w-3.5 h-3.5 text-slate-600" />
+                  <KeyRound className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                   <span>
                     {lang === 'zh-CN'
                       ? '🔢 使用PIN码'
@@ -3305,56 +3395,20 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   </span>
                 </button>
 
-                {/* Button 3: Retry Scan (ลองสแกนอีกครั้ง with 1.5s cooldown) */}
+                {/* Button 4: Retry Scan (ลองสแกนอีกครั้ง with 1.5s cooldown) */}
                 <button
                   type="button"
                   id="kiosk-retry-scan-btn"
                   data-testid="kiosk-retry-scan-btn"
                   disabled={isRetryCooldownActive}
-                  onClick={() => {
-                    if (isRetryCooldownActive) return;
-                    setIsRetryCooldownActive(true);
-                    setIsAccountNotFound(false);
-                    setUnrecognizedAlert(null);
-                    sampleFramesRef.current = [];
-                    lastProbeVectorRef.current = null;
-                    pendingRegistrationBiometricsRef.current = null;
-                    lockedTargetRef.current = null;
-                    consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
-                    stabilityDetectorRef.current.reset();
-                    isCoolingDownRef.current = true;
-                    setIsAutoScanCoolingDown(true);
-                    setStatusText(
-                      lang === 'zh-CN'
-                        ? '正在准备摄像头...'
-                        : lang === 'en-US'
-                        ? 'Preparing camera...'
-                        : 'กำลังเตรียมความพร้อมของกล้อง...'
-                    );
-                    setTimeout(() => {
-                      if (isMountedRef.current) {
-                        isCoolingDownRef.current = false;
-                        setIsAutoScanCoolingDown(false);
-                        setIsRetryCooldownActive(false);
-                        stabilityDetectorRef.current.reset();
-                        fastLivenessVerifierRef.current.start();
-                        setStatusText(
-                          lang === 'zh-CN'
-                            ? '请站在摄像头前开始扫描'
-                            : lang === 'en-US'
-                            ? 'Please stand in front of camera to begin'
-                            : 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น'
-                        );
-                      }
-                    }, KIOSK_NOT_FOUND_CONFIG.RETRY_COOLDOWN_MS);
-                  }}
+                  onClick={handleNotFoundRetryScan}
                   className={`py-3 px-3 rounded-xl border font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition active:scale-95 ${
                     isRetryCooldownActive
                       ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
                       : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-800 cursor-pointer'
                   }`}
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isRetryCooldownActive ? 'animate-spin text-slate-400' : 'text-slate-600'}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRetryCooldownActive ? 'animate-spin text-slate-400' : 'text-slate-600'} shrink-0`} />
                   <span>
                     {lang === 'zh-CN'
                       ? '🔄 重新扫描'
@@ -3367,13 +3421,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
               {/* Countdown: 30s auto-reset */}
               <div className="text-xs text-slate-400 mt-2 flex items-center justify-center gap-1.5 select-none">
-                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>
                   {lang === 'zh-CN'
-                    ? `${notFoundRemainingSec} 秒后自动返回`
+                    ? `${notFoundRemainingSec} 秒后自动返回初始页面`
                     : lang === 'en-US'
-                    ? `Auto-resets in ${notFoundRemainingSec}s`
-                    : `กลับสู่หน้าแรกโดยอัตโนมัติใน ${notFoundRemainingSec} วินาที`}
+                    ? `Auto-resets to home in ${notFoundRemainingSec}s`
+                    : `ระบบจะคืนสู่หน้าเริ่มต้นอัตโนมัติใน ${notFoundRemainingSec} วินาที`}
                 </span>
               </div>
             </div>
