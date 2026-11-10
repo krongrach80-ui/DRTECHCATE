@@ -343,25 +343,62 @@ export class RepStateMachine {
             : calculateAngle2D(effectivePA, pV, elbowLm);
           readinessStatus = 'partial_upper_body';
         } else if (hasShoulder && (!hasElbow || !hasWrist)) {
-          // Tier 3: Close-Up Desk Mode (Only Shoulders visible; Elbow & Wrist out of bottom frame)
+          // Tier 3: Close-Up Desk Mode (Only Shoulders visible; Elbow & Wrist out of frame)
           isUpperBodyDeskActive = true;
           readinessStatus = 'partial_upper_body';
 
-          const oppShoulderIdx = shoulderIdx === 11 ? 12 : 11;
-          const oppShoulder = landmarks[oppShoulderIdx];
-          const nose = landmarks[0];
-          const baselineY =
-            isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
-              ? oppShoulder.y
-              : isCamUsable(0, 0.35) && nose
-              ? nose.y + 0.18
-              : landmarks[shoulderIdx]?.y ?? 0.35;
+          const isAbduction =
+            this.config.id === 'shoulder-abduction' ||
+            (this.config.id && this.config.id.includes('abduction')) ||
+            this.config.elevationPlane?.requiredPlane === 'abduction';
 
-          const upwardLift = Math.max(0, baselineY - (landmarks[shoulderIdx]?.y ?? 0.35));
-          const targetMin = angleCfg.targetMinDeg;
-          const startAngle = angleCfg.startAngleDeg;
-          const liftRatio = Math.min(1.0, upwardLift / 0.1);
-          currentAngle = startAngle + liftRatio * (targetMin - startAngle);
+          if (isAbduction) {
+            // Lateral Humerus Vector Fallback (Coronal Abduction):
+            // In abduction, arm moves laterally toward frame boundaries.
+            // Estimate angle from directional vector of upper arm (Shoulder -> Elbow/Edge intersection)
+            const rawElbow = landmarks[elbowIdx] || normalizedLandmarks[elbowIdx];
+            const shLm = landmarks[shoulderIdx] || normalizedLandmarks[shoulderIdx];
+
+            if (rawElbow && shLm) {
+              const clampedX = Math.max(0.0, Math.min(1.0, rawElbow.x));
+              const clampedY = Math.max(0.0, Math.min(1.0, rawElbow.y));
+              const dx = clampedX - shLm.x;
+              const dy = clampedY - shLm.y;
+              const mag = Math.sqrt(dx * dx + dy * dy);
+
+              if (mag > 0.04) {
+                // Angle with downward vertical torso vector (0, 1):
+                // cos(theta) = (0*dx + 1*dy) / mag = dy / mag
+                const cosVal = Math.max(-1.0, Math.min(1.0, dy / mag));
+                const humerusAngleDeg = (Math.acos(cosVal) * 180) / Math.PI;
+                currentAngle = Math.round(humerusAngleDeg);
+              } else {
+                currentAngle = angleCfg.startAngleDeg;
+              }
+            } else {
+              currentAngle = angleCfg.startAngleDeg;
+            }
+          } else {
+            const oppShoulderIdx = shoulderIdx === 11 ? 12 : 11;
+            const oppShoulder = landmarks[oppShoulderIdx];
+            const nose = landmarks[0];
+            const baselineY =
+              isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
+                ? oppShoulder.y
+                : isCamUsable(0, 0.35) && nose
+                ? nose.y + 0.18
+                : landmarks[shoulderIdx]?.y ?? 0.35;
+
+            const upwardLift = Math.max(0, baselineY - (landmarks[shoulderIdx]?.y ?? 0.35));
+            const targetMin =
+              (this.config as any).targetMinDegOverride ??
+              this.config.defaultPrescription?.targetMinDeg ??
+              (this.config as any).prescription?.targetMinDeg ??
+              angleCfg.targetMinDeg;
+            const startAngle = angleCfg.startAngleDeg;
+            const liftRatio = Math.min(1.0, upwardLift / 0.1);
+            currentAngle = startAngle + liftRatio * (targetMin - startAngle);
+          }
         } else {
           currentAngle = triplet.use3DWorld
             ? calculateAngle3D(effectivePA, pV, pB)
@@ -472,9 +509,13 @@ export class RepStateMachine {
     let readinessStatus = targetComp.readiness;
     let isUpperBodyDeskActive = targetComp.isDeskActive;
 
-    // Target zone parameters
+    // Target zone parameters with Clinical Prescription Override (Option A)
     const startAngle = angleCfg.startAngleDeg;
-    const targetMin = angleCfg.targetMinDeg;
+    const targetMin =
+      (this.config as any).targetMinDegOverride ??
+      this.config.defaultPrescription?.targetMinDeg ??
+      (this.config as any).prescription?.targetMinDeg ??
+      angleCfg.targetMinDeg;
     const targetMax = angleCfg.targetMaxDeg;
     const tolerance = angleCfg.toleranceDeg || 10;
     const holdDurationSec = angleCfg.holdDurationSec || 1.0;
@@ -622,8 +663,22 @@ export class RepStateMachine {
         const planeRes = calculatePlaneOfElevation(normalizedLandmarks, targetSide, isWristTarget);
 
         if (!planeRes || !planeRes.isConfident) {
-          isPlaneLandmarkDegraded = true;
-          isInsideTargetZone = false;
+          const isAbduction = elevationPlaneCfg.requiredPlane === 'abduction';
+          const targetElbowIdx = triplet.vertex === 11 ? 13 : 14;
+          const rawElbow = landmarks[targetElbowIdx];
+          const isNearBoundary =
+            rawElbow &&
+            (rawElbow.x < 0.08 || rawElbow.x > 0.92 || rawElbow.y < 0.08 || rawElbow.y > 0.92);
+
+          if (isAbduction && isNearBoundary) {
+            // Elevation Plane Leniency:
+            // When elbow reaches near camera boundaries in lateral abduction,
+            // maintain target zone instead of strictly disqualifying as degraded plane.
+            isPlaneLandmarkDegraded = false;
+          } else {
+            isPlaneLandmarkDegraded = true;
+            isInsideTargetZone = false;
+          }
         } else {
           currentPlaneAngleDeg = Math.round(planeRes.planeAngleDeg * 10) / 10;
           this.recentPlaneAngles.push(planeRes.planeAngleDeg);
@@ -1040,6 +1095,7 @@ export class RepStateMachine {
       isOccluded: lockResult?.isOccluded ?? false,
       occlusionReasonTh: lockResult?.occlusionReasonTh,
       elevationPlaneDeg: currentPlaneAngleDeg,
+      isPlaneDegraded: isPlaneLandmarkDegraded,
       isSubjectLocked: lockResult?.isSubjectLocked ?? true,
       isFrameDropped: lockResult?.isFrameDropped ?? false,
       frameDropReason: lockResult?.frameDropReason,
