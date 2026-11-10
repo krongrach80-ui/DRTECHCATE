@@ -338,8 +338,8 @@ export function checkKioskFaceQuality(
   const faceWidth = detection.box.width;
   const faceWidthRatio = faceWidth / fw;
 
-  // 1. faceWidthRatio >= 0.10 (ขนาดใบหน้าไม่ต่ำกว่า 10% ของจอ เพื่อรองรับทั้งนั่งใกล้และไกล)
-  if (faceWidthRatio < 0.10) {
+  // 1. faceWidthRatio >= 0.08 (ขนาดใบหน้าไม่ต่ำกว่า 8% ของจอ เพื่อรองรับทั้งนั่งใกล้และไกล)
+  if (faceWidthRatio < 0.08) {
     return { passed: false, reason: 'FACE_TOO_SMALL', statusMessageThai: 'กรุณาขยับเข้าใกล้กล้องอีกนิด' };
   }
 
@@ -371,12 +371,12 @@ export function checkKioskFaceQuality(
 }
 
 export interface FaceStabilityConfig {
-  minDurationMs?: number; // default 600ms
-  maxDisplacementRatio?: number; // default 0.015 (1.5% screen distance)
-  minWidthRatio?: number; // default 0.15 (15% screen width)
+  minDurationMs?: number; // default 500ms
+  maxDisplacementRatio?: number; // default 0.035 (3.5% screen distance)
+  minWidthRatio?: number; // default 0.08 (8% screen width)
   maxWidthRatio?: number; // default 0.65 (65% screen width)
-  maxYaw?: number; // default 18°
-  maxPitch?: number; // default 15°
+  maxYaw?: number; // default 22°
+  maxPitch?: number; // default 20°
 }
 
 export interface StabilityCheckResult {
@@ -389,7 +389,7 @@ export interface StabilityCheckResult {
 
 /**
  * Face Stability Detector (Pose & Positional Stability Gate)
- * Detects when a patient sits still with a frontal face for 600ms without requiring physical motion or gestures.
+ * Detects when a patient sits still with a frontal face for 500ms without requiring physical motion or gestures.
  */
 export class FaceStabilityDetector {
   private config: Required<FaceStabilityConfig>;
@@ -405,12 +405,12 @@ export class FaceStabilityDetector {
 
   constructor(config?: FaceStabilityConfig) {
     this.config = {
-      minDurationMs: config?.minDurationMs ?? 600,
-      maxDisplacementRatio: config?.maxDisplacementRatio ?? 0.015,
-      minWidthRatio: config?.minWidthRatio ?? 0.15,
+      minDurationMs: config?.minDurationMs ?? 500,
+      maxDisplacementRatio: config?.maxDisplacementRatio ?? 0.035,
+      minWidthRatio: config?.minWidthRatio ?? 0.08,
       maxWidthRatio: config?.maxWidthRatio ?? 0.65,
-      maxYaw: config?.maxYaw ?? 18,
-      maxPitch: config?.maxPitch ?? 15,
+      maxYaw: config?.maxYaw ?? 22,
+      maxPitch: config?.maxPitch ?? 20,
     };
   }
 
@@ -450,10 +450,10 @@ export class FaceStabilityDetector {
       };
     }
 
-    const { box, pose, landmarks } = detection;
+    const { box, pose } = detection;
     const widthRatio = box.width / fw;
 
-    // 1. Width ratio check: between 15% and 65% of screen width
+    // 1. Width ratio check: between 8% and 65% of screen width
     if (widthRatio < this.config.minWidthRatio) {
       this.reset();
       return {
@@ -476,7 +476,7 @@ export class FaceStabilityDetector {
       };
     }
 
-    // 2. Frontal orientation: Head rotation |yaw| <= 18° and |pitch| <= 15°
+    // 2. Frontal orientation: Head rotation |yaw| <= 22° and |pitch| <= 20°
     const yaw = pose ? Math.abs(pose.yaw) : 0;
     const pitch = pose ? Math.abs(pose.pitch) : 0;
     if (yaw > this.config.maxYaw || pitch > this.config.maxPitch) {
@@ -490,9 +490,9 @@ export class FaceStabilityDetector {
       };
     }
 
-    // 3. Spatial stability: Nose tip or bounding box center moves less than 1.5% screen distance
-    const ptX = landmarks?.noseTip ? landmarks.noseTip.x : (box.x + box.width / 2);
-    const ptY = landmarks?.noseTip ? landmarks.noseTip.y : (box.y + box.height / 2);
+    // 3. Spatial stability: Bounding box center moves less than maxDisplacementRatio screen distance
+    const ptX = box.x + box.width / 2;
+    const ptY = box.y + box.height / 2;
 
     const normPtX = ptX / fw;
     const normPtY = ptY / fh;
@@ -530,7 +530,7 @@ export class FaceStabilityDetector {
       if (dist > maxDisp) maxDisp = dist;
     }
 
-    // If movement exceeds maxDisplacementRatio (1.5%), reset stillness timer
+    // If movement exceeds maxDisplacementRatio (3.5%), reset stillness timer
     if (maxDisp > this.config.maxDisplacementRatio) {
       this.stableStartTime = now;
       return {
@@ -735,7 +735,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(350));
   const stabilityDetectorRef = useRef<FaceStabilityDetector>(
-    new FaceStabilityDetector({ minDurationMs: 600, maxDisplacementRatio: 0.015, minWidthRatio: 0.15, maxWidthRatio: 0.65, maxYaw: 18, maxPitch: 15 })
+    new FaceStabilityDetector({ minDurationMs: 500, maxDisplacementRatio: 0.035, minWidthRatio: 0.08, maxWidthRatio: 0.65, maxYaw: 22, maxPitch: 20 })
   );
   const [floatingToast, setFloatingToast] = useState<string | null>(null);
   const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1074,7 +1074,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
     try {
       const samples = sampleFramesRef.current.slice();
-      if (samples.length < 6) {
+      if (samples.length < 3) {
         const motionMsg =
           lang === 'zh-CN'
             ? '🔄 未找到人脸数据，正在自动重新扫描...'
@@ -2149,8 +2149,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               setPresenceDetected(true);
             }
 
-            if (stability.isStable) {
-              // Face is still and frontal for 600ms -> Autonomous Zero-Touch Auto-Scan
+            const isPoseFrontal = !res.pose || (Math.abs(res.pose.yaw) <= 22 && Math.abs(res.pose.pitch) <= 20);
+            if (isPoseFrontal) {
+              consecutiveSteadyFramesRef.current = (consecutiveSteadyFramesRef.current || 0) + 1;
+            } else {
+              consecutiveSteadyFramesRef.current = 0;
+            }
+
+            // Resilient DUAL-TRIGGER:
+            // 1. Stability detector confirms face still for 500ms
+            // OR 2. Liveness verified with frontal pose for >= 2 frames
+            const isReadyToScan =
+              stability.isStable ||
+              (liv.state === 'live_verified' && consecutiveSteadyFramesRef.current >= 2);
+
+            if (isReadyToScan) {
+              // Face is still and frontal -> Autonomous Zero-Touch Auto-Scan
               if (
                 !isCountingDownRef.current &&
                 !isScanning &&
@@ -2495,7 +2509,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
                     <span className="text-emerald-300 font-semibold truncate">
-                      {lang === 'zh-CN' ? '🔍 已检测到人脸，请直视摄像头...' : lang === 'en-US' ? '🔍 Face detected. Please look straight at camera...' : '🔍 ตรวจพบใบหน้า กรุณามองตรงที่กล้อง...'}
+                      {statusText || (lang === 'zh-CN' ? '🔍 已检测到人脸，请直视摄像头...' : lang === 'en-US' ? '🔍 Face detected. Please look straight at camera...' : '🔍 ตรวจพบใบหน้า กรุณามองตรงที่กล้อง...')}
                     </span>
                   </>
                 ) : (
