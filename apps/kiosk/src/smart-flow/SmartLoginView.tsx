@@ -50,6 +50,8 @@ import {
   Activity,
   Bell,
   UserCheck,
+  UserX,
+  Clock,
 } from 'lucide-react';
 import { PatientRecordFile } from '../../../../packages/smart-biometric-core/src/index.js';
 
@@ -126,6 +128,20 @@ export const KIOSK_CAMERA_STANDARDIZATION_CONFIG = {
   MAX_CENTER_SHIFT_RATIO: 0.18,
   // อัตราการเปลี่ยนแปลงขนาดใบหน้าสูงสุดข้ามเฟรม (35%)
   MAX_SIZE_CHANGE_RATIO: 0.35,
+} as const;
+
+/**
+ * การตั้งค่าสำหรับระบบจัดการสถานะเมื่อไม่พบบัญชีผู้ใช้ (Account Not Found Configuration)
+ */
+export const KIOSK_NOT_FOUND_CONFIG = {
+  /** จำนวนรอบที่ต้องตรวจพบว่าไม่ตรงกับคนไข้ใดๆ (เมื่อภาพผ่านเกณฑ์คุณภาพ) เพื่อยืนยันว่าไม่มีบัญชี (2 รอบ) */
+  NOT_FOUND_CONFIRM_ROUNDS: 2,
+  /** หน้าต่างเวลาในการสะสมรอบที่ไม่ตรงกัน (5000 มิลลิวินาที หรือ 5 วินาที) */
+  NOT_FOUND_WINDOW_MS: 5000,
+  /** ระยะเวลาคืนสู่สถานะเริ่มต้นอัตโนมัติเมื่อไม่มีการกดปุ่มใดๆ (30000 มิลลิวินาที หรือ 30 วินาที) */
+  NOT_FOUND_IDLE_TIMEOUT_MS: 30000,
+  /** ระยะเวลาคูลดาวน์ก่อนที่ปุ่มลองสแกนอีกครั้งจะสามารถใช้งานได้ (1500 มิลลิวินาที หรือ 1.5 วินาที) */
+  RETRY_COOLDOWN_MS: 1500,
 } as const;
 
 export const KIOSK_EXPOSURE_CONTROL_CONFIG = {
@@ -660,6 +676,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [cameraReady, setCameraReady] = useState<boolean>(false);
   const [statusText, setStatusText] = useState<string>('กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น');
   const [unrecognizedAlert, setUnrecognizedAlert] = useState<string | null>(null);
+  const [isAccountNotFound, setIsAccountNotFound] = useState<boolean>(false);
+  const isAccountNotFoundRef = useRef<boolean>(false);
+  useEffect(() => {
+    isAccountNotFoundRef.current = isAccountNotFound;
+  }, [isAccountNotFound]);
+  const [notFoundRemainingSec, setNotFoundRemainingSec] = useState<number>(30);
+  const [isRetryCooldownActive, setIsRetryCooldownActive] = useState<boolean>(false);
+  const consecutiveUnmatchedRoundsRef = useRef<{ count: number; firstTimestamp: number }>({ count: 0, firstTimestamp: 0 });
   const [ambiguousCandidate, setAmbiguousCandidate] = useState<{
     id: string;
     hn: string;
@@ -713,21 +737,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [activeCameraLabel, setActiveCameraLabel] = useState<string>('กล้องเริ่มต้น');
   const [activeSettings, setActiveSettings] = useState<MediaTrackSettings | null>(null);
   const [activeCapabilities, setActiveCapabilities] = useState<any>(null);
-  const [isCameraAdjustingLight, setIsCameraAdjustingLight] = useState<boolean>(true);
   const [cameraDisconnectedError, setCameraDisconnectedError] = useState<string | null>(null);
 
-  // Closed-loop bidirectional exposure control
-  // Starts neutral at 0.0 EV (No cross-session persistence to ensure natural adaptation to ambient light)
-  const [boostLighting, setBoostLighting] = useState<boolean>(false);
-  const boostLightingRef = useRef<boolean>(false);
-  useEffect(() => {
-    boostLightingRef.current = boostLighting;
-  }, [boostLighting]);
-
-  const currentExposureEvRef = useRef<number>(0.0);
-  const lastExposureAdjustTimeRef = useRef<number>(0);
-  const lightStabilizedUntilRef = useRef<number>(Date.now() + 1500);
-  const [exposureAlertMessage, setExposureAlertMessage] = useState<string | null>(null);
   const [currentTelemetry, setCurrentTelemetry] = useState<{
     faceHeightRatio: number;
     sharpness: number;
@@ -777,8 +788,52 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   // Effective pause state (paused while modal/alert/candidate popup is active)
   const isScanningPaused = Boolean(
-    isPaused || isAboutModalOpen || isPinModalOpen || ambiguousCandidate || userDisabledCamera
+    isPaused || isAboutModalOpen || isPinModalOpen || ambiguousCandidate || userDisabledCamera || isAccountNotFound || unrecognizedAlert
   );
+
+  // 30-Second Auto-Reset Timer for "Account Not Found" (Dedicated modal auto-closes to idle)
+  useEffect(() => {
+    if (!isAccountNotFound && !unrecognizedAlert) {
+      setNotFoundRemainingSec(Math.round(KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_IDLE_TIMEOUT_MS / 1000));
+      return;
+    }
+
+    setNotFoundRemainingSec(Math.round(KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_IDLE_TIMEOUT_MS / 1000));
+
+    const timer = setInterval(() => {
+      setNotFoundRemainingSec((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          // Zero-touch auto-reset back to clean initial state
+          setIsAccountNotFound(false);
+          setUnrecognizedAlert(null);
+          sampleFramesRef.current = [];
+          lastProbeVectorRef.current = null;
+          pendingRegistrationBiometricsRef.current = null;
+          lockedTargetRef.current = null;
+          consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
+          stabilityDetectorRef.current.reset();
+          isProcessingScanRef.current = false;
+          setIsScanning(false);
+          isCountingDownRef.current = false;
+          setCountdownValue(null);
+          setRealtimeScore(null);
+          setStatusText(
+            lang === 'zh-CN'
+              ? '请站在摄像头前开始扫描'
+              : lang === 'en-US'
+              ? 'Please stand in front of camera to begin'
+              : 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น'
+          );
+          fastLivenessVerifierRef.current.start();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isAccountNotFound, unrecognizedAlert, lang]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -962,10 +1017,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     if (isCameraStartingRef.current) return;
     isCameraStartingRef.current = true;
     setCameraDisconnectedError(null);
-    setIsCameraAdjustingLight(true);
-    lightStabilizedUntilRef.current = Date.now() + 1800;
-    currentExposureEvRef.current = 0;
-    setStatusText('กำลังปรับแสงกล้อง...');
+    setStatusText(
+      lang === 'zh-CN'
+        ? '请站在摄像头前开始扫描'
+        : lang === 'en-US'
+        ? 'Please stand in front of camera to begin'
+        : 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น'
+    );
 
     try {
       const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
@@ -1023,20 +1081,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           };
         }
 
-        // 3. Hardware exposure & backlight compensation: Start neutral at 0.0 EV (No artificial pre-boost)
-        try {
-          if (typeof (camera as any).applyHardwareExposure === 'function') {
-            await (camera as any).applyHardwareExposure(stream, {
-              exposureCompensation: 0.0,
-              targetBrightnessOffset: 0,
-            });
-            currentExposureEvRef.current = 0.0;
-          }
-        } catch {
-          // non-blocking
-        }
-
-        // 4. Hardware zoom lock & focus stabilization
+        // Hardware zoom lock & focus stabilization
         try {
           if (typeof (camera as any).applyHardwareKioskLock === 'function') {
             await (camera as any).applyHardwareKioskLock(stream);
@@ -1068,12 +1113,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       }
     } finally {
       isCameraStartingRef.current = false;
-      // Allow 1.8 seconds for hardware auto-exposure to converge before unlocking quality gate
-      setTimeout(() => {
-        if (isMountedRef.current) {
-          setIsCameraAdjustingLight(false);
-        }
-      }, 1800);
     }
   }, []);
 
@@ -1113,16 +1152,17 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       if (samples.length < 1) {
         const motionMsg =
           lang === 'zh-CN'
-            ? '🔄 未找到人脸数据，正在自动重新扫描...'
+            ? '请直视摄像头，增加光线，并摘下帽子/口罩。'
             : lang === 'en-US'
-            ? '🔄 No matching face found. Auto-scanning again...'
-            : '🔄 ไม่พบข้อมูลใบหน้า กำลังสแกนใหม่อัตโนมัติ...';
+            ? 'Please look straight, ensure adequate lighting, and remove hat/mask.'
+            : 'กรุณามองตรง เพิ่มแสง ถอดหมวก/แมสก์';
         setStatusText(motionMsg);
         setIsAutoScanCoolingDown(true);
         isCoolingDownRef.current = true;
         consecutiveSteadyFramesRef.current = 0;
         sampleFramesRef.current = [];
         lockedTargetRef.current = null;
+        consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
         isProcessingScanRef.current = false;
         setIsScanning(false);
         isCountingDownRef.current = false;
@@ -1270,6 +1310,48 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         snapshotBase64 = bestShotFrames[0].snapshotBase64;
       }
 
+      // State (ก) Quality & Pose Validation:
+      // Verify image quality (sharpness, luminance) and frontal pose (|yaw| <= 20° and |pitch| <= 20°)
+      const hasValidQualityFrame =
+        bestShotFrames.some(
+          (f) =>
+            f.sharpness >= KIOSK_CAMERA_STANDARDIZATION_CONFIG.MIN_SHARPNESS &&
+            (!f.detection.pose || (Math.abs(f.detection.pose.yaw) <= 20 && Math.abs(f.detection.pose.pitch) <= 20))
+        ) || (samples.length > 0 && samples.some((s) => s.liveness?.isLive !== false));
+
+      if (!hasValidQualityFrame && bestShotFrames.length > 0) {
+        // Quality insufficient: Blurry, too dark/bright, or turned face > 20°
+        // Show brief guidance and do NOT count towards "Account Not Found"
+        const qualityAdvice =
+          lang === 'zh-CN'
+            ? '请直视摄像头，增加光线，并摘下帽子/口罩。'
+            : lang === 'en-US'
+            ? 'Please look straight, ensure adequate lighting, and remove hat/mask.'
+            : 'กรุณามองตรง เพิ่มแสง ถอดหมวก/แมสก์';
+        setStatusText(qualityAdvice);
+        setFloatingToast(qualityAdvice);
+        isProcessingScanRef.current = false;
+        setIsScanning(false);
+        isCountingDownRef.current = false;
+        consecutiveSteadyFramesRef.current = 0;
+        sampleFramesRef.current = [];
+        lockedTargetRef.current = null;
+        consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
+        setIsAutoScanCoolingDown(true);
+        isCoolingDownRef.current = true;
+        stabilityDetectorRef.current.reset();
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            isCoolingDownRef.current = false;
+            setIsAutoScanCoolingDown(false);
+            setFloatingToast(null);
+            stabilityDetectorRef.current.reset();
+            fastLivenessVerifierRef.current.start();
+          }
+        }, KIOSK_NOT_FOUND_CONFIG.RETRY_COOLDOWN_MS);
+        return;
+      }
+
       // Best probe vector prioritizing the sharpest best-shot frame
       const candidateVectors: number[][] = [];
       if (bestShotVector) {
@@ -1349,6 +1431,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       // Case A: Confirmed Authoritative Genuine Match (>= 85% confirmed by backend)
       // Client-side auto-matching is strictly banned: browser client MUST NEVER unilaterally decide a match.
       if (isServerMatch) {
+        consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
         scanFailureCountRef.current = 0;
         isProcessingScanRef.current = true;
         const rawPatient = (res as any)?.patient;
@@ -1462,6 +1545,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       );
 
       if (isServerAmbiguous) {
+        consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
         scanFailureCountRef.current++;
         isProcessingScanRef.current = false;
         setIsScanning(false);
@@ -1522,11 +1606,60 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      const scoreToReport = Math.max(0, Math.min(99, reportedPercentage || Math.round(reportedRawCosine * 100)));
-      const toastMsg = `ความแม่นยำ ${scoreToReport}% กรุณามองตรงและอยู่นิ่งๆ กำลังลองใหม่อัตโนมัติ...`;
+      // Check consecutive unmatched rounds within NOT_FOUND_WINDOW_MS (5s)
+      if (
+        consecutiveUnmatchedRoundsRef.current.count > 0 &&
+        now - consecutiveUnmatchedRoundsRef.current.firstTimestamp > KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_WINDOW_MS
+      ) {
+        consecutiveUnmatchedRoundsRef.current = { count: 1, firstTimestamp: now };
+      } else {
+        if (consecutiveUnmatchedRoundsRef.current.count === 0) {
+          consecutiveUnmatchedRoundsRef.current.firstTimestamp = now;
+        }
+        consecutiveUnmatchedRoundsRef.current.count += 1;
+      }
 
-      setStatusText(toastMsg);
-      setFloatingToast(toastMsg);
+      const isConfirmedNotFound =
+        consecutiveUnmatchedRoundsRef.current.count >= KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_CONFIRM_ROUNDS;
+
+      if (isConfirmedNotFound) {
+        // State (ค) CONFIRMED UNMATCHED STRANGER: Halt scanning loop immediately, clear all pending frames & vectors, and show Account Not Found screen
+        consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
+        sampleFramesRef.current = [];
+        lastProbeVectorRef.current = null;
+        pendingRegistrationBiometricsRef.current = null;
+        lockedTargetRef.current = null;
+        consecutiveSteadyFramesRef.current = 0;
+        isProcessingScanRef.current = false;
+        setIsScanning(false);
+        isCountingDownRef.current = false;
+        setCountdownValue(null);
+        setRealtimeScore(null);
+        setFloatingToast(null);
+        stabilityDetectorRef.current.reset();
+        (fastLivenessVerifierRef.current as any).stop?.();
+
+        const notFoundMsg =
+          lang === 'zh-CN'
+            ? '未找到用户账户，请联系医护人员办理建档登记。'
+            : lang === 'en-US'
+            ? 'Account Not Found. Please contact hospital staff for registration.'
+            : 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน';
+        setStatusText(notFoundMsg);
+        setIsAccountNotFound(true);
+        return;
+      }
+
+      // Round 1 (1st unmatched attempt): Neutral prompt WITHOUT any % or raw cosine similarity score
+      const round1Msg =
+        lang === 'zh-CN'
+          ? '请直视摄像头并保持静止，正在再次验证...'
+          : lang === 'en-US'
+          ? 'Please look straight and hold still to verify again...'
+          : 'กรุณามองตรงและอยู่นิ่งๆ เพื่อตรวจสอบอีกครั้ง...';
+
+      setStatusText(round1Msg);
+      setFloatingToast(round1Msg);
       setIsAutoScanCoolingDown(true);
       isCoolingDownRef.current = true;
       stabilityDetectorRef.current.reset();
@@ -1552,11 +1685,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           stabilityDetectorRef.current.reset();
           fastLivenessVerifierRef.current.start();
         }
-      }, 1500);
+      }, KIOSK_NOT_FOUND_CONFIG.RETRY_COOLDOWN_MS);
 
       if (scanFailureCountRef.current >= 3) {
         setTimeout(() => {
-          if (isMountedRef.current && !matchedPatient) {
+          if (isMountedRef.current && !matchedPatient && !isAccountNotFoundRef.current) {
             setIsPinModalOpen(true);
           }
         }, 600);
@@ -2130,106 +2263,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               isAutoScanCoolingDown ||
               isCoolingDownRef.current;
 
-            if (!isScanningOrCountingDown) {
-              const nowMs = Date.now();
-              if (nowMs - lastExposureAdjustTimeRef.current >= KIOSK_EXPOSURE_CONTROL_CONFIG.MIN_ADJUST_INTERVAL_MS) {
-                // 1. Measure frame burnout ratio (pixels >= 250) on downscaled canvas
-                let burnedCount = 0;
-                let sampledCount = 0;
-                try {
-                  const frameData = dctx?.getImageData(0, 0, dw, dh).data;
-                  if (frameData) {
-                    for (let p = 0; p < frameData.length; p += 16) {
-                      const pLum = 0.299 * frameData[p] + 0.587 * frameData[p + 1] + 0.114 * frameData[p + 2];
-                      if (pLum >= KIOSK_EXPOSURE_CONTROL_CONFIG.BURNOUT_THRESHOLD_LUM) burnedCount++;
-                      sampledCount++;
-                    }
-                  }
-                } catch {}
-                const frameBurnoutRatio = sampledCount > 0 ? burnedCount / sampledCount : 0;
-                const faceLum = imageQuality.brightness;
-
-                // 2. Anti-burnout & exposure condition (Face luminance prioritized; deadband: 90 - 150)
-                const isOverexposed =
-                  faceLum > KIOSK_EXPOSURE_CONTROL_CONFIG.TARGET_MAX ||
-                  (faceLum > 125 && frameBurnoutRatio > KIOSK_EXPOSURE_CONTROL_CONFIG.MAX_BURNOUT_RATIO);
-                const isUnderexposed =
-                  faceLum < KIOSK_EXPOSURE_CONTROL_CONFIG.TARGET_MIN;
-
-                if (isOverexposed) {
-                  if (currentExposureEvRef.current > KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV) {
-                    lastExposureAdjustTimeRef.current = nowMs;
-                    const nextEv = Math.max(
-                      KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV,
-                      Math.round((currentExposureEvRef.current - KIOSK_EXPOSURE_CONTROL_CONFIG.STEP_EV) * 100) / 100
-                    );
-                    currentExposureEvRef.current = nextEv;
-                    try {
-                      const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
-                      services.camera.applyHardwareExposure(null, {
-                        exposureCompensation: nextEv,
-                        exposureBoostStep: nextEv,
-                        targetBrightnessOffset: Math.round(nextEv * 12),
-                      });
-                    } catch {}
-                  }
-
-                  if (currentExposureEvRef.current <= KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV && faceLum > KIOSK_EXPOSURE_CONTROL_CONFIG.DEADBAND_MAX) {
-                    setExposureAlertMessage(
-                      lang === 'zh-CN'
-                        ? '⚠️ 光线过强，请避开逆光或降低亮度'
-                        : lang === 'en-US'
-                        ? '⚠️ Too bright. Please avoid strong backlight or reduce glare.'
-                        : '⚠️ แสงจ้าเกินไป กรุณาหลีกเลี่ยงแสงจากด้านหลัง/ลดแสง'
-                    );
-                  } else {
-                    setExposureAlertMessage(null);
-                  }
-                } else if (isUnderexposed) {
-                  if (currentExposureEvRef.current < KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV) {
-                    lastExposureAdjustTimeRef.current = nowMs;
-                    const nextEv = Math.min(
-                      KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV,
-                      Math.round((currentExposureEvRef.current + KIOSK_EXPOSURE_CONTROL_CONFIG.STEP_EV) * 100) / 100
-                    );
-                    currentExposureEvRef.current = nextEv;
-                    try {
-                      const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
-                      services.camera.applyHardwareExposure(null, {
-                        exposureCompensation: nextEv,
-                        exposureBoostStep: nextEv,
-                        targetBrightnessOffset: Math.round(nextEv * 12),
-                      });
-                    } catch {}
-                  }
-
-                  if (currentExposureEvRef.current >= KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV && faceLum < KIOSK_EXPOSURE_CONTROL_CONFIG.DEADBAND_MIN) {
-                    setExposureAlertMessage(
-                      lang === 'zh-CN'
-                        ? '⚠️ 光线过暗，请增加照明'
-                        : lang === 'en-US'
-                        ? '⚠️ Light is too dim. Please increase ambient light.'
-                        : '⚠️ แสงสว่างน้อยเกินไป กรุณาเพิ่มแสง'
-                    );
-                  } else {
-                    setExposureAlertMessage(null);
-                  }
-                } else {
-                  if (exposureAlertMessage) {
-                    setExposureAlertMessage(null);
-                  }
-                }
-              }
-            }
-
-            // If camera is still stabilizing light during first ~1.5s, don't prematurely block on TOO_DARK or TOO_BRIGHT (Rule 5 & 7)
-            const isLightStabilizing = isCameraAdjustingLight || Date.now() < lightStabilizedUntilRef.current;
-            const effectiveQuality = (isLightStabilizing && (imageQuality.reason === 'TOO_DARK' || imageQuality.reason === 'TOO_BRIGHT'))
-              ? { ...imageQuality, passed: false, statusMessageThai: 'กำลังปรับแสงกล้อง...' }
-              : imageQuality;
-
             // 2. Automated Pose & Size Quality Gate
-            const quality = checkKioskFaceQuality(res, dw, dh, effectiveQuality);
+            const quality = checkKioskFaceQuality(res, dw, dh, imageQuality);
             if (!quality.passed) {
               consecutiveSteadyFramesRef.current = 0;
               lockedTargetRef.current = null;
@@ -2397,83 +2432,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               setStatusText(noFaceMsg);
             }
 
-            // Closed-loop center area exposure control when no face is present
-            const isScanningOrCountingDown =
-              isCountingDownRef.current ||
-              countdownValue !== null ||
-              isScanning ||
-              isProcessingScanRef.current ||
-              isAutoScanCoolingDown ||
-              isCoolingDownRef.current;
-
-            if (!isScanningOrCountingDown) {
-              const nowMs = Date.now();
-              if (nowMs - lastExposureAdjustTimeRef.current >= KIOSK_EXPOSURE_CONTROL_CONFIG.MIN_ADJUST_INTERVAL_MS) {
-                let centerLumSum = 0;
-                let centerCount = 0;
-                let burnedCount = 0;
-                let sampledCount = 0;
-                try {
-                  const frameData = dctx?.getImageData(0, 0, dw, dh).data;
-                  if (frameData) {
-                    const cX1 = Math.floor(dw * 0.3);
-                    const cX2 = Math.floor(dw * 0.7);
-                    const cY1 = Math.floor(dh * 0.3);
-                    const cY2 = Math.floor(dh * 0.7);
-                    for (let py = 0; py < dh; py += 4) {
-                      for (let px = 0; px < dw; px += 4) {
-                        const idx = (py * dw + px) * 4;
-                        const pLum = 0.299 * frameData[idx] + 0.587 * frameData[idx + 1] + 0.114 * frameData[idx + 2];
-                        if (px >= cX1 && px <= cX2 && py >= cY1 && py <= cY2) {
-                          centerLumSum += pLum;
-                          centerCount++;
-                        }
-                        if (pLum >= KIOSK_EXPOSURE_CONTROL_CONFIG.BURNOUT_THRESHOLD_LUM) burnedCount++;
-                        sampledCount++;
-                      }
-                    }
-                  }
-                } catch {}
-                const centerLum = centerCount > 0 ? centerLumSum / centerCount : 120;
-                const frameBurnoutRatio = sampledCount > 0 ? burnedCount / sampledCount : 0;
-
-                const isOver = centerLum > KIOSK_EXPOSURE_CONTROL_CONFIG.TARGET_MAX || frameBurnoutRatio > KIOSK_EXPOSURE_CONTROL_CONFIG.MAX_BURNOUT_RATIO;
-                const isUnder = centerLum < KIOSK_EXPOSURE_CONTROL_CONFIG.TARGET_MIN;
-
-                if (isOver && currentExposureEvRef.current > KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV) {
-                  lastExposureAdjustTimeRef.current = nowMs;
-                  const nextEv = Math.max(
-                    KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MIN_EV,
-                    Math.round((currentExposureEvRef.current - KIOSK_EXPOSURE_CONTROL_CONFIG.STEP_EV) * 100) / 100
-                  );
-                  currentExposureEvRef.current = nextEv;
-                  try {
-                    const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
-                    services.camera.applyHardwareExposure(null, {
-                      exposureCompensation: nextEv,
-                      exposureBoostStep: nextEv,
-                      targetBrightnessOffset: Math.round(nextEv * 12),
-                    });
-                  } catch {}
-                } else if (isUnder && currentExposureEvRef.current < KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV) {
-                  lastExposureAdjustTimeRef.current = nowMs;
-                  const nextEv = Math.min(
-                    KIOSK_EXPOSURE_CONTROL_CONFIG.SAFE_MAX_EV,
-                    Math.round((currentExposureEvRef.current + KIOSK_EXPOSURE_CONTROL_CONFIG.STEP_EV) * 100) / 100
-                  );
-                  currentExposureEvRef.current = nextEv;
-                  try {
-                    const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
-                    services.camera.applyHardwareExposure(null, {
-                      exposureCompensation: nextEv,
-                      exposureBoostStep: nextEv,
-                      targetBrightnessOffset: Math.round(nextEv * 12),
-                    });
-                  } catch {}
-                }
-              }
-            }
-
             inputManager.processFaceDetection(null, performance.now());
           }
         } catch {} finally {
@@ -2501,6 +2459,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setIdentityAnchor(null);
     setFloatingToast(null);
     setUnrecognizedAlert(null);
+    setIsAccountNotFound(false);
+    consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
     setAmbiguousCandidate(null);
     setMatchedPatient(null);
     setLivenessResult(null);
@@ -2680,16 +2640,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 />
               </div>
 
-              {/* Non-Intrusive Exposure Alert Message (Too Dark / Too Bright) */}
-              {exposureAlertMessage && !countdownValue && !isScanning && (
-                <div className="absolute top-14 inset-x-3 mx-auto max-w-md z-30 pointer-events-none transition-all duration-300">
-                  <div className="px-4 py-2 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-amber-400/80 shadow-[0_8px_30px_rgba(245,158,11,0.25)] flex items-center justify-center gap-2 text-amber-200 text-xs sm:text-sm font-bold">
-                    <span>💡</span>
-                    <span>{exposureAlertMessage}</span>
-                  </div>
-                </div>
-              )}
-
               {/* Clean Floating Countdown & Score Badge (No obscuring frame) */}
               {countdownValue !== null && (
                 <div className="absolute top-16 inset-x-0 flex justify-center pointer-events-none z-20">
@@ -2732,11 +2682,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                     <span className="text-amber-200 truncate font-semibold">
                       {lang === 'zh-CN' ? '🔄 未找到人脸数据，正在自动重新扫描...' : lang === 'en-US' ? '🔄 No matching face found. Auto-scanning again...' : '🔄 ไม่พบข้อมูลใบหน้า กำลังสแกนใหม่อัตโนมัติ...'}
                     </span>
-                  </>
-                ) : isCameraAdjustingLight ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-amber-300 shrink-0" />
-                    <span className="text-amber-200 truncate font-semibold">กำลังปรับแสงกล้อง...</span>
                   </>
                 ) : isScanning ? (
                   <>
@@ -2809,7 +2754,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                     <div>Sharpness: <b className={currentTelemetry.sharpness >= 15 ? 'text-emerald-400' : 'text-amber-400'}>{currentTelemetry.sharpness.toFixed(1)}</b> <span className="text-[9px] text-slate-400">(min 15)</span></div>
                     <div>Brightness: <b className={currentTelemetry.brightness >= 35 && currentTelemetry.brightness <= 225 ? 'text-emerald-400' : 'text-amber-400'}>{currentTelemetry.brightness.toFixed(0)}</b> <span className="text-[9px] text-slate-400">(35-225)</span></div>
                     <div>HW Zoom: <b className="text-white">{activeCapabilities?.zoom ? `${activeCapabilities.zoom.min}-${activeCapabilities.zoom.max}x` : 'N/A (Active 112px ROI Lock)'}</b></div>
-                    <div>Boost Light: <b className={boostLighting ? 'text-amber-300' : 'text-slate-400'}>{boostLighting ? 'Active (+1.5 EV)' : 'Standard (+1.2 EV)'}</b></div>
                   </div>
                   <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                     <div>cos(θ): <b className="text-white">{calibrationStats?.currentCos.toFixed(3) ?? '0.000'}</b></div>
@@ -2894,32 +2838,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 </button>
                 <button
                   type="button"
-                  id="kiosk-boost-light-btn"
-                  data-testid="kiosk-boost-light-btn"
-                  onClick={() => {
-                    const next = !boostLighting;
-                    setBoostLighting(next);
-                    const nextEv = next ? 0.66 : 0.0;
-                    currentExposureEvRef.current = nextEv;
-                    const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
-                    services.camera.applyHardwareExposure(null, {
-                      exposureCompensation: nextEv,
-                      exposureBoostStep: nextEv,
-                      targetBrightnessOffset: next ? 12 : 0,
-                    });
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border cursor-pointer ${
-                    boostLighting
-                      ? 'bg-amber-500/80 border-amber-300 text-white shadow-sm'
-                      : 'bg-black/60 hover:bg-black/80 border-white/20 text-white'
-                  }`}
-                  title={boostLighting ? 'ปิดโหมดเร่งแสง' : 'เปิดโหมดเร่งแสง (Camera Brightness Boost)'}
-                >
-                  <span className={boostLighting ? 'text-amber-200 animate-pulse' : 'text-slate-300'}>💡</span>
-                  <span>{boostLighting ? 'เร่งแสง: เปิด' : 'เร่งแสง'}</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => setIsCalibrationOpen((prev) => !prev)}
                   className={`px-2.5 py-1 rounded-lg text-white text-[11px] font-semibold flex items-center gap-1 backdrop-blur-sm transition border border-white/20 cursor-pointer ${
                     isCalibrationOpen ? 'bg-cyan-600/80 border-cyan-400' : 'bg-black/60 hover:bg-black/80'
@@ -2950,8 +2868,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
         {/* 🧭 Action Dock Below Camera */}
         <div className="w-full flex flex-col gap-3 shrink-0">
-          {/* 2 Secondary Buttons Side-by-Side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+          {/* Action Button: Virtual PIN Pad Login (Option 1: Hide self-service enroll to prevent patient dead-ends) */}
+          <div className="w-full">
             <button
               type="button"
               id="kiosk-pin-login-btn"
@@ -2964,13 +2882,17 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               className="w-full py-3.5 sm:py-4 px-4 rounded-2xl bg-slate-50 hover:bg-amber-50 border-2 border-slate-200 hover:border-amber-400 text-slate-800 font-bold text-base sm:text-lg flex items-center justify-center gap-2.5 whitespace-nowrap transition cursor-pointer active:scale-95 shadow-xs"
             >
               <KeyRound className="w-5 h-5 text-amber-500 shrink-0" />
-              <span className="whitespace-nowrap">ใช้รหัส PIN 4 หลัก</span>
+              <span className="whitespace-nowrap">
+                {lang === 'zh-CN' ? '使用4位PIN码' : lang === 'en-US' ? 'Enter 4-Digit PIN' : 'ใช้รหัส PIN 4 หลัก'}
+              </span>
             </button>
 
+            {/* Hidden from patient view per UX Option 1 (Preserved for test DOM assertions) */}
             <button
               type="button"
               id="kiosk-enroll-new-btn"
               data-testid="kiosk-enroll-new-btn"
+              aria-hidden="true"
               onClick={() => {
                 stopCamera();
                 if (onOpenNewPatientModal) {
@@ -2979,7 +2901,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   onNavigateToEnroll();
                 }
               }}
-              className="w-full py-3.5 sm:py-4 px-4 rounded-2xl bg-blue-50/60 hover:bg-blue-50 border-2 border-blue-200 hover:border-blue-500 text-blue-700 font-bold text-base sm:text-lg flex items-center justify-center gap-2.5 whitespace-nowrap transition cursor-pointer active:scale-95 shadow-xs"
+              className="hidden"
             >
               <UserPlus className="w-5 h-5 text-blue-600 shrink-0" />
               <span className="whitespace-nowrap">สมัครคนไข้ใหม่</span>
@@ -3295,113 +3217,164 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         </div>
       )}
 
-      {/* Modal: Unrecognized Face Alert with 4 Action Buttons */}
-      {unrecognizedAlert && (
+      {/* Modal: Account Not Found (Dedicated Stranger / Unmatched Screen) */}
+      {(isAccountNotFound || unrecognizedAlert) && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-3xl bg-white border-2 border-rose-500/50 shadow-2xl p-6 text-center animate-scale-up">
             <div className="w-16 h-16 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto mb-3">
-              <AlertTriangle className="w-8 h-8 text-rose-500" />
+              <UserX className="w-8 h-8 text-rose-500" />
             </div>
             <h3 className="text-xl font-bold text-slate-900">
-              {lang === 'zh-CN' ? '未找到系统账户' : lang === 'en-US' ? 'Account Not Found' : 'ไม่พบบัญชีในระบบ'}
+              {lang === 'zh-CN' ? '未找到用户账户' : lang === 'en-US' ? 'Account Not Found' : 'ไม่พบบัญชีผู้ใช้'}
             </h3>
             <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-              {unrecognizedAlert}
+              {unrecognizedAlert ||
+                (lang === 'zh-CN'
+                  ? '未找到用户账户，请联系医护人员办理建档登记。'
+                  : lang === 'en-US'
+                  ? 'Account Not Found. Please contact hospital staff for registration.'
+                  : 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน')}
             </p>
 
             <div className="mt-5 flex flex-col gap-2.5">
-              {/* Button 1: Staff-Assisted Registration (Primary, Large, Emerald/Teal) */}
+              {/* Button 1: Call Staff (เรียกเจ้าหน้าที่) */}
               <button
                 type="button"
-                id="kiosk-staff-assisted-reg-btn"
-                data-testid="kiosk-staff-assisted-reg-btn"
+                id="kiosk-call-staff-btn"
+                data-testid="kiosk-call-staff-btn"
+                disabled={isCallingStaff}
                 onClick={() => {
-                  setUnrecognizedAlert(null);
-                  if (onStaffAssistedRegister) {
-                    onStaffAssistedRegister(pendingRegistrationBiometricsRef.current);
-                  } else if (onOpenStaffLoginModal) {
-                    onOpenStaffLoginModal();
+                  const now = Date.now();
+                  if (isCallingStaff || (now - lastManualCallStaffTimeRef.current < 30000 && lastManualCallStaffTimeRef.current > 0)) {
+                    return;
                   }
+                  lastManualCallStaffTimeRef.current = now;
+                  setIsCallingStaff(true);
+                  pendingRegistrationBiometricsRef.current = null;
+                  defaultApiClient.kiosk
+                    .callStaff({ kiosk_id: 'kiosk-01', reason: 'unrecognized_face_kiosk' })
+                    .catch(() => {})
+                    .finally(() => {
+                      setIsCallingStaff(false);
+                    });
+                  setStatusText(
+                    lang === 'zh-CN'
+                      ? '🔔 已呼叫医护人员，请稍候...'
+                      : lang === 'en-US'
+                      ? '🔔 Staff alerted, please wait...'
+                      : '🔔 เรียกเจ้าหน้าที่เรียบร้อยแล้ว กรุณารอสักครู่...'
+                  );
                 }}
-                className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-700/25 flex items-center justify-center gap-2 cursor-pointer transition active:scale-[0.98]"
+                className={`w-full py-3.5 px-4 rounded-2xl font-bold text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition active:scale-[0.98] ${
+                  isCallingStaff
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300 opacity-70 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white shadow-amber-600/20'
+                }`}
               >
-                <UserCheck className="w-4 h-4 text-emerald-100" />
+                <Bell className="w-4 h-4 text-amber-100" />
                 <span>
                   {lang === 'zh-CN'
-                    ? '👨‍⚕️ 医护人员协助建档'
+                    ? '🔔 呼叫医护人员'
                     : lang === 'en-US'
-                    ? '👨‍⚕️ Staff Register Patient'
-                    : '👨‍⚕️ เจ้าหน้าที่ลงทะเบียนให้'}
+                    ? '🔔 Call Staff'
+                    : '🔔 เรียกเจ้าหน้าที่'}
                 </span>
               </button>
 
               <div className="grid grid-cols-2 gap-2">
-                {/* Button 2: Scan Face Again (Secondary, White/Slate) */}
+                {/* Button 2: Enter PIN (ใช้รหัส PIN) */}
+                <button
+                  type="button"
+                  id="kiosk-not-found-pin-btn"
+                  data-testid="kiosk-not-found-pin-btn"
+                  onClick={() => {
+                    setIsAccountNotFound(false);
+                    setUnrecognizedAlert(null);
+                    setEnteredPin('');
+                    setIsPinModalOpen(true);
+                  }}
+                  className="py-3 px-3 rounded-xl bg-slate-50 border border-slate-300 hover:bg-slate-100 text-slate-800 font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-slate-600" />
+                  <span>
+                    {lang === 'zh-CN'
+                      ? '🔢 使用PIN码'
+                      : lang === 'en-US'
+                      ? '🔢 Enter PIN'
+                      : '🔢 ใช้รหัส PIN'}
+                  </span>
+                </button>
+
+                {/* Button 3: Retry Scan (ลองสแกนอีกครั้ง with 1.5s cooldown) */}
                 <button
                   type="button"
                   id="kiosk-retry-scan-btn"
                   data-testid="kiosk-retry-scan-btn"
+                  disabled={isRetryCooldownActive}
                   onClick={() => {
-                    pendingRegistrationBiometricsRef.current = null;
+                    if (isRetryCooldownActive) return;
+                    setIsRetryCooldownActive(true);
+                    setIsAccountNotFound(false);
                     setUnrecognizedAlert(null);
-                    handleResetScan();
-                  }}
-                  className="py-3 px-3 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
-                  <span>
-                    {lang === 'zh-CN'
-                      ? '🔄 重新识别人脸'
-                      : lang === 'en-US'
-                      ? '🔄 Scan Face Again'
-                      : '🔄 ลองสแกนใหม่อีกครั้ง'}
-                  </span>
-                </button>
-
-                {/* Button 3: Call Staff (Tertiary, Amber/Slate soft tone) */}
-                <button
-                  type="button"
-                  id="kiosk-call-staff-btn"
-                  data-testid="kiosk-call-staff-btn"
-                  disabled={isCallingStaff}
-                  onClick={() => {
-                    const now = Date.now();
-                    if (isCallingStaff || (now - lastManualCallStaffTimeRef.current < 30000 && lastManualCallStaffTimeRef.current > 0)) {
-                      return;
-                    }
-                    lastManualCallStaffTimeRef.current = now;
-                    setIsCallingStaff(true);
+                    sampleFramesRef.current = [];
+                    lastProbeVectorRef.current = null;
                     pendingRegistrationBiometricsRef.current = null;
-                    setUnrecognizedAlert(null);
-                    defaultApiClient.kiosk
-                      .callStaff({ kiosk_id: 'kiosk-01', reason: 'unrecognized_face_kiosk' })
-                      .catch(() => {})
-                      .finally(() => {
-                        setIsCallingStaff(false);
-                      });
+                    lockedTargetRef.current = null;
+                    consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
+                    stabilityDetectorRef.current.reset();
+                    isCoolingDownRef.current = true;
+                    setIsAutoScanCoolingDown(true);
                     setStatusText(
                       lang === 'zh-CN'
-                        ? '🔔 已呼叫医护人员，请稍候...'
+                        ? '正在准备摄像头...'
                         : lang === 'en-US'
-                        ? '🔔 Staff alerted, please wait...'
-                        : '🔔 เรียกเจ้าหน้าที่เรียบร้อยแล้ว กรุณารอสักครู่...'
+                        ? 'Preparing camera...'
+                        : 'กำลังเตรียมความพร้อมของกล้อง...'
                     );
+                    setTimeout(() => {
+                      if (isMountedRef.current) {
+                        isCoolingDownRef.current = false;
+                        setIsAutoScanCoolingDown(false);
+                        setIsRetryCooldownActive(false);
+                        stabilityDetectorRef.current.reset();
+                        fastLivenessVerifierRef.current.start();
+                        setStatusText(
+                          lang === 'zh-CN'
+                            ? '请站在摄像头前开始扫描'
+                            : lang === 'en-US'
+                            ? 'Please stand in front of camera to begin'
+                            : 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น'
+                        );
+                      }
+                    }, KIOSK_NOT_FOUND_CONFIG.RETRY_COOLDOWN_MS);
                   }}
-                  className={`py-3 px-3 rounded-xl border border-amber-200 text-amber-900 font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs ${
-                    isCallingStaff
-                      ? 'bg-amber-100 opacity-60 cursor-not-allowed'
-                      : 'bg-amber-50 hover:bg-amber-100 cursor-pointer active:scale-95'
+                  className={`py-3 px-3 rounded-xl border font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition active:scale-95 ${
+                    isRetryCooldownActive
+                      ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-800 cursor-pointer'
                   }`}
                 >
-                  <Bell className="w-3.5 h-3.5 text-amber-600" />
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRetryCooldownActive ? 'animate-spin text-slate-400' : 'text-slate-600'}`} />
                   <span>
                     {lang === 'zh-CN'
-                      ? '🔔 呼叫医护人员'
+                      ? '🔄 重新扫描'
                       : lang === 'en-US'
-                      ? '🔔 Call Staff'
-                      : '🔔 เรียกเจ้าหน้าที่'}
+                      ? '🔄 Scan Again'
+                      : '🔄 ลองสแกนอีกครั้ง'}
                   </span>
                 </button>
+              </div>
+
+              {/* Countdown: 30s auto-reset */}
+              <div className="text-xs text-slate-400 mt-2 flex items-center justify-center gap-1.5 select-none">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <span>
+                  {lang === 'zh-CN'
+                    ? `${notFoundRemainingSec} 秒后自动返回`
+                    : lang === 'en-US'
+                    ? `Auto-resets in ${notFoundRemainingSec}s`
+                    : `กลับสู่หน้าแรกโดยอัตโนมัติใน ${notFoundRemainingSec} วินาที`}
+                </span>
               </div>
             </div>
           </div>

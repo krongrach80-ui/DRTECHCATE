@@ -99,16 +99,6 @@ export class CameraManager {
       }
     }
 
-    // Hardware exposure and backlight compensation for kiosks facing windows: Start neutral at 0.0 EV
-    try {
-      await this.applyHardwareExposure(this.stream, {
-        exposureCompensation: 0.0,
-        targetBrightnessOffset: 0,
-      });
-    } catch {
-      // non-blocking
-    }
-
     // Hardware zoom & autofocus lock (Dedicated for kiosk face scan; non-breaking on unsupported webcams)
     if (isKioskLock) {
       try {
