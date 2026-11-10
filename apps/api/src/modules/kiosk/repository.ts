@@ -595,21 +595,62 @@ export class KioskRepository implements IKioskRepository {
     const handledAt = new Date().toISOString();
     try {
       const adminClient = getAdminClient();
-      const { error } = await adminClient
+
+      // Check if call was already handled concurrently
+      const { data: existing, error: checkError } = await adminClient
         .from('staff_calls')
-        .update({ handled_by: staffId, handled_at: handledAt })
-        .eq('id', id);
+        .select('id, handled_at')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (!checkError && existing && existing.handled_at) {
+        throw new AppError('มีเจ้าหน้าที่รับเรื่องนี้ไปแล้ว', 409, 'CALL_ALREADY_HANDLED');
+      }
+
+      // Atomic update only when handled_at is null
+      const { data, error } = await adminClient
+        .from('staff_calls')
+        .update({ status: 'resolved', handled_by: staffId, handled_at: handledAt })
+        .eq('id', id)
+        .is('handled_at', null)
+        .select();
 
       if (error) {
         logger.error({ error, id, staffId }, 'Failed to handle staff call in Supabase');
-        throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        throw new AppError('รับเรื่องไม่สำเร็จ ลองใหม่', 503, 'SERVICE_UNAVAILABLE');
+      }
+
+      if (!data || data.length === 0) {
+        throw new AppError('มีเจ้าหน้าที่รับเรื่องนี้ไปแล้ว', 409, 'CALL_ALREADY_HANDLED');
+      }
+
+      // Non-blocking Audit Trail (no patient PII)
+      if (staffId && staffId !== 'unknown') {
+        Promise.resolve(
+          adminClient
+            .from('audit_logs')
+            .insert({
+              actor_type: 'staff',
+              actor_id: staffId,
+              action: 'resolve_staff_call',
+              entity: 'staff_calls',
+              entity_id: id,
+              metadata: {
+                resolved_at: handledAt,
+              },
+            })
+        )
+          .then(() => {})
+          .catch((auditErr: unknown) => {
+            logger.warn({ auditErr, id }, 'Non-blocking audit log insert failed for staff call');
+          });
       }
 
       return true;
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, id, staffId }, 'Database error in handleStaffCall');
-      throw new AppError('Kiosk service unavailable', 503, 'SERVICE_UNAVAILABLE');
+      throw new AppError('รับเรื่องไม่สำเร็จ ลองใหม่', 503, 'SERVICE_UNAVAILABLE');
     }
   }
 

@@ -178,6 +178,12 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
     return () => clearInterval(interval);
   }, [countdown]);
 
+  // Clear transient alert banners when switching subtabs to prevent cross-tab message leak
+  useEffect(() => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+  }, [subTab]);
+
   const handleSecurityError = (err: unknown, defaultMessage: string) => {
     const msg = err instanceof Error ? err.message : String(err || defaultMessage);
     const status = (err as any)?.status;
@@ -201,11 +207,23 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
   const handleResolveStaffCall = async (id: string) => {
     try {
       setActionLoading(true);
+      setErrorMsg(null);
       await defaultApiClient.kiosk.handleStaffCall(id);
-      setSuccessMsg('รับเรื่องและบันทึกการช่วยเหลือคนไข้เรียบร้อย');
+      setSuccessMsg('รับเรื่องแล้ว');
       onStaffCallHandled();
     } catch (err: unknown) {
-      handleSecurityError(err, 'ไม่สามารถรับเรื่องได้');
+      const msg = err instanceof Error ? err.message : String(err || '');
+      if (msg.includes('มีเจ้าหน้าที่รับเรื่องนี้ไปแล้ว')) {
+        setErrorMsg('มีเจ้าหน้าที่รับเรื่องนี้ไปแล้ว');
+      } else if (
+        msg.includes('รับเรื่องไม่สำเร็จ') ||
+        msg.includes('Failed to fetch') ||
+        msg.includes('Network request failed')
+      ) {
+        setErrorMsg('รับเรื่องไม่สำเร็จ ลองใหม่');
+      } else {
+        handleSecurityError(err, 'รับเรื่องไม่สำเร็จ ลองใหม่');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -361,7 +379,7 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
             <AlertTriangle className="w-5 h-5 flex-shrink-0" />
             <span>{errorMsg}</span>
           </div>
-          <button onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-200">
+          <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-200 cursor-pointer" title="ปิดการแจ้งเตือน">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -372,7 +390,7 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
             <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
             <span>{successMsg}</span>
           </div>
-          <button onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-emerald-200">
+          <button type="button" onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-emerald-200 cursor-pointer" title="ปิดการแจ้งเตือน">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -523,11 +541,12 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
                       <td className="px-6 py-4 text-right whitespace-nowrap">
                         {!call.handled_at && (
                           <button
+                            type="button"
                             onClick={() => handleResolveStaffCall(call.id)}
                             disabled={actionLoading}
-                            className="whitespace-nowrap shrink-0 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
+                            className="whitespace-nowrap shrink-0 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
                           >
-                            รับเรื่องช่วยเหลือ
+                            {actionLoading ? 'กำลังบันทึก...' : 'รับเรื่องช่วยเหลือ'}
                           </button>
                         )}
                       </td>
@@ -599,11 +618,12 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
                           </td>
                           <td className="px-6 py-3.5 text-right whitespace-nowrap">
                             <button
+                              type="button"
                               onClick={() => handleResolveStaffCall(call.id)}
                               disabled={actionLoading}
-                              className="whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
+                              className="whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
                             >
-                              รับเรื่องช่วยเหลือ
+                              {actionLoading ? 'กำลังบันทึก...' : 'รับเรื่องช่วยเหลือ'}
                             </button>
                           </td>
                         </tr>

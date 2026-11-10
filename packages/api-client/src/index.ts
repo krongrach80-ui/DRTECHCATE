@@ -2783,15 +2783,21 @@ export class ApiClient {
         } as T;
       }
 
-      // 5. Direct Supabase handling for /staff, /therapists, /pts, and /directory/pts
-      if (
-        endpointPath.startsWith('/staff') ||
-        endpointPath.startsWith('/therapists') ||
-        endpointPath.startsWith('/pts') ||
-        endpointPath.includes('/staff') ||
-        endpointPath.includes('/pts') ||
-        endpointPath.includes('/directory/pts')
-      ) {
+      // 5. Direct Supabase handling for /staff, /therapists, /pts, and /directory/pts (EXCLUDES /staff-calls and /call-staff)
+      const isStaffUserDirectory =
+        !endpointPath.includes('/staff-calls') &&
+        !endpointPath.includes('/call-staff') &&
+        (
+          endpointPath === '/staff' ||
+          endpointPath.startsWith('/staff/') ||
+          endpointPath === '/api/staff' ||
+          endpointPath.startsWith('/api/staff/') ||
+          endpointPath.startsWith('/therapists') ||
+          endpointPath.startsWith('/pts') ||
+          endpointPath.includes('/directory/pts')
+        );
+
+      if (isStaffUserDirectory) {
         const parts = endpointPath.split('?')[0].split('/');
         const id = parts[2];
         const sub = parts[3];
@@ -5044,21 +5050,90 @@ export class ApiClient {
       if (endpointPath.includes('/staff-calls') && endpointPath.includes('/handle')) {
         const idMatch = endpointPath.match(/\/staff-calls\/([^/]+)\/handle/);
         if (idMatch && idMatch[1]) {
-          await fetch(
-            `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls?id=eq.${idMatch[1]}`,
+          const callId = idMatch[1];
+          const currentStaff = this.getUserProfile();
+          const staffId = currentStaff?.id || null;
+          const nowIso = new Date().toISOString();
+
+          // 1. Concurrency / Duplicate check
+          const checkRes = await fetch(
+            `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls?id=eq.${callId}&select=id,handled_at,handled_by`,
             {
-              method: 'PATCH',
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
                 Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+              },
+            }
+          ).catch(() => null);
+
+          if (checkRes && checkRes.ok) {
+            const existingRows = await checkRes.json().catch(() => []);
+            if (Array.isArray(existingRows) && existingRows.length > 0 && existingRows[0].handled_at) {
+              throw new Error('มีเจ้าหน้าที่รับเรื่องนี้ไปแล้ว');
+            }
+          }
+
+          // 2. Atomic update: only resolve if still pending (handled_at is null)
+          let patchRes: Response | null = null;
+          try {
+            patchRes = await fetch(
+              `${DEFAULT_SUPABASE_URL}/rest/v1/staff_calls?id=eq.${callId}&handled_at=is.null`,
+              {
+                method: 'PATCH',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json',
+                  Prefer: 'return=representation',
+                },
+                body: JSON.stringify({
+                  status: 'resolved',
+                  handled_at: nowIso,
+                  handled_by: staffId,
+                }),
+              }
+            );
+          } catch {
+            throw new Error('รับเรื่องไม่สำเร็จ ลองใหม่');
+          }
+
+          if (!patchRes || !patchRes.ok) {
+            throw new Error('รับเรื่องไม่สำเร็จ ลองใหม่');
+          }
+
+          const updatedRows = await patchRes.json().catch(() => []);
+          if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+            // Already handled concurrently by another staff member
+            throw new Error('มีเจ้าหน้าที่รับเรื่องนี้ไปแล้ว');
+          }
+
+          // 3. Non-blocking Audit Trail
+          if (staffId) {
+            fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/audit_logs`, {
+              method: 'POST',
+              headers: {
                 'Content-Type': 'application/json',
+                apikey: DEFAULT_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                Prefer: 'return=minimal',
               },
               body: JSON.stringify({
-                handled_at: new Date().toISOString(),
+                actor_type: 'staff',
+                actor_id: staffId,
+                action: 'resolve_staff_call',
+                entity: 'staff_calls',
+                entity_id: callId,
+                metadata: {
+                  staff_name: currentStaff?.full_name || currentStaff?.username || 'Staff',
+                  role: currentStaff?.role || 'staff',
+                  resolved_at: nowIso,
+                },
               }),
-            }
-          ).catch(() => {});
-          return { ok: true, message: 'Staff call resolved' } as T;
+            }).catch(() => {});
+          }
+
+          return { ok: true, message: 'รับเรื่องแล้ว' } as T;
         }
       }
 

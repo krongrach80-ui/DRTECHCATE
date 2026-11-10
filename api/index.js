@@ -6830,16 +6830,40 @@ var init_repository9 = __esm({
         const handledAt = (/* @__PURE__ */ new Date()).toISOString();
         try {
           const adminClient = getAdminClient();
-          const { error } = await adminClient.from("staff_calls").update({ handled_by: staffId, handled_at: handledAt }).eq("id", id);
+          const { data: existing, error: checkError } = await adminClient.from("staff_calls").select("id, handled_at").eq("id", id).maybeSingle();
+          if (!checkError && existing && existing.handled_at) {
+            throw new AppError("\u0E21\u0E35\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E23\u0E31\u0E1A\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E44\u0E1B\u0E41\u0E25\u0E49\u0E27", 409, "CALL_ALREADY_HANDLED");
+          }
+          const { data, error } = await adminClient.from("staff_calls").update({ status: "resolved", handled_by: staffId, handled_at: handledAt }).eq("id", id).is("handled_at", null).select();
           if (error) {
             logger.error({ error, id, staffId }, "Failed to handle staff call in Supabase");
-            throw new AppError("Kiosk service unavailable", 503, "SERVICE_UNAVAILABLE");
+            throw new AppError("\u0E23\u0E31\u0E1A\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E25\u0E2D\u0E07\u0E43\u0E2B\u0E21\u0E48", 503, "SERVICE_UNAVAILABLE");
+          }
+          if (!data || data.length === 0) {
+            throw new AppError("\u0E21\u0E35\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E23\u0E31\u0E1A\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E44\u0E1B\u0E41\u0E25\u0E49\u0E27", 409, "CALL_ALREADY_HANDLED");
+          }
+          if (staffId && staffId !== "unknown") {
+            Promise.resolve(
+              adminClient.from("audit_logs").insert({
+                actor_type: "staff",
+                actor_id: staffId,
+                action: "resolve_staff_call",
+                entity: "staff_calls",
+                entity_id: id,
+                metadata: {
+                  resolved_at: handledAt
+                }
+              })
+            ).then(() => {
+            }).catch((auditErr) => {
+              logger.warn({ auditErr, id }, "Non-blocking audit log insert failed for staff call");
+            });
           }
           return true;
         } catch (err) {
           if (err instanceof AppError) throw err;
           logger.error({ err, id, staffId }, "Database error in handleStaffCall");
-          throw new AppError("Kiosk service unavailable", 503, "SERVICE_UNAVAILABLE");
+          throw new AppError("\u0E23\u0E31\u0E1A\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E25\u0E2D\u0E07\u0E43\u0E2B\u0E21\u0E48", 503, "SERVICE_UNAVAILABLE");
         }
       }
       getFailedFaceAttempts(kioskId) {

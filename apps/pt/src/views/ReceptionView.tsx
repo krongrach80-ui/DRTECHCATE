@@ -257,11 +257,23 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
   const handleResolveStaffCall = async (id: string) => {
     try {
       setActionLoading(true);
+      setErrorMsg(null);
       await defaultApiClient.kiosk.handleStaffCall(id);
-      setSuccessMsg('รับเรื่องและบันทึกการช่วยเหลือคนไข้เรียบร้อย');
+      setSuccessMsg('รับเรื่องแล้ว');
       onStaffCallHandled();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถรับเรื่องได้');
+      const msg = err instanceof Error ? err.message : String(err || '');
+      if (msg.includes('มีเจ้าหน้าที่รับเรื่องนี้ไปแล้ว')) {
+        setErrorMsg('มีเจ้าหน้าที่รับเรื่องนี้ไปแล้ว');
+      } else if (
+        msg.includes('รับเรื่องไม่สำเร็จ') ||
+        msg.includes('Failed to fetch') ||
+        msg.includes('Network request failed')
+      ) {
+        setErrorMsg('รับเรื่องไม่สำเร็จ ลองใหม่');
+      } else {
+        setErrorMsg(msg || 'รับเรื่องไม่สำเร็จ ลองใหม่');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -339,12 +351,13 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => handleResolveStaffCall(call.id)}
                   disabled={actionLoading}
-                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shrink-0"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>รับเรื่อง</span>
+                  <span>{actionLoading ? 'กำลังบันทึก...' : 'รับเรื่อง'}</span>
                 </button>
               </div>
             ))}
@@ -393,12 +406,13 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={() => handleResolveStaffCall(call.id)}
                     disabled={actionLoading}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shrink-0"
                   >
                     <Check className="w-3.5 h-3.5" />
-                    <span>รับเรื่อง</span>
+                    <span>{actionLoading ? 'กำลังบันทึก...' : 'รับเรื่อง'}</span>
                   </button>
                 </div>
               ))}
@@ -430,7 +444,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
             <AlertTriangle className="w-5 h-5 flex-shrink-0" />
             <span>{errorMsg}</span>
           </div>
-          <button onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-200">
+          <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-200 cursor-pointer" title="ปิดการแจ้งเตือน">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -441,7 +455,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
             <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
             <span>{successMsg}</span>
           </div>
-          <button onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-emerald-200">
+          <button type="button" onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-emerald-200 cursor-pointer" title="ปิดการแจ้งเตือน">
             <X className="w-4 h-4" />
           </button>
         </div>
