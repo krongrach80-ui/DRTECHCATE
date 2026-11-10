@@ -87,6 +87,10 @@ export interface PatientRecordFile {
   // Therapy Schedule & Modpack Config
   schedule?: TherapySchedule | null;
 
+  // Prescription snapshot written by smart onboarding
+  activePrescriptionSnapshot?: Record<string, unknown> | null;
+  prescription?: Record<string, unknown> | null;
+
   // Rehab & Game Scores
   daily_checklists: Record<string, boolean>;
   rehab_scores: RehabScoreEntry[];
