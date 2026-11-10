@@ -113,7 +113,7 @@ export const KIOSK_CAMERA_STANDARDIZATION_CONFIG = {
   // องศาการก้ม-เงยศีรษะสูงสุดที่ยอมรับได้ (องศา)
   MAX_PITCH: 23,
   // ความคมชัดขั้นต่ำ (Laplacian Variance ต่ำกว่านี้คือภาพเบลอจากการเคลื่อนไหว)
-  MIN_SHARPNESS: 8.0,
+  MIN_SHARPNESS: 4.0,
   // ความสว่างเฉลี่ยขั้นต่ำของใบหน้า (0 - 255 ป้องกันภาพมืด)
   MIN_BRIGHTNESS: 35,
   // ความสว่างเฉลี่ยสูงสุดของใบหน้า (0 - 255 ป้องกันแสงจ้า/ย้อนแสง)
@@ -1125,6 +1125,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         lockedTargetRef.current = null;
         isProcessingScanRef.current = false;
         setIsScanning(false);
+        isCountingDownRef.current = false;
         setTimeout(() => {
           if (isMountedRef.current) {
             isCoolingDownRef.current = false;
@@ -1573,6 +1574,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       if (isMountedRef.current) {
         isProcessingScanRef.current = false;
         setIsScanning(false);
+        isCountingDownRef.current = false;
       }
     }
   }, [isScanningPaused, matchedPatient, lang]);
@@ -1627,6 +1629,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         clearInterval(interval);
         countdownIntervalRef.current = null;
         setCountdownValue(null);
+        isCountingDownRef.current = false;
         finishCountdownAndVerify();
         return;
       }
@@ -1689,7 +1692,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
           const quality = checkKioskFaceQuality(detection, dw, dh, imageQuality);
           if (!quality.passed) {
-            if (lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+            if (quality.reason === 'NO_FACE' && lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
               lockedTargetRef.current = null;
               cancelCountdown(quality.statusMessageThai);
               stabilityDetectorRef.current.reset();
@@ -1729,7 +1732,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
           const liv = fastLivenessVerifierRef.current.evaluate(detection);
           setLivenessResult(liv);
-          if (liv.state === 'spoof_blocked' || (!liv.isLive && liv.depthScore < 0.20)) {
+          if (liv.state === 'spoof_blocked') {
             lockedTargetRef.current = null;
             cancelCountdown(t('kiosk_spoof_blocked'));
             stabilityDetectorRef.current.reset();
@@ -1792,6 +1795,41 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
             console.log(`[FaceAuth] Scanned score: ${(highestSimilarity * 100).toFixed(1)}%, Matched: ${bestCandidate?.hn || 'None'}`);
 
+            // Instant Zero-Touch Fast-Track: If highest similarity >= 72%, log in immediately!
+            if (bestCandidate && highestSimilarity >= 0.72) {
+              clearInterval(interval);
+              countdownIntervalRef.current = null;
+              setCountdownValue(null);
+              isCountingDownRef.current = false;
+              isProcessingScanRef.current = false;
+              setIsScanning(false);
+
+              const nameParts = (bestCandidate.name || '').trim().split(' ');
+              const matchedPatientObj = {
+                id: bestCandidate.id,
+                hn: bestCandidate.hn,
+                first_name: nameParts[0] || bestCandidate.name,
+                last_name: nameParts.slice(1).join(' ') || '',
+                name: bestCandidate.name,
+              };
+              setMatchedPatient(matchedPatientObj as any);
+              const finalPercent = Math.round(highestSimilarity * 100);
+              const welcomeMsg =
+                lang === 'zh-CN'
+                  ? `欢迎，คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
+                  : lang === 'en-US'
+                  ? `Welcome, คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
+                  : `ยินดีต้อนรับ คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`;
+              setStatusText(welcomeMsg);
+              setIsTransitioning(true);
+              setTimeout(() => {
+                if (isMountedRef.current) {
+                  onLoginSuccess(matchedPatientObj as any);
+                }
+              }, 600);
+              return;
+            }
+
             const top1Cand = bestCandidate || null;
             const top1Sim = highestSimilarity;
 
@@ -1837,7 +1875,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     }, 250);
 
     countdownIntervalRef.current = interval;
-  }, [cancelCountdown, finishCountdownAndVerify, isScanning, isScanningPaused, matchedPatient, rateLimitCooldownSec, lang, t]);
+  }, [cancelCountdown, finishCountdownAndVerify, onLoginSuccess, isScanning, isScanningPaused, matchedPatient, rateLimitCooldownSec, lang, t]);
 
   // Trigger manual scan (activates countdown if face is aligned or restarts camera if inactive)
   const executeScanLogin = useCallback(() => {
@@ -1847,13 +1885,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       startCamera();
       return;
     }
-    if (isScanning || isProcessingScanRef.current || isScanningPaused) return;
     if (rateLimitCooldownSec > 0) {
       alert(`กรุณารอระบบคูลดาวน์ ${rateLimitCooldownSec} วินาที`);
       return;
     }
+    // Force reset any stalled or cooling state
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    isCountingDownRef.current = false;
+    isProcessingScanRef.current = false;
+    isCoolingDownRef.current = false;
+    setIsAutoScanCoolingDown(false);
+    setIsScanning(false);
     startCountdown();
-  }, [cameraReady, userDisabledCamera, isScanningPaused, isScanning, rateLimitCooldownSec, startCountdown, startCamera]);
+  }, [cameraReady, userDisabledCamera, rateLimitCooldownSec, startCountdown, startCamera]);
 
   // ISOLATED CAMERA LIFECYCLE
   useEffect(() => {
@@ -2009,6 +2056,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     });
 
     const presenceInterval = setInterval(async () => {
+      // Watchdog: If countdown flag was stuck for > 4.5s without active interval, release lock
+      if (isCountingDownRef.current && !countdownIntervalRef.current && Date.now() - countdownStartTimeRef.current > 4500) {
+        isCountingDownRef.current = false;
+      }
+
       // Guard against overlapping inferences: never run presence detection while counting down, scanning, or hidden
       if (
         !isMountedRef.current ||
