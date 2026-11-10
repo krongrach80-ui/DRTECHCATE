@@ -76,13 +76,27 @@ export default {
       return new Response('DrTech.Care Kiosk System', { status: 200 });
     }
 
-    const addNoCacheHeaders = (res) => {
+    const addNoCacheHeaders = async (res) => {
+      const contentType = res.headers.get('content-type') || '';
       const newHeaders = new Headers(res.headers);
       newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       newHeaders.set('CDN-Cache-Control', 'no-store');
       newHeaders.set('Cloudflare-CDN-Cache-Control', 'no-store');
       newHeaders.set('Pragma', 'no-cache');
       newHeaders.set('Expires', '0');
+
+      if (contentType.includes('text/html')) {
+        let htmlText = await res.text();
+        htmlText = htmlText
+          .replace(/\/kiosk\/assets\/index-[a-zA-Z0-9_-]+\.js/g, '/kiosk/assets/index-CvOBLXLh.js')
+          .replace(/\/kiosk\/assets\/index-[a-zA-Z0-9_-]+\.css/g, '/kiosk/assets/index-BWgUVDvb.css');
+        return new Response(htmlText, {
+          status: res.status,
+          statusText: res.statusText,
+          headers: newHeaders,
+        });
+      }
+
       return new Response(res.body, {
         status: res.status,
         statusText: res.statusText,
@@ -102,7 +116,7 @@ export default {
     if (response.status !== 404 && response.status !== 405) {
       // Never cache HTML entries at Edge or in browser to ensure fresh bundles
       if (isRootOrHtml) {
-        return addNoCacheHeaders(response);
+        return await addNoCacheHeaders(response);
       }
       return response;
     }
@@ -126,25 +140,25 @@ export default {
 
     if (url.pathname.startsWith('/admin')) {
       const adminRes = await env.ASSETS.fetch(spaGetReq('/admin/index.html'));
-      if (adminRes.status < 400) return addNoCacheHeaders(adminRes);
+      if (adminRes.status < 400) return await addNoCacheHeaders(adminRes);
       const rootRes = await env.ASSETS.fetch(spaGetReq('/index.html'));
-      return addNoCacheHeaders(rootRes);
+      return await addNoCacheHeaders(rootRes);
     }
     if (url.pathname.startsWith('/pt')) {
       const ptRes = await env.ASSETS.fetch(spaGetReq('/pt/index.html'));
-      if (ptRes.status < 400) return addNoCacheHeaders(ptRes);
+      if (ptRes.status < 400) return await addNoCacheHeaders(ptRes);
       const rootRes = await env.ASSETS.fetch(spaGetReq('/index.html'));
-      return addNoCacheHeaders(rootRes);
+      return await addNoCacheHeaders(rootRes);
     }
     if (url.pathname.startsWith('/kiosk')) {
       const kioskRes = await env.ASSETS.fetch(spaGetReq('/kiosk/index.html'));
-      if (kioskRes.status < 400) return addNoCacheHeaders(kioskRes);
+      if (kioskRes.status < 400) return await addNoCacheHeaders(kioskRes);
       const rootRes = await env.ASSETS.fetch(spaGetReq('/index.html'));
-      return addNoCacheHeaders(rootRes);
+      return await addNoCacheHeaders(rootRes);
     }
 
     // 5. Root SPA fallback
     const rootRes = await env.ASSETS.fetch(spaGetReq('/index.html'));
-    return addNoCacheHeaders(rootRes);
+    return await addNoCacheHeaders(rootRes);
   },
 };
