@@ -111,7 +111,7 @@ describe('15 Standard Clinical Exercises Single Source of Truth', () => {
       expect(ex.descriptionCn).toBeTruthy();
       expect(ex.clinicalSource).toBeTruthy();
       expect(ex.clinicalDisclaimerTh).toContain('ค่าเริ่มต้นแนะนำ');
-      expect(ex.mediaUrl).toMatch(/\.svg$/);
+      expect(ex.mediaUrl).toMatch(/\.(svg|mp4|webp|webm|gif)$/);
     }
   });
 

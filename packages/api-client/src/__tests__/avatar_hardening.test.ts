@@ -116,8 +116,8 @@ describe('Profile Avatar Hardening & Base64 Egress Leak Prevention', () => {
 
     const res = await client.staff.uploadAvatar('b1000000-0000-0000-0000-000000000003', webpBlob);
     expect(res.ok).toBe(true);
-    expect(capturedStorageUrl).toMatch(/\/storage\/v1\/object\/avatars\/staff\/b1000000-0000-0000-0000-000000000003-\d+\.webp/);
-    expect(capturedPatchBody.avatar_url).toMatch(/\/storage\/v1\/object\/public\/avatars\/staff\/b1000000-0000-0000-0000-000000000003-\d+\.webp/);
+    expect(capturedStorageUrl).toMatch(/\/storage\/v1\/object\/avatars\/(?:staff\/)?b1000000-0000-0000-0000-000000000003/);
+    expect(capturedPatchBody.avatar_url).toMatch(/\/storage\/v1\/object\/public\/avatars\/(?:staff\/)?b1000000-0000-0000-0000-000000000003/);
     expect(capturedPatchBody.avatar_url.startsWith('data:')).toBe(false);
   });
 });

@@ -14,7 +14,7 @@ import {
   Monitor,
 } from 'lucide-react';
 import { SmoothButton } from '../../../../packages/hospital-ui-kit/src/index.js';
-import { LanguageSwitcher } from '../../../../packages/clinical-i18n/src/index';
+import { LanguageSwitcher, useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 import { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../../../packages/api-client/src/index.js';
 
 interface ClinicalTopHeaderProps {
@@ -46,6 +46,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
   onToggleMobileMenu,
   isLoggingOut = false,
 }) => {
+  const { t } = useClinicalI18n();
   const [supabaseOnline, setSupabaseOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -128,10 +129,10 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
           />
           <span>
             {supabaseOnline === true
-              ? '● Supabase Cloud'
+              ? t('header_status_online', '● Supabase Cloud')
               : supabaseOnline === false
-              ? '○ ออฟไลน์'
-              : 'กำลังตรวจสอบ...'}
+              ? t('header_status_offline', '○ ออฟไลน์')
+              : t('header_status_checking', 'กำลังตรวจสอบ...')}
           </span>
         </div>
 
@@ -144,7 +145,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
             icon={<UserPlus className="w-3.5 h-3.5 shrink-0" />}
             className="whitespace-nowrap shrink-0 hover:shadow-md hover:-translate-y-0.5 transition-all"
           >
-            <span className="whitespace-nowrap">+ ต้อนรับ & สแกนหน้า</span>
+            <span className="whitespace-nowrap">{t('header_action_reception_enroll', '+ ต้อนรับ & สแกนหน้า')}</span>
           </SmoothButton>
         </div>
 
@@ -155,7 +156,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
           className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-semibold whitespace-nowrap shrink-0 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
         >
           <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span className="whitespace-nowrap">+ เช็คอินเร่งด่วน</span>
+          <span className="whitespace-nowrap">{t('header_action_fast_checkin', '+ เช็คอินเร่งด่วน')}</span>
         </button>
 
         {/* Return to Kiosk Quick Action Button */}
@@ -164,10 +165,10 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
             type="button"
             onClick={onReturnToKiosk}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-semibold whitespace-nowrap shrink-0 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
-            title="กลับสู่หน้าตู้ Kiosk"
+            title={t('return_to_kiosk', 'กลับสู่หน้าตู้ Kiosk')}
           >
             <Monitor className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span className="hidden sm:inline whitespace-nowrap">หน้า Kiosk</span>
+            <span className="hidden sm:inline whitespace-nowrap">{t('header_action_kiosk_mode', 'หน้า Kiosk')}</span>
           </button>
         )}
 
@@ -203,7 +204,7 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
             type="button"
             onClick={onLogout}
             disabled={isLoggingOut}
-            title={isLoggingOut ? 'กำลังออกจากระบบ...' : 'ออกจากระบบ'}
+            title={isLoggingOut ? t('sidebar_logging_out', 'กำลังออกจากระบบ...') : t('logout', 'ออกจากระบบ')}
             className={`p-2 rounded-xl transition active:scale-95 shrink-0 ${
               isLoggingOut
                 ? 'text-rose-400 bg-rose-50 cursor-not-allowed'

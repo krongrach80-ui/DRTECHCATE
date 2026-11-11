@@ -151,8 +151,9 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
       }
 
       setDailyPlanResponse(res);
-      const scheduled = Boolean(res.is_scheduled_today);
-      const completed = Boolean(res.is_completed_today);
+      const scheduled = Boolean(res?.is_scheduled_today);
+      const completed = Boolean(res?.is_completed_today);
+      const exercisesList = Array.isArray(res?.exercises) ? res.exercises : [];
 
       // Hydrate completed exercise IDs from server response
       if (Array.isArray((res as any)?.completed_exercise_ids) && (res as any).completed_exercise_ids.length > 0) {
@@ -163,73 +164,35 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         });
       }
 
-      // If server returned !scheduled (e.g. slight replication lag or fallback mismatch), but patient was just directly prescribed a schedule for today
-      const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
-      const snapshot = (patient as any)?.activePrescriptionSnapshot;
-      const sched = patient.schedule || snapshot?.schedule;
-      const snapshotDates = sched?.scheduled_dates || sched?.scheduledDates || [];
-      const hasTodayInSnapshot = snapshotDates.includes(todayBkk) || (snapshot && (snapshot.prescribed_exercises?.length > 0));
-
-      const isEffectivelyScheduled = scheduled || Boolean(hasTodayInSnapshot);
+      // Authoritative Server-Driven: strictly rely on server response without synthetic fallback or snapshot resurrection
+      const isEffectivelyScheduled = scheduled && exercisesList.length > 0;
       setIsScheduledToday(isEffectivelyScheduled);
       setIsCompletedToday(completed);
 
       if (!isEffectivelyScheduled) {
         setExercises([]);
-        setRestReason(res.reason || 'rest_day_default');
+        setRestReason(res?.reason || 'no_plan_scheduled');
       } else {
-        setRestReason(res.reason || '');
-        let resolvedExercises = res.exercises && res.exercises.length > 0 ? res.exercises : [];
-
-        // If server response had empty exercises, use snapshot or patient.schedule
-        if (resolvedExercises.length === 0) {
-          const snapshotExs = snapshot?.prescribed_exercises || sched?.prescribed_exercises || sched?.assigned_exercises || [];
-          if (Array.isArray(snapshotExs) && snapshotExs.length > 0) {
-            resolvedExercises = snapshotExs.map((ex: any) => ({
-              exercise_id: ex.exercise_id || ex.id,
-              id: ex.exercise_id || ex.id,
-              name: ex.name || ex.name_th || 'ท่ากายภาพบำบัด',
-              name_th: ex.name_th || ex.name || 'ท่ากายภาพบำบัด',
-              name_en: ex.name_en || ex.name || 'Physical Therapy Exercise',
-              name_cn: ex.name_cn || ex.name || '康复动作',
-              target_joint: ex.target_joint || (patient as any).target_joint || 'general',
-              sets: Number(ex.sets) || 3,
-              reps: Number(ex.reps) || 10,
-              side: ex.side || 'both',
-              hold_duration_sec: ex.hold_duration_sec,
-              target_max_deg: ex.target_max_deg,
-              target_min_deg: ex.target_min_deg,
-              detection_config: ex.detection_config || ALL_CLINICAL_EXERCISES.find((c) => c.id === (ex.exercise_id || ex.id)),
-            }));
-          }
-        }
-
-        // If still empty, filter catalog presets by patient's target joint (never dump all 15 poses with shoulder #1 to knee patients!)
-        if (resolvedExercises.length === 0) {
-          const pJoint = ((patient as any).target_joint || (patient as any)?.history?.target_joint || '').toLowerCase();
-          const filteredPresets = ALL_CLINICAL_EXERCISES.filter((ex) => {
-            if (!pJoint) return true;
-            const exJ = ex.targetJoint.toLowerCase();
-            return pJoint.includes(exJ) || exJ.includes(pJoint);
-          });
-          const pool = filteredPresets.length > 0 ? filteredPresets : ALL_CLINICAL_EXERCISES;
-          resolvedExercises = pool.map((ex) => ({
-            exercise_id: ex.id,
-            id: ex.id,
-            name: ex.nameTh,
-            name_th: ex.nameTh,
-            name_en: ex.nameEn,
-            name_cn: ex.nameCn,
-            target_joint: ex.targetJoint,
-            sets: ex.defaultPrescription.totalSets,
-            reps: ex.defaultPrescription.repsPerSet,
-            side: 'both',
-            detection_config: ex,
-          }));
-        }
+        setRestReason(res?.reason || '');
+        const resolvedExercises = exercisesList.map((ex: any) => ({
+          exercise_id: ex.exercise_id || ex.id,
+          id: ex.exercise_id || ex.id,
+          name: ex.name || ex.name_th || 'ท่ากายภาพบำบัด',
+          name_th: ex.name_th || ex.name || 'ท่ากายภาพบำบัด',
+          name_en: ex.name_en || ex.name || 'Physical Therapy Exercise',
+          name_cn: ex.name_cn || ex.name || '康复动作',
+          target_joint: ex.target_joint || (patient as any).target_joint || 'general',
+          sets: Number(ex.sets) || 3,
+          reps: Number(ex.reps) || 10,
+          side: ex.side || 'both',
+          hold_duration_sec: ex.hold_duration_sec,
+          target_max_deg: ex.target_max_deg,
+          target_min_deg: ex.target_min_deg,
+          detection_config: ex.detection_config || ALL_CLINICAL_EXERCISES.find((c) => c.id === (ex.exercise_id || ex.id)),
+        }));
 
         setExercises(resolvedExercises);
-        setIncludeMinigame(res.include_minigame ?? sched?.include_minigame ?? true);
+        setIncludeMinigame(res?.include_minigame ?? true);
       }
     } catch (err: any) {
       if (!isMountedRef.current) return;
@@ -669,16 +632,13 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         }
       }
     }
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    const day = d.getDate();
-    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-    return `${day} ${months[d.getMonth()]} ${d.getFullYear() + 543} (09:00 - 10:00 น.)`;
+    return null;
   }, [dailyPlanResponse?.next_appointment_date, dailyPlanResponse?.time_slot, dailyPlanResponse?.schedule?.time_slot, lang]);
 
   // Clinical Touchless Gesture Starter Hook
   const isGestureStarterEnabled = Boolean(
     isScheduledToday &&
+    exercises.length > 0 &&
     !isCompletedToday &&
     !isSessionCompleted &&
     !activeSession &&
@@ -749,11 +709,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     );
   }
 
-  // 1. Rest Day View (Friendly notice when no appointment today - camera never opened)
-  if (!isScheduledToday) {
+  // 1. Neutral Empty State / No Scheduled Program View (3 Languages TH/EN/CN)
+  if (!isScheduledToday || exercises.length === 0) {
     return (
       <div className="w-full min-h-[calc(100vh-64px)] flex flex-col justify-between bg-gradient-to-b from-[#EBF5FA] via-[#F4F9FC] to-[#E6F4F8] text-slate-900 select-none">
-        {/* Patient Top Bar (Clean White Card Bar & No Duplicate Language Switcher) */}
+        {/* Patient Top Bar (Clean White Card Bar & Language Switcher) */}
         <div className="w-full bg-white border-b border-blue-100 px-6 py-3.5 shadow-xs flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-extrabold text-lg flex items-center justify-center shadow-xs">
@@ -772,6 +732,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            <LanguageSwitcher />
             <button
               onClick={onLogout}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-200 font-bold text-xs sm:text-sm transition cursor-pointer active:scale-95 shadow-xs"
@@ -783,54 +744,74 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           </div>
         </div>
 
-        {/* Center Friendly Notice Bento Card (No Redundant Text Boxes) */}
+        {/* Center Friendly Notice Bento Card */}
         <div className="max-w-2xl w-full bg-white rounded-[32px] border border-blue-100 shadow-xl p-8 sm:p-10 text-center space-y-6 my-auto mx-auto animate-in fade-in zoom-in-95 duration-300">
-          <div className="w-20 h-20 rounded-3xl bg-emerald-50 border-2 border-emerald-200 text-emerald-600 mx-auto flex items-center justify-center shadow-sm">
+          <div className="w-20 h-20 rounded-3xl bg-blue-50 border-2 border-blue-200 text-blue-600 mx-auto flex items-center justify-center shadow-sm">
             <Sun className="w-10 h-10" />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              {lang === 'zh-CN' ? '今天是您的休息日' : lang === 'en-US' ? 'Your Scheduled Rest Day' : 'วันนี้เป็นวันพักผ่อนของคุณ'}
-            </h2>
-            <p className="text-slate-600 text-base sm:text-lg leading-relaxed">
               {lang === 'zh-CN'
-                ? '今日没有为您安排康复训练，建议您好好休息并补充充足水分。'
+                ? '今日暂无康复训练方案'
                 : lang === 'en-US'
-                ? 'No physical therapy session scheduled for today. We recommend resting and staying well-hydrated.'
-                : 'ไม่มีรายการฝึกกายภาพสำหรับวันนี้ แนะนำให้พักผ่อนและดื่มน้ำให้เพียงพอครับ'}
+                ? 'No Exercise Program Scheduled Today'
+                : 'ยังไม่มีโปรแกรมฝึกในวันนี้'}
+            </h2>
+            <p className="text-slate-600 text-base sm:text-lg leading-relaxed font-medium">
+              {lang === 'zh-CN'
+                ? '今日暂无康复训练方案，请联系物理治疗师。'
+                : lang === 'en-US'
+                ? 'No exercise program scheduled for today. Please contact your physical therapist.'
+                : 'ยังไม่มีโปรแกรมฝึกในวันนี้ กรุณาติดต่อนักกายภาพบำบัด'}
             </p>
           </div>
 
-          {/* Next Appointment Highlight Box */}
-          <div className="w-full bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border-2 border-emerald-200 rounded-2xl p-5 text-center shadow-xs">
-            <div className="text-sm text-teal-800 font-bold flex items-center justify-center gap-1.5">
-              <Clock className="w-4 h-4 text-emerald-600" />
-              <span>
-                {lang === 'zh-CN' ? '📅 下次康复训练预约时间' : lang === 'en-US' ? '📅 Your Next Scheduled Session' : '📅 วันนัดฝึกกายภาพบำบัดครั้งถัดไปของคุณ'}
-              </span>
+          {/* Next Appointment Highlight Box (Only if there is an actual next appointment date) */}
+          {nextApptDateStr && (
+            <div className="w-full bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border-2 border-emerald-200 rounded-2xl p-5 text-center shadow-xs">
+              <div className="text-sm text-teal-800 font-bold flex items-center justify-center gap-1.5">
+                <Clock className="w-4 h-4 text-emerald-600" />
+                <span>
+                  {lang === 'zh-CN' ? '📅 下次康复训练预约时间' : lang === 'en-US' ? '📅 Your Next Scheduled Session' : '📅 วันนัดฝึกกายภาพบำบัดครั้งถัดไปของคุณ'}
+                </span>
+              </div>
+              <div className="text-xl sm:text-2xl font-extrabold text-blue-950 mt-1.5">
+                {nextApptDateStr}
+              </div>
             </div>
-            <div className="text-xl sm:text-2xl font-extrabold text-blue-950 mt-1.5">
-              {nextApptDateStr}
+          )}
+
+          {/* Pain Alert Banner Notification if user clicked pain button */}
+          {painAlertActive && (
+            <div className="w-full p-4 rounded-2xl bg-rose-50 border-2 border-rose-400 text-rose-900 flex items-center justify-between gap-4 shadow-sm animate-bounce">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0" />
+                <div className="text-sm font-bold text-left">
+                  {lang === 'zh-CN'
+                    ? '🚨 已接收到疼痛反馈！工作人员与物理治疗师已收到提醒，请坐下休息。'
+                    : lang === 'en-US'
+                    ? '🚨 Pain alert triggered! Clinical staff notified. Please sit down and rest comfortably.'
+                    : '🚨 แจ้งอาการเจ็บเรียบร้อยแล้ว! เจ้าหน้าที่และนักกายภาพบำบัดกำลังมาดูแล กรุณานั่งพักผ่อนครับ'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPainAlertActive(false)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-rose-200 hover:bg-rose-300 text-rose-800 font-bold cursor-pointer"
+              >
+                {lang === 'zh-CN' ? '关闭提示' : lang === 'en-US' ? 'Dismiss' : 'ปิดการแจ้งเตือน'}
+              </button>
             </div>
-          </div>
+          )}
 
-          {/* 2 Clear Bottom Action Buttons */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
-            <button
-              type="button"
-              onClick={onLogout}
-              className="py-4 px-6 rounded-2xl font-extrabold text-white bg-gradient-to-r from-emerald-600 to-blue-600 hover:brightness-105 active:scale-98 shadow-md transition flex items-center justify-center gap-2 cursor-pointer text-base sm:text-lg"
-            >
-              <span>🏠</span>
-              <span>{lang === 'zh-CN' ? '返回首页 (完成)' : lang === 'en-US' ? 'Home (Complete)' : 'กลับหน้าแรก (เสร็จสิ้น)'}</span>
-            </button>
-
+          {/* 3 Main Action Buttons: Call Staff, Feel Pain Emergency, and Sign Out */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2">
             <button
               type="button"
               onClick={handleCallStaff}
               disabled={callStaffStatus === 'sending' || callStaffStatus === 'sent'}
-              className="py-4 px-6 rounded-2xl font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 text-base sm:text-lg shadow-xs"
+              className="py-3.5 px-4 rounded-2xl font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 text-sm sm:text-base shadow-xs"
             >
               {callStaffStatus === 'sent' ? (
                 <Check className="w-5 h-5 text-emerald-600" />
@@ -839,11 +820,31 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
               )}
               <span>
                 {callStaffStatus === 'sending'
-                  ? (lang === 'zh-CN' ? '正在呼叫工作人员...' : lang === 'en-US' ? 'Calling staff...' : 'กำลังเรียกเจ้าหน้าที่...')
+                  ? (lang === 'zh-CN' ? '呼叫中...' : lang === 'en-US' ? 'Calling...' : 'กำลังเรียก...')
                   : callStaffStatus === 'sent'
-                  ? (lang === 'zh-CN' ? '✓ 已成功通知医护人员' : lang === 'en-US' ? '✓ Staff Notified' : '✓ แจ้งเจ้าหน้าที่เรียบร้อยแล้ว')
-                  : (lang === 'zh-CN' ? '呼叫医护人员 / 咨询预约' : lang === 'en-US' ? 'Call Staff / Inquire' : 'เรียกเจ้าหน้าที่ / ปรึกษาตารางนัด')}
+                  ? (lang === 'zh-CN' ? '✓ 已通知' : lang === 'en-US' ? '✓ Notified' : '✓ แจ้งแล้ว')
+                  : (lang === 'zh-CN' ? '🔔 呼叫人员' : lang === 'en-US' ? '🔔 Call Staff' : '🔔 เรียกเจ้าหน้าที่')}
               </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePainEmergency}
+              className="py-3.5 px-4 rounded-2xl font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer text-sm sm:text-base shadow-xs"
+            >
+              <ShieldAlert className="w-5 h-5 text-rose-600" />
+              <span>
+                {lang === 'zh-CN' ? '🚨 感觉疼痛' : lang === 'en-US' ? '🚨 Feel Pain' : '🚨 รู้สึกเจ็บ'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onLogout}
+              className="py-3.5 px-4 rounded-2xl font-extrabold text-white bg-gradient-to-r from-emerald-600 to-blue-600 hover:brightness-105 active:scale-98 shadow-md transition flex items-center justify-center gap-2 cursor-pointer text-sm sm:text-base"
+            >
+              <LogOut className="w-5 h-5" />
+              <span>{lang === 'zh-CN' ? '🚪 退出系统' : lang === 'en-US' ? '🚪 Sign Out' : '🚪 ออกจากระบบ'}</span>
             </button>
           </div>
 

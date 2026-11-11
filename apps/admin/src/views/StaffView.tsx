@@ -16,7 +16,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { UserProfile, defaultApiClient } from '../../../../packages/api-client/src/index.js';
-import { getSavedLanguage, ClinicalLanguage } from '../../../../packages/clinical-i18n/src/index';
+import { getSavedLanguage, ClinicalLanguage, useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 
 interface FormValidationErrors {
   username?: string;
@@ -245,6 +245,7 @@ const DEMO_STAFF: UserProfile[] = [
 ];
 
 export const StaffView: React.FC = () => {
+  const { t: tDict, language: i18nLang } = useClinicalI18n();
   const [staffList, setStaffList] = useState<UserProfile[]>(DEMO_STAFF);
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
@@ -273,7 +274,11 @@ export const StaffView: React.FC = () => {
   const [fieldErrors, setFieldErrors] = useState<FormValidationErrors>({});
   const [, setTouchedFields] = useState<Record<string, boolean>>({});
   const [wizardErrorMsg, setWizardErrorMsg] = useState<string | null>(null);
-  const [currentLang, setCurrentLang] = useState<ClinicalLanguage>(() => getSavedLanguage());
+  const [currentLang, setCurrentLang] = useState<ClinicalLanguage>(() => i18nLang || getSavedLanguage());
+
+  useEffect(() => {
+    if (i18nLang) setCurrentLang(i18nLang);
+  }, [i18nLang]);
 
   useEffect(() => {
     const onLangChange = (e: any) => {
@@ -664,10 +669,10 @@ export const StaffView: React.FC = () => {
         <div>
           <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
             <Users className="w-6 h-6 text-teal-600" />
-            <span>จัดการเจ้าหน้าที่โรงพยาบาล (Staff Management)</span>
+            <span>{tDict('staff_view_title', 'จัดการเจ้าหน้าที่โรงพยาบาล (Staff Management)')}</span>
           </h2>
           <p className="text-sm text-slate-500 mt-1">
-            บัญชีผู้อำนวยการ (Admin) และนักกายภาพบำบัด (PT) ควบคุมสิทธิ์และเซสชันการเข้าถึง
+            {tDict('staff_view_desc', 'บัญชีผู้อำนวยการ (Admin) และนักกายภาพบำบัด (PT) ควบคุมสิทธิ์และเซสชันการเข้าถึง')}
           </p>
         </div>
 
@@ -675,7 +680,7 @@ export const StaffView: React.FC = () => {
           <button
             onClick={fetchStaff}
             className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition shadow-sm"
-            title="รีเฟรชข้อมูล"
+            title={tDict('refresh_data', 'รีเฟรชข้อมูล')}
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -690,7 +695,7 @@ export const StaffView: React.FC = () => {
             className="whitespace-nowrap shrink-0 px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-95"
           >
             <UserPlus className="w-4 h-4 shrink-0" />
-            <span className="whitespace-nowrap">+ เพิ่มเจ้าหน้าที่ใหม่</span>
+            <span className="whitespace-nowrap">{tDict('staff_add_button', '+ เพิ่มเจ้าหน้าที่ใหม่')}</span>
           </button>
         </div>
       </div>
@@ -725,7 +730,7 @@ export const StaffView: React.FC = () => {
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="ค้นหาชื่อ, username, เบอร์โทร..."
+            placeholder={tDict('staff_search_placeholder', 'ค้นหาชื่อ, username, เบอร์โทร...')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
@@ -738,10 +743,10 @@ export const StaffView: React.FC = () => {
             onChange={(e) => setRoleFilter(e.target.value as 'all' | 'admin' | 'pt' | 'patient')}
             className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
           >
-            <option value="all">ทุกบทบาท (All Roles)</option>
-            <option value="admin">ผู้อำนวยการ (Admin)</option>
-            <option value="pt">นักกายภาพบำบัด (PT)</option>
-            <option value="patient">คนไข้ (Patient)</option>
+            <option value="all">{tDict('staff_filter_all_roles', 'ทุกบทบาท (All Roles)')}</option>
+            <option value="admin">{tDict('admin_role_badge', 'ผู้อำนวยการ (Admin)')}</option>
+            <option value="pt">{tDict('pt_role_badge', 'นักกายภาพบำบัด (PT)')}</option>
+            <option value="patient">{tDict('role_patient_title', 'คนไข้ (Patient)')}</option>
           </select>
 
           <select
@@ -749,9 +754,9 @@ export const StaffView: React.FC = () => {
             onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'suspended')}
             className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
           >
-            <option value="all">ทุกสถานะ (All Status)</option>
-            <option value="active">ใช้งานปกติ (Active)</option>
-            <option value="suspended">ถูกระงับ (Suspended)</option>
+            <option value="all">{tDict('staff_filter_all_status', 'ทุกสถานะ (All Status)')}</option>
+            <option value="active">{tDict('staff_status_active', 'ใช้งานปกติ (Active)')}</option>
+            <option value="suspended">{tDict('staff_status_suspended', 'ถูกระงับ (Suspended)')}</option>
           </select>
         </div>
       </div>
@@ -762,12 +767,12 @@ export const StaffView: React.FC = () => {
           <table className="w-full text-left text-sm text-slate-700">
             <thead className="bg-blue-50/80 text-blue-950 font-semibold text-xs uppercase tracking-wider border-b border-blue-100">
               <tr>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">ชื่อ-นามสกุล</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">Username / HN</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">บทบาท</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">สถานะ</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">เข้าสู่ระบบล่าสุด</th>
-                <th className="px-6 py-4 font-semibold text-right whitespace-nowrap">การจัดการ</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">{tDict('staff_th_name', 'ชื่อ-นามสกุล')}</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">{tDict('staff_th_username', 'Username / HN')}</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">{tDict('staff_th_role', 'บทบาท')}</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">{tDict('staff_th_status', 'สถานะ')}</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">{tDict('staff_th_last_login', 'เข้าสู่ระบบล่าสุด')}</th>
+                <th className="px-6 py-4 font-semibold text-right whitespace-nowrap">{tDict('staff_th_actions', 'การจัดการ')}</th>
               </tr>
             </thead>
             <tbody className="bg-white hover:bg-emerald-50/40 divide-y divide-slate-100 text-slate-800">
@@ -775,13 +780,13 @@ export const StaffView: React.FC = () => {
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-500 whitespace-nowrap">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-600" />
-                    <span>กำลังโหลดรายชื่อผู้ใช้...</span>
+                    <span>{tDict('staff_loading', 'กำลังโหลดรายชื่อผู้ใช้...')}</span>
                   </td>
                 </tr>
               ) : filteredStaff.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-500 whitespace-nowrap">
-                    ไม่พบข้อมูลผู้ใช้ที่ตรงตามเงื่อนไข
+                    {tDict('staff_not_found', 'ไม่พบข้อมูลผู้ใช้ที่ตรงตามเงื่อนไข')}
                   </td>
                 </tr>
               ) : (
@@ -803,17 +808,17 @@ export const StaffView: React.FC = () => {
                       {user.role === 'admin' ? (
                         <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
                           <Shield className="w-3.5 h-3.5 shrink-0" />
-                          <span>ผู้อำนวยการ (Admin)</span>
+                          <span>{tDict('admin_role_badge', 'ผู้อำนวยการ (Admin)')}</span>
                         </span>
                       ) : user.role === 'pt' ? (
                         <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                          <span>นักกายภาพบำบัด (PT)</span>
+                          <span>{tDict('pt_role_badge', 'นักกายภาพบำบัด (PT)')}</span>
                         </span>
                       ) : (
                         <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
                           <Users className="w-3.5 h-3.5 shrink-0" />
-                          <span>คนไข้ (Patient)</span>
+                          <span>{tDict('role_patient_title', 'คนไข้ (Patient)')}</span>
                         </span>
                       )}
                     </td>
@@ -821,26 +826,26 @@ export const StaffView: React.FC = () => {
                       {user.status === 'active' ? (
                         <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span>● ปกติ</span>
+                          <span>{tDict('sidebar_status_normal', '● ปกติ')}</span>
                         </span>
                       ) : (
                         <span className="whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
                           <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                          <span>ระงับการใช้งาน</span>
+                          <span>{tDict('staff_status_suspended', 'ระงับการใช้งาน')}</span>
                         </span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-xs text-slate-600 whitespace-nowrap">
                       {user.last_login_at
-                        ? new Date(user.last_login_at).toLocaleString('th-TH')
-                        : 'ยังไม่เคยเข้าสู่ระบบ'}
+                        ? new Date(user.last_login_at).toLocaleString(currentLang === 'zh-CN' ? 'zh-CN' : currentLang === 'en-US' ? 'en-US' : 'th-TH')
+                        : tDict('staff_never_logged_in', 'ยังไม่เคยเข้าสู่ระบบ')}
                     </td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-2">
                         {(user.role as string) !== 'patient' && (
                           <button
                             onClick={() => setResetModalUser(user)}
-                            title="รีเซ็ตรหัสผ่าน"
+                            title={tDict('action_reset_password', 'รีเซ็ตรหัสผ่าน')}
                             className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
                           >
                             <KeyRound className="w-4 h-4" />
@@ -848,7 +853,7 @@ export const StaffView: React.FC = () => {
                         )}
                         <button
                           onClick={() => handleToggleSuspend(user)}
-                          title={user.status === 'suspended' ? 'ยกเลิกระงับ' : 'ระงับการใช้งาน'}
+                          title={user.status === 'suspended' ? tDict('action_unsuspend', 'ยกเลิกระงับ') : tDict('action_suspend', 'ระงับการใช้งาน')}
                           className={`p-2 rounded-lg transition cursor-pointer ${
                             user.status === 'suspended'
                               ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
@@ -860,7 +865,7 @@ export const StaffView: React.FC = () => {
                         {user.username !== 'director' && user.username !== 'admin' && (
                           <button
                             onClick={() => handleDeleteStaff(user)}
-                            title={`ลบ${(user.role as string) === 'patient' ? 'คนไข้' : user.role === 'pt' ? 'นักกายภาพบำบัด' : 'เจ้าหน้าที่'}ถาวร`}
+                            title={`${currentLang === 'zh-CN' ? '删除' : currentLang === 'en-US' ? 'Delete' : 'ลบ'}${user.role === 'pt' ? ` ${tDict('pt_role_badge', 'นักกายภาพบำบัด')}` : (user.role as string) === 'patient' ? ` ${tDict('role_patient_title', 'คนไข้')}` : ''}`}
                             className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -872,7 +877,7 @@ export const StaffView: React.FC = () => {
                 ))
               )}
             </tbody>
-          </table>
+            </table>
         </div>
       </div>
 
@@ -901,10 +906,14 @@ export const StaffView: React.FC = () => {
               <div>
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <UserPlus className="w-5 h-5 text-emerald-600" />
-                  <span>เพิ่มผู้ใช้ใหม่ (Staff / PT / คนไข้)</span>
+                  <span>{tDict('staff_modal_create_title', 'เพิ่มผู้ใช้ใหม่ (Staff / PT / คนไข้)')}</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  ขั้นตอนที่ {wizardStep} จาก {formData.role === 'admin' ? 2 : 3}
+                  {currentLang === 'zh-CN'
+                    ? `第 ${wizardStep} 步，共 ${formData.role === 'admin' ? 2 : 3} 步`
+                    : currentLang === 'en-US'
+                    ? `Step ${wizardStep} of ${formData.role === 'admin' ? 2 : 3}`
+                    : `ขั้นตอนที่ ${wizardStep} จาก ${formData.role === 'admin' ? 2 : 3}`}
                 </p>
               </div>
               <button
@@ -937,7 +946,7 @@ export const StaffView: React.FC = () => {
               {wizardStep === 1 && (
                 <div className="space-y-4">
                   <h4 className="text-sm sm:text-base font-bold text-teal-800 tracking-normal">
-                    1. ข้อมูลบัญชีผู้ใช้
+                    {tDict('step_1_account_info', '1. ข้อมูลบัญชีผู้ใช้')}
                   </h4>
                   <div>
                     <label htmlFor="field-username" className="block text-xs sm:text-sm font-semibold text-slate-800 mb-1.5">
@@ -1056,7 +1065,7 @@ export const StaffView: React.FC = () => {
               {wizardStep === 2 && (
                 <div className="space-y-4">
                   <h4 className="text-sm sm:text-base font-bold text-teal-800 tracking-normal">
-                    2. กำหนดบทบาทและสิทธิ์การใช้งาน
+                    {tDict('step_2_roles_perms', '2. กำหนดบทบาทและสิทธิ์การใช้งาน')}
                   </h4>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" role="radiogroup" aria-label="บทบาทผู้ใช้">
@@ -1148,7 +1157,7 @@ export const StaffView: React.FC = () => {
               {wizardStep === 3 && formData.role === 'pt' && (
                 <div className="space-y-4">
                   <h4 className="text-sm sm:text-base font-bold text-teal-800 tracking-normal">
-                    3. ข้อมูลใบอนุญาตประกอบวิชาชีพกายภาพบำบัด
+                    {tDict('step_3_pt_license', '3. ข้อมูลใบอนุญาตประกอบวิชาชีพกายภาพบำบัด')}
                   </h4>
 
                   <div>
@@ -1213,7 +1222,7 @@ export const StaffView: React.FC = () => {
               {wizardStep === 3 && formData.role === 'patient' && (
                 <div className="space-y-4">
                   <h4 className="text-sm sm:text-base font-bold text-blue-800 tracking-normal">
-                    3. ข้อมูลผู้ป่วยและอาการเริ่มต้น
+                    {tDict('step_3_patient_info', '3. ข้อมูลผู้ป่วยและอาการเริ่มต้น')}
                   </h4>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -1319,7 +1328,7 @@ export const StaffView: React.FC = () => {
                     }}
                     className="h-11 px-5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-sm font-semibold transition active:scale-95 cursor-pointer"
                   >
-                    ย้อนกลับ
+                    {tDict('btn_back', 'ย้อนกลับ')}
                   </button>
                 ) : (
                   <div />
@@ -1333,12 +1342,12 @@ export const StaffView: React.FC = () => {
                   {actionLoading ? (
                     <div className="flex items-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>กำลังดำเนินการ...</span>
+                      <span>{tDict('processing', 'กำลังดำเนินการ...')}</span>
                     </div>
                   ) : (
                     <>
                       <span>
-                        {wizardStep < (formData.role === 'admin' ? 2 : 3) ? 'ขั้นตอนถัดไป' : 'บันทึกและสร้างบัญชี'}
+                        {wizardStep < (formData.role === 'admin' ? 2 : 3) ? tDict('btn_next_step', 'ขั้นตอนถัดไป') : tDict('btn_save_and_create', 'บันทึกและสร้างบัญชี')}
                       </span>
                       <ChevronRight className="w-4 h-4" />
                     </>
@@ -1357,7 +1366,7 @@ export const StaffView: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <KeyRound className="w-5 h-5 text-amber-500" />
-                <span>รีเซ็ตรหัสผ่านเจ้าหน้าที่</span>
+                <span>{tDict('modal_reset_password_title', 'รีเซ็ตรหัสผ่านเจ้าหน้าที่')}</span>
               </h3>
               <button
                 onClick={() => setResetModalUser(null)}
@@ -1368,9 +1377,18 @@ export const StaffView: React.FC = () => {
             </div>
 
             <p className="text-sm text-slate-600">
-              กำลังรีเซ็ตรหัสผ่านสำหรับ{' '}
+              {currentLang === 'zh-CN'
+                ? `正在为 `
+                : currentLang === 'en-US'
+                ? `Resetting password for `
+                : `กำลังรีเซ็ตรหัสผ่านสำหรับ `}
               <strong className="text-slate-900">{resetModalUser.full_name}</strong> (@
-              {resetModalUser.username}) การดำเนินการนี้จะบังคับล็อกเอาต์เซสชันที่มีอยู่ทั้งหมดทันที
+              {resetModalUser.username}){' '}
+              {currentLang === 'zh-CN'
+                ? `此操作将立即强制注销该用户所有活跃会话`
+                : currentLang === 'en-US'
+                ? `This action will immediately terminate all active sessions.`
+                : `การดำเนินการนี้จะบังคับล็อกเอาต์เซสชันที่มีอยู่ทั้งหมดทันที`}
             </p>
 
             {resetSuccessMessage ? (
@@ -1381,11 +1399,15 @@ export const StaffView: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    รหัสผ่านใหม่ (ปล่อยว่างเพื่อสุ่มรหัสผ่านปลอดภัยอัตโนมัติ)
+                    {currentLang === 'zh-CN'
+                      ? '新密码（留空则自动生成安全密码）'
+                      : currentLang === 'en-US'
+                      ? 'New password (leave empty to generate secure password)'
+                      : 'รหัสผ่านใหม่ (ปล่อยว่างเพื่อสุ่มรหัสผ่านปลอดภัยอัตโนมัติ)'}
                   </label>
                   <input
                     type="password"
-                    placeholder="อย่างน้อย 12 ตัวอักษร"
+                    placeholder={currentLang === 'zh-CN' ? '至少12位字符' : currentLang === 'en-US' ? 'At least 12 characters' : 'อย่างน้อย 12 ตัวอักษร'}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-amber-500"
@@ -1398,7 +1420,7 @@ export const StaffView: React.FC = () => {
                     onClick={() => setResetModalUser(null)}
                     className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-semibold transition"
                   >
-                    ยกเลิก
+                    {tDict('btn_cancel', 'ยกเลิก')}
                   </button>
                   <button
                     type="button"
@@ -1406,7 +1428,7 @@ export const StaffView: React.FC = () => {
                     disabled={actionLoading}
                     className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold shadow-md shadow-amber-950/20 disabled:opacity-50 transition active:scale-95"
                   >
-                    ยืนยันรีเซ็ตรหัสผ่าน
+                    {tDict('btn_confirm_reset_password', 'ยืนยันรีเซ็ตรหัสผ่าน')}
                   </button>
                 </div>
               </div>

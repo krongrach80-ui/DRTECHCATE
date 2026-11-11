@@ -735,7 +735,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     }
   });
   const selectedCameraIdRef = useRef<string>(selectedCameraId);
-  selectedCameraIdRef.current = selectedCameraId;
+  useEffect(() => {
+    selectedCameraIdRef.current = selectedCameraId;
+  }, [selectedCameraId]);
   const [activeCameraLabel, setActiveCameraLabel] = useState<string>('กล้องเริ่มต้น');
   const [activeSettings, setActiveSettings] = useState<MediaTrackSettings | null>(null);
   const [activeCapabilities, setActiveCapabilities] = useState<any>(null);
@@ -763,9 +765,18 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownStartTimeRef = useRef<number>(0);
   const isCountingDownRef = useRef<boolean>(false);
+  const lastFaceSeenDuringCountdownRef = useRef<number>(0);
+  const lastInferenceTickRef = useRef<number>(0);
   const cachedPatientsRef = useRef<CachedPatientBiometric[]>([]);
   const lockedTargetRef = useRef<LockedFaceTarget | null>(null);
   const isDetectingRef = useRef<boolean>(false);
+  const startCountdownRef = useRef<() => void>(() => {});
+  const cancelCountdownRef = useRef<(reason?: string) => void>(() => {});
+  const finishCountdownAndVerifyRef = useRef<() => Promise<void>>(async () => {});
+  const onLoginSuccessRef = useRef(onLoginSuccess);
+  useEffect(() => {
+    onLoginSuccessRef.current = onLoginSuccess;
+  }, [onLoginSuccess]);
 
   const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(350));
   const stabilityDetectorRef = useRef<FaceStabilityDetector>(
@@ -837,6 +848,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     return () => clearInterval(timer);
   }, [isAccountNotFound, unrecognizedAlert, lang]);
 
+  const isMountedRef = useRef<boolean>(true);
+
   // Clean retry scan handler with 1.5s cooldown and state purge for Account Not Found
   const handleNotFoundRetryScan = useCallback(() => {
     if (isRetryCooldownActive) return;
@@ -892,7 +905,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
   // Touchless "Raise-Both-Hands" Readiness Confirmation Hook (Reuses active video stream)
   const {
-    progress: gestureProgress,
     status: gestureStatus,
     thaiMessage: gestureMessage,
     showAccessibilityFallbackHint,
@@ -918,7 +930,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   });
 
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const isMountedRef = useRef<boolean>(true);
   const cameraRotationRef = useRef(cameraRotation);
   const isMirroredRef = useRef(isMirrored);
 
@@ -1182,10 +1193,15 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setRealtimeScore(null);
     sampleFramesRef.current = [];
     countdownStartTimeRef.current = 0;
+    lastFaceSeenDuringCountdownRef.current = 0;
+    lastInferenceTickRef.current = 0;
     if (reason) {
       setStatusText(reason);
     }
   }, []);
+  useEffect(() => {
+    cancelCountdownRef.current = cancelCountdown;
+  }, [cancelCountdown]);
 
   // Complete 3-Second Countdown: Compute Median & Verify Server-Side
   const finishCountdownAndVerify = useCallback(async () => {
@@ -1764,8 +1780,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       }
     }
   }, [isScanningPaused, matchedPatient, lang]);
+  useEffect(() => {
+    finishCountdownAndVerifyRef.current = finishCountdownAndVerify;
+  }, [finishCountdownAndVerify]);
 
-  // Start Auto Countdown 3..2..1 & 250ms periodic embedding extraction
+  // Start Auto Countdown 3..2..1 & periodic embedding extraction
   const startCountdown = useCallback(() => {
     if (
       isCountingDownRef.current ||
@@ -1779,289 +1798,318 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       return;
     }
 
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+
     isCountingDownRef.current = true;
-    countdownStartTimeRef.current = Date.now();
+    const now = Date.now();
+    countdownStartTimeRef.current = now;
+    lastFaceSeenDuringCountdownRef.current = now;
+    lastInferenceTickRef.current = 0;
     sampleFramesRef.current = [];
     lowSimFramesRef.current = 0;
     setCountdownValue(3);
     setRealtimeScore(null);
+    setFloatingToast(null);
     setStatusText(
       lang === 'zh-CN'
-        ? '⏱️ 正在自动扫描 3...'
+        ? '⏱️ 请直视摄像头并保持静止，正在自动扫描...'
         : lang === 'en-US'
-        ? '⏱️ Auto-scanning in 3...'
-        : '⏱️ กำลังสแกนอัตโนมัติใน 3...'
+        ? '⏱️ Please look straight and hold still, auto-scanning...'
+        : '⏱️ กรุณามองตรงและอยู่นิ่ง ๆ กำลังสแกนอัตโนมัติ...'
     );
 
-    const interval = setInterval(async () => {
+    const interval = setInterval(() => {
       if (!isMountedRef.current || isScanningPaused) {
-        cancelCountdown();
+        cancelCountdownRef.current?.('การสแกนหยุดชั่วคราว');
         return;
       }
 
       const elapsed = Date.now() - countdownStartTimeRef.current;
+      const remainingSec = Math.max(1, 3 - Math.floor(elapsed / 1000));
 
-      // Auto countdown 3..2..1
-      if (elapsed < 1000) {
-        setCountdownValue(3);
-        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 3...' : lang === 'en-US' ? '⏱️ Auto-scanning in 3...' : '⏱️ กำลังสแกนอัตโนมัติใน 3...');
-      } else if (elapsed < 2000) {
-        setCountdownValue(2);
-        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 2...' : lang === 'en-US' ? '⏱️ Auto-scanning in 2...' : '⏱️ กำลังสแกนอัตโนมัติใน 2...');
-      } else if (elapsed < 3000) {
-        setCountdownValue(1);
-        setStatusText(lang === 'zh-CN' ? '⏱️ 正在自动扫描 1...' : lang === 'en-US' ? '⏱️ Auto-scanning in 1...' : '⏱️ กำลังสแกนอัตโนมัติใน 1...');
-      } else {
+      if (elapsed >= 3000) {
         clearInterval(interval);
         countdownIntervalRef.current = null;
         setCountdownValue(null);
         isCountingDownRef.current = false;
-        finishCountdownAndVerify();
+        finishCountdownAndVerifyRef.current?.();
         return;
       }
 
-      // Periodic 250ms feature extraction & local matching with Target Face Lock
-      if (videoRef.current && videoRef.current.readyState >= 2) {
+      setCountdownValue(remainingSec);
+
+      // Periodic 250ms feature extraction & local matching with Target Face Lock (Async Non-Blocking)
+      const currentTick = Date.now();
+      if (
+        currentTick - lastInferenceTickRef.current >= 250 &&
+        videoRef.current &&
+        videoRef.current.readyState >= 2
+      ) {
         if (isDetectingRef.current) return;
+        lastInferenceTickRef.current = currentTick;
         isDetectingRef.current = true;
-        try {
-          const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
-          const { camera, detector, aligner, embeddingModel } = services;
-          const rawFrame = camera.captureRotatedFrame(videoRef.current);
 
-          // Downscale to 480px width detectCanvas to eliminate inference lag (25-35ms instead of 120ms+)
-          let dCanvas = detectCanvasRef.current;
-          if (!dCanvas) {
-            dCanvas = document.createElement('canvas');
-            detectCanvasRef.current = dCanvas;
-          }
-          const targetW = 480;
-          const scale = Math.min(1.0, targetW / (rawFrame.width || 640));
-          const dw = Math.round((rawFrame.width || 640) * scale);
-          const dh = Math.round((rawFrame.height || 480) * scale);
-          if (dCanvas.width !== dw || dCanvas.height !== dh) {
-            dCanvas.width = dw;
-            dCanvas.height = dh;
-          }
-          const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
-          if (dctx) {
-            dctx.filter = 'none';
-            dctx.drawImage(rawFrame, 0, 0, dw, dh);
-          }
+        (async () => {
+          try {
+            const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
+            const { camera, detector, aligner, embeddingModel } = services;
+            const rawFrame = camera.captureRotatedFrame(videoRef.current || undefined);
 
-          const detection = await detector.detect(dCanvas);
-
-          if (!detection.hasFace || !detection.box) {
-            if (lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
-              lockedTargetRef.current = null;
-              cancelCountdown(lang === 'zh-CN' ? '未检测到人脸，已重置' : lang === 'en-US' ? 'Face lost, reset' : 'ไม่พบใบหน้า ระบบได้รีเซ็ตการสแกน');
-              stabilityDetectorRef.current.reset();
+            // Downscale to 480px width detectCanvas to eliminate inference lag (25-35ms instead of 120ms+)
+            let dCanvas = detectCanvasRef.current;
+            if (!dCanvas) {
+              dCanvas = document.createElement('canvas');
+              detectCanvasRef.current = dCanvas;
             }
-            return;
-          }
-
-          // If face turned away or tilted drastically during countdown, reset smoothly
-          if (detection.pose && (Math.abs(detection.pose.yaw) > 26 || Math.abs(detection.pose.pitch) > 25)) {
-            lockedTargetRef.current = null;
-            cancelCountdown(lang === 'zh-CN' ? '请直视摄像头，已重置' : lang === 'en-US' ? 'Please look straight, reset' : 'กรุณามองตรงที่กล้อง ระบบได้รีเซ็ตการสแกน');
-            stabilityDetectorRef.current.reset();
-            return;
-          }
-
-          // Compute Image Quality (Sharpness & Luminance) on Face Region
-          const imageQuality = computeFaceImageQuality(dCanvas, detection.box);
-          setCurrentTelemetry({
-            faceHeightRatio: detection.box.height / dh,
-            sharpness: imageQuality.sharpness,
-            brightness: imageQuality.brightness,
-          });
-
-          const quality = checkKioskFaceQuality(detection, dw, dh, imageQuality);
-          if (!quality.passed) {
-            if (quality.reason === 'NO_FACE' && lockedTargetRef.current && Date.now() - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
-              lockedTargetRef.current = null;
-              cancelCountdown(quality.statusMessageThai);
-              stabilityDetectorRef.current.reset();
+            const targetW = 480;
+            const scale = Math.min(1.0, targetW / (rawFrame.width || 640));
+            const dw = Math.round((rawFrame.width || 640) * scale);
+            const dh = Math.round((rawFrame.height || 480) * scale);
+            if (dCanvas.width !== dw || dCanvas.height !== dh) {
+              dCanvas.width = dw;
+              dCanvas.height = dh;
             }
-            return;
-          }
+            const dctx = dCanvas.getContext('2d', { willReadFrequently: true });
+            if (dctx) {
+              dctx.filter = 'none';
+              dctx.drawImage(rawFrame, 0, 0, dw, dh);
+            }
 
-          // Strict Target Face Lock & Spatial Continuity Verification
-          const now = Date.now();
-          if (!lockedTargetRef.current) {
-            lockedTargetRef.current = {
-              box: { ...detection.box },
-              centerX: detection.box.x + detection.box.width / 2,
-              centerY: detection.box.y + detection.box.height / 2,
-              lastSeenTimestamp: now,
-              lockedAt: now,
-            };
-          } else {
-            const isMatch = isTargetContinuityMatch(detection.box, lockedTargetRef.current, dw, dh);
-            if (isMatch) {
-              lockedTargetRef.current.box = { ...detection.box };
-              lockedTargetRef.current.centerX = detection.box.x + detection.box.width / 2;
-              lockedTargetRef.current.centerY = detection.box.y + detection.box.height / 2;
-              lockedTargetRef.current.lastSeenTimestamp = now;
-            } else {
-              // Different face appeared in frame (e.g. background face or passerby)
-              if (now - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+            const detection = await detector.detect(dCanvas);
+
+            // Face Lost Check with 1000ms Grace Period
+            if (!detection.hasFace || !detection.box) {
+              if (Date.now() - lastFaceSeenDuringCountdownRef.current > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
                 lockedTargetRef.current = null;
-                cancelCountdown('เป้าหมายหลุดจากกล้อง ระบบได้รีเซ็ตการสแกน');
+                cancelCountdown(lang === 'zh-CN' ? '未检测到人脸，已重置' : lang === 'en-US' ? 'Face lost, reset' : 'ไม่พบใบหน้า ระบบได้รีเซ็ตการสแกน');
                 stabilityDetectorRef.current.reset();
+              }
+              return;
+            }
+
+            // Severe Pose Tilt Check with 1000ms Grace Period
+            const isSeverelyTilted = detection.pose && (Math.abs(detection.pose.yaw) > 32 || Math.abs(detection.pose.pitch) > 32);
+            if (isSeverelyTilted) {
+              if (Date.now() - lastFaceSeenDuringCountdownRef.current > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+                lockedTargetRef.current = null;
+                cancelCountdownRef.current?.(lang === 'zh-CN' ? '请直视摄像头，已重置' : lang === 'en-US' ? 'Please look straight, reset' : 'กรุณามองตรงที่กล้อง ระบบได้รีเซ็ตการสแกน');
+                stabilityDetectorRef.current.reset();
+              }
+              return;
+            }
+
+            // Valid face seen within normal boundaries: update heartbeat timestamp
+            lastFaceSeenDuringCountdownRef.current = Date.now();
+
+            // Compute Image Quality (Sharpness & Luminance) on Face Region
+            const imageQuality = computeFaceImageQuality(dCanvas, detection.box);
+            setCurrentTelemetry({
+              faceHeightRatio: detection.box.height / dh,
+              sharpness: imageQuality.sharpness,
+              brightness: imageQuality.brightness,
+            });
+
+            const quality = checkKioskFaceQuality(detection, dw, dh, imageQuality);
+            if (!quality.passed) {
+              if (quality.reason === 'NO_FACE' && Date.now() - lastFaceSeenDuringCountdownRef.current > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+                lockedTargetRef.current = null;
+                cancelCountdown(quality.statusMessageThai);
+                stabilityDetectorRef.current.reset();
+              }
+              return;
+            }
+
+            // Strict Target Face Lock & Spatial Continuity Verification
+            const checkNow = Date.now();
+            if (!lockedTargetRef.current) {
+              lockedTargetRef.current = {
+                box: { ...detection.box },
+                centerX: detection.box.x + detection.box.width / 2,
+                centerY: detection.box.y + detection.box.height / 2,
+                lastSeenTimestamp: checkNow,
+                lockedAt: checkNow,
+              };
+            } else {
+              const isMatch = isTargetContinuityMatch(detection.box, lockedTargetRef.current, dw, dh);
+              if (isMatch) {
+                lockedTargetRef.current.box = { ...detection.box };
+                lockedTargetRef.current.centerX = detection.box.x + detection.box.width / 2;
+                lockedTargetRef.current.centerY = detection.box.y + detection.box.height / 2;
+                lockedTargetRef.current.lastSeenTimestamp = checkNow;
+              } else {
+                // Different face appeared in frame (e.g. background face or passerby)
+                if (checkNow - lockedTargetRef.current.lastSeenTimestamp > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
+                  lockedTargetRef.current = null;
+                  cancelCountdown('เป้าหมายหลุดจากกล้อง ระบบได้รีเซ็ตการสแกน');
+                  stabilityDetectorRef.current.reset();
+                  return;
+                }
+                // Ignore passerby, do not collect probe embedding from non-locked subject
                 return;
               }
-              // Ignore passerby, do not collect probe embedding from non-locked subject
+            }
+
+            const liv = fastLivenessVerifierRef.current.evaluate(detection);
+            setLivenessResult(liv);
+            if (liv.state === 'spoof_blocked') {
+              lockedTargetRef.current = null;
+              cancelCountdown(t('kiosk_spoof_blocked'));
+              stabilityDetectorRef.current.reset();
               return;
             }
-          }
 
-          const liv = fastLivenessVerifierRef.current.evaluate(detection);
-          setLivenessResult(liv);
-          if (liv.state === 'spoof_blocked') {
-            lockedTargetRef.current = null;
-            cancelCountdown(t('kiosk_spoof_blocked'));
-            stabilityDetectorRef.current.reset();
-            return;
-          }
+            // Software & Hardware Camera Standardization:
+            // 1. Hardware Zoom auto-adjustment (if supported by webcam capabilities)
+            try {
+              const currentRatio = detection.box.height / dh;
+              const targetRatio = KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_HEIGHT_RATIO_TARGET;
+              // CameraManager declares applyHardwareZoom, so no cast or typeof check is needed.
+              if (currentRatio < 0.35) {
+                const zoomFactor = Math.min(2.5, targetRatio / currentRatio);
+                camera.applyHardwareZoom(zoomFactor);
+              }
+            } catch {}
 
-          // Software & Hardware Camera Standardization:
-          // 1. Hardware Zoom auto-adjustment (if supported by webcam capabilities)
-          try {
-            const currentRatio = detection.box.height / dh;
-            const targetRatio = KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_HEIGHT_RATIO_TARGET;
-            if (currentRatio < 0.35 && typeof (camera as any).applyHardwareZoom === 'function') {
-              const zoomFactor = Math.min(2.5, targetRatio / currentRatio);
-              (camera as any).applyHardwareZoom(zoomFactor);
+            // Extract 512-D embedding directly with landmarks alignment to 112x112 ArcFace (zero distortion)
+            let vector: number[] | null = null;
+            if (detection.landmarks) {
+              const aligned = aligner.align(dCanvas, detection.landmarks);
+              vector = await embeddingModel.embed(aligned);
+              const actx = aligned.getContext?.('2d');
+              if (actx) actx.clearRect(0, 0, aligned.width, aligned.height);
+            } else {
+              vector = await embeddingModel.embed(dCanvas);
             }
-          } catch {}
 
-          // Extract 512-D embedding directly with landmarks alignment to 112x112 ArcFace (zero distortion)
-          let vector: number[] | null = null;
-          if (detection.landmarks) {
-            const aligned = aligner.align(dCanvas, detection.landmarks);
-            vector = await embeddingModel.embed(aligned);
-            const actx = aligned.getContext?.('2d');
-            if (actx) actx.clearRect(0, 0, aligned.width, aligned.height);
-          } else {
-            vector = await embeddingModel.embed(dCanvas);
-          }
+            if (vector && vector.length === 512) {
+              // Match against cached patients
+              let bestCandidate: CachedPatientBiometric | null = null;
+              let highestSimilarity = 0;
+              let top2Cand: CachedPatientBiometric | null = null;
+              let top2Sim = 0;
 
-          if (vector && vector.length === 512) {
-            // Match against cached patients
-            let bestCandidate: CachedPatientBiometric | null = null;
-            let highestSimilarity = 0;
-            let top2Cand: CachedPatientBiometric | null = null;
-            let top2Sim = 0;
-
-            for (const cand of cachedPatientsRef.current) {
-              let candBestSim = 0;
-              for (const storedVector of cand.vectors) {
-                if (storedVector && storedVector.length === 512) {
-                  let dot = 0;
-                  for (let i = 0; i < 512; i++) {
-                    dot += vector[i] * storedVector[i];
+              for (const cand of cachedPatientsRef.current) {
+                let candBestSim = 0;
+                for (const storedVector of cand.vectors) {
+                  if (storedVector && storedVector.length === 512) {
+                    let dot = 0;
+                    for (let i = 0; i < 512; i++) {
+                      dot += vector[i] * storedVector[i];
+                    }
+                    const calDot = calibrateCosineSimilarity(dot);
+                    if (calDot > candBestSim) candBestSim = calDot;
                   }
-                  const calDot = calibrateCosineSimilarity(dot);
-                  if (calDot > candBestSim) candBestSim = calDot;
+                }
+                if (candBestSim > highestSimilarity) {
+                  top2Sim = highestSimilarity;
+                  top2Cand = bestCandidate;
+                  highestSimilarity = candBestSim;
+                  if (candBestSim >= 0.72) {
+                    bestCandidate = cand;
+                  }
+                } else if (candBestSim > top2Sim) {
+                  top2Sim = candBestSim;
+                  top2Cand = cand;
                 }
               }
-              if (candBestSim > highestSimilarity) {
-                top2Sim = highestSimilarity;
-                top2Cand = bestCandidate;
-                highestSimilarity = candBestSim;
-                if (candBestSim >= 0.72) {
-                  bestCandidate = cand;
+
+              // Instant Zero-Touch Fast-Track: If highest similarity >= 72%, log in immediately!
+              if (bestCandidate && highestSimilarity >= 0.72) {
+                clearInterval(interval);
+                countdownIntervalRef.current = null;
+                setCountdownValue(null);
+                isCountingDownRef.current = false;
+                isProcessingScanRef.current = false;
+                setIsScanning(false);
+
+                const nameParts = (bestCandidate.name || '').trim().split(' ');
+                const partialPatient = {
+                  id: bestCandidate.id,
+                  hn: bestCandidate.hn,
+                  first_name: nameParts[0] || bestCandidate.name,
+                  last_name: nameParts.slice(1).join(' ') || '',
+                  name: bestCandidate.name,
+                };
+                let matchedPatientObj: PatientRecordFile | typeof partialPatient = partialPatient;
+                try {
+                  matchedPatientObj = await defaultApiClient.patients.get(bestCandidate.id);
+                } catch (fetchErr) {
+                  console.warn('Full patient record fetch failed, using partial identity fields', fetchErr);
                 }
-              } else if (candBestSim > top2Sim) {
-                top2Sim = candBestSim;
-                top2Cand = cand;
+                // The `as any` remains only for the partial fallback object.
+                setMatchedPatient(matchedPatientObj as any);
+                const finalPercent = Math.round(highestSimilarity * 100);
+                const welcomeMsg =
+                  lang === 'zh-CN'
+                    ? `欢迎，คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
+                    : lang === 'en-US'
+                    ? `Welcome, คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
+                    : `ยินดีต้อนรับ คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`;
+                setStatusText(welcomeMsg);
+                setIsTransitioning(true);
+                setTimeout(() => {
+                  if (isMountedRef.current) {
+                    onLoginSuccessRef.current?.(matchedPatientObj as any);
+                  }
+                }, 600);
+                return;
               }
+
+              const top1Cand = bestCandidate || null;
+              const top1Sim = highestSimilarity;
+
+              const currentPercent = Math.max(0, Math.min(100, Math.round(top1Sim * 100)));
+              const currentDist = Math.sqrt(Math.max(0, 2 - 2 * top1Sim));
+              const isCandidateLikely = currentPercent >= 68;
+
+              sampleFramesRef.current.push({
+                vector,
+                score: top1Sim,
+                percent: currentPercent,
+                distance: currentDist,
+                candidateId: isCandidateLikely ? top1Cand?.id : undefined,
+                candidateName: isCandidateLikely ? top1Cand?.name : undefined,
+                candidateHn: isCandidateLikely ? top1Cand?.hn : undefined,
+                secondCandidate: top2Cand && (top2Sim * 100 >= 50) ? { name: top2Cand.name, hn: top2Cand.hn, score: Math.round(top2Sim * 100) } : undefined,
+                liveness: liv,
+                timestamp: Date.now(),
+              });
+
+              setRealtimeScore(currentPercent);
+
+              const allPercents = sampleFramesRef.current.map((s) => s.percent).sort((a, b) => a - b);
+              const medPerc = allPercents[Math.floor(allPercents.length / 2)] || currentPercent;
+              setCalibrationStats({
+                currentCos: top1Sim,
+                currentDist: currentDist,
+                currentPercent,
+                medianPercent: medPerc,
+                minPercent: allPercents[0] || currentPercent,
+                maxPercent: allPercents[allPercents.length - 1] || currentPercent,
+                samplesCount: sampleFramesRef.current.length,
+                depthScore: liv.depthScore,
+                ear: liv.ear || 0.30,
+                top1: top1Cand ? { name: top1Cand.name, hn: top1Cand.hn, score: currentPercent } : undefined,
+                top2: top2Cand ? { name: top2Cand.name, hn: top2Cand.hn, score: Math.round(top2Sim * 100) } : undefined,
+              });
             }
-
-            console.log(`[FaceAuth] Scanned score: ${(highestSimilarity * 100).toFixed(1)}%, Matched: ${bestCandidate?.hn || 'None'}`);
-
-            // Instant Zero-Touch Fast-Track: If highest similarity >= 72%, log in immediately!
-            if (bestCandidate && highestSimilarity >= 0.72) {
-              clearInterval(interval);
-              countdownIntervalRef.current = null;
-              setCountdownValue(null);
-              isCountingDownRef.current = false;
-              isProcessingScanRef.current = false;
-              setIsScanning(false);
-
-              const nameParts = (bestCandidate.name || '').trim().split(' ');
-              const matchedPatientObj = {
-                id: bestCandidate.id,
-                hn: bestCandidate.hn,
-                first_name: nameParts[0] || bestCandidate.name,
-                last_name: nameParts.slice(1).join(' ') || '',
-                name: bestCandidate.name,
-              };
-              setMatchedPatient(matchedPatientObj as any);
-              const finalPercent = Math.round(highestSimilarity * 100);
-              const welcomeMsg =
-                lang === 'zh-CN'
-                  ? `欢迎，คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
-                  : lang === 'en-US'
-                  ? `Welcome, คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
-                  : `ยินดีต้อนรับ คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`;
-              setStatusText(welcomeMsg);
-              setIsTransitioning(true);
-              setTimeout(() => {
-                if (isMountedRef.current) {
-                  onLoginSuccess(matchedPatientObj as any);
-                }
-              }, 600);
-              return;
-            }
-
-            const top1Cand = bestCandidate || null;
-            const top1Sim = highestSimilarity;
-
-            const currentPercent = Math.max(0, Math.min(100, Math.round(top1Sim * 100)));
-            const currentDist = Math.sqrt(Math.max(0, 2 - 2 * top1Sim));
-            const isCandidateLikely = currentPercent >= 68;
-
-            sampleFramesRef.current.push({
-              vector,
-              score: top1Sim,
-              percent: currentPercent,
-              distance: currentDist,
-              candidateId: isCandidateLikely ? top1Cand?.id : undefined,
-              candidateName: isCandidateLikely ? top1Cand?.name : undefined,
-              candidateHn: isCandidateLikely ? top1Cand?.hn : undefined,
-              secondCandidate: top2Cand && (top2Sim * 100 >= 50) ? { name: top2Cand.name, hn: top2Cand.hn, score: Math.round(top2Sim * 100) } : undefined,
-              liveness: liv,
-              timestamp: Date.now(),
-            });
-
-            setRealtimeScore(currentPercent);
-
-            const allPercents = sampleFramesRef.current.map((s) => s.percent).sort((a, b) => a - b);
-            const medPerc = allPercents[Math.floor(allPercents.length / 2)] || currentPercent;
-            setCalibrationStats({
-              currentCos: top1Sim,
-              currentDist: currentDist,
-              currentPercent,
-              medianPercent: medPerc,
-              minPercent: allPercents[0] || currentPercent,
-              maxPercent: allPercents[allPercents.length - 1] || currentPercent,
-              samplesCount: sampleFramesRef.current.length,
-              depthScore: liv.depthScore,
-              ear: liv.ear || 0.30,
-              top1: top1Cand ? { name: top1Cand.name, hn: top1Cand.hn, score: currentPercent } : undefined,
-              top2: top2Cand ? { name: top2Cand.name, hn: top2Cand.hn, score: Math.round(top2Sim * 100) } : undefined,
-            });
+          } catch (err) {
+            console.warn('[FaceScan] inference error:', err);
+          } finally {
+            isDetectingRef.current = false;
           }
-        } catch {} finally {
-          isDetectingRef.current = false;
-        }
+        })();
       }
-    }, 250);
+    }, 100);
 
     countdownIntervalRef.current = interval;
-  }, [cancelCountdown, finishCountdownAndVerify, onLoginSuccess, isScanning, isScanningPaused, matchedPatient, rateLimitCooldownSec, lang, t]);
+  }, [cancelCountdown, finishCountdownAndVerify, isScanning, isScanningPaused, matchedPatient, rateLimitCooldownSec, lang, t]);
+  useEffect(() => {
+    startCountdownRef.current = startCountdown;
+  }, [startCountdown]);
 
   // Trigger manual scan (activates countdown if face is aligned or restarts camera if inactive)
   const executeScanLogin = useCallback(() => {
@@ -2085,8 +2133,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     isCoolingDownRef.current = false;
     setIsAutoScanCoolingDown(false);
     setIsScanning(false);
-    startCountdown();
-  }, [cameraReady, userDisabledCamera, rateLimitCooldownSec, startCountdown, startCamera]);
+    startCountdownRef.current?.();
+  }, [cameraReady, userDisabledCamera, rateLimitCooldownSec, startCamera]);
 
   // ISOLATED CAMERA LIFECYCLE
   useEffect(() => {
@@ -2096,6 +2144,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
     return () => {
       isMountedRef.current = false;
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
       stopCamera();
     };
   }, [startCamera, stopCamera]);
@@ -2112,6 +2164,20 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [startCamera, userDisabledCamera]);
+
+  // Cycle to the next available camera (used by the on-screen camera switch button)
+  const handleSwitchCamera = useCallback(() => {
+    const idx = availableCameras.findIndex((c) => c.deviceId === selectedCameraId);
+    const nextIdx = (Math.max(0, idx) + 1) % availableCameras.length;
+    const next = availableCameras[nextIdx];
+    if (next) {
+      setSelectedCameraId(next.deviceId);
+      try {
+        localStorage.setItem(KIOSK_CAMERA_STORAGE_KEY, next.deviceId);
+      } catch {}
+      startCamera(next.deviceId);
+    }
+  }, [availableCameras, selectedCameraId, startCamera]);
 
   // Multi-camera enumeration & dynamic hotplug listener
   useEffect(() => {
@@ -2242,9 +2308,16 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     });
 
     const presenceInterval = setInterval(async () => {
-      // Watchdog: If countdown flag was stuck for > 4.5s without active interval, release lock
-      if (isCountingDownRef.current && !countdownIntervalRef.current && Date.now() - countdownStartTimeRef.current > 4500) {
+      // Watchdog: If countdown flag was stuck for > 4.5s, forcibly clean up and release lock
+      if (isCountingDownRef.current && Date.now() - countdownStartTimeRef.current > 4500) {
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
         isCountingDownRef.current = false;
+        setCountdownValue(null);
+        setRealtimeScore(null);
+        countdownStartTimeRef.current = 0;
       }
 
       // Guard against overlapping inferences: never run presence detection while counting down, scanning, or hidden
@@ -2383,7 +2456,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               stabilityDetectorRef.current.reset();
               consecutiveSteadyFramesRef.current = 0;
               if (isCountingDownRef.current) {
-                cancelCountdown(t('kiosk_spoof_blocked'));
+                cancelCountdownRef.current?.(t('kiosk_spoof_blocked'));
               }
               const msg = t('kiosk_spoof_blocked');
               if (prevStatusTextRef.current !== msg) {
@@ -2429,7 +2502,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 !matchedPatient &&
                 rateLimitCooldownSec === 0
               ) {
-                startCountdown();
+                startCountdownRef.current?.();
               }
             } else if (!isCountingDownRef.current && !isScanning && !isCoolingDownRef.current) {
               let promptMsg = '🔍 ตรวจพบใบหน้า กรุณามองตรงและอยู่นิ่งๆ...';
@@ -2470,7 +2543,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 ? '👤 Please stand in front of camera for auto-login'
                 : '👤 กรุณาก้าวยืนหน้ากล้องเพื่อเข้าสู่ระบบอัตโนมัติ';
             if (isCountingDownRef.current) {
-              cancelCountdown(noFaceMsg);
+              cancelCountdownRef.current?.(noFaceMsg);
             }
             if (prevFaceInCircleRef.current !== false) {
               prevFaceInCircleRef.current = false;
@@ -2487,7 +2560,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
             inputManager.processFaceDetection(null, performance.now());
           }
-        } catch {} finally {
+        } catch (err) {
+          console.warn('[FaceScan] presence inference error:', err);
+        } finally {
           isDetectingRef.current = false;
         }
       }
@@ -2496,12 +2571,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     return () => {
       clearInterval(presenceInterval);
       unsubscribe();
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
     };
-  }, [cameraReady, isScanningPaused, customDetector, isScanning, matchedPatient, rateLimitCooldownSec, startCountdown, cancelCountdown, t]);
+  }, [cameraReady, isScanningPaused, customDetector, isScanning, matchedPatient, rateLimitCooldownSec]);
 
   const handleResetScan = () => {
     lockedTargetRef.current = null;
@@ -2711,7 +2782,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               )}
 
               {/* Floating Non-Intrusive Diagnostics Toast (Zero-Touch Auto-Retry) */}
-              {floatingToast && (
+              {floatingToast && countdownValue === null && (
                 <div className="absolute top-16 inset-x-3 mx-auto max-w-md z-30 pointer-events-none transition-all duration-300">
                   <div className="px-4 py-3 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-amber-400/80 shadow-[0_10px_35px_rgba(245,158,11,0.25)] flex items-center gap-2.5 text-white text-xs sm:text-sm font-semibold">
                     <RefreshCw className="w-4 h-4 shrink-0 animate-spin text-amber-300" />
@@ -2747,7 +2818,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
                     <span className="text-emerald-300 truncate font-bold">
-                      {lang === 'zh-CN' ? `⏱️ 正在自动扫描 ${countdownValue}...` : lang === 'en-US' ? `⏱️ Auto-scanning in ${countdownValue}...` : `⏱️ กำลังสแกนอัตโนมัติใน ${countdownValue}...`}
+                      {lang === 'zh-CN'
+                        ? '⏱️ 请直视摄像头并保持静止，正在自动扫描...'
+                        : lang === 'en-US'
+                        ? '⏱️ Please look straight and hold still, auto-scanning...'
+                        : '⏱️ กรุณามองตรงและอยู่นิ่ง ๆ กำลังสแกนอัตโนมัติ...'}
                     </span>
                   </>
                 ) : matchedPatient ? (
@@ -2840,18 +2915,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   return (
                     <button
                       type="button"
-                      onClick={() => {
-                        const idx = availableCameras.findIndex((c) => c.deviceId === selectedCameraId);
-                        const nextIdx = (Math.max(0, idx) + 1) % availableCameras.length;
-                        const next = availableCameras[nextIdx];
-                        if (next) {
-                          setSelectedCameraId(next.deviceId);
-                          try {
-                            localStorage.setItem(KIOSK_CAMERA_STORAGE_KEY, next.deviceId);
-                          } catch {}
-                          startCamera(next.deviceId);
-                        }
-                      }}
+                      onClick={handleSwitchCamera}
                       className="px-2.5 py-1 rounded-lg bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold flex items-center gap-1.5 backdrop-blur-sm transition border border-white/20 cursor-pointer"
                       title={`สลับกล้อง (${activeCameraLabel})`}
                     >

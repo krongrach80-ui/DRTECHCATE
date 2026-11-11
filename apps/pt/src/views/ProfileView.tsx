@@ -50,7 +50,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
-  const [avatarCacheBuster, setAvatarCacheBuster] = useState(Date.now());
+  const [avatarCacheBuster, setAvatarCacheBuster] = useState(0);
+  const [avatarUrlOverride, setAvatarUrlOverride] = useState<string | null>(null);
+  const displayAvatarUrl = avatarUrlOverride ?? currentUser.avatar_url ?? null;
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -278,7 +280,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
     // 1. File size check: limit to 2 MB (Test #3)
     if (file.size > 2 * 1024 * 1024) {
-      const msg = 'ขนาดไฟล์ภาพเกินกำหนด (สูงสุด 2 MB)';
+      const msg = isZh
+        ? '文件大小超过限制（最大 2 MB）'
+        : isEn
+        ? 'Image file size exceeds limit (Max 2 MB)'
+        : 'ขนาดไฟล์ภาพเกินกำหนด (สูงสุด 2 MB)';
       setErrorMsg(msg);
       setAvatarError(msg);
       return;
@@ -307,13 +313,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       }
 
       if (!isValidMime) {
-        const msg = 'ชนิดไฟล์ไม่ถูกต้อง อนุญาตเฉพาะไฟล์ภาพ JPEG, PNG หรือ WebP เท่านั้น';
+        const msg = isZh
+          ? '无效的文件类型。仅支持 JPEG, PNG 或 WebP 格式'
+          : isEn
+          ? 'Invalid file type. Only JPEG, PNG, or WebP images are allowed.'
+          : 'ชนิดไฟล์ไม่ถูกต้อง อนุญาตเฉพาะไฟล์ภาพ JPEG, PNG หรือ WebP เท่านั้น';
         setErrorMsg(msg);
         setAvatarError(msg);
         return;
       }
     } catch {
-      setErrorMsg('ไม่สามารถอ่านไฟล์ได้');
+      const msg = isZh ? '无法读取文件' : isEn ? 'Unable to read file' : 'ไม่สามารถอ่านไฟล์ได้';
+      setErrorMsg(msg);
       return;
     }
 
@@ -330,14 +341,43 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       const res = await defaultApiClient.staff.uploadAvatar(currentUser.id, uploadPayload);
       if (res && res.ok !== false) {
-        setSuccessMsg('อัปโหลดรูปโปรไฟล์เรียบร้อย');
-        setAvatarCacheBuster(Date.now());
+        const timestamp = Date.now();
+        const baseAvatarUrl = res.avatar_url || currentUser.avatar_url;
+        const freshUrlWithCacheBuster = baseAvatarUrl
+          ? (baseAvatarUrl.includes('?')
+              ? `${baseAvatarUrl.split('?')[0]}?v=${timestamp}`
+              : `${baseAvatarUrl}?v=${timestamp}`)
+          : null;
+
+        setAvatarUrlOverride(freshUrlWithCacheBuster ?? null);
+        setAvatarCacheBuster(timestamp);
+        setSuccessMsg(
+          isZh
+            ? '头像上传成功'
+            : isEn
+            ? 'Profile picture uploaded successfully'
+            : 'อัปโหลดรูปโปรไฟล์เรียบร้อย'
+        );
         onProfileUpdated();
       } else {
-        throw new Error(res?.message || 'การอัปโหลดรูปโปรไฟล์ไม่สำเร็จ');
+        throw new Error(
+          res?.message ||
+            (isZh
+              ? '头像上传失败'
+              : isEn
+              ? 'Failed to upload profile picture'
+              : 'การอัปโหลดรูปโปรไฟล์ไม่สำเร็จ')
+        );
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'ไม่สามารถอัปโหลดรูปโปรไฟล์ได้';
+      const msg =
+        err instanceof Error
+          ? err.message
+          : isZh
+          ? '无法上传个人头像'
+          : isEn
+          ? 'Unable to upload profile picture'
+          : 'ไม่สามารถอัปโหลดรูปโปรไฟล์ได้';
       setErrorMsg(msg);
       setAvatarError(msg);
     } finally {
@@ -440,12 +480,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-6 border-b border-slate-100">
           <div className="relative group">
             <div className="w-24 h-24 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-md shadow-blue-500/20 overflow-hidden border border-blue-200">
-              {currentUser.avatar_url ? (
+              {displayAvatarUrl ? (
                 <img
+                  key={avatarCacheBuster}
                   src={
-                    currentUser.avatar_url.startsWith('data:')
-                      ? currentUser.avatar_url
-                      : `${currentUser.avatar_url}${currentUser.avatar_url.includes('?') ? '&' : '?'}v=${avatarCacheBuster}`
+                    displayAvatarUrl.startsWith('data:')
+                      ? displayAvatarUrl
+                      : (displayAvatarUrl.includes('?v=')
+                          ? displayAvatarUrl
+                          : `${displayAvatarUrl}${displayAvatarUrl.includes('?') ? '&' : '?'}v=${avatarCacheBuster}`)
                   }
                   alt={currentUser.full_name}
                   className="w-full h-full object-cover"

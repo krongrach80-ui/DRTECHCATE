@@ -231,40 +231,159 @@ export const computeTargetRingProgress = (
 interface ExercisePostureGuideCardProps {
   exerciseId: string;
   titleString: string;
+  mediaUrl?: string;
+  mediaType?: 'svg' | 'image' | 'video';
+  fallbackMediaUrl?: string;
   instructionTextTh?: string;
+  instructionTextEn?: string;
+  instructionTextCn?: string;
   descriptionTh?: string;
+  descriptionEn?: string;
+  descriptionCn?: string;
+  lang?: string;
 }
 
 const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
-  ({ exerciseId, titleString, instructionTextTh, descriptionTh }) => {
+  ({
+    exerciseId,
+    titleString,
+    mediaUrl,
+    mediaType,
+    fallbackMediaUrl,
+    instructionTextTh,
+    instructionTextEn,
+    instructionTextCn,
+    descriptionTh,
+    descriptionEn,
+    descriptionCn,
+    lang = 'th-TH',
+  }) => {
+    // Media stage: 0 = primary video/image, 1 = webp/gif, 2 = fallback SVG, 3 = placeholder
+    const [mediaStage, setMediaStage] = useState<number>(0);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+
+    useEffect(() => {
+      setMediaStage(0);
+      setIsLoading(true);
+    }, [exerciseId, mediaUrl]);
+
+    // Trilingual labels
+    const cardTitle =
+      lang === 'zh-CN'
+        ? '动作示范'
+        : lang === 'en-US'
+          ? 'Posture Guide'
+          : 'ภาพตัวอย่างท่ากายภาพบำบัด';
+
+    const cueHeader =
+      lang === 'zh-CN'
+        ? '动作要领指导:'
+        : lang === 'en-US'
+          ? 'Posture Guidance:'
+          : 'คำแนะนำท่านี้:';
+
+    const bullet1 =
+      lang === 'zh-CN'
+        ? instructionTextCn || '正对摄像头，距离1.8-2.8米，确保躯干与双臂清晰可见'
+        : lang === 'en-US'
+          ? instructionTextEn || 'Face camera directly, 1.8–2.8m away, with trunk and arms clearly visible'
+          : instructionTextTh || 'จัดระยะยืนให้อยู่ในกรอบภาพและมองตรงที่กล้อง';
+
+    const bullet2 =
+      lang === 'zh-CN'
+        ? descriptionCn || '平稳缓慢控制关节运动，保持节律均匀'
+        : lang === 'en-US'
+          ? descriptionEn || 'Move joint smoothly and steadily with controlled tempo'
+          : descriptionTh || 'ขยับแขน/ข้อต่อตามจังหวะช้าๆ อย่างสม่ำเสมอ';
+
+    const bullet3 =
+      lang === 'zh-CN'
+        ? '若感到剧烈刺痛，请立即点击暂停并通知医护人员。'
+        : lang === 'en-US'
+          ? 'If you feel sharp pain, stop immediately and alert staff.'
+          : 'หากรู้สึกเจ็บแปลบ ให้แตะปุ่มหยุดพักและแจ้งเจ้าหน้าที่ทันที';
+
+    const primaryVideoUrl =
+      mediaType === 'video' || (!mediaType && !mediaUrl?.endsWith('.svg'))
+        ? mediaUrl || `/exercises/${exerciseId}.mp4`
+        : null;
+
+    const primaryImageUrl = mediaUrl || `/exercises/${exerciseId}.webp`;
+    const svgFallbackUrl = fallbackMediaUrl || `/assets/exercises/${exerciseId}.svg`;
+
     return (
       <div className="bg-white rounded-3xl border border-blue-100 p-4 sm:p-5 shadow-sm flex-1 flex flex-col justify-between gap-3">
         <div>
           <div className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <span>📐</span>
-            <span>ภาพตัวอย่างท่ากายภาพบำบัด</span>
+            <span>{cardTitle}</span>
           </div>
-          <div className="w-full aspect-[16/10] bg-slate-50 border border-slate-100 rounded-2xl p-2 flex items-center justify-center overflow-hidden">
-            <img
-              src={`/assets/exercises/${exerciseId}.svg`}
-              alt={titleString}
-              className="max-h-full max-w-full object-contain"
-              onError={(e) => {
-                (e.currentTarget as HTMLElement).style.display = 'none';
-              }}
-            />
+
+          <div className="w-full aspect-[16/10] bg-slate-50 border border-slate-100 rounded-2xl p-2 flex items-center justify-center overflow-hidden relative">
+            {isLoading && mediaStage < 3 && (
+              <div className="absolute inset-0 bg-slate-100 animate-pulse flex items-center justify-center">
+                <span className="text-slate-400 text-xs">กำลังโหลดตัวอย่าง...</span>
+              </div>
+            )}
+
+            {mediaStage === 0 && primaryVideoUrl && (
+              <video
+                src={primaryVideoUrl}
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+                onLoadedData={() => setIsLoading(false)}
+                onError={() => {
+                  setMediaStage(1);
+                }}
+                className="w-full h-full object-contain rounded-xl"
+              />
+            )}
+
+            {(mediaStage === 1 || (mediaStage === 0 && !primaryVideoUrl)) && (
+              <img
+                src={primaryImageUrl}
+                alt={titleString}
+                onLoad={() => setIsLoading(false)}
+                onError={() => {
+                  setMediaStage(2);
+                }}
+                className="max-h-full max-w-full object-contain rounded-xl"
+              />
+            )}
+
+            {mediaStage === 2 && (
+              <img
+                src={svgFallbackUrl}
+                alt={titleString}
+                onLoad={() => setIsLoading(false)}
+                onError={() => {
+                  setIsLoading(false);
+                  setMediaStage(3);
+                }}
+                className="max-h-full max-w-full object-contain"
+              />
+            )}
+
+            {mediaStage >= 3 && (
+              <div className="text-center text-slate-400 text-xs py-4">
+                <span>📐 {titleString}</span>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
           <div className="font-bold text-slate-800 flex items-center gap-1">
             <span>💡</span>
-            <span>คำแนะนำท่านี้:</span>
+            <span>{cueHeader}</span>
           </div>
           <ul className="list-disc list-inside text-slate-600 space-y-1 leading-relaxed">
-            <li>{instructionTextTh || 'จัดระยะยืนให้อยู่ในกรอบภาพและมองตรงที่กล้อง'}</li>
-            <li>{descriptionTh || 'ขยับแขน/ข้อต่อตามจังหวะช้าๆ อย่างสม่ำเสมอ'}</li>
-            <li>หากรู้สึกเจ็บแปลบ ให้แตะปุ่มหยุดพักและแจ้งเจ้าหน้าที่ทันที</li>
+            <li>{bullet1}</li>
+            <li>{bullet2}</li>
+            <li>{bullet3}</li>
           </ul>
         </div>
       </div>
@@ -427,13 +546,17 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     hasLightingWarning: false,
     requiredKeypointsStatus: [] as Array<{ idx: number; name: string; visibility: number; isPresent: boolean }>,
     readinessReason: 'กำลังเตรียมระบบตรวจจับ...',
+    isArmClipping: false,
+    isPlaneDegraded: false,
+    targetThreshold: 80,
   });
 
   // 60 FPS Visual Ring Animation & Direct DOM Ref
   const progressCircleRef = useRef<SVGCircleElement | null>(null);
   const targetProgressRef = useRef<number>(0);
   const currentAnimatedProgressRef = useRef<number>(0);
-  const lastRenderTimeRef = useRef<number>(performance.now());
+  const [initialRenderTime] = useState<number>(() => performance.now());
+  const lastRenderTimeRef = useRef<number>(initialRenderTime);
   const smoothedRenderFpsRef = useRef<number>(60);
 
   // Accuracy Percentage EMA Smoothing & Deadband
@@ -510,6 +633,17 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     showDebugRef.current = showDebugHud;
   }, [showDebugHud]);
 
+  // Staff Shortcut: Shift+D toggles Staff Diagnostic Debug HUD
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'D' && e.shiftKey) {
+        setShowDebugHud((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const activeSideRef = useRef(activeSide);
   useEffect(() => {
     activeSideRef.current = activeSide;
@@ -557,9 +691,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
   // --- Continuous Identity Verification State & Refs ---
   const patientId = patient?.patient_id || patient?.hn || '';
-  const sessionIdRef = useRef<string>(
-    `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+  const [initialSessionId] = useState<string>(
+    () => `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
   );
+  const sessionIdRef = useRef<string>(initialSessionId);
 
   const isPendulumExercise = Boolean(
     resolvedConfig.id?.includes('pendulum') ||
@@ -578,7 +713,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   }, [verificationStatus]);
 
   const isIdentityVerifiedRef = useRef<boolean>(true); // starts true for initial grace
-  const lastVerifiedTimeRef = useRef<number>(Date.now());
+  const [initialVerifiedTime] = useState<number>(() => Date.now());
+  const lastVerifiedTimeRef = useRef<number>(initialVerifiedTime);
   const verifiedFaceBoxRef = useRef<NormalizedBox | null>(null);
   const isFaceCheckInProgressRef = useRef<boolean>(false);
   const lastFaceCheckTimeRef = useRef<number>(0);
@@ -1554,6 +1690,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               };
             });
 
+            const isArmClipping = Boolean(
+              smoothedPose && (
+                (smoothedPose[13] && (smoothedPose[13].x < 0.03 || smoothedPose[13].x > 0.97 || smoothedPose[13].y < 0.03)) ||
+                (smoothedPose[14] && (smoothedPose[14].x < 0.03 || smoothedPose[14].x > 0.97 || smoothedPose[14].y < 0.03)) ||
+                (smoothedPose[15] && (smoothedPose[15].x < 0.03 || smoothedPose[15].x > 0.97 || smoothedPose[15].y < 0.03)) ||
+                (smoothedPose[16] && (smoothedPose[16].x < 0.03 || smoothedPose[16].x > 0.97 || smoothedPose[16].y < 0.03))
+              )
+            );
+
             setHudState({
               fps: Math.round(smoothedFpsRef.current),
               renderFps: Math.round(smoothedRenderFpsRef.current),
@@ -1574,6 +1719,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               hasLightingWarning: backlightRes.isBacklightDetected || backlightRes.isSubjectDark,
               requiredKeypointsStatus,
               readinessReason: evalRes.blockingReason || (evalRes.phase === 'WAITING_FOR_FRAMING' ? 'รอจัดตำแหน่ง' : 'พร้อมเริ่มฝึก'),
+              isArmClipping,
+              isPlaneDegraded: Boolean(evalRes.isPlaneDegraded),
+              targetThreshold: evalRes.targetAngleDeg ?? resolvedConfig.angleMechanics?.targetMinDeg ?? 80,
             });
             setEvalResult(evalRes);
             setWatchdogStatus(wdStatus);
@@ -2199,6 +2347,22 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           )}
 
+          {/* Real-time Framing Alert Banner (Arm clipping boundary) */}
+          {hudState.isArmClipping && hudState.repPhase !== 'WAITING_FOR_FRAMING' && (
+            <div className="absolute top-4 inset-x-4 z-25 flex justify-center pointer-events-none animate-bounce-subtle">
+              <div className="bg-amber-500/95 backdrop-blur-md text-white border-2 border-amber-300 px-6 py-2.5 rounded-2xl shadow-xl font-bold text-xs sm:text-sm flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-white shrink-0 animate-pulse" />
+                <span>
+                  {lang === 'zh-CN'
+                    ? '📷 请后退至距离摄像头1.8-2.5米处，确保双臂完整入镜'
+                    : lang === 'en-US'
+                      ? '📷 Please step back 1.8–2.5m so both arms are clearly visible'
+                      : '📷 กรุณาถอยห่างจากกล้อง 1.8–2.5 เมตร เพื่อให้เห็นแขนทั้งสองข้าง'}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Body Alignment Warning Guide Card if waiting for framing */}
           {hudState.repPhase === 'WAITING_FOR_FRAMING' && (
             <div className="absolute top-4 inset-x-4 z-20 flex justify-center pointer-events-none">
@@ -2233,7 +2397,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               <div className="flex items-center justify-between border-b border-emerald-500/30 pb-1.5 text-emerald-400 font-bold">
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span>🔍 Debug สถานะระบบ</span>
+                  <span>🔍 Staff Diagnostic HUD</span>
                 </span>
                 <button
                   type="button"
@@ -2246,8 +2410,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               <div>📷 กล้อง/AI: {hudState.fps} FPS | หลอดแสดงผล: {hudState.renderFps ?? 60} FPS</div>
               <div>🧠 โมเดล: {modelStatus} | พบ: {hudState.detectedPeople} คน</div>
               <div>🦾 ข้างที่ตรวจจับ: {activeSide === 'left' ? 'ซ้าย (L)' : activeSide === 'right' ? 'ขวา (R)' : 'ทั้งสองข้าง (Bilateral)'}</div>
-              <div>📐 มุม: {hudState.currentAngle}° | แม่นยำ: {hudState.accuracyPct}%</div>
-              <div>🔄 เฟส: {hudState.repPhase} | นับ: {hudState.completedReps} ครั้ง</div>
+              <div>📐 มุมปัจจุบัน (Current Angle): <span className="font-bold text-white">{hudState.currentAngle}°</span></div>
+              <div>🎯 เกณฑ์เป้าหมาย (Target Threshold): <span className="font-bold text-emerald-400">{hudState.targetThreshold}°</span></div>
+              <div>🔄 สถานะเฟส (Active Phase): <span className="font-bold text-amber-300">{hudState.repPhase}</span> | นับ: {hudState.completedReps} ครั้ง</div>
+              <div>🧭 ระนาบยกแขน (Plane Degradation): <span className={hudState.isPlaneDegraded ? 'text-rose-400 font-bold' : 'text-emerald-400'}>{hudState.isPlaneDegraded ? '⚠️ เสื่อมสภาพ (Degraded)' : '✅ ปกติ (Normal)'}</span></div>
+              <div>📏 ขอบภาพ (Arm Boundary): <span className={hudState.isArmClipping ? 'text-amber-400 font-bold' : 'text-emerald-400'}>{hudState.isArmClipping ? '⚠️ หลุดขอบจอ (Clipping)' : '✅ อยู่ในเฟรม (In Frame)'}</span></div>
             </div>
           )}
 
@@ -2375,10 +2542,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           {/* Card 2: Exercise Vector Demonstration & Posture Guide (Memoized) */}
           <ExercisePostureGuideCard
-            exerciseId={resolvedConfig.id || (exercise as any).id || (exercise as any).exercise_id || 'shoulder-er-band'}
+            exerciseId={resolvedConfig.id || (exercise as any).id || (exercise as any).exercise_id || 'shoulder-abduction'}
             titleString={titleString}
+            mediaUrl={resolvedConfig.mediaUrl}
+            mediaType={resolvedConfig.mediaType}
+            fallbackMediaUrl={resolvedConfig.fallbackMediaUrl}
             instructionTextTh={resolvedConfig.cameraGuide?.instructionTextTh}
+            instructionTextEn={resolvedConfig.cameraGuide?.instructionTextEn}
+            instructionTextCn={resolvedConfig.cameraGuide?.instructionTextCn}
             descriptionTh={resolvedConfig.descriptionTh}
+            descriptionEn={resolvedConfig.descriptionEn}
+            descriptionCn={resolvedConfig.descriptionCn}
+            lang={lang}
           />
         </div>
       </div>

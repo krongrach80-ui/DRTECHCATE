@@ -4,7 +4,7 @@
  * Coordinates: SmartLoginView -> SmartEnrollmentView -> SmartInfoForm -> SmartDailyPlanView
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { SmartLoginView } from './SmartLoginView';
 import { SmartEnrollmentView } from './SmartEnrollmentView';
 import { SmartInfoForm } from './SmartInfoForm';
@@ -40,10 +40,10 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
   const [activePatient, setActivePatient] = useState<PatientRecordFile | null>(null);
   const [pendingPatientId, setPendingPatientId] = useState<string | null>(null);
 
-  const changeStep = (nextStep: SmartFlowStep) => {
+  const changeStep = useCallback((nextStep: SmartFlowStep) => {
     setCurrentStep(nextStep);
     onStepChange?.(nextStep);
-  };
+  }, [onStepChange]);
 
   // Direct login trigger (e.g. from Course Prescription "เริ่มฝึกทันที")
   useEffect(() => {
@@ -55,34 +55,34 @@ export const SmartFlowController: React.FC<SmartFlowControllerProps> = ({
   }, [directPatient, onStepChange]);
 
   // 1. Login success -> Route to Daily Plan
-  const handleLoginSuccess = (patient: PatientRecordFile) => {
+  const handleLoginSuccess = useCallback((patient: PatientRecordFile) => {
     setActivePatient(patient);
     changeStep('daily_plan');
-  };
+  }, [changeStep]);
 
   // 2. Unrecognized face -> Route to 10-snap Enrollment
-  const handleNavigateToEnroll = () => {
+  const handleNavigateToEnroll = useCallback(() => {
     changeStep('enroll');
-  };
+  }, [changeStep]);
 
   // 3. 10-snap Enrollment success -> Route to Dual-Channel Info Input
-  const handleEnrollSuccess = (patientId: string) => {
+  const handleEnrollSuccess = useCallback((patientId: string) => {
     setPendingPatientId(patientId);
     changeStep('info_form');
-  };
+  }, [changeStep]);
 
   // 4. Info form completed (Option A or Option B) -> Auto reset to Welcome / Login screen
-  const handleInfoCompleted = () => {
+  const handleInfoCompleted = useCallback(() => {
     setPendingPatientId(null);
     changeStep('login');
-  };
+  }, [changeStep]);
 
   // 5. Daily plan completed / logout -> Reset to Welcome / Login screen
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     setActivePatient(null);
     onClearDirectPatient?.();
     changeStep('login');
-  };
+  }, [changeStep, onClearDirectPatient]);
 
   return (
     <ClinicalErrorBoundary

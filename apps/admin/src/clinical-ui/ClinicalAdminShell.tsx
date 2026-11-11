@@ -27,6 +27,7 @@ import {
   filterActiveStaffCalls,
   defaultApiClient,
 } from '../../../../packages/api-client/src/index.js';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 
 interface ClinicalAdminShellProps {
   currentUser: UserProfile | null;
@@ -66,6 +67,7 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
   const [isPhysicalCardGameOpen, setIsPhysicalCardGameOpen] = useState(false);
   const [schedulePreselectedPatientId, setSchedulePreselectedPatientId] = useState<string | undefined>(undefined);
   const [autoOpenScheduleWizard, setAutoOpenScheduleWizard] = useState<boolean>(false);
+  const { t } = useClinicalI18n();
 
   useEffect(() => {
     const handleClinicalNavigate = (e: Event) => {
@@ -160,37 +162,37 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
     switch (tab) {
       case 'users':
         return {
-          title: 'จัดการผู้ใช้และบุคลากรโรงพยาบาล',
+          title: t('page_users_title', 'จัดการผู้ใช้และบุคลากรโรงพยาบาล'),
           subtitle: 'Hospital Staff & User Management Portal',
         };
       case 'patients':
         return {
-          title: 'ทะเบียนประวัติและเวชระเบียนคนไข้',
+          title: t('page_patients_title', 'ทะเบียนประวัติและเวชระเบียนคนไข้'),
           subtitle: 'Patient Directory & Electronic Health Records',
         };
       case 'pts':
         return {
-          title: 'ข้อมูลนักกายภาพบำบัดและการกำกับดูแล',
+          title: t('page_pts_title', 'ข้อมูลนักกายภาพบำบัดและการกำกับดูแล'),
           subtitle: 'Physiotherapist Directory & Clinical Governance',
         };
       case 'library':
         return {
-          title: 'ท่ากายภาพ มินิเกมฝึกสมอง และ Modpack',
+          title: t('page_library_title', 'ท่ากายภาพ มินิเกมฝึกสมอง และ Modpack'),
           subtitle: 'Exercise Library, Minigame Bank & Clinical Modpacks',
         };
       case 'schedule':
         return {
-          title: 'ตารางฝึกกายภาพและปฏิทินการฟื้นฟู',
+          title: t('page_schedule_title', 'ตารางฝึกกายภาพและปฏิทินการฟื้นฟู'),
           subtitle: 'Clinical Physical Therapy Schedule Planner',
         };
       case 'audit':
         return {
-          title: 'ประวัติการใช้งานและบันทึกความปลอดภัย',
+          title: t('page_audit_title', 'ประวัติการใช้งานและบันทึกความปลอดภัย'),
           subtitle: 'Tamper-Evident System Audit Trail & Security',
         };
       default:
         return {
-          title: 'ระบบบริหารโรงพยาบาล Dr.Tech.Care',
+          title: t('page_default_title', 'ระบบบริหารโรงพยาบาล Dr.Tech.Care'),
           subtitle: 'Hospital Clinical Administration Portal',
         };
     }
@@ -260,12 +262,12 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
           }
           userRoleTitle={
             currentUser?.username === 'director'
-              ? 'ผู้อำนวยการโรงพยาบาล (Hospital Director)'
+              ? t('role_director_title', 'ผู้อำนวยการโรงพยาบาล (Hospital Director)')
               : (currentUser?.role === 'admin' || currentUser?.username === 'admin')
-              ? 'ผู้ดูแลระบบโรงพยาบาล (Hospital Administrator)'
+              ? t('role_admin_title', 'ผู้ดูแลระบบโรงพยาบาล (Hospital Administrator)')
               : currentUser?.role === 'pt'
-              ? 'นักกายภาพบำบัด (PT)'
-              : 'เจ้าหน้าที่โรงพยาบาล (Hospital Staff)'
+              ? t('role_pt_title', 'นักกายภาพบำบัด (PT)')
+              : t('admin_role_badge', 'เจ้าหน้าที่โรงพยาบาล (Hospital Staff)')
           }
           onOpenNewPatientModal={() => setIsNewPatientModalOpen(true)}
           onFastCheckIn={() => {

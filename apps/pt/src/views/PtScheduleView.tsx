@@ -44,13 +44,6 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
 }) => {
   const [subTab, setSubTab] = useState<'today' | 'calendar' | 'monthly' | 'smart'>('monthly');
 
-  useEffect(() => {
-    const target = preselectedPatientId || (typeof window !== 'undefined' ? sessionStorage.getItem('drtech_pt_schedule_target_patient_id') : null);
-    if (target) {
-      setSubTab('monthly');
-      setSelectedPatientId(target);
-    }
-  }, [preselectedPatientId]);
   const [isSmartWizardOpen, setIsSmartWizardOpen] = useState(false);
   const [todayCourses, setTodayCourses] = useState<TodayCourseItem[]>(DEMO_TODAY_COURSES);
   const [calendarCourses, setCalendarCourses] = useState<CourseRecord[]>([]);
@@ -70,6 +63,14 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
 
   // Wizard form data
   const [selectedPatientId, setSelectedPatientId] = useState('');
+
+  useEffect(() => {
+    const target = preselectedPatientId || (typeof window !== 'undefined' ? sessionStorage.getItem('drtech_pt_schedule_target_patient_id') : null);
+    if (target) {
+      setSubTab('monthly');
+      setSelectedPatientId(target);
+    }
+  }, [preselectedPatientId]);
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedModpackId, setSelectedModpackId] = useState<string>('');
   const [selectedCustomExercises, setSelectedCustomExercises] = useState<

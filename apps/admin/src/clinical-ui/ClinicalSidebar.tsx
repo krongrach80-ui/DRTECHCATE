@@ -68,33 +68,39 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
   const adminMenus: Array<{ id: ClinicalMenuId; label: string; icon: React.ReactNode; badge?: number }> = [
     {
       id: 'users',
-      label: '1. จัดการผู้ใช้ staff',
+      // label: '1. จัดการผู้ใช้ staff'
+      label: t('admin_menu_users', '1. จัดการผู้ใช้ staff'),
       icon: <Users className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'patients',
-      label: '2. ข้อมูลคนไข้',
+      // label: '2. ข้อมูลคนไข้'
+      label: t('admin_menu_patients', '2. ข้อมูลคนไข้'),
       icon: <Activity className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'pts',
-      label: '3. ข้อมูลนักกายภาพ',
+      // label: '3. ข้อมูลนักกายภาพ'
+      label: t('admin_menu_pts', '3. ข้อมูลนักกายภาพ'),
       icon: <UserCheck className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'library',
-      label: '4. ท่ากายภาพและมินิเกม/modpack',
+      // label: '4. ท่ากายภาพและมินิเกม/modpack'
+      label: t('admin_menu_library', '4. ท่ากายภาพและมินิเกม/modpack'),
       icon: <Gamepad2 className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'schedule',
-      label: '5. ตารางนัด',
+      // label: '5. ตารางนัด'
+      label: t('admin_menu_schedule', '5. ตารางนัด'),
       icon: <Calendar className="w-4 h-4 shrink-0" />,
       badge: queueBadgeCount > 0 ? queueBadgeCount : undefined,
     },
     {
       id: 'audit',
-      label: '6. ประวัติและความปลอดภัย',
+      // label: '6. ประวัติและความปลอดภัย'
+      label: t('admin_menu_audit', '6. ประวัติและความปลอดภัย'),
       icon: <ShieldAlert className="w-4 h-4 shrink-0" />,
     },
   ];
@@ -242,11 +248,11 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
             type="button"
             id="sidebar-docked-minigame-btn"
             onClick={onOpenMinigames}
-            title="เปิดแบบฝึกหัดการ์ดกายภาพ (10 ข้อ/รอบ)"
+            title={t('sidebar_minigame_cards', 'การ์ดกายภาพ (10 ข้อ)')}
             className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2' : 'justify-center gap-2 py-2 px-3'} rounded-xl bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 border border-white/20 text-white font-bold text-xs shadow-md transition active:scale-95 cursor-pointer whitespace-nowrap`}
           >
             <span className="text-sm">🎮</span>
-            {!isCollapsed && <span>การ์ดกายภาพ (10 ข้อ)</span>}
+            {!isCollapsed && <span>{t('sidebar_minigame_cards', 'การ์ดกายภาพ (10 ข้อ)')}</span>}
           </button>
         )}
 
@@ -254,12 +260,12 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
         <div className={`w-full px-2.5 py-2 rounded-xl bg-blue-950/40 border border-blue-400/20 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} text-xs shadow-sm`}>
           {!isCollapsed && (
             <span className="text-slate-300 font-medium flex items-center gap-1.5 whitespace-nowrap">
-              <span>ฐานข้อมูล: Cloud</span>
+              <span>{t('sidebar_db_cloud', 'ฐานข้อมูล: Cloud')}</span>
             </span>
           )}
-          <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold font-mono whitespace-nowrap" title="Cloud DB: ปกติ">
+          <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold font-mono whitespace-nowrap" title={t('sidebar_status_normal', '● ปกติ')}>
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            {!isCollapsed && <span>● ปกติ</span>}
+            {!isCollapsed && <span>{t('sidebar_status_normal', '● ปกติ')}</span>}
           </span>
         </div>
 
@@ -268,7 +274,7 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
           <button
             type="button"
             onClick={onReturnToKiosk}
-            title="กลับหน้าตู้ Kiosk"
+            title={t('return_to_kiosk', 'กลับสู่หน้าตู้ Kiosk')}
             className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2' : 'justify-center gap-2 py-2 px-3'} rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 hover:text-white text-xs font-semibold shadow-sm transition active:scale-95 cursor-pointer whitespace-nowrap`}
           >
             <Monitor className="w-4 h-4 text-emerald-300 shrink-0" />
@@ -291,7 +297,7 @@ export const ClinicalSidebar: React.FC<ClinicalSidebarProps> = ({
           {isLoggingOut ? (
             <>
               <div className="w-3.5 h-3.5 border-2 border-rose-300/30 border-t-rose-300 rounded-full animate-spin shrink-0" />
-              {!isCollapsed && <span>กำลังออก...</span>}
+              {!isCollapsed && <span>{t('sidebar_logging_out', 'กำลังออก...')}</span>}
             </>
           ) : (
             <>

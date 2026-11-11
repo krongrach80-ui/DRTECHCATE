@@ -95,6 +95,236 @@ export const CLINICAL_DICTIONARY = {
     'th-TH': '6. ตารางนัด',
     'en-US': '6. Schedule',
   },
+
+  // Admin Navigation Menus (Master Prompt v3 Spec 8.1)
+  admin_menu_users: {
+    'zh-CN': '1. 员工与用户管理',
+    'th-TH': '1. จัดการผู้ใช้ staff',
+    'en-US': '1. Staff & User Management',
+  },
+  admin_menu_patients: {
+    'zh-CN': '2. 患者病历资料',
+    'th-TH': '2. ข้อมูลคนไข้',
+    'en-US': '2. Patient Records',
+  },
+  admin_menu_pts: {
+    'zh-CN': '3. 物理治疗师名录',
+    'th-TH': '3. ข้อมูลนักกายภาพ',
+    'en-US': '3. PT Directory',
+  },
+  admin_menu_library: {
+    'zh-CN': '4. 康复动作库与游戏',
+    'th-TH': '4. ท่ากายภาพและมินิเกม/modpack',
+    'en-US': '4. Exercise & Game Library',
+  },
+  admin_menu_schedule: {
+    'zh-CN': '5. 预约排班日历',
+    'th-TH': '5. ตารางนัด',
+    'en-US': '5. Schedule Planner',
+  },
+  admin_menu_audit: {
+    'zh-CN': '6. 审计日志与安全',
+    'th-TH': '6. ประวัติและความปลอดภัย',
+    'en-US': '6. Audit Log & Security',
+  },
+
+  // Admin Sidebar Extras
+  sidebar_minigame_cards: {
+    'zh-CN': '康复卡片 (10 题)',
+    'th-TH': 'การ์ดกายภาพ (10 ข้อ)',
+    'en-US': 'Physical Cards (10 Qs)',
+  },
+  sidebar_db_cloud: {
+    'zh-CN': '数据库: 云端 Cloud',
+    'th-TH': 'ฐานข้อมูล: Cloud',
+    'en-US': 'Database: Cloud',
+  },
+  sidebar_status_normal: {
+    'zh-CN': '● 正常',
+    'th-TH': '● ปกติ',
+    'en-US': '● Normal',
+  },
+  sidebar_logging_out: {
+    'zh-CN': '正在退出...',
+    'th-TH': 'กำลังออก...',
+    'en-US': 'Logging out...',
+  },
+
+  // Admin Top Header Titles & Actions
+  page_users_title: {
+    'zh-CN': '医院员工与用户管理中心',
+    'th-TH': 'จัดการผู้ใช้และบุคลากรโรงพยาบาล',
+    'en-US': 'Hospital Staff & User Management Portal',
+  },
+  page_patients_title: {
+    'zh-CN': '患者病历档案与健康管理',
+    'th-TH': 'ทะเบียนประวัติและเวชระเบียนคนไข้',
+    'en-US': 'Patient Directory & Electronic Health Records',
+  },
+  page_pts_title: {
+    'zh-CN': '物理治疗师管理与临床督导',
+    'th-TH': 'ข้อมูลนักกายภาพบำบัดและการกำกับดูแล',
+    'en-US': 'Physiotherapist Directory & Clinical Governance',
+  },
+  page_library_title: {
+    'zh-CN': '康复动作库、认知游戏与模组包',
+    'th-TH': 'ท่ากายภาพ มินิเกมฝึกสมอง และ Modpack',
+    'en-US': 'Exercise Library, Minigame Bank & Clinical Modpacks',
+  },
+  page_schedule_title: {
+    'zh-CN': '临床康复训练排班与日历',
+    'th-TH': 'ตารางฝึกกายภาพและปฏิทินการฟื้นฟู',
+    'en-US': 'Clinical Physical Therapy Schedule Planner',
+  },
+  page_audit_title: {
+    'zh-CN': '系统审计轨迹与安全管理',
+    'th-TH': 'ประวัติการใช้งานและบันทึกความปลอดภัย',
+    'en-US': 'Tamper-Evident System Audit Trail & Security',
+  },
+  page_default_title: {
+    'zh-CN': 'Dr.Tech.Care 医院临床管理系统',
+    'th-TH': 'ระบบบริหารโรงพยาบาล Dr.Tech.Care',
+    'en-US': 'Dr.Tech.Care Hospital Administration Portal',
+  },
+
+  header_action_reception_enroll: {
+    'zh-CN': '+ 接待与人脸登记',
+    'th-TH': '+ ต้อนรับ & สแกนหน้า',
+    'en-US': '+ Reception & Face Enroll',
+  },
+  header_action_fast_checkin: {
+    'zh-CN': '+ 快速签到',
+    'th-TH': '+ เช็คอินเร่งด่วน',
+    'en-US': '+ Fast Check-in',
+  },
+  header_action_kiosk_mode: {
+    'zh-CN': '自助终端 Kiosk',
+    'th-TH': 'หน้า Kiosk',
+    'en-US': 'Kiosk Mode',
+  },
+  header_status_online: {
+    'zh-CN': '● Supabase 云端',
+    'th-TH': '● Supabase Cloud',
+    'en-US': '● Supabase Cloud',
+  },
+  header_status_offline: {
+    'zh-CN': '○ 离线',
+    'th-TH': '○ ออฟไลน์',
+    'en-US': '○ Offline',
+  },
+  header_status_checking: {
+    'zh-CN': '正在检查...',
+    'th-TH': 'กำลังตรวจสอบ...',
+    'en-US': 'Checking...',
+  },
+
+  role_director_title: {
+    'zh-CN': '医院院长 (Hospital Director)',
+    'th-TH': 'ผู้อำนวยการโรงพยาบาล (Hospital Director)',
+    'en-US': 'Hospital Director',
+  },
+  role_admin_title: {
+    'zh-CN': '系统管理员 (Hospital Administrator)',
+    'th-TH': 'ผู้ดูแลระบบโรงพยาบาล (Hospital Administrator)',
+    'en-US': 'Hospital Administrator',
+  },
+  role_pt_title: {
+    'zh-CN': '物理治疗师 (PT)',
+    'th-TH': 'นักกายภาพบำบัด (PT)',
+    'en-US': 'Physical Therapist (PT)',
+  },
+  role_patient_title: {
+    'zh-CN': '患者 (Patient)',
+    'th-TH': 'คนไข้ (Patient)',
+    'en-US': 'Patient',
+  },
+
+  // Staff View UI Translations
+  staff_view_title: {
+    'zh-CN': '医院员工管理 (Staff Management)',
+    'th-TH': 'จัดการเจ้าหน้าที่โรงพยาบาล (Staff Management)',
+    'en-US': 'Hospital Staff Management',
+  },
+  staff_view_desc: {
+    'zh-CN': '管理院长 (Admin) 与物理治疗师 (PT) 账户，控制权限与访问会话',
+    'th-TH': 'บัญชีผู้อำนวยการ (Admin) และนักกายภาพบำบัด (PT) ควบคุมสิทธิ์และเซสชันการเข้าถึง',
+    'en-US': 'Manage Director (Admin) and Physical Therapist (PT) accounts, permissions, and sessions',
+  },
+  staff_add_button: {
+    'zh-CN': '+ 添加新员工',
+    'th-TH': '+ เพิ่มเจ้าหน้าที่ใหม่',
+    'en-US': '+ Add New Staff',
+  },
+  staff_search_placeholder: {
+    'zh-CN': '搜索姓名、用户名、电话...',
+    'th-TH': 'ค้นหาชื่อ, username, เบอร์โทร...',
+    'en-US': 'Search by name, username, phone...',
+  },
+  staff_filter_all_roles: {
+    'zh-CN': '所有角色 (All Roles)',
+    'th-TH': 'ทุกบทบาท (All Roles)',
+    'en-US': 'All Roles',
+  },
+  staff_filter_all_status: {
+    'zh-CN': '所有状态 (All Status)',
+    'th-TH': 'ทุกสถานะ (All Status)',
+    'en-US': 'All Statuses',
+  },
+  staff_status_active: {
+    'zh-CN': '正常 (Active)',
+    'th-TH': 'ใช้งานปกติ (Active)',
+    'en-US': 'Active',
+  },
+  staff_status_suspended: {
+    'zh-CN': '已暂停 (Suspended)',
+    'th-TH': 'ถูกระงับ (Suspended)',
+    'en-US': 'Suspended',
+  },
+  staff_never_logged_in: {
+    'zh-CN': '从未登录',
+    'th-TH': 'ยังไม่เคยเข้าสู่ระบบ',
+    'en-US': 'Never logged in',
+  },
+  staff_th_name: {
+    'zh-CN': '姓名',
+    'th-TH': 'ชื่อ-นามสกุล',
+    'en-US': 'Full Name',
+  },
+  staff_th_username: {
+    'zh-CN': 'Username / HN',
+    'th-TH': 'Username / HN',
+    'en-US': 'Username / HN',
+  },
+  staff_th_role: {
+    'zh-CN': '角色',
+    'th-TH': 'บทบาท',
+    'en-US': 'Role',
+  },
+  staff_th_status: {
+    'zh-CN': '状态',
+    'th-TH': 'สถานะ',
+    'en-US': 'Status',
+  },
+  staff_th_last_login: {
+    'zh-CN': '最后登录时间',
+    'th-TH': 'เข้าสู่ระบบล่าสุด',
+    'en-US': 'Last Login',
+  },
+  staff_th_actions: {
+    'zh-CN': '操作',
+    'th-TH': 'การจัดการ',
+    'en-US': 'Actions',
+  },
+  staff_loading: {
+    'zh-CN': '正在加载用户列表...',
+    'th-TH': 'กำลังโหลดรายชื่อผู้ใช้...',
+    'en-US': 'Loading staff directory...',
+  },
+  staff_not_found: {
+    'zh-CN': '未找到符合条件的用户',
+    'th-TH': 'ไม่พบข้อมูลผู้ใช้ที่ตรงตามเงื่อนไข',
+    'en-US': 'No users found matching filters',
+  },
   pt_role_badge: {
     'zh-CN': '物理治疗师 (PT)',
     'th-TH': 'นักกายภาพ (PT)',
@@ -119,6 +349,86 @@ export const CLINICAL_DICTIONARY = {
     'zh-CN': '转介患者 / Delegated',
     'th-TH': 'ฝากเคสชั่วคราว / Delegated',
     'en-US': 'Delegated Case',
+  },
+  refresh_data: {
+    'zh-CN': '刷新数据',
+    'th-TH': 'รีเฟรชข้อมูล',
+    'en-US': 'Refresh Data',
+  },
+  staff_modal_create_title: {
+    'zh-CN': '添加新用户 (Staff / PT / 患者)',
+    'th-TH': 'เพิ่มผู้ใช้ใหม่ (Staff / PT / คนไข้)',
+    'en-US': 'Add New User (Staff / PT / Patient)',
+  },
+  step_1_account_info: {
+    'zh-CN': '1. 用户账户信息',
+    'th-TH': '1. ข้อมูลบัญชีผู้ใช้',
+    'en-US': '1. Account Information',
+  },
+  step_2_roles_perms: {
+    'zh-CN': '2. 角色与权限设置',
+    'th-TH': '2. กำหนดบทบาทและสิทธิ์การใช้งาน',
+    'en-US': '2. Roles & Permissions',
+  },
+  step_3_pt_license: {
+    'zh-CN': '3. 物理治疗师执业资格信息',
+    'th-TH': '3. ข้อมูลใบอนุญาตประกอบวิชาชีพกายภาพบำบัด',
+    'en-US': '3. Physical Therapy License Details',
+  },
+  step_3_patient_info: {
+    'zh-CN': '3. 患者初步病症与个人资料',
+    'th-TH': '3. ข้อมูลผู้ป่วยและอาการเริ่มต้น',
+    'en-US': '3. Patient Initial Diagnosis & Info',
+  },
+  btn_back: {
+    'zh-CN': '上一步',
+    'th-TH': 'ย้อนกลับ',
+    'en-US': 'Back',
+  },
+  btn_next_step: {
+    'zh-CN': '下一步',
+    'th-TH': 'ขั้นตอนถัดไป',
+    'en-US': 'Next',
+  },
+  btn_save_and_create: {
+    'zh-CN': '保存并创建账户',
+    'th-TH': 'บันทึกและสร้างบัญชี',
+    'en-US': 'Save & Create Account',
+  },
+  processing: {
+    'zh-CN': '正在处理...',
+    'th-TH': 'กำลังดำเนินการ...',
+    'en-US': 'Processing...',
+  },
+  modal_reset_password_title: {
+    'zh-CN': '重置员工密码',
+    'th-TH': 'รีเซ็ตรหัสผ่านเจ้าหน้าที่',
+    'en-US': 'Reset Staff Password',
+  },
+  btn_confirm_reset_password: {
+    'zh-CN': '确认重置密码',
+    'th-TH': 'ยืนยันรีเซ็ตรหัสผ่าน',
+    'en-US': 'Confirm Reset Password',
+  },
+  btn_cancel: {
+    'zh-CN': '取消',
+    'th-TH': 'ยกเลิก',
+    'en-US': 'Cancel',
+  },
+  action_unsuspend: {
+    'zh-CN': '解除暂停',
+    'th-TH': 'ยกเลิกระงับ',
+    'en-US': 'Unsuspend',
+  },
+  action_suspend: {
+    'zh-CN': '暂停使用',
+    'th-TH': 'ระงับการใช้งาน',
+    'en-US': 'Suspend',
+  },
+  action_reset_password: {
+    'zh-CN': '重置密码',
+    'th-TH': 'รีเซ็ตรหัสผ่าน',
+    'en-US': 'Reset Password',
   },
   // Biomechanical & Kinematic Terms
   rom: {
@@ -540,6 +850,7 @@ export function t(key: TranslationKey, lang: ClinicalLanguage = getSavedLanguage
 
 export interface ClinicalI18nContextValue {
   lang: ClinicalLanguage;
+  language: ClinicalLanguage;
   setLanguage: (lang: ClinicalLanguage) => void;
   t: (key: TranslationKey, fallback?: string) => string;
 }
@@ -578,6 +889,7 @@ export const ClinicalI18nProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const contextValue = useMemo(
     () => ({
       lang,
+      language: lang,
       setLanguage: switchLanguage,
       t: translate,
     }),
@@ -632,6 +944,7 @@ export function useClinicalI18n(): ClinicalI18nContextValue {
 
   return {
     lang: localLang,
+    language: localLang,
     setLanguage: switchLanguage,
     t: translate,
   };

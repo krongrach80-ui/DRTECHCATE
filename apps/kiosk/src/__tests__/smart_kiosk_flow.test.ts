@@ -321,6 +321,38 @@ describe('[MASTER PROMPT v4] Isolated Kiosk Smart Flow Test Suite', () => {
       expect(plan.is_completed_today).toBe(true);
       expect(plan.reason).toContain('ฝึกกายภาพบำบัดครบถ้วน');
     });
+
+    it('4.5 Cleared schedule with stale activePrescriptionSnapshot strictly yields empty exercises and no phantom cards', async () => {
+      const patientWithStaleSnapshot: any = {
+        ...mockPatient,
+        activePrescriptionSnapshot: {
+          schedule: { scheduled_dates: ['2026-11-10'] },
+          prescribed_exercises: [
+            { exercise_id: 'shoulder-abduction', name: 'กางแขนออกด้านข้าง', sets: 1, reps: 5 },
+            { exercise_id: 'active-shoulder-flexion', name: 'ยกแขนไปข้างหน้า', sets: 1, reps: 4 },
+          ],
+        },
+      };
+
+      vi.spyOn(defaultApiClient.smartOnboarding, 'getDailyPlan').mockResolvedValueOnce({
+        is_scheduled_today: false,
+        is_completed_today: false,
+        reason: 'ไม่มีตารางฝึกสำหรับผู้ป่วยรายนี้',
+        schedule: null,
+        exercises: [],
+        include_minigame: false,
+      });
+
+      const plan = await defaultApiClient.smartOnboarding.getDailyPlan(patientWithStaleSnapshot.patient_id);
+      expect(plan.is_scheduled_today).toBe(false);
+      expect(plan.exercises).toHaveLength(0);
+
+      const element = React.createElement(SmartDailyPlanView, {
+        patient: patientWithStaleSnapshot,
+        onLogout: () => {},
+      });
+      expect(element).toBeDefined();
+    });
   });
 
   describe('5. SmartFlowController: State Transitions', () => {

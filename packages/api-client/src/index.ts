@@ -2911,8 +2911,7 @@ export class ApiClient {
           const supaBearerToken = isSovereignToken ? DEFAULT_SUPABASE_ANON_KEY : rawToken;
 
           const currentProfile = this.getUserProfile();
-          const rpcPayload = {
-            p_caller_id: currentProfile?.id || null,
+          const rpcPayload: Record<string, any> = {
             p_username: cleanUsername,
             p_password: cleanPassword,
             p_full_name: cleanFullName,
@@ -2926,7 +2925,7 @@ export class ApiClient {
             p_sex: body.sex || 'male',
           };
 
-          const rpcRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/rpc/admin_create_staff_account`, {
+          let rpcRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/rpc/admin_create_staff_account`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -2935,6 +2934,23 @@ export class ApiClient {
             },
             body: JSON.stringify(rpcPayload),
           });
+
+          // Resilient Dual-Signature: If database schema expects p_caller_id, retry with p_caller_id
+          if (!rpcRes.ok && rpcRes.status === 404) {
+            const errClone = await rpcRes.clone().json().catch(() => ({}));
+            if (errClone.code === 'PGRST202' && (errClone.hint?.includes('p_caller_id') || errClone.details?.includes('p_caller_id'))) {
+              rpcPayload.p_caller_id = currentProfile?.id || null;
+              rpcRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/rpc/admin_create_staff_account`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${supaBearerToken}`,
+                },
+                body: JSON.stringify(rpcPayload),
+              });
+            }
+          }
 
           if (!rpcRes.ok) {
             const errBody = await rpcRes.json().catch(() => ({}));
@@ -5649,13 +5665,13 @@ export class ApiClient {
       // 1. Cross-user modification check (Test #9)
       const currentLoggedIn = this.getUserProfile();
       if (currentLoggedIn && currentLoggedIn.role !== 'admin' && currentLoggedIn.id !== id) {
-        throw new Error('403 Forbidden: สิทธิ์ไม่เพียงพอ ไม่อนุญาตให้อัปโหลดรูปโปรไฟล์แทนผู้อื่น');
+        throw new Error('403 Forbidden: สิทธิ์ไม่เพียงพอ ไม่อนุญาตให้อัปโหลดรูปโปรไฟล์แทนผู้อื่น (Insufficient permissions to upload avatar for other users / 权限不足，不允许为其他用户上传头像)');
       }
 
       // 2. Validate file size (Test #3: limit 2 MB = 2,097,152 bytes)
       const MAX_SIZE = 2 * 1024 * 1024;
       if (file.size > MAX_SIZE) {
-        throw new Error('ขนาดไฟล์ภาพเกิน 2 MB กรุณาเลือกไฟล์ภาพที่มีขนาดไม่เกิน 2 MB');
+        throw new Error('ขนาดไฟล์ภาพเกิน 2 MB กรุณาเลือกไฟล์ภาพที่มีขนาดไม่เกิน 2 MB (File size exceeds 2 MB / 图片文件超过 2 MB)');
       }
 
       // 3. Validate Magic Bytes / Genuine Image Header (Test #2: reject .exe, .pdf renamed as .jpg)
@@ -5684,16 +5700,17 @@ export class ApiClient {
       }
 
       if (!detectedMime) {
-        throw new Error('ชนิดไฟล์ไม่ถูกต้อง อนุญาตเฉพาะไฟล์ภาพ JPEG, PNG หรือ WebP เท่านั้น');
+        throw new Error('ชนิดไฟล์ไม่ถูกต้อง อนุญาตเฉพาะไฟล์ภาพ JPEG, PNG หรือ WebP เท่านั้น (Invalid file type. Only JPEG, PNG, or WebP allowed / 文件类型错误，仅支持 JPEG, PNG 或 WebP)');
       }
 
-      // 4. Primary storage path: staff/${userId}-${Date.now()}.webp per Master Hardening Spec
-      const fileName = `${id}-${Date.now()}.${ext}`;
-      let targetPath = `staff/${fileName}`;
+      // 4. Primary storage path: ${id}/avatar_${Date.now()}.${ext} per folder-owner RLS policy (เลิกใช้พาธ staff/...)
+      const fileName = `avatar_${Date.now()}.${ext}`;
+      const targetPath = `${id}/${fileName}`;
       let finalAvatarUrl: string | null = null;
+      let lastErrorMessage = '';
 
       try {
-        let storageRes = await fetch(`${DEFAULT_SUPABASE_URL}/storage/v1/object/avatars/${targetPath}`, {
+        const storageRes = await fetch(`${DEFAULT_SUPABASE_URL}/storage/v1/object/avatars/${targetPath}`, {
           method: 'POST',
           headers: {
             apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -5704,26 +5721,16 @@ export class ApiClient {
           body: arrayBuffer,
         });
 
-        // Folder owner fallback if bucket policy is scoped to userId
-        if (!storageRes.ok && (storageRes.status === 403 || storageRes.status === 400 || storageRes.status === 404)) {
-          const userFolderPath = `${id}/${fileName}`;
-          const retryRes = await fetch(`${DEFAULT_SUPABASE_URL}/storage/v1/object/avatars/${userFolderPath}`, {
-            method: 'POST',
-            headers: {
-              apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-              'Content-Type': detectedMime,
-              'x-upsert': 'true',
-            },
-            body: arrayBuffer,
-          });
-          if (retryRes.ok) {
-            storageRes = retryRes;
-            targetPath = userFolderPath;
+        if (!storageRes.ok) {
+          let errDetail = '';
+          try {
+            const errJson = await storageRes.json();
+            errDetail = errJson.message || errJson.error || JSON.stringify(errJson);
+          } catch {
+            errDetail = await storageRes.text().catch(() => '');
           }
-        }
-
-        if (storageRes.ok) {
+          lastErrorMessage = `(HTTP ${storageRes.status} ${storageRes.statusText || ''}): ${errDetail || 'Storage upload failed'}`;
+        } else {
           finalAvatarUrl = `${DEFAULT_SUPABASE_URL}/storage/v1/object/public/avatars/${targetPath}`;
 
           // Clean up older avatar files in this user's folder to prevent storage accumulation
@@ -5756,14 +5763,14 @@ export class ApiClient {
             }
           } catch {}
         }
-      } catch {
-        // Storage upload network fallback
+      } catch (networkErr: any) {
+        lastErrorMessage = networkErr?.message || 'ข้อผิดพลาดเครือข่าย / Network error / 网络错误';
       }
 
       // STRICT RULE: Never store raw Base64 data URLs in PostgreSQL columns (Egress Leak Hardening)
       if (!finalAvatarUrl) {
         throw new Error(
-          'ไม่สามารถอัปโหลดรูปภาพไปยัง Supabase Storage Bucket "avatars" ได้ เพื่อความปลอดภัยและป้องกันฐานข้อมูลช้า จึงไม่อนุญาตให้บันทึก Base64 ลงในฐานข้อมูล กรุณาตรวจสอบว่า Storage Bucket "avatars" เปิดใช้งานและเป็น Public'
+          `ไม่สามารถอัปโหลดรูปภาพไปยัง Supabase Storage Bucket "avatars" ได้ ${lastErrorMessage ? `[${lastErrorMessage}] ` : ''}เพื่อความปลอดภัยและป้องกันฐานข้อมูลช้า จึงไม่อนุญาตให้บันทึก Base64 ลงในฐานข้อมูล กรุณาตรวจสอบว่า Storage Bucket "avatars" เปิดใช้งานและเป็น Public (Failed to upload image to Supabase Storage / 无法上传图片到 Supabase 存储空间)`
         );
       }
 

@@ -28,7 +28,6 @@ export interface UseRaiseBothHandsConfirmProps {
 }
 
 export interface UseRaiseBothHandsConfirmReturn {
-  progress: number;
   status: RaiseBothHandsStatus;
   thaiMessage: string;
   showAccessibilityFallbackHint: boolean;
@@ -36,7 +35,6 @@ export interface UseRaiseBothHandsConfirmReturn {
   isSeated: boolean;
   handleManualConfirm: () => void;
   resetConfirmation: () => void;
-  progressRef: React.MutableRefObject<number>;
   topProgressBarRef: React.RefObject<HTMLDivElement | null>;
   bottomProgressBarRef: React.RefObject<HTMLDivElement | null>;
   spinnerPathRef: React.RefObject<SVGPathElement | null>;
@@ -463,7 +461,6 @@ export function useRaiseBothHandsConfirm({
   }, [isOpen, videoRef, config, resetConfirmation]);
 
   return {
-    progress: progressRef.current,
     status,
     thaiMessage,
     showAccessibilityFallbackHint,
@@ -471,7 +468,6 @@ export function useRaiseBothHandsConfirm({
     isSeated,
     handleManualConfirm,
     resetConfirmation,
-    progressRef,
     topProgressBarRef,
     bottomProgressBarRef,
     spinnerPathRef,
