@@ -685,7 +685,7 @@ export class CourseRepository implements ICourseRepository {
       const adminClient = getAdminClient();
       const { data: c } = await adminClient
         .from('courses')
-        .select('*')
+        .select('id, start_date, end_date')
         .eq('id', id)
         .maybeSingle();
 
@@ -808,13 +808,14 @@ export class CourseRepository implements ICourseRepository {
   }
 
   async listSessionLogs(query: SessionLogQuery): Promise<SessionLogRecord[]> {
+    const limit = Math.min(Math.max(query.limit || 50, 1), 50);
     try {
       const adminClient = getAdminClient();
       let dbQuery = adminClient
         .from('exercise_session_logs')
-        .select('*')
+        .select('id, patient_id, course_id, exercise_id, kiosk_id, completion_mode, correct_reps, incorrect_reps, target_reps, current_set, total_sets, max_angle_achieved, consistency_score, pain_reported, duration_seconds, telemetry_summary, created_at')
         .order('created_at', { ascending: false })
-        .limit(query.limit || 50);
+        .limit(limit);
 
       if (query.patient_id) {
         dbQuery = dbQuery.eq('patient_id', query.patient_id);

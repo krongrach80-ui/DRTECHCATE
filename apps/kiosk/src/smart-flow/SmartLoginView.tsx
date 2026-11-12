@@ -132,19 +132,24 @@ export const KIOSK_CAMERA_STANDARDIZATION_CONFIG = {
 
 /**
  * การตั้งค่าสำหรับระบบจัดการสถานะเมื่อไม่พบบัญชีผู้ใช้ (Account Not Found Configuration)
+ * สำหรับควบคุม UX และการจัดการรอบสแกน (ห้ามนำไปปรับความเข้มงวดของ Face Matching)
  */
 export const KIOSK_NOT_FOUND_CONFIG = {
-  /** จำนวนรอบที่ต้องตรวจพบว่าไม่ตรงกับคนไข้ใดๆ (เมื่อภาพผ่านเกณฑ์คุณภาพ) เพื่อยืนยันว่าไม่มีบัญชี (2 รอบ) */
+  /** จำนวนรอบที่ต้องตรวจพบว่าไม่ตรงกับคนไข้ใดๆ (เมื่อภาพผ่านเกณฑ์คุณภาพและ Liveness) เพื่อยืนยันว่าไม่มีบัญชี (2 รอบ) */
   NOT_FOUND_CONFIRM_ROUNDS: 2,
-  /** หน้าต่างเวลาในการสะสมรอบที่ไม่ตรงกัน (5000 มิลลิวินาที หรือ 5 วินาที เพื่อครอบคลุม 2 รอบการสแกน) */
-  NOT_FOUND_WINDOW_MS: 5000,
-  /** เกณฑ์คะแนนคุณภาพภาพต่ำสุด (ความคมชัด) ที่ยอมรับเพื่อตัดสินว่าไม่มีบัญชี ป้องกันการใช้ภาพเบลอมาตัดสิน */
+  /** หน้าต่างเวลาระหว่างรอบสแกนที่ยอมรับได้ (10,000 มิลลิวินาที หรือ 10 วินาที ครอบคลุมคูลดาวน์ 1.5s + นับถอยหลัง 3.0s + หน่วงเวลาเครือข่าย) */
+  MAX_CONFIRM_WINDOW_MS: 10000,
+  /** แฟล็ก Alias ย้อนหลังสำหรับ MAX_CONFIRM_WINDOW_MS */
+  NOT_FOUND_WINDOW_MS: 10000,
+  /** เกณฑ์คะแนนคุณภาพภาพต่ำสุด (ความคมชัด Laplacian Variance) ที่ยอมรับเพื่อตัดสินรอบ ป้องกันการนำภาพเบลอมาตัดสิน */
   QUALITY_MIN: 4.0,
   /** จำนวนรอบสูงสุดที่ยอมให้ภาพคุณภาพไม่ผ่านติดกัน ก่อนแจ้งเตือนให้เรียกเจ้าหน้าที่ (3 รอบ) */
   QUALITY_RETRY_MAX: 3,
-  /** ระยะเวลาคืนสู่สถานะเริ่มต้นอัตโนมัติเมื่อไม่มีการกดปุ่มใดๆ ในป็อปอัพ (30000 มิลลิวินาที หรือ 30 วินาที) */
+  /** ระยะเวลาคืนสู่สถานะเริ่มต้นอัตโนมัติเมื่อไม่มีการกดปุ่มใดๆ ใน Modal (30,000 มิลลิวินาที หรือ 30 วินาที) */
+  NOT_FOUND_IDLE_MS: 30000,
+  /** แฟล็ก Alias ย้อนหลังสำหรับ NOT_FOUND_IDLE_MS */
   NOT_FOUND_IDLE_TIMEOUT_MS: 30000,
-  /** ระยะเวลาคูลดาวน์ก่อนเริ่มสแกนใหม่ (1500 มิลลิวินาที หรือ 1.5 วินาที) */
+  /** ระยะเวลาคูลดาวน์ก่อนเริ่มสแกนใหม่ (1,500 มิลลิวินาที หรือ 1.5 วินาที) */
   RETRY_COOLDOWN_MS: 1500,
 } as const;
 
@@ -1301,22 +1306,24 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       const margin = aggregatedScore - secondCandScore;
       const isMarginAmbiguous = topGroup && secondGroup && margin < BIOMETRIC_CONFIG.MARGIN_MIN;
 
-      // Non-blocking log to Supabase face_scan_logs
-      defaultApiClient.request('/face_scan_logs', {
-        method: 'POST',
-        body: JSON.stringify({
-          patient_id: topCand?.id || null,
-          hn: topCand?.hn || null,
-          cosine_similarity: aggregatedScore,
-          euclidean_distance: aggregatedDistance,
-          similarity_percentage: aggregatedPercent,
-          samples_count: totalSamples,
-          agreement_ratio: agreementRatio,
-          margin,
-          passed: aggregatedPercent >= 80 && agreementRatio >= MIN_FRAME_AGREEMENT && !isMarginAmbiguous,
-          timestamp: new Date().toISOString(),
-        }),
-      }).catch(() => {});
+      // Non-blocking log to Supabase face_scan_logs ONLY for genuine verified matches (Zero stranger logging per Part 5 & 6)
+      if (topCand && topCand.id && aggregatedPercent >= 80 && !isMarginAmbiguous) {
+        defaultApiClient.request('/face_scan_logs', {
+          method: 'POST',
+          body: JSON.stringify({
+            patient_id: topCand?.id || null,
+            hn: topCand?.hn || null,
+            cosine_similarity: aggregatedScore,
+            euclidean_distance: aggregatedDistance,
+            similarity_percentage: aggregatedPercent,
+            samples_count: totalSamples,
+            agreement_ratio: agreementRatio,
+            margin,
+            passed: aggregatedPercent >= 80 && agreementRatio >= MIN_FRAME_AGREEMENT && !isMarginAmbiguous,
+            timestamp: new Date().toISOString(),
+          }),
+        }).catch(() => {});
+      }
 
       // Multi-Frame Best-Shot Capture: Collect 4 consecutive video frames over 150ms
       const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
@@ -1403,12 +1410,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               ? 'Persistent image quality issue. Please ask staff for assistance.'
               : 'ภาพไม่ชัดเจนต่อเนื่อง กรุณาติดต่อหรือเรียกเจ้าหน้าที่';
         } else {
-          qualityAdvice =
-            lang === 'zh-CN'
-              ? '请直视摄像头，增加光线，并摘下帽子/口罩。'
-              : lang === 'en-US'
-              ? 'Please look straight, ensure adequate lighting, and remove hat/mask.'
-              : 'กรุณามองตรง เพิ่มแสง ถอดหมวก/แมสก์';
+          qualityAdvice = t('kiosk_msg_quality_insufficient');
         }
         setStatusText(qualityAdvice);
         setFloatingToast(qualityAdvice);
@@ -1487,7 +1489,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      if ((res as any).error || (res as any).ok === false) {
+      if ((res as any)?.error || (res as any).ok === false) {
         const errorMsg = (res as any).message || (res as any).error?.message || 'เชื่อมต่อระบบไม่ได้ ลองใหม่หรือเรียกเจ้าหน้าที่';
         setStatusText(`⚠️ ${errorMsg}`);
         setFloatingToast(`⚠️ ${errorMsg}`);
@@ -1499,6 +1501,19 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             setFloatingToast(null);
           }
         }, 2000);
+        return;
+      }
+
+      // State B: MATCH_UNCERTAIN - Request PIN Verification without leaking near candidates or scores
+      if ((res as any)?.requirePin) {
+        isProcessingScanRef.current = false;
+        setIsScanning(false);
+        setCountdownValue(null);
+        setRealtimeScore(null);
+        setIsPinModalOpen(true);
+        const uncertainMsg = t('kiosk_msg_match_uncertain');
+        setStatusText(uncertainMsg);
+        setFloatingToast(uncertainMsg);
         return;
       }
 
@@ -1641,10 +1656,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      // Check consecutive unmatched rounds within NOT_FOUND_WINDOW_MS (5s config)
+      // Check consecutive unmatched rounds within MAX_CONFIRM_WINDOW_MS (10s config)
+      const windowMs = KIOSK_NOT_FOUND_CONFIG.MAX_CONFIRM_WINDOW_MS;
       if (
         consecutiveUnmatchedRoundsRef.current.count > 0 &&
-        now - consecutiveUnmatchedRoundsRef.current.firstTimestamp > KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_WINDOW_MS
+        now - consecutiveUnmatchedRoundsRef.current.firstTimestamp > windowMs
       ) {
         consecutiveUnmatchedRoundsRef.current = { count: 1, firstTimestamp: now };
       } else {
@@ -1674,12 +1690,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         stabilityDetectorRef.current.reset();
         (fastLivenessVerifierRef.current as any).stop?.();
 
-        const notFoundMsg =
-          lang === 'zh-CN'
-            ? '未找到与该面部匹配的用户账户，请联系医护人员协助办理登记。'
-            : lang === 'en-US'
-            ? 'No matching patient account found for this face. Please contact staff for registration.'
-            : 'ไม่พบบัญชีผู้ใช้ที่ตรงกับใบหน้านี้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน';
+        const notFoundMsg = t('kiosk_account_not_found_desc');
         setStatusText(notFoundMsg);
         setIsAccountNotFound(true);
         return;
@@ -2031,22 +2042,28 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 timestamp: Date.now(),
               });
 
-              setRealtimeScore(currentPercent);
+              // Zero information disclosure for unauthenticated strangers (Part 5 & Part 6)
+              // Only expose realtime score if user was already verified/matched
+              if (matchedPatient) {
+                setRealtimeScore(currentPercent);
+              } else {
+                setRealtimeScore(null);
+              }
 
               const allPercents = sampleFramesRef.current.map((s) => s.percent).sort((a, b) => a - b);
               const medPerc = allPercents[Math.floor(allPercents.length / 2)] || currentPercent;
               setCalibrationStats({
                 currentCos: top1Sim,
                 currentDist: currentDist,
-                currentPercent,
-                medianPercent: medPerc,
-                minPercent: allPercents[0] || currentPercent,
-                maxPercent: allPercents[allPercents.length - 1] || currentPercent,
+                currentPercent: matchedPatient ? currentPercent : 0,
+                medianPercent: matchedPatient ? medPerc : 0,
+                minPercent: matchedPatient ? (allPercents[0] || currentPercent) : 0,
+                maxPercent: matchedPatient ? (allPercents[allPercents.length - 1] || currentPercent) : 0,
                 samplesCount: sampleFramesRef.current.length,
                 depthScore: liv.depthScore,
                 ear: liv.ear || 0.30,
-                top1: top1Cand ? { name: top1Cand.name, hn: top1Cand.hn, score: currentPercent } : undefined,
-                top2: top2Cand ? { name: top2Cand.name, hn: top2Cand.hn, score: Math.round(top2Sim * 100) } : undefined,
+                top1: matchedPatient && top1Cand ? { name: top1Cand.name, hn: top1Cand.hn, score: currentPercent } : undefined,
+                top2: undefined,
               });
             }
           } catch (err) {
@@ -2732,7 +2749,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                     <span>
                       {lang === 'zh-CN' ? `正在自动扫描 ${countdownValue}...` : lang === 'en-US' ? `Auto-scanning in ${countdownValue}...` : `กำลังสแกนอัตโนมัติใน ${countdownValue}...`}
                     </span>
-                    {realtimeScore !== null && isCalibrationOpen && (
+                    {realtimeScore !== null && isCalibrationOpen && Boolean(matchedPatient) && (
                       <span className="ml-1 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-400">
                         {realtimeScore}%
                       </span>
@@ -3243,15 +3260,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               <UserCheck className="w-8 h-8 text-teal-600" />
             </div>
             <h3 id="not-found-dialog-title" className="text-xl font-bold text-slate-900">
-              {lang === 'zh-CN' ? '未找到用户账户' : lang === 'en-US' ? 'Account Not Found' : 'ไม่พบบัญชีผู้ใช้'}
+              {t('kiosk_account_not_found_title')}
             </h3>
             <p id="not-found-dialog-desc" className="text-sm text-slate-600 mt-2 leading-relaxed">
-              {unrecognizedAlert ||
-                (lang === 'zh-CN'
-                  ? '未找到与该面部匹配的用户账户，请联系医护人员协助办理登记。'
-                  : lang === 'en-US'
-                  ? 'No matching patient account found for this face. Please contact staff for registration.'
-                  : 'ไม่พบบัญชีผู้ใช้ที่ตรงกับใบหน้านี้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน')}
+              {t('kiosk_account_not_found_desc')}
             </p>
 
             <div className="mt-5 flex flex-col gap-2.5">
@@ -3274,11 +3286,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               >
                 <UserCheck className="w-5 h-5 text-white shrink-0" />
                 <span>
-                  {lang === 'zh-CN'
-                    ? '👨‍⚕️ 医护人员协助建档登记'
-                    : lang === 'en-US'
-                    ? '👨‍⚕️ Staff-Assisted Registration'
-                    : '👨‍⚕️ เจ้าหน้าที่ลงทะเบียนให้'}
+                  {t('kiosk_btn_staff_register')}
                 </span>
               </button>
 
@@ -3317,11 +3325,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               >
                 <Bell className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
-                  {lang === 'zh-CN'
-                    ? '🔔 呼叫医护人员'
-                    : lang === 'en-US'
-                    ? '🔔 Call Staff'
-                    : '🔔 เรียกเจ้าหน้าที่'}
+                  {t('kiosk_btn_call_staff')}
                 </span>
               </button>
 
@@ -3341,11 +3345,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 >
                   <KeyRound className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                   <span>
-                    {lang === 'zh-CN'
-                      ? '🔢 使用PIN码'
-                      : lang === 'en-US'
-                      ? '🔢 Enter PIN'
-                      : '🔢 ใช้รหัส PIN'}
+                    {t('kiosk_btn_use_pin')}
                   </span>
                 </button>
 
@@ -3364,11 +3364,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isRetryCooldownActive ? 'animate-spin text-slate-400' : 'text-slate-600'} shrink-0`} />
                   <span>
-                    {lang === 'zh-CN'
-                      ? '🔄 重新扫描'
-                      : lang === 'en-US'
-                      ? '🔄 Scan Again'
-                      : '🔄 ลองสแกนอีกครั้ง'}
+                    {t('kiosk_btn_try_again')}
                   </span>
                 </button>
               </div>

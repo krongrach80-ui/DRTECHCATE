@@ -248,7 +248,7 @@ export class BackgroundSyncWorker<T = unknown> {
   constructor(
     buffer: OfflineBufferEngine<T>,
     syncHandler: TelemetrySyncHandler<T>,
-    syncIntervalMs = 30000
+    syncIntervalMs = 60000
   ) {
     this.buffer = buffer;
     this.syncHandler = syncHandler;
@@ -258,6 +258,7 @@ export class BackgroundSyncWorker<T = unknown> {
         this.triggerSync();
       });
       this.intervalId = setInterval(() => {
+        if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) return;
         if (typeof navigator !== 'undefined' && navigator.onLine) {
           this.triggerSync();
         }

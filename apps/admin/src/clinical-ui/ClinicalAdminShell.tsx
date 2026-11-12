@@ -139,11 +139,11 @@ export const ClinicalAdminShell: React.FC<ClinicalAdminShellProps> = ({
       // non-blocking
     }
 
-    // Fallback sync polling (20 seconds when active, paused when tab is hidden)
+    // Fallback sync polling (60 seconds minimum when active, paused when tab is hidden)
     const syncInterval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) return;
       fetchCalls();
-    }, 20000);
+    }, 60000);
 
     return () => {
       unsubSse?.();

@@ -222,7 +222,8 @@ export class StaffRepository implements IStaffRepository {
       let query = adminClient
         .from('profiles')
         .select('*, pts(*)')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (filter?.role) {
         query = query.eq('role', filter.role);
@@ -242,7 +243,8 @@ export class StaffRepository implements IStaffRepository {
         let fallbackQuery = adminClient
           .from('profiles')
           .select('*')
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(50);
 
         if (filter?.role) {
           fallbackQuery = fallbackQuery.eq('role', filter.role);

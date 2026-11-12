@@ -832,7 +832,9 @@ export class SmartOnboardingService {
     if (process.env.NODE_ENV !== 'test') {
       try {
         const supabase = getAdminClient();
-        const { data: dbPatients } = await supabase.from('patients').select('*');
+        const { data: dbPatients } = await supabase
+          .from('patients')
+          .select('id, hn, first_name, last_name, age, sex, phone, injury, registration_status, registered_via, created_at, history');
         if (dbPatients && Array.isArray(dbPatients)) {
           for (const p of dbPatients) {
             const pRecord: PatientRecordFile | undefined = p.history?.patient_record ? { ...p.history.patient_record } : undefined;
@@ -1081,7 +1083,7 @@ export class SmartOnboardingService {
         const timeoutPromise = new Promise<{ data: null }>((resolve) =>
           setTimeout(() => resolve({ data: null }), 8000)
         );
-        const queryPromise = supabase.from('patients').select('*');
+        const queryPromise = supabase.from('patients').select('id, hn, registration_status');
         const res = await Promise.race([queryPromise, timeoutPromise]);
         dbPatients = res && 'data' in res ? res.data : null;
 

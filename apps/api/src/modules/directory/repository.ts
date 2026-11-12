@@ -309,9 +309,10 @@ export class DirectoryRepository implements IDirectoryRepository {
       const adminClient = getAdminClient();
       let query = adminClient
         .from('exercises')
-        .select('*')
+        .select('id, title, description, target_joint, suitable_for, warnings, difficulty, default_sets, default_reps, rest_seconds, image_path, calibration_notes, is_active, created_by, created_at, updated_at')
         .neq('is_active', false)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (filter?.target_joint) {
         query = query.eq('target_joint', filter.target_joint);
@@ -328,7 +329,7 @@ export class DirectoryRepository implements IDirectoryRepository {
         logger.warn({ error, filter }, 'Database error listing exercises, applying fallback presets');
       }
 
-      let records = (data as ExerciseRecord[]) || [];
+      let records = (data as unknown as ExerciseRecord[]) || [];
       records = records.filter((e) => (e as any).is_active !== false);
 
       // Ensure all 10 clinical exercises are present in catalog
@@ -477,15 +478,16 @@ export class DirectoryRepository implements IDirectoryRepository {
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('minigames')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('id, title, description, category, is_active, created_by, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (error) {
         logger.error({ error }, 'Database error listing minigames');
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return (data as MinigameRecord[]) || [];
+      return (data as unknown as MinigameRecord[]) || [];
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err }, 'Unexpected error in listMinigames');
@@ -723,9 +725,10 @@ export class DirectoryRepository implements IDirectoryRepository {
       const adminClient = getAdminClient();
       let query = adminClient
         .from('modpacks')
-        .select('*, items:modpack_items(*, exercise:exercises(*))')
+        .select('id, name, description, target_joint, is_active, created_by, created_at, updated_at, items:modpack_items(id, course_id, modpack_id, exercise_id, sets, reps, position, exercise:exercises(id, title, target_joint, difficulty, default_sets, default_reps, image_path))')
         .neq('is_active', false)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (targetJoint) {
         query = query.eq('target_joint', targetJoint);
@@ -737,7 +740,7 @@ export class DirectoryRepository implements IDirectoryRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      const packs = (data as ModpackRecord[]) || [];
+      const packs = (data as unknown as ModpackRecord[]) || [];
       return packs.filter((m) => (m as any).is_active !== false);
     } catch (err) {
       if (err instanceof AppError) throw err;

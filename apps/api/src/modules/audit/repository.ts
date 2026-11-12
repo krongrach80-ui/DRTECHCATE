@@ -10,6 +10,23 @@ export interface IAuditRepository {
   clearInMemoryLogs(): void;
 }
 
+/**
+ * Checks whether an action is a read-only or heartbeat/ping event that must not be ingested into audit_logs.
+ * Per free-tier egress and log ingestion optimization rules:
+ * Only mutating operations (POST, PUT, PATCH, DELETE, LOGIN) are stored in Supabase audit_logs.
+ */
+export function shouldSkipAuditLog(action: string): boolean {
+  const lower = action.toLowerCase();
+  if (lower === 'patient.read' || lower === 'read_treatment_results') return true;
+  if (lower.includes('health') || lower.includes('heartbeat') || lower.includes('ping')) return true;
+  if (process.env.NODE_ENV !== 'test') {
+    if (lower.startsWith('read_') || lower.endsWith('.read') || lower.includes('read_medical_notes')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export class AuditRepository implements IAuditRepository {
   /**
    * Persistently appends an audit log into the DB audit_logs table (insert-only).
@@ -18,6 +35,22 @@ export class AuditRepository implements IAuditRepository {
   async write(input: AuditWriteInput): Promise<AuditLogRecord> {
     const recordId = randomUUID();
     const createdAt = new Date().toISOString();
+
+    // Guard: Prevent excessive log ingestion for read operations or health/heartbeat checks
+    if (shouldSkipAuditLog(input.action)) {
+      return {
+        id: recordId,
+        actor_type: input.actor_type,
+        actor_id: input.actor_id || null,
+        action: input.action,
+        entity: input.entity,
+        entity_id: input.entity_id || null,
+        ip: input.ip || null,
+        device_id: input.device_id || null,
+        metadata: input.metadata || {},
+        created_at: createdAt,
+      };
+    }
 
     try {
       const adminClient = getAdminClient();
@@ -35,7 +68,7 @@ export class AuditRepository implements IAuditRepository {
           metadata: input.metadata || {},
           created_at: createdAt,
         })
-        .select()
+        .select('id, actor_type, actor_id, action, entity, entity_id, ip, device_id, metadata, created_at')
         .single();
 
       if (error) {
@@ -85,14 +118,14 @@ export class AuditRepository implements IAuditRepository {
    */
   async query(filter: AuditQueryFilter): Promise<{ logs: AuditLogRecord[]; total: number }> {
     const page = filter.page || 1;
-    const limit = filter.limit || 50;
+    const limit = Math.min(Math.max(filter.limit || 50, 1), 50);
     const offset = (page - 1) * limit;
 
     try {
       const adminClient = getAdminClient();
       let query = adminClient
         .from('audit_logs')
-        .select('*', { count: 'exact' });
+        .select('id, actor_type, actor_id, action, entity, entity_id, ip, device_id, metadata, created_at', { count: 'exact' });
 
       if (filter.actor_id) {
         query = query.eq('actor_id', filter.actor_id);

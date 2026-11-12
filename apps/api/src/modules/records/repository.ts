@@ -48,16 +48,17 @@ export class RecordsRepository implements IRecordsRepository {
     try {
       const { data, error } = await supabase
         .from('medical_notes')
-        .select('*, author:profiles!author_id(id, full_name, role)')
+        .select('id, patient_id, author_id, body, created_at, author:profiles!author_id(id, full_name, role)')
         .eq('patient_id', patientId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (error) {
         logger.error({ error, patientId }, 'Database error querying medical notes');
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return (data as MedicalNoteRecord[]) || [];
+      return (data as unknown as MedicalNoteRecord[]) || [];
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, patientId }, 'Unexpected database error in getNotes');
@@ -115,16 +116,17 @@ export class RecordsRepository implements IRecordsRepository {
     try {
       const { data, error } = await supabase
         .from('treatment_results')
-        .select('*, author:profiles!author_id(id, full_name, role)')
+        .select('id, patient_id, author_id, body, version, supersedes_id, created_at, author:profiles!author_id(id, full_name, role)')
         .eq('patient_id', patientId)
-        .order('version', { ascending: true });
+        .order('version', { ascending: true })
+        .limit(50);
 
       if (error) {
         logger.error({ error, patientId }, 'Database error querying treatment results');
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return (data as TreatmentResultRecord[]) || [];
+      return (data as unknown as TreatmentResultRecord[]) || [];
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, patientId }, 'Unexpected database error in getTreatmentResults');

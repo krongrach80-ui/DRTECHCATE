@@ -114,7 +114,11 @@ export class SecurityRepository implements ISecurityRepository {
   async listBans(filter?: BanQueryFilter): Promise<BanRecord[]> {
     try {
       const adminClient = getAdminClient();
-      let query = adminClient.from('bans').select('*').order('created_at', { ascending: false });
+      let query = adminClient
+        .from('bans')
+        .select('id, type, value, reason, expires_at, created_by, created_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (filter?.type) {
         query = query.eq('type', filter.type);

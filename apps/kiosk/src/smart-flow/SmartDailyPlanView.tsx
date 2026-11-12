@@ -262,11 +262,11 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     };
     window.addEventListener('storage', handleStorage);
 
-    // Periodic sync polling (20 seconds when active, paused when tab is hidden)
+    // Periodic sync polling (60 seconds minimum when active, paused when tab is hidden)
     const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) return;
       loadPlan();
-    }, 20000);
+    }, 60000);
 
     return () => {
       isMountedRef.current = false;

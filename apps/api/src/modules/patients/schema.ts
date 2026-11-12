@@ -120,7 +120,7 @@ export const PatientQuerySchema = z.object({
   status: PatientRegistrationStatusSchema.optional(),
   responsible_pt_id: z.string().trim().optional(),
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
 export type PatientQueryFilter = z.infer<typeof PatientQuerySchema>;

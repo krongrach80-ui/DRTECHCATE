@@ -146,11 +146,11 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
     window.addEventListener('drtech:patients_reconciled', handleRefresh);
     window.addEventListener('focus', handleRefresh);
 
-    // Background sync polling: 25 seconds when active, paused when tab is hidden
+    // Background sync polling: 60 seconds minimum when active, paused when tab is hidden
     const pollInterval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) return;
       void fetchData();
-    }, 25000);
+    }, 60000);
 
     return () => {
       window.removeEventListener('schedule-updated', handleRefresh);

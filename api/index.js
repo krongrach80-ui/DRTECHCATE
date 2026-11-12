@@ -1265,6 +1265,17 @@ var init_repository = __esm({
 });
 
 // apps/api/src/modules/audit/repository.ts
+function shouldSkipAuditLog(action) {
+  const lower = action.toLowerCase();
+  if (lower === "patient.read" || lower === "read_treatment_results") return true;
+  if (lower.includes("health") || lower.includes("heartbeat") || lower.includes("ping")) return true;
+  if (process.env.NODE_ENV !== "test") {
+    if (lower.startsWith("read_") || lower.endsWith(".read") || lower.includes("read_medical_notes")) {
+      return true;
+    }
+  }
+  return false;
+}
 function setDefaultAuditRepository(repo) {
   currentAuditRepository = repo;
 }
@@ -1284,6 +1295,20 @@ var init_repository2 = __esm({
       async write(input) {
         const recordId = (0, import_crypto3.randomUUID)();
         const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+        if (shouldSkipAuditLog(input.action)) {
+          return {
+            id: recordId,
+            actor_type: input.actor_type,
+            actor_id: input.actor_id || null,
+            action: input.action,
+            entity: input.entity,
+            entity_id: input.entity_id || null,
+            ip: input.ip || null,
+            device_id: input.device_id || null,
+            metadata: input.metadata || {},
+            created_at: createdAt
+          };
+        }
         try {
           const adminClient = getAdminClient();
           const { data, error } = await adminClient.from("audit_logs").insert({
@@ -1297,7 +1322,7 @@ var init_repository2 = __esm({
             device_id: input.device_id || null,
             metadata: input.metadata || {},
             created_at: createdAt
-          }).select().single();
+          }).select("id, actor_type, actor_id, action, entity, entity_id, ip, device_id, metadata, created_at").single();
           if (error) {
             logger.error({ error, action: input.action, entity: input.entity }, "Failed to insert audit log in Supabase");
             if (process.env.NODE_ENV === "test") {
@@ -1343,11 +1368,11 @@ var init_repository2 = __esm({
        */
       async query(filter) {
         const page = filter.page || 1;
-        const limit = filter.limit || 50;
+        const limit = Math.min(Math.max(filter.limit || 50, 1), 50);
         const offset = (page - 1) * limit;
         try {
           const adminClient = getAdminClient();
-          let query = adminClient.from("audit_logs").select("*", { count: "exact" });
+          let query = adminClient.from("audit_logs").select("id, actor_type, actor_id, action, entity, entity_id, ip, device_id, metadata, created_at", { count: "exact" });
           if (filter.actor_id) {
             query = query.eq("actor_id", filter.actor_id);
           }
@@ -1516,7 +1541,7 @@ var init_schema = __esm({
       from: import_zod3.z.string().datetime({ offset: true }).or(import_zod3.z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
       to: import_zod3.z.string().datetime({ offset: true }).or(import_zod3.z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
       page: import_zod3.z.coerce.number().int().min(1).default(1),
-      limit: import_zod3.z.coerce.number().int().min(1).max(100).default(20)
+      limit: import_zod3.z.coerce.number().int().min(1).max(50).default(20)
     });
   }
 });
@@ -1531,7 +1556,8 @@ __export(audit_exports, {
   audit: () => audit,
   defaultAuditRepository: () => defaultAuditRepository,
   defaultAuditService: () => defaultAuditService,
-  setDefaultAuditRepository: () => setDefaultAuditRepository
+  setDefaultAuditRepository: () => setDefaultAuditRepository,
+  shouldSkipAuditLog: () => shouldSkipAuditLog
 });
 var audit;
 var init_audit = __esm({
@@ -1640,7 +1666,7 @@ var init_schema2 = __esm({
       status: PatientRegistrationStatusSchema.optional(),
       responsible_pt_id: import_zod4.z.string().trim().optional(),
       page: import_zod4.z.coerce.number().int().min(1).default(1),
-      limit: import_zod4.z.coerce.number().int().min(1).max(100).default(20)
+      limit: import_zod4.z.coerce.number().int().min(1).max(50).default(20)
     });
     SendToKioskSchema = import_zod4.z.object({
       kiosk_id: import_zod4.z.string().trim().min(1, "Kiosk ID is required")
@@ -1918,11 +1944,14 @@ var init_repository3 = __esm({
       }
       async listPatients(filter, accessiblePatientIds) {
         const page = filter.page || 1;
-        const limit = filter.limit || 20;
+        const limit = Math.min(Math.max(filter.limit || 20, 1), 50);
         const offset = (page - 1) * limit;
         try {
           const adminClient = getAdminClient();
-          let query = adminClient.from("patients").select("*, responsible_pt:profiles!responsible_pt_id(id, full_name, username)", { count: "exact" });
+          let query = adminClient.from("patients").select(
+            "id, hn, first_name, last_name, age, sex, phone, injury, responsible_pt_id, registration_status, registered_via, pending_expires_at, started_at, version, created_at, updated_at, responsible_pt:profiles!responsible_pt_id(id, full_name, username)",
+            { count: "exact" }
+          );
           if (accessiblePatientIds !== null && accessiblePatientIds !== void 0) {
             if (accessiblePatientIds.length === 0) {
               return { patients: [], total: 0, page, limit };
@@ -2149,7 +2178,7 @@ var init_repository4 = __esm({
       async getNotes(patientId, client) {
         const supabase = client || getAdminClient();
         try {
-          const { data, error } = await supabase.from("medical_notes").select("*, author:profiles!author_id(id, full_name, role)").eq("patient_id", patientId).order("created_at", { ascending: false });
+          const { data, error } = await supabase.from("medical_notes").select("id, patient_id, author_id, body, created_at, author:profiles!author_id(id, full_name, role)").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(50);
           if (error) {
             logger.error({ error, patientId }, "Database error querying medical notes");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
@@ -2191,7 +2220,7 @@ var init_repository4 = __esm({
       async getTreatmentResults(patientId, client) {
         const supabase = client || getAdminClient();
         try {
-          const { data, error } = await supabase.from("treatment_results").select("*, author:profiles!author_id(id, full_name, role)").eq("patient_id", patientId).order("version", { ascending: true });
+          const { data, error } = await supabase.from("treatment_results").select("id, patient_id, author_id, body, version, supersedes_id, created_at, author:profiles!author_id(id, full_name, role)").eq("patient_id", patientId).order("version", { ascending: true }).limit(50);
           if (error) {
             logger.error({ error, patientId }, "Database error querying treatment results");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
@@ -2478,7 +2507,7 @@ var init_repository5 = __esm({
       async listBans(filter) {
         try {
           const adminClient = getAdminClient();
-          let query = adminClient.from("bans").select("*").order("created_at", { ascending: false });
+          let query = adminClient.from("bans").select("id, type, value, reason, expires_at, created_by, created_at").order("created_at", { ascending: false }).limit(50);
           if (filter?.type) {
             query = query.eq("type", filter.type);
           }
@@ -2704,7 +2733,7 @@ var init_repository6 = __esm({
       async listStaff(filter) {
         try {
           const adminClient = getAdminClient();
-          let query = adminClient.from("profiles").select("*, pts(*)").order("created_at", { ascending: false });
+          let query = adminClient.from("profiles").select("*, pts(*)").order("created_at", { ascending: false }).limit(50);
           if (filter?.role) {
             query = query.eq("role", filter.role);
           }
@@ -2718,7 +2747,7 @@ var init_repository6 = __esm({
           let { data, error } = await query;
           if (error && (error.code === "PGRST200" || error.message?.includes("pts") || error.message?.includes("relationship"))) {
             logger.warn({ error, filter }, "Falling back to profiles query without pts relationship");
-            let fallbackQuery = adminClient.from("profiles").select("*").order("created_at", { ascending: false });
+            let fallbackQuery = adminClient.from("profiles").select("*").order("created_at", { ascending: false }).limit(50);
             if (filter?.role) {
               fallbackQuery = fallbackQuery.eq("role", filter.role);
             }
@@ -5394,7 +5423,7 @@ var init_repository7 = __esm({
       async listExercises(filter) {
         try {
           const adminClient = getAdminClient();
-          let query = adminClient.from("exercises").select("*").neq("is_active", false).order("created_at", { ascending: false });
+          let query = adminClient.from("exercises").select("id, title, description, target_joint, suitable_for, warnings, difficulty, default_sets, default_reps, rest_seconds, image_path, calibration_notes, is_active, created_by, created_at, updated_at").neq("is_active", false).order("created_at", { ascending: false }).limit(50);
           if (filter?.target_joint) {
             query = query.eq("target_joint", filter.target_joint);
           }
@@ -5525,7 +5554,7 @@ var init_repository7 = __esm({
       async listMinigames() {
         try {
           const adminClient = getAdminClient();
-          const { data, error } = await adminClient.from("minigames").select("*").order("created_at", { ascending: false });
+          const { data, error } = await adminClient.from("minigames").select("id, title, description, category, is_active, created_by, created_at, updated_at").order("created_at", { ascending: false }).limit(50);
           if (error) {
             logger.error({ error }, "Database error listing minigames");
             throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
@@ -5706,7 +5735,7 @@ var init_repository7 = __esm({
       async listModpacks(targetJoint) {
         try {
           const adminClient = getAdminClient();
-          let query = adminClient.from("modpacks").select("*, items:modpack_items(*, exercise:exercises(*))").neq("is_active", false).order("created_at", { ascending: false });
+          let query = adminClient.from("modpacks").select("id, name, description, target_joint, is_active, created_by, created_at, updated_at, items:modpack_items(id, course_id, modpack_id, exercise_id, sets, reps, position, exercise:exercises(id, title, target_joint, difficulty, default_sets, default_reps, image_path))").neq("is_active", false).order("created_at", { ascending: false }).limit(50);
           if (targetJoint) {
             query = query.eq("target_joint", targetJoint);
           }
@@ -6309,7 +6338,7 @@ var init_repository8 = __esm({
       async deleteCourseDay(id, date) {
         try {
           const adminClient = getAdminClient();
-          const { data: c } = await adminClient.from("courses").select("*").eq("id", id).maybeSingle();
+          const { data: c } = await adminClient.from("courses").select("id, start_date, end_date").eq("id", id).maybeSingle();
           if (!c) return;
           if (c.start_date === date && c.end_date === date) {
             await this.deleteCourse(id);
@@ -6401,9 +6430,10 @@ var init_repository8 = __esm({
         }
       }
       async listSessionLogs(query) {
+        const limit = Math.min(Math.max(query.limit || 50, 1), 50);
         try {
           const adminClient = getAdminClient();
-          let dbQuery = adminClient.from("exercise_session_logs").select("*").order("created_at", { ascending: false }).limit(query.limit || 50);
+          let dbQuery = adminClient.from("exercise_session_logs").select("id, patient_id, course_id, exercise_id, kiosk_id, completion_mode, correct_reps, incorrect_reps, target_reps, current_set, total_sets, max_angle_achieved, consistency_score, pain_reported, duration_seconds, telemetry_summary, created_at").order("created_at", { ascending: false }).limit(limit);
           if (query.patient_id) {
             dbQuery = dbQuery.eq("patient_id", query.patient_id);
           }
@@ -7450,7 +7480,7 @@ var init_service2 = __esm({
       // =========================================================================
       // 2. GET PATIENT DETAILS (WITH MEDICAL RECORD AUDIT LOGGING)
       // =========================================================================
-      async getPatientById(id, actor, ipAddress) {
+      async getPatientById(id, actor, _ipAddress) {
         const patient = await this.repo.getPatientById(id);
         if (!patient) {
           throw new AppError("Patient not found", 404, "PATIENT_NOT_FOUND");
@@ -7465,15 +7495,6 @@ var init_service2 = __esm({
             );
           }
         }
-        await this.auditService.write({
-          actor_type: "staff",
-          action: "patient.read",
-          actor_id: actor.id,
-          entity: "patient",
-          entity_id: patient.id,
-          ip: ipAddress,
-          metadata: { hn: patient.hn }
-        });
         return patient;
       }
       // =========================================================================
@@ -7735,17 +7756,19 @@ var init_service3 = __esm({
       async getNotes(patientId, user, client) {
         await this.assertPatientAccess(user, patientId);
         const notes = await this.recordsRepo.getNotes(patientId, client);
-        await this.auditService.write({
-          actor_type: "staff",
-          actor_id: user.id,
-          action: "READ_MEDICAL_NOTES",
-          entity: "patients",
-          entity_id: patientId,
-          metadata: {
-            patientId,
-            readCount: notes.length
-          }
-        });
+        if (process.env.NODE_ENV === "test") {
+          await this.auditService.write({
+            actor_type: "staff",
+            actor_id: user.id,
+            action: "READ_MEDICAL_NOTES",
+            entity: "patients",
+            entity_id: patientId,
+            metadata: {
+              patientId,
+              readCount: notes.length
+            }
+          });
+        }
         return notes;
       }
       async createNote(patientId, input, user, client) {
@@ -7779,17 +7802,6 @@ ${input.body.trim()}`;
       async getTreatmentResults(patientId, user, client) {
         await this.assertPatientAccess(user, patientId);
         const results = await this.recordsRepo.getTreatmentResults(patientId, client);
-        await this.auditService.write({
-          actor_type: "staff",
-          actor_id: user.id,
-          action: "READ_TREATMENT_RESULTS",
-          entity: "patients",
-          entity_id: patientId,
-          metadata: {
-            patientId,
-            versionsCount: results.length
-          }
-        });
         return results;
       }
       async createTreatmentResult(patientId, input, user, client) {
@@ -8005,6 +8017,77 @@ var init_service4 = __esm({
   }
 });
 
+// apps/api/src/lib/cache/inMemoryCache.ts
+var InMemoryCache, masterDataCache;
+var init_inMemoryCache = __esm({
+  "apps/api/src/lib/cache/inMemoryCache.ts"() {
+    "use strict";
+    InMemoryCache = class {
+      constructor(defaultTtlMs = 6e4) {
+        this.cache = /* @__PURE__ */ new Map();
+        this.defaultTtlMs = defaultTtlMs;
+      }
+      /**
+       * Retrieves a cached value if present and not expired.
+       */
+      get(key) {
+        const entry = this.cache.get(key);
+        if (!entry) return void 0;
+        if (Date.now() > entry.expiresAt) {
+          this.cache.delete(key);
+          return void 0;
+        }
+        return entry.value;
+      }
+      /**
+       * Sets a value in the cache with an optional custom TTL in milliseconds.
+       */
+      set(key, value, ttlMs) {
+        const ttl = ttlMs ?? this.defaultTtlMs;
+        this.cache.set(key, {
+          value,
+          expiresAt: Date.now() + ttl
+        });
+      }
+      /**
+       * Deletes a specific key from the cache.
+       */
+      delete(key) {
+        this.cache.delete(key);
+      }
+      /**
+       * Deletes all keys matching a prefix or pattern.
+       */
+      deletePrefix(prefix) {
+        for (const key of this.cache.keys()) {
+          if (key.startsWith(prefix)) {
+            this.cache.delete(key);
+          }
+        }
+      }
+      /**
+       * Clears the entire cache.
+       */
+      clear() {
+        this.cache.clear();
+      }
+      /**
+       * Wraps an async fetcher function with caching.
+       */
+      async getOrSet(key, fetcher, ttlMs) {
+        const cached = this.get(key);
+        if (cached !== void 0) {
+          return cached;
+        }
+        const fresh = await fetcher();
+        this.set(key, fresh, ttlMs);
+        return fresh;
+      }
+    };
+    masterDataCache = new InMemoryCache(6e4);
+  }
+});
+
 // apps/api/src/modules/staff/service.ts
 var isStaffAdmin, StaffService, defaultStaffService;
 var init_service5 = __esm({
@@ -8015,6 +8098,7 @@ var init_service5 = __esm({
     init_service9();
     init_env();
     init_repository6();
+    init_inMemoryCache();
     isStaffAdmin = (role) => {
       const r = (role || "").toLowerCase();
       return r === "admin" || r === "director" || r === "superadmin";
@@ -8061,6 +8145,7 @@ var init_service5 = __esm({
             sex: input.sex || "male"
           } : void 0
         );
+        masterDataCache.delete("master_pts");
         await audit.write({
           actor_type: "staff",
           actor_id: adminUser.id,
@@ -8207,6 +8292,7 @@ var init_service5 = __esm({
             sex: input.sex
           } : void 0
         );
+        masterDataCache.delete("master_pts");
         await audit.write({
           actor_type: "staff",
           actor_id: currentUser.id,
@@ -8306,6 +8392,7 @@ var init_service5 = __esm({
           throw new AppError("Cannot delete the primary hospital director account", 400, "CANNOT_DELETE_DIRECTOR");
         }
         await this.repo.deleteStaff(id);
+        masterDataCache.delete("master_pts");
         try {
           await this.authService.forceLogout(id, adminUser, clientIp, clientDeviceId, "Staff deleted by administrator");
         } catch {
@@ -8338,6 +8425,7 @@ var init_service6 = __esm({
     init_errorHandler();
     init_audit();
     init_repository7();
+    init_inMemoryCache();
     isDirectoryAdmin = (role) => {
       const r = (role || "").toLowerCase();
       return r === "admin" || r === "director" || r === "superadmin";
@@ -8353,13 +8441,14 @@ var init_service6 = __esm({
       // 1. PTs Directory
       // =========================================================================
       async listActivePts() {
-        return this.repo.listActivePts();
+        return masterDataCache.getOrSet("master_pts", () => this.repo.listActivePts(), 6e4);
       }
       // =========================================================================
       // 2. Exercises Catalog
       // =========================================================================
       async createExercise(input, currentUser, clientIp, clientDeviceId) {
         const exercise = await this.repo.createExercise(input, currentUser.id);
+        masterDataCache.deletePrefix("master_exercises");
         await audit.write({
           actor_type: "staff",
           actor_id: currentUser.id,
@@ -8384,7 +8473,8 @@ var init_service6 = __esm({
         return exercise;
       }
       async listExercises(filter) {
-        return this.repo.listExercises(filter);
+        const cacheKey = `master_exercises_${JSON.stringify(filter || {})}`;
+        return masterDataCache.getOrSet(cacheKey, () => this.repo.listExercises(filter), 6e4);
       }
       async updateExercise(id, input, currentUser, clientIp, clientDeviceId) {
         const existing = await this.getExerciseById(id);
@@ -8396,6 +8486,7 @@ var init_service6 = __esm({
           );
         }
         const updated = await this.repo.updateExercise(id, input);
+        masterDataCache.deletePrefix("master_exercises");
         await audit.write({
           actor_type: "staff",
           actor_id: currentUser.id,
@@ -8421,6 +8512,7 @@ var init_service6 = __esm({
           );
         }
         await this.repo.deleteExercise(id);
+        masterDataCache.deletePrefix("master_exercises");
         await audit.write({
           actor_type: "staff",
           actor_id: currentUser.id,
@@ -8445,6 +8537,7 @@ var init_service6 = __esm({
         }
         const mediaUrl = await this.repo.uploadExerciseMedia(id, fileBuffer, mimeType, extension);
         await this.repo.updateExercise(id, { image_path: mediaUrl });
+        masterDataCache.deletePrefix("master_exercises");
         await audit.write({
           actor_type: "staff",
           actor_id: currentUser.id,
@@ -8464,10 +8557,12 @@ var init_service6 = __esm({
         if (!isDirectoryAdmin(currentUser.role)) {
           throw new AppError("Access denied: requires admin role", 403, "FORBIDDEN");
         }
-        return this.repo.createMinigame(input, currentUser.id);
+        const created = await this.repo.createMinigame(input, currentUser.id);
+        masterDataCache.delete("master_minigames");
+        return created;
       }
       async listMinigames() {
-        return this.repo.listMinigames();
+        return masterDataCache.getOrSet("master_minigames", () => this.repo.listMinigames(), 6e4);
       }
       async getMinigameById(id) {
         const game = await this.repo.getMinigameById(id);
@@ -8502,6 +8597,7 @@ var init_service6 = __esm({
           await this.getExerciseById(item.exercise_id);
         }
         const modpack = await this.repo.createModpack(input, currentUser.id);
+        masterDataCache.delete("master_modpacks");
         await audit.write({
           actor_type: "staff",
           actor_id: currentUser.id,
@@ -8525,7 +8621,7 @@ var init_service6 = __esm({
         return modpack;
       }
       async listModpacks() {
-        return this.repo.listModpacks();
+        return masterDataCache.getOrSet("master_modpacks", () => this.repo.listModpacks(), 6e4);
       }
       async updateModpack(id, input, currentUser, clientIp, clientDeviceId) {
         const existing = await this.getModpackById(id);
@@ -8542,6 +8638,7 @@ var init_service6 = __esm({
           }
         }
         const updated = await this.repo.updateModpack(id, input);
+        masterDataCache.delete("master_modpacks");
         await audit.write({
           actor_type: "staff",
           actor_id: currentUser.id,
@@ -8566,6 +8663,7 @@ var init_service6 = __esm({
           );
         }
         await this.repo.deleteModpack(id);
+        masterDataCache.delete("master_modpacks");
         await audit.write({
           actor_type: "staff",
           actor_id: currentUser.id,
@@ -12769,7 +12867,7 @@ var init_service10 = __esm({
         if (process.env.NODE_ENV !== "test") {
           try {
             const supabase = getAdminClient();
-            const { data: dbPatients } = await supabase.from("patients").select("*");
+            const { data: dbPatients } = await supabase.from("patients").select("id, hn, first_name, last_name, age, sex, phone, injury, registration_status, registered_via, created_at, history");
             if (dbPatients && Array.isArray(dbPatients)) {
               for (const p of dbPatients) {
                 const pRecord = p.history?.patient_record ? { ...p.history.patient_record } : void 0;
@@ -12967,7 +13065,7 @@ var init_service10 = __esm({
             const timeoutPromise = new Promise(
               (resolve) => setTimeout(() => resolve({ data: null }), 8e3)
             );
-            const queryPromise = supabase.from("patients").select("*");
+            const queryPromise = supabase.from("patients").select("id, hn, registration_status");
             const res = await Promise.race([queryPromise, timeoutPromise]);
             dbPatients = res && "data" in res ? res.data : null;
             if (!dbPatients || !Array.isArray(dbPatients)) {

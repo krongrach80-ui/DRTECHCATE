@@ -66,9 +66,9 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
 
     checkSupabase();
     const timer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) return;
       checkSupabase();
-    }, 30000);
+    }, 60000);
     return () => {
       isMounted = false;
       clearInterval(timer);

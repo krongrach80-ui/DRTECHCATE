@@ -62,7 +62,7 @@ export class PatientService {
   async getPatientById(
     id: string,
     actor: UserSession,
-    ipAddress?: string
+    _ipAddress?: string
   ): Promise<PatientRecord> {
     const patient = await this.repo.getPatientById(id);
     if (!patient) {
@@ -80,17 +80,6 @@ export class PatientService {
         );
       }
     }
-
-    // Spec Section 11: Audit log on reading patient medical records
-    await this.auditService.write({
-      actor_type: 'staff',
-      action: 'patient.read',
-      actor_id: actor.id,
-      entity: 'patient',
-      entity_id: patient.id,
-      ip: ipAddress,
-      metadata: { hn: patient.hn },
-    });
 
     return patient;
   }

@@ -3,6 +3,7 @@ import { UserSession } from '../../middleware/authenticate';
 import { audit } from '../audit';
 import { StaffProfileRecord } from '../staff/schema';
 import { IDirectoryRepository, defaultDirectoryRepository } from './repository';
+import { masterDataCache } from '../../lib/cache/inMemoryCache';
 import {
   ExerciseRecord,
   ExerciseQueryFilter,
@@ -35,7 +36,7 @@ export class DirectoryService {
   // 1. PTs Directory
   // =========================================================================
   async listActivePts(): Promise<StaffProfileRecord[]> {
-    return this.repo.listActivePts();
+    return masterDataCache.getOrSet('master_pts', () => this.repo.listActivePts(), 60000);
   }
 
   // =========================================================================
@@ -48,6 +49,7 @@ export class DirectoryService {
     clientDeviceId?: string
   ): Promise<ExerciseRecord> {
     const exercise = await this.repo.createExercise(input, currentUser.id);
+    masterDataCache.deletePrefix('master_exercises');
 
     await audit.write({
       actor_type: 'staff',
@@ -76,7 +78,8 @@ export class DirectoryService {
   }
 
   async listExercises(filter?: ExerciseQueryFilter): Promise<ExerciseRecord[]> {
-    return this.repo.listExercises(filter);
+    const cacheKey = `master_exercises_${JSON.stringify(filter || {})}`;
+    return masterDataCache.getOrSet(cacheKey, () => this.repo.listExercises(filter), 60000);
   }
 
   async updateExercise(
@@ -98,6 +101,7 @@ export class DirectoryService {
     }
 
     const updated = await this.repo.updateExercise(id, input);
+    masterDataCache.deletePrefix('master_exercises');
 
     await audit.write({
       actor_type: 'staff',
@@ -134,6 +138,7 @@ export class DirectoryService {
     }
 
     await this.repo.deleteExercise(id);
+    masterDataCache.deletePrefix('master_exercises');
 
     await audit.write({
       actor_type: 'staff',
@@ -170,6 +175,7 @@ export class DirectoryService {
 
     const mediaUrl = await this.repo.uploadExerciseMedia(id, fileBuffer, mimeType, extension);
     await this.repo.updateExercise(id, { image_path: mediaUrl });
+    masterDataCache.deletePrefix('master_exercises');
 
     await audit.write({
       actor_type: 'staff',
@@ -192,11 +198,13 @@ export class DirectoryService {
     if (!isDirectoryAdmin(currentUser.role)) {
       throw new AppError('Access denied: requires admin role', 403, 'FORBIDDEN');
     }
-    return this.repo.createMinigame(input, currentUser.id);
+    const created = await this.repo.createMinigame(input, currentUser.id);
+    masterDataCache.delete('master_minigames');
+    return created;
   }
 
   async listMinigames(): Promise<MinigameRecord[]> {
-    return this.repo.listMinigames();
+    return masterDataCache.getOrSet('master_minigames', () => this.repo.listMinigames(), 60000);
   }
 
   async getMinigameById(id: string): Promise<MinigameRecord> {
@@ -247,6 +255,7 @@ export class DirectoryService {
     }
 
     const modpack = await this.repo.createModpack(input, currentUser.id);
+    masterDataCache.delete('master_modpacks');
 
     await audit.write({
       actor_type: 'staff',
@@ -274,7 +283,7 @@ export class DirectoryService {
   }
 
   async listModpacks(): Promise<ModpackRecord[]> {
-    return this.repo.listModpacks();
+    return masterDataCache.getOrSet('master_modpacks', () => this.repo.listModpacks(), 60000);
   }
 
   async updateModpack(
@@ -301,6 +310,7 @@ export class DirectoryService {
     }
 
     const updated = await this.repo.updateModpack(id, input);
+    masterDataCache.delete('master_modpacks');
 
     await audit.write({
       actor_type: 'staff',
@@ -335,6 +345,7 @@ export class DirectoryService {
     }
 
     await this.repo.deleteModpack(id);
+    masterDataCache.delete('master_modpacks');
 
     await audit.write({
       actor_type: 'staff',

@@ -424,14 +424,17 @@ export class PatientRepository implements IPatientRepository {
     accessiblePatientIds?: string[] | null
   ): Promise<{ patients: PatientRecord[]; total: number; page: number; limit: number }> {
     const page = filter.page || 1;
-    const limit = filter.limit || 20;
+    const limit = Math.min(Math.max(filter.limit || 20, 1), 50);
     const offset = (page - 1) * limit;
 
     try {
       const adminClient = getAdminClient();
       let query = adminClient
         .from('patients')
-        .select('*, responsible_pt:profiles!responsible_pt_id(id, full_name, username)', { count: 'exact' });
+        .select(
+          'id, hn, first_name, last_name, age, sex, phone, injury, responsible_pt_id, registration_status, registered_via, pending_expires_at, started_at, version, created_at, updated_at, responsible_pt:profiles!responsible_pt_id(id, full_name, username)',
+          { count: 'exact' }
+        );
 
       if (accessiblePatientIds !== null && accessiblePatientIds !== undefined) {
         if (accessiblePatientIds.length === 0) {
@@ -463,7 +466,7 @@ export class PatientRepository implements IPatientRepository {
         }
       }
 
-      let patients = (data as PatientRecord[]) || [];
+      let patients = (data as unknown as PatientRecord[]) || [];
       try {
         const { currentFakePatientRepo } = await import('../../__tests__/fixtures/fakeRepositories');
         const localList = Array.from(currentFakePatientRepo.inMemoryPatients.values());

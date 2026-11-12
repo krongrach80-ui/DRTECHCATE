@@ -4,6 +4,7 @@ import { audit } from '../audit';
 import { AuthService } from '../auth/service';
 import { getEnv } from '../../config/env';
 import { IStaffRepository, defaultStaffRepository } from './repository';
+import { masterDataCache } from '../../lib/cache/inMemoryCache';
 import {
   CreateStaffInput,
   UpdateStaffInput,
@@ -73,6 +74,7 @@ export class StaffService {
           }
         : undefined
     );
+    masterDataCache.delete('master_pts');
 
     // Audit trail (Strictly excludes password)
     await audit.write({
@@ -248,6 +250,7 @@ export class StaffService {
           }
         : undefined
     );
+    masterDataCache.delete('master_pts');
 
     await audit.write({
       actor_type: 'staff',
@@ -395,6 +398,7 @@ export class StaffService {
     }
 
     await this.repo.deleteStaff(id);
+    masterDataCache.delete('master_pts');
 
     try {
       await this.authService.forceLogout(id, adminUser, clientIp, clientDeviceId, 'Staff deleted by administrator');

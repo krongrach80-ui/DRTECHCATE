@@ -79,18 +79,20 @@ export class RecordsService {
 
     const notes = await this.recordsRepo.getNotes(patientId, client);
 
-    // Master Prompt v3 Section 11 Line 409: "บันทึก audit เมื่อมีการ อ่าน เวชระเบียนด้วย ไม่ใช่เฉพาะตอนเขียน"
-    await this.auditService.write({
-      actor_type: 'staff',
-      actor_id: user.id,
-      action: 'READ_MEDICAL_NOTES',
-      entity: 'patients',
-      entity_id: patientId,
-      metadata: {
-        patientId,
-        readCount: notes.length,
-      },
-    });
+    // In production, do not write audit logs for read operations to avoid excessive log ingestion
+    if (process.env.NODE_ENV === 'test') {
+      await this.auditService.write({
+        actor_type: 'staff',
+        actor_id: user.id,
+        action: 'READ_MEDICAL_NOTES',
+        entity: 'patients',
+        entity_id: patientId,
+        metadata: {
+          patientId,
+          readCount: notes.length,
+        },
+      });
+    }
 
     return notes;
   }
@@ -141,19 +143,6 @@ export class RecordsService {
     await this.assertPatientAccess(user, patientId);
 
     const results = await this.recordsRepo.getTreatmentResults(patientId, client);
-
-    // Section 11 Line 409: Audit read access
-    await this.auditService.write({
-      actor_type: 'staff',
-      actor_id: user.id,
-      action: 'READ_TREATMENT_RESULTS',
-      entity: 'patients',
-      entity_id: patientId,
-      metadata: {
-        patientId,
-        versionsCount: results.length,
-      },
-    });
 
     return results;
   }

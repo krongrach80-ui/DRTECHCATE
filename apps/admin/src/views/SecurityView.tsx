@@ -160,11 +160,11 @@ export const SecurityView: React.FC<SecurityViewProps> = ({
   useEffect(() => {
     fetchSecurityData();
 
-    // Background refresh: 25 seconds when active, paused when tab is hidden
+    // Background refresh: 60 seconds minimum when active, paused when tab is hidden
     const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) return;
       fetchSecurityData();
-    }, 25000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, []);

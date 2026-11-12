@@ -733,6 +733,46 @@ export const CLINICAL_DICTIONARY = {
     'th-TH': '⚠️ ตรวจพบภาพที่ไม่ใช่ใบหน้าจริง กรุณามองกล้องด้วยใบหน้าจริงและกะพริบตา',
     'en-US': '⚠️ Spoof detected. Please face the camera and blink',
   },
+  kiosk_account_not_found_title: {
+    'zh-CN': '未找到用户账户',
+    'th-TH': 'ไม่พบบัญชีผู้ใช้',
+    'en-US': 'Account Not Found',
+  },
+  kiosk_account_not_found_desc: {
+    'zh-CN': '未找到用户账户，请联系工作人员进行注册。',
+    'th-TH': 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน',
+    'en-US': 'No user account was found. Please contact staff for registration.',
+  },
+  kiosk_btn_staff_register: {
+    'zh-CN': '由工作人员注册',
+    'th-TH': 'เจ้าหน้าที่ลงทะเบียนให้',
+    'en-US': 'Staff Registration',
+  },
+  kiosk_btn_call_staff: {
+    'zh-CN': '呼叫工作人员',
+    'th-TH': 'เรียกเจ้าหน้าที่',
+    'en-US': 'Call Staff',
+  },
+  kiosk_btn_use_pin: {
+    'zh-CN': '使用 PIN',
+    'th-TH': 'ใช้รหัส PIN',
+    'en-US': 'Use PIN',
+  },
+  kiosk_btn_try_again: {
+    'zh-CN': '重新扫描',
+    'th-TH': 'ลองสแกนอีกครั้ง',
+    'en-US': 'Try Again',
+  },
+  kiosk_msg_quality_insufficient: {
+    'zh-CN': '请正视摄像头，改善光线，并将面部置于画面中央。',
+    'th-TH': 'กรุณามองตรง เพิ่มแสง และจัดใบหน้าให้อยู่กลางกล้อง',
+    'en-US': 'Please face the camera, improve lighting, and position your face in the center.',
+  },
+  kiosk_msg_match_uncertain: {
+    'zh-CN': '需要进一步身份验证',
+    'th-TH': 'กรุณายืนยันตัวตนเพิ่มเติม',
+    'en-US': 'Additional verification required.',
+  },
 
   // Physical Cards Minigame
   card_minigame_title: {
