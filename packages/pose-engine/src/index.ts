@@ -22,3 +22,4 @@ export * from './hardwareWatchdog';
 export * from './backlightCompensator';
 export * from './math/oneEuroFilter';
 export * from './math/sideResolution';
+export * from './math/armIdentityStabilizer';

@@ -39,6 +39,7 @@ import { PoseSkeletonFilter, OneEuroScalarFilter } from '../math/filters';
 import { ShoulderPendulumAnalyzer } from '../math/pendulumAnalyzer';
 import { CompensationDetector } from '../compensation';
 import { ForegroundSubjectLocker, SubjectLockResult } from '../subjectLock';
+import { ArmIdentityStabilizer } from '../math/armIdentityStabilizer';
 
 export interface LandmarkVisibilityPolicy {
   shoulderMinVis: number; // 0.45 (จุดหลักที่ต้องเห็นในโหมดครึ่งตัว)
@@ -72,6 +73,7 @@ export class RepStateMachine {
   private pendulumAnalyzer: ShoulderPendulumAnalyzer;
   private compensationDetector: CompensationDetector;
   private subjectLocker: ForegroundSubjectLocker;
+  private armStabilizer: ArmIdentityStabilizer;
 
   private completedReps: number = 0;
   private incorrectReps: number = 0;
@@ -92,6 +94,9 @@ export class RepStateMachine {
   private balanceHoldStartTimeMs: number | null = null;
   private balanceHoldAccumulatedMs: number = 0;
   private recentPlaneAngles: number[] = [];
+  private recentElbowAngles: number[] = [];
+  private recentWristDistances: number[] = [];
+  private hasCurrentRepFormViolation: boolean = false;
   private repStartTimeMs: number | null = null;
   private lastUpperArmLen: number | null = null;
   private lastForearmLen: number | null = null;
@@ -149,6 +154,7 @@ export class RepStateMachine {
       primaryKeypointIndices: isUpper ? [11, 12, 13, 14] : [11, 12, 13, 14, 15, 16, 23, 24],
       minKeypointVisibility: isUpper ? 0.45 : 0.65,
     });
+    this.armStabilizer = new ArmIdentityStabilizer();
   }
 
   public updateConfig(config: ExerciseDetectionConfig): void {
@@ -174,6 +180,7 @@ export class RepStateMachine {
       primaryKeypointIndices: isUpper ? [11, 12, 13, 14] : [11, 12, 13, 14, 15, 16, 23, 24],
       minKeypointVisibility: isUpper ? 0.45 : 0.65,
     });
+    this.armStabilizer = new ArmIdentityStabilizer();
   }
 
   public setSide(side: BodySide): void {
@@ -184,15 +191,17 @@ export class RepStateMachine {
   public evaluateFrame(
     normLandmarks: PoseEngineLandmark[],
     worldLandmarks?: PoseEngineLandmark[],
-    timestampMs: number = Date.now()
+    timestampMs: number = Date.now(),
+    options?: { isArmAmbiguous?: boolean; ambiguousJoints?: Set<number>; isArmClipping?: boolean }
   ): RepEvaluationResult {
-    return this.evaluate(normLandmarks, timestampMs, worldLandmarks);
+    return this.evaluate(normLandmarks, timestampMs, worldLandmarks, options);
   }
 
   public evaluate(
     rawLandmarks: PoseEngineLandmark[],
     timestampMs: number = Date.now(),
-    worldLandmarks?: PoseEngineLandmark[]
+    worldLandmarks?: PoseEngineLandmark[],
+    options?: { isArmAmbiguous?: boolean; ambiguousJoints?: Set<number>; isArmClipping?: boolean }
   ): RepEvaluationResult {
     // 0. Anti-hijack & foreground subject lock evaluation
     const lockResult = this.subjectLocker.processFrame(rawLandmarks, timestampMs);
@@ -205,8 +214,66 @@ export class RepStateMachine {
       };
     }
 
+    // 0.5. Arm Ambiguity Fail-Closed Gate
+    const isAmbiguous = Boolean(options?.isArmAmbiguous);
+
+    // Fail-Closed Freeze on Arm Ambiguity:
+    // Suspend rep progression and hold timers, preserve completed reps, and display coaching prompt.
+    if (isAmbiguous) {
+      const coachingPromptTh = 'กรุณาแยกแขนหรือข้อมือสองข้างออกจากกันเพื่อความแม่นยำ';
+      const coachingPromptEn = 'Please separate both arms or wrists for tracking accuracy';
+      const coachingPromptCn = '请将双手或手腕分开以确保准确追踪';
+
+      if (this.lastEvaluationResult) {
+        return {
+          ...this.lastEvaluationResult,
+          isArmAmbiguous: true,
+          ambiguousReasonTh: 'ข้อมือหรือศอกชิดกันหรือไขว้กัน กรุณาแยกแขนออกจากกัน',
+          coachingMessage: coachingPromptTh,
+          coachingMessageTh: coachingPromptTh,
+          coachingMessageEn: coachingPromptEn,
+          coachingMessageCn: coachingPromptCn,
+          formRating: this.lastEvaluationResult.formRating === 'error' ? 'error' : 'warning',
+        };
+      }
+
+      const defaultAngle = this.config.angleMechanics?.startAngleDeg ?? 0;
+      const targetAngle = this.config.angleMechanics?.targetMinDeg ?? 90;
+      return {
+        phase: 'IDLE',
+        currentAngleDeg: defaultAngle,
+        targetAngleDeg: targetAngle,
+        accuracyPercent: 0,
+        accuracyPct: 0,
+        severity: 'warning',
+        holdProgressRatio: 0,
+        pendulumCircleProgressRatio: 0,
+        isInsideTargetZone: false,
+        isExceedingSafetyCap: false,
+        completedReps: this.completedReps,
+        incorrectReps: this.incorrectReps,
+        targetReps: this.config.defaultReps ?? 10,
+        currentSet: this.currentSet,
+        totalSets: this.config.defaultSets ?? 3,
+        isSetCompleted: false,
+        isExerciseCompleted: false,
+        coachingMessage: coachingPromptTh,
+        coachingMessageTh: coachingPromptTh,
+        coachingMessageEn: coachingPromptEn,
+        coachingMessageCn: coachingPromptCn,
+        activeWarnings: [],
+        formRating: 'warning',
+        instantaneousVelocity: 0,
+        readinessStatus: 'ready',
+        isArmAmbiguous: true,
+        ambiguousReasonTh: 'ข้อมือหรือศอกชิดกันหรือไขว้กัน กรุณาแยกแขนออกจากกัน',
+        filteredLandmarks: rawLandmarks,
+      };
+    }
+
     // 1. Filter raw landmarks using 1€ filter
-    const filteredLandmarks = this.skeletonFilter.filterSkeleton(rawLandmarks, timestampMs);
+    const landmarksToFilter = rawLandmarks;
+    const filteredLandmarks = this.skeletonFilter.filterSkeleton(landmarksToFilter, timestampMs);
 
     // 2. Framing & anatomical visibility readiness check
     const framingCheck = this.checkFramingReadiness(filteredLandmarks);
@@ -228,11 +295,15 @@ export class RepStateMachine {
     } else if (this.config.evaluationMode === 'heel_raise') {
       result = this.evaluateHeelRaise(filteredLandmarks, timestampMs, lockResult);
     } else {
-      result = this.evaluateAngleRepHold(filteredLandmarks, timestampMs, lockResult, worldLandmarks);
+      result = this.evaluateAngleRepHold(filteredLandmarks, timestampMs, lockResult, worldLandmarks, options);
     }
 
-    this.lastEvaluationResult = result;
-    return result;
+    this.lastEvaluationResult = {
+      ...result,
+      isArmAmbiguous: false,
+      isArmClipping: Boolean(options?.isArmClipping),
+    };
+    return this.lastEvaluationResult;
   }
 
   /**
@@ -312,6 +383,35 @@ export class RepStateMachine {
         def.formRating = 'warning';
         return def;
       }
+
+      if (this.config.formGate?.disallowOutOfFrame) {
+        const effectiveSide = resolveTargetSide(this.config.side);
+        const minVis = this.config.formGate.minLandmarkVisibility ?? 0.50;
+        const isArmVisible = (idx: number) => {
+          const lm = landmarks[idx];
+          return Boolean(lm && (lm.visibility ?? 1.0) >= minVis && isInFrame(lm));
+        };
+        const hasLeftArm = isArmVisible(11) && isArmVisible(13) && isArmVisible(15);
+        const hasRightArm = isArmVisible(12) && isArmVisible(14) && isArmVisible(16);
+        const hasRequiredArm =
+          effectiveSide === 'right'
+            ? hasRightArm
+            : effectiveSide === 'left'
+            ? hasLeftArm
+            : (hasLeftArm || hasRightArm);
+
+        if (!hasRequiredArm) {
+          const def = this.createDefaultResult(
+            landmarks,
+            this.config.formGate.missingArmCueTh || '📷 ขยับถอยหลังอีกนิด ให้เห็นแขนถึงข้อศอก'
+          );
+          def.coachingMessageEn = this.config.formGate.missingArmCueEn || '📷 Step back slightly so your arm and elbow are visible';
+          def.coachingMessageCn = this.config.formGate.missingArmCueCn || '📷 请稍微后退，确保手臂和肘部完整入镜';
+          def.readinessStatus = 'missing_arm_landmarks';
+          def.formRating = 'warning';
+          return def;
+        }
+      }
     }
 
     return null;
@@ -325,7 +425,8 @@ export class RepStateMachine {
     normalizedLandmarks: PoseEngineLandmark[],
     landmarks: PoseEngineLandmark[],
     angleCfg: AngleMechanicsConfig,
-    worldLandmarks?: PoseEngineLandmark[]
+    worldLandmarks?: PoseEngineLandmark[],
+    options?: { isArmAmbiguous?: boolean; ambiguousJoints?: Set<number>; isArmClipping?: boolean }
   ): {
     angle: number;
     readiness: RepEvaluationResult['readinessStatus'];
@@ -489,52 +590,96 @@ export class RepStateMachine {
             : calculateAngle2D(effectivePA, pV, pB);
         }
       } else if (this.config.targetJoint === 'elbow') {
-        const elbowIdx = triplet.vertex;
-        const shoulderIdx = triplet.pointA;
-        const wristIdx = triplet.pointB;
-        const hasElbow = isCamUsable(elbowIdx, policy.elbowMinVis);
-        const hasShoulder = isCamUsable(shoulderIdx, policy.shoulderMinVis);
-        const hasWrist = isCamUsable(wristIdx, policy.wristMinVis);
+        const isElbowFlexionEx =
+          this.config.id === 'elbow-flexion-extension' ||
+          this.config.id === 'elbow-flexion';
 
-        if (hasShoulder && hasElbow && hasWrist) {
-          currentAngle = triplet.use3DWorld
-            ? calculateAngle3D(pA, pV, pB)
-            : calculateAngle2D(pA, pV, pB);
-          readinessStatus = 'ready';
-        } else if (hasShoulder && hasElbow && !hasWrist) {
-          readinessStatus = 'partial_upper_body';
-          const synthWrist = {
-            x: pV.x + (pV.x - pA.x) * 0.5,
-            y: pV.y + 0.2,
-            z: pV.z ?? 0,
-            visibility: 0.7,
-          };
-          currentAngle = triplet.use3DWorld
-            ? calculateAngle3D(pA, pV, synthWrist)
-            : calculateAngle2D(pA, pV, synthWrist);
-        } else if (hasShoulder && (!hasElbow || !hasWrist)) {
-          // Graceful fallback to Partial Upper-Body / Shoulder Oscillation Mode
-          isUpperBodyDeskActive = true;
-          readinessStatus = 'partial_upper_body';
+        if (isElbowFlexionEx) {
+          const elbowIdx = triplet.vertex;
+          const shoulderIdx = triplet.pointA;
+          const wristIdx = triplet.pointB;
+          const reqVis = this.config.formGate?.minLandmarkVisibility ?? 0.50;
+          const hasElbow = isCamUsable(elbowIdx, reqVis);
+          const hasShoulder = isCamUsable(shoulderIdx, reqVis);
+          const hasWrist = isCamUsable(wristIdx, reqVis);
 
-          const oppShoulderIdx = shoulderIdx === 11 ? 12 : 11;
-          const oppShoulder = landmarks[oppShoulderIdx];
-          const nose = landmarks[0];
-          const baselineY =
-            isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
-              ? oppShoulder.y
-              : isCamUsable(0, 0.35) && nose
-              ? nose.y + 0.18
-              : landmarks[shoulderIdx]?.y ?? 0.35;
+          // Boundary clipping check
+          const pElbow = landmarks[elbowIdx];
+          const pWrist = landmarks[wristIdx];
+          const isArmOut =
+            Boolean(options?.isArmClipping) ||
+            !pElbow ||
+            pElbow.x < 0.03 ||
+            pElbow.x > 0.97 ||
+            pElbow.y < 0.03 ||
+            pElbow.y > 0.97 ||
+            !pWrist ||
+            pWrist.x < 0.03 ||
+            pWrist.x > 0.97 ||
+            pWrist.y < 0.03 ||
+            pWrist.y > 0.97;
 
-          const upwardLift = Math.max(0, baselineY - (landmarks[shoulderIdx]?.y ?? 0.35));
-          const targetMin = angleCfg.targetMinDeg;
-          const startAngle = angleCfg.startAngleDeg;
-          const liftRatio = Math.min(1.0, upwardLift / 0.08);
-          currentAngle = startAngle + liftRatio * (targetMin - startAngle);
+          if (!hasShoulder || !hasElbow || !hasWrist || isArmOut) {
+            // Strict Fail-Closed: Out of frame or missing arm keypoints
+            // Freeze angle at start, disable desk-mode shoulder oscillation, mark missing_arm_landmarks
+            currentAngle = angleCfg.startAngleDeg;
+            readinessStatus = 'missing_arm_landmarks';
+            isUpperBodyDeskActive = false;
+          } else {
+            currentAngle = triplet.use3DWorld
+              ? calculateAngle3D(pA, pV, pB)
+              : calculateAngle2D(pA, pV, pB);
+            readinessStatus = 'ready';
+          }
         } else {
-          currentAngle = angleCfg.startAngleDeg;
-          readinessStatus = 'partial_upper_body';
+          // Zero-Regression: Wall-pushup and any other elbow exercises retain previous fallback
+          const elbowIdx = triplet.vertex;
+          const shoulderIdx = triplet.pointA;
+          const wristIdx = triplet.pointB;
+          const hasElbow = isCamUsable(elbowIdx, policy.elbowMinVis);
+          const hasShoulder = isCamUsable(shoulderIdx, policy.shoulderMinVis);
+          const hasWrist = isCamUsable(wristIdx, policy.wristMinVis);
+
+          if (hasShoulder && hasElbow && hasWrist) {
+            currentAngle = triplet.use3DWorld
+              ? calculateAngle3D(pA, pV, pB)
+              : calculateAngle2D(pA, pV, pB);
+            readinessStatus = 'ready';
+          } else if (hasShoulder && hasElbow && !hasWrist) {
+            readinessStatus = 'partial_upper_body';
+            const synthWrist = {
+              x: pV.x + (pV.x - pA.x) * 0.5,
+              y: pV.y + 0.2,
+              z: pV.z ?? 0,
+              visibility: 0.7,
+            };
+            currentAngle = triplet.use3DWorld
+              ? calculateAngle3D(pA, pV, synthWrist)
+              : calculateAngle2D(pA, pV, synthWrist);
+          } else if (hasShoulder && (!hasElbow || !hasWrist)) {
+            // Graceful fallback to Partial Upper-Body / Shoulder Oscillation Mode
+            isUpperBodyDeskActive = true;
+            readinessStatus = 'partial_upper_body';
+
+            const oppShoulderIdx = shoulderIdx === 11 ? 12 : 11;
+            const oppShoulder = landmarks[oppShoulderIdx];
+            const nose = landmarks[0];
+            const baselineY =
+              isCamUsable(oppShoulderIdx, 0.35) && oppShoulder
+                ? oppShoulder.y
+                : isCamUsable(0, 0.35) && nose
+                ? nose.y + 0.18
+                : landmarks[shoulderIdx]?.y ?? 0.35;
+
+            const upwardLift = Math.max(0, baselineY - (landmarks[shoulderIdx]?.y ?? 0.35));
+            const targetMin = angleCfg.targetMinDeg;
+            const startAngle = angleCfg.startAngleDeg;
+            const liftRatio = Math.min(1.0, upwardLift / 0.08);
+            currentAngle = startAngle + liftRatio * (targetMin - startAngle);
+          } else {
+            currentAngle = angleCfg.startAngleDeg;
+            readinessStatus = 'partial_upper_body';
+          }
         }
       } else {
         const isAUsable = isCamUsable(triplet.pointA, 0.3);
@@ -561,7 +706,8 @@ export class RepStateMachine {
     landmarks: PoseEngineLandmark[],
     timestampMs: number,
     lockResult?: SubjectLockResult,
-    worldLandmarks?: PoseEngineLandmark[]
+    worldLandmarks?: PoseEngineLandmark[],
+    options?: { isArmAmbiguous?: boolean; ambiguousJoints?: Set<number>; isArmClipping?: boolean }
   ): RepEvaluationResult {
     const angleCfg = this.config.angleMechanics;
     const targetReps = this.config.defaultPrescription?.repsPerSet || 10;
@@ -589,7 +735,14 @@ export class RepStateMachine {
       triplet = rightConf >= leftConf ? angleCfg.landmarks.right : angleCfg.landmarks.left;
     }
 
-    const targetComp = this.computeAngleForTriplet(triplet, normalizedLandmarks, landmarks, angleCfg, worldLandmarks);
+    const targetComp = this.computeAngleForTriplet(
+      triplet,
+      normalizedLandmarks,
+      landmarks,
+      angleCfg,
+      worldLandmarks,
+      options
+    );
     let currentAngle = targetComp.angle;
     let readinessStatus = targetComp.readiness;
     let isUpperBodyDeskActive = targetComp.isDeskActive;
@@ -644,7 +797,8 @@ export class RepStateMachine {
         normalizedLandmarks,
         landmarks,
         angleCfg,
-        worldLandmarks
+        worldLandmarks,
+        options
       );
       oppositeAngle = oppComp.angle;
 
@@ -713,7 +867,11 @@ export class RepStateMachine {
     }
 
     // At rest / neutral starting posture: display 100% readiness (never 19% or random partial scores at rest)
-    if (isAtStartZone && (this.phase === 'IDLE' || this.phase === 'REP_COMPLETED')) {
+    if (
+      isAtStartZone &&
+      (this.phase === 'IDLE' || this.phase === 'REP_COMPLETED') &&
+      readinessStatus !== 'missing_arm_landmarks'
+    ) {
       accuracyPercent = 100;
     } else if (this.phase === 'HOLDING_TARGET') {
       let penalty = 0;
@@ -736,7 +894,7 @@ export class RepStateMachine {
       }
     }
 
-    if (isWrongSideMoving) {
+    if (isWrongSideMoving || readinessStatus === 'missing_arm_landmarks' || options?.isArmClipping) {
       accuracyPercent = 0;
     }
 
@@ -792,6 +950,9 @@ export class RepStateMachine {
       if (currentAngle < minElevationToEnforce) {
         // Arm is resting near side; reset window to avoid stale angles when movement begins
         this.recentPlaneAngles = [];
+    this.recentElbowAngles = [];
+    this.recentWristDistances = [];
+    this.hasCurrentRepFormViolation = false;
       } else {
         const targetSide = sideInfo.isUnilateral && effectiveSide === 'left' ? 'left' : (effectiveSide === 'right' ? 'right' : (triplet.vertex === 11 ? 'left' : 'right'));
         const isWristTarget = triplet.pointB === 15 || triplet.pointB === 16;
@@ -857,6 +1018,129 @@ export class RepStateMachine {
       accuracyPercent = 0;
     }
 
+    // Biomechanical Form Gate (Zero-Regression: Enforced only when formGate is configured on exercise)
+    const formGate = this.config.formGate;
+    let isFormGateViolated = false;
+    let formGateReason:
+      | 'elbow_bent'
+      | 'wrist_crossed'
+      | 'low_visibility'
+      | 'scapular_hiking'
+      | 'elbow_drift'
+      | 'out_of_frame'
+      | null = null;
+    let elbowExtensionDeg = 180;
+    let wristSeparationDist = 1.0;
+    let lateralElbowDriftDist = 0.0;
+
+    if (formGate) {
+      const activeShoulderIdx = sideInfo.isUnilateral && effectiveSide === 'right' ? 12 : 11;
+      const activeElbowIdx = sideInfo.isUnilateral && effectiveSide === 'right' ? 14 : 13;
+      const activeWristIdx = sideInfo.isUnilateral && effectiveSide === 'right' ? 16 : 15;
+      const oppWristIdx = activeWristIdx === 15 ? 16 : 15;
+
+      const pS = normalizedLandmarks[activeShoulderIdx];
+      const pE = normalizedLandmarks[activeElbowIdx];
+      const pW = normalizedLandmarks[activeWristIdx];
+      const pOppW = normalizedLandmarks[oppWristIdx];
+
+      const rawS = landmarks[activeShoulderIdx];
+      const rawE = landmarks[activeElbowIdx];
+      const rawW = landmarks[activeWristIdx];
+
+      // Reset gate smoothing buffers when resting at neutral start zone
+      if (isAtStartZone && (this.phase === 'IDLE' || this.phase === 'REP_COMPLETED')) {
+        this.recentElbowAngles = [];
+        this.recentWristDistances = [];
+      }
+
+      // 1. Active arm landmark visibility gate (always evaluated, even at start zone)
+      if (formGate.minLandmarkVisibility !== undefined) {
+        const sVis = pS?.visibility ?? 1.0;
+        const eVis = pE?.visibility ?? 1.0;
+        const wVis = pW?.visibility ?? 1.0;
+        if (
+          sVis < formGate.minLandmarkVisibility ||
+          eVis < formGate.minLandmarkVisibility ||
+          wVis < formGate.minLandmarkVisibility ||
+          readinessStatus === 'missing_arm_landmarks'
+        ) {
+          isFormGateViolated = true;
+          formGateReason = 'low_visibility';
+        }
+      }
+
+      // 2. Boundary clipping / Out of frame gate (evaluated in camera frame space [0, 1])
+      if (!isFormGateViolated && formGate.disallowOutOfFrame) {
+        const isClipping = Boolean(
+          options?.isArmClipping ||
+          readinessStatus === 'missing_arm_landmarks' ||
+          (rawS && (rawS.x < 0.03 || rawS.x > 0.97 || rawS.y < 0.03 || rawS.y > 0.97)) ||
+          (rawE && (rawE.x < 0.03 || rawE.x > 0.97 || rawE.y < 0.03 || rawE.y > 0.97)) ||
+          (rawW && (rawW.x < 0.03 || rawW.x > 0.97 || rawW.y < 0.03 || rawW.y > 0.97))
+        );
+        if (isClipping) {
+          isFormGateViolated = true;
+          formGateReason = 'out_of_frame';
+        }
+      }
+
+      if (!isAtStartZone || this.phase === 'MOVING_TO_TARGET' || this.phase === 'HOLDING_TARGET') {
+        // 3. Wrist separation distance gate (prevent folded elbows with crossed fists at chin/chest)
+        if (!isFormGateViolated && formGate.minWristSeparationNorm !== undefined && pW && pOppW) {
+          wristSeparationDist = Math.hypot(pW.x - pOppW.x, pW.y - pOppW.y);
+          this.recentWristDistances.push(wristSeparationDist);
+          if (this.recentWristDistances.length > 4) {
+            this.recentWristDistances.shift();
+          }
+          const avgWristDist = this.recentWristDistances.reduce((a, b) => a + b, 0) / this.recentWristDistances.length;
+          if (avgWristDist < formGate.minWristSeparationNorm || wristSeparationDist < formGate.minWristSeparationNorm * 0.8) {
+            isFormGateViolated = true;
+            formGateReason = 'wrist_crossed';
+          }
+        }
+
+        // 4. Active elbow extension angle gate (Shoulder -> Elbow -> Wrist)
+        if (!isFormGateViolated && formGate.minElbowExtensionDeg !== undefined && pS && pE && pW) {
+          elbowExtensionDeg = calculateAngle3D(pS, pE, pW);
+          this.recentElbowAngles.push(elbowExtensionDeg);
+          if (this.recentElbowAngles.length > 4) {
+            this.recentElbowAngles.shift();
+          }
+          const avgElbowDeg = this.recentElbowAngles.reduce((a, b) => a + b, 0) / this.recentElbowAngles.length;
+          if (avgElbowDeg < formGate.minElbowExtensionDeg || elbowExtensionDeg < formGate.minElbowExtensionDeg - 5) {
+            isFormGateViolated = true;
+            formGateReason = 'elbow_bent';
+          }
+        }
+
+        // 5. Lateral Elbow Drift gate (prevent flared chicken-wing arm during flexion/extension)
+        if (!isFormGateViolated && formGate.elbowDriftTolerance !== undefined && pS && pE) {
+          lateralElbowDriftDist = Math.abs(pE.x - pS.x);
+          if (lateralElbowDriftDist > formGate.elbowDriftTolerance) {
+            isFormGateViolated = true;
+            formGateReason = 'elbow_drift';
+          }
+        }
+
+        // 6. Scapular hiking / Shrug gate
+        if (!isFormGateViolated && formGate.disallowScapularHiking) {
+          const hasHiking = activeWarnings.some((w) => w.type === 'scapular_hiking' || w.type === 'shoulder_shrug');
+          if (hasHiking) {
+            isFormGateViolated = true;
+            formGateReason = 'scapular_hiking';
+          }
+        }
+      }
+
+      if (isFormGateViolated) {
+        isInsideTargetZone = false;
+        this.hasCurrentRepFormViolation = true;
+        // Disqualify score floor clamp and penalize accuracy
+        accuracyPercent = 0;
+      }
+    }
+
     let coachingMessage = 'เริ่มขยับข้อต่อเข้าสู่มุมเป้าหมาย';
     let coachingMessageEn: string | undefined;
     let coachingMessageCn: string | undefined;
@@ -904,6 +1188,53 @@ export class RepStateMachine {
         currentValue: Math.round(currentPlaneAngleDeg ?? 0),
         thresholdValue: 45,
       });
+    } else if (isFormGateViolated && formGate) {
+      formRating = 'error';
+      if (formGateReason === 'wrist_crossed') {
+        coachingMessage = formGate.wristCrossedCueTh || 'กรุณาแยกมือทั้งสองข้างออกจากกัน';
+        coachingMessageEn = formGate.wristCrossedCueEn || 'Please keep your hands separated';
+        coachingMessageCn = formGate.wristCrossedCueCn || '请将双手分开，不要交叉';
+        activeWarnings.unshift({
+          ruleId: 'form_gate_wrist_crossed',
+          type: 'elbow_flexion',
+          messageTh: coachingMessage,
+          severity: 'error',
+          currentValue: Math.round(wristSeparationDist * 100),
+          thresholdValue: Math.round((formGate.minWristSeparationNorm ?? 0.14) * 100),
+        });
+      } else if (formGateReason === 'elbow_bent') {
+        coachingMessage = formGate.elbowBentCueTh || 'กรุณาเหยียดข้อศอกให้ตรงขณะยกแขน';
+        coachingMessageEn = formGate.elbowBentCueEn || 'Please keep your elbow straight';
+        coachingMessageCn = formGate.elbowBentCueCn || '抬臂时请保持肘部伸直';
+        activeWarnings.unshift({
+          ruleId: 'form_gate_elbow_bent',
+          type: 'elbow_flexion',
+          messageTh: coachingMessage,
+          severity: 'error',
+          currentValue: Math.round(elbowExtensionDeg),
+          thresholdValue: formGate.minElbowExtensionDeg ?? 145,
+        });
+      } else if (formGateReason === 'scapular_hiking') {
+        coachingMessage = formGate.scapularHikingCueTh || 'อย่าเกร็งยกหัวไหล่ขึ้น ให้ยกเฉพาะแขน';
+        coachingMessageEn = formGate.scapularHikingCueEn || 'Do not shrug shoulder upward, isolate arm movement';
+        coachingMessageCn = formGate.scapularHikingCueCn || '请勿耸肩借力，保持肩胛平稳';
+      } else if (formGateReason === 'elbow_drift') {
+        coachingMessage = formGate.elbowDriftCueTh || 'กรุณาแนบข้อศอกกับลำตัว อย่ายกศอกกางออก';
+        coachingMessageEn = formGate.elbowDriftCueEn || 'Keep your elbow tucked close to your torso';
+        coachingMessageCn = formGate.elbowDriftCueCn || '屈肘时请将肘部贴近躯干，避免向外张开';
+        activeWarnings.unshift({
+          ruleId: 'form_gate_elbow_drift',
+          type: 'elbow_flexion',
+          messageTh: coachingMessage,
+          severity: 'error',
+          currentValue: Math.round(lateralElbowDriftDist * 100),
+          thresholdValue: Math.round((formGate.elbowDriftTolerance ?? 0.14) * 100),
+        });
+      } else if (formGateReason === 'out_of_frame' || formGateReason === 'low_visibility') {
+        coachingMessage = formGate.missingArmCueTh || 'ถอยห่างให้เห็นแขนและข้อศอกชัดเจน';
+        coachingMessageEn = formGate.missingArmCueEn || 'Please step back so your arm and elbow are clearly visible';
+        coachingMessageCn = formGate.missingArmCueCn || '请稍微后退，使手臂和手肘完整可见';
+      }
     } else if (isSitToStandCheating) {
       formRating = 'error';
       coachingMessage = 'กรุณาลุกขึ้นยืนจากเก้าอี้จริง (อย่ายกเฉพาะขาขณะนั่ง)';
@@ -983,8 +1314,8 @@ export class RepStateMachine {
     // STATE TRANSITIONS
     switch (this.phase) {
       case 'IDLE': {
-        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded) {
-          // Block transitioning when wrong side or wrong plane
+        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded || isFormGateViolated) {
+          // Block transitioning when wrong side, wrong plane, or form gate violated
           break;
         }
         if (isInsideTargetZone) {
@@ -1009,8 +1340,8 @@ export class RepStateMachine {
       }
 
       case 'MOVING_TO_TARGET': {
-        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded) {
-          // Block advancing to HOLDING_TARGET when wrong side or wrong plane
+        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded || isFormGateViolated) {
+          // Block advancing to HOLDING_TARGET when wrong side, wrong plane, or form gate violated
           break;
         }
         if (isInsideTargetZone) {
@@ -1028,8 +1359,8 @@ export class RepStateMachine {
       }
 
       case 'HOLDING_TARGET': {
-        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded) {
-          // Patient fell out due to wrong side or wrong plane
+        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded || isFormGateViolated) {
+          // Patient fell out due to wrong side, wrong plane, or form gate violation
           this.holdStartTimeMs = null;
           this.holdPauseStartMs = null;
           this.totalHoldPausedDurationMs = 0;
@@ -1120,8 +1451,13 @@ export class RepStateMachine {
           const nowMs = timestampMs;
           const isDebounced = nowMs - this.lastRepCompletedTimeMs >= 350;
 
-          if (this.compensationDetector.getVelocityGuard().hasRepViolation() || isSitToStandCheating || isHipAbductionCheating) {
-            // Rep rejected due to excessive velocity / jerky movement or anti-cheat violation
+          if (
+            this.compensationDetector.getVelocityGuard().hasRepViolation() ||
+            isSitToStandCheating ||
+            isHipAbductionCheating ||
+            (formGate && this.hasCurrentRepFormViolation)
+          ) {
+            // Rep rejected due to excessive velocity / jerky movement or anti-cheat / form gate violation
             this.incorrectReps++;
             this.phase = 'REP_COMPLETED';
             isRepRejected = true;
@@ -1129,14 +1465,20 @@ export class RepStateMachine {
               ? 'กรุณาลุกขึ้นยืนจากเก้าอี้จริง (อย่ายกเฉพาะขาขณะนั่ง)'
               : isHipAbductionCheating
               ? 'รักษาลำตัวให้ตรง อย่ายักสะโพกหรือเอียงตัวช่วยยกขา'
+              : (formGate && this.hasCurrentRepFormViolation)
+              ? (coachingMessage || 'ท่าทางไม่ผ่านเกณฑ์ความถูกต้อง')
               : 'เคลื่อนไหวช้าลง ควบคุมจังหวะให้สม่ำเสมอ';
             coachingMessage = `⚠️ ท่าไม่ผ่าน: ${repRejectionReasonTh}`;
             this.compensationDetector.getVelocityGuard().resetRepViolation();
+            this.hasCurrentRepFormViolation = false;
           } else if (isDebounced) {
             // Rep completed successfully!
             this.completedReps++;
             this.lastRepCompletedTimeMs = nowMs;
             this.recentPlaneAngles = [];
+    this.recentElbowAngles = [];
+    this.recentWristDistances = [];
+    this.hasCurrentRepFormViolation = false;
             this.phase = 'REP_COMPLETED';
             coachingMessage = `ครบ 1 ครั้ง! (${this.completedReps}/${targetReps})`;
 
@@ -1155,6 +1497,7 @@ export class RepStateMachine {
 
       case 'REP_COMPLETED': {
         this.compensationDetector.getVelocityGuard().resetRepViolation();
+        this.hasCurrentRepFormViolation = false;
         this.phase = 'MOVING_TO_TARGET';
         break;
       }
@@ -1196,6 +1539,37 @@ export class RepStateMachine {
       coachingMessage = elevationPlaneCfg.scaptionCueTh || 'ใกล้เคียง: ปรับทิศทางการยกแขนเล็กน้อย';
       coachingMessageEn = elevationPlaneCfg.scaptionCueEn;
       coachingMessageCn = elevationPlaneCfg.scaptionCueCn;
+    } else if (isFormGateViolated && formGate) {
+      formRating = 'error';
+      if (formGateReason === 'wrist_crossed') {
+        coachingMessage = formGate.wristCrossedCueTh || 'กรุณาแยกมือทั้งสองข้างออกจากกัน';
+        coachingMessageEn = formGate.wristCrossedCueEn || 'Please keep your hands separated';
+        coachingMessageCn = formGate.wristCrossedCueCn || '请将双手分开，不要交叉';
+      } else if (formGateReason === 'elbow_bent') {
+        coachingMessage = formGate.elbowBentCueTh || 'กรุณาเหยียดข้อศอกให้ตรงขณะยกแขน';
+        coachingMessageEn = formGate.elbowBentCueEn || 'Please keep your elbow straight';
+        coachingMessageCn = formGate.elbowBentCueCn || '抬臂时请保持肘部伸直';
+      } else if (formGateReason === 'scapular_hiking') {
+        coachingMessage = formGate.scapularHikingCueTh || 'อย่าเกร็งยกหัวไหล่ขึ้น ให้ยกเฉพาะแขน';
+        coachingMessageEn = formGate.scapularHikingCueEn || 'Do not shrug shoulder upward, isolate arm movement';
+        coachingMessageCn = formGate.scapularHikingCueCn || '请勿耸肩借力，保持肩胛平稳';
+      } else if (formGateReason === 'elbow_drift') {
+        coachingMessage = formGate.elbowDriftCueTh || 'กรุณาแนบข้อศอกกับลำตัว อย่ายกศอกกางออก';
+        coachingMessageEn = formGate.elbowDriftCueEn || 'Keep your elbow tucked close to your torso';
+        coachingMessageCn = formGate.elbowDriftCueCn || '屈肘时请将肘部贴近躯干，避免向外张开';
+        activeWarnings.unshift({
+          ruleId: 'form_gate_elbow_drift',
+          type: 'elbow_flexion',
+          messageTh: coachingMessage,
+          severity: 'error',
+          currentValue: Math.round(lateralElbowDriftDist * 100),
+          thresholdValue: Math.round((formGate.elbowDriftTolerance ?? 0.14) * 100),
+        });
+      } else if (formGateReason === 'out_of_frame' || formGateReason === 'low_visibility') {
+        coachingMessage = formGate.missingArmCueTh || 'ถอยห่างให้เห็นแขนและข้อศอกชัดเจน';
+        coachingMessageEn = formGate.missingArmCueEn || 'Please step back so your arm and elbow are clearly visible';
+        coachingMessageCn = formGate.missingArmCueCn || '请稍微后退，使手臂和手肘完整可见';
+      }
     } else if (isWrongSideMoving) {
       const wrongMsg = getWrongSideCoachingMessage(
         effectiveSide as 'left' | 'right',
@@ -1212,12 +1586,17 @@ export class RepStateMachine {
       coachingMessage = activeWarnings.find((w) => w.severity === 'error')!.messageTh;
     }
 
+    const effectiveAccuracy =
+      (readinessStatus === 'missing_arm_landmarks' || options?.isArmClipping || isFormGateViolated || isWrongSideMoving)
+        ? 0
+        : accuracyPercent;
+
     return {
       phase: this.phase,
       currentAngleDeg: Math.round(currentAngle),
       targetAngleDeg: targetMin,
-      accuracyPercent,
-      accuracyPct: accuracyPercent,
+      accuracyPercent: effectiveAccuracy,
+      accuracyPct: effectiveAccuracy,
       severity: formRating,
       holdProgressRatio,
       pendulumCircleProgressRatio: 0,
@@ -1248,6 +1627,7 @@ export class RepStateMachine {
       isFrameDropped: lockResult?.isFrameDropped ?? false,
       frameDropReason: lockResult?.frameDropReason,
       readinessStatus,
+      isArmClipping: Boolean(options?.isArmClipping),
       coachingMessageEn,
       coachingMessageCn,
       filteredLandmarks: normalizedLandmarks,
@@ -2133,9 +2513,13 @@ export class RepStateMachine {
     this.balanceHoldStartTimeMs = null;
     this.balanceHoldAccumulatedMs = 0;
     this.recentPlaneAngles = [];
+    this.recentElbowAngles = [];
+    this.recentWristDistances = [];
+    this.hasCurrentRepFormViolation = false;
     this.skeletonFilter.reset();
     this.pendulumAnalyzer.reset();
     this.compensationDetector.reset();
     this.subjectLocker.reset();
+    this.armStabilizer.reset();
   }
 }

@@ -3173,6 +3173,23 @@ var init_exercises_config = __esm({
           scaptionCueEn: "Close: Move arm slightly more forward",
           scaptionCueCn: "\u63A5\u8FD1\u8FBE\u6807\uFF1A\u8BF7\u5C06\u624B\u81C2\u518D\u5F80\u524D\u6536\u4E00\u4E9B"
         },
+        formGate: {
+          minElbowExtensionDeg: 145,
+          // [ต้องให้นักกายภาพตรวจสอบ] ป้องกันท่างอศอกพับ
+          minWristSeparationNorm: 0.14,
+          // [ต้องให้นักกายภาพตรวจสอบ] ป้องกันท่ายกกำปั้น/ข้อมือไขว้ชิดกันหน้าคาง
+          minLandmarkVisibility: 0.5,
+          disallowScapularHiking: true,
+          elbowBentCueTh: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E43\u0E2B\u0E49\u0E15\u0E23\u0E07\u0E02\u0E13\u0E30\u0E22\u0E01\u0E41\u0E02\u0E19",
+          elbowBentCueEn: "Please keep your elbow straight",
+          elbowBentCueCn: "\u62AC\u81C2\u65F6\u8BF7\u4FDD\u6301\u8098\u90E8\u4F38\u76F4",
+          wristCrossedCueTh: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E41\u0E22\u0E01\u0E21\u0E37\u0E2D\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E07\u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E01\u0E31\u0E19",
+          wristCrossedCueEn: "Please keep your hands separated",
+          wristCrossedCueCn: "\u8BF7\u5C06\u53CC\u624B\u5206\u5F00\uFF0C\u4E0D\u8981\u4EA4\u53C9",
+          scapularHikingCueTh: "\u0E2D\u0E22\u0E48\u0E32\u0E40\u0E01\u0E23\u0E47\u0E07\u0E22\u0E01\u0E2B\u0E31\u0E27\u0E44\u0E2B\u0E25\u0E48\u0E02\u0E36\u0E49\u0E19 \u0E43\u0E2B\u0E49\u0E22\u0E01\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E41\u0E02\u0E19",
+          scapularHikingCueEn: "Do not shrug shoulder upward, isolate arm movement",
+          scapularHikingCueCn: "\u8BF7\u52FF\u8038\u80A9\u501F\u529B\uFF0C\u4FDD\u6301\u80A9\u80DB\u5E73\u7A33"
+        },
         requiredLandmarks: {
           right: [12, 14, 16],
           left: [11, 13, 15],
@@ -3480,16 +3497,34 @@ var init_exercises_config = __esm({
             right: { pointA: 12, vertex: 14, pointB: 16, use3DWorld: true }
           },
           direction: "decrease",
-          startAngleDeg: 155,
+          startAngleDeg: 160,
           targetMinDeg: 35,
-          targetMaxDeg: 65,
-          toleranceDeg: 10,
+          targetMaxDeg: 50,
+          toleranceDeg: 8,
           holdDurationSec: 1
         },
         defaultPrescription: {
           repsPerSet: 10,
           totalSets: 3,
           restBetweenSetsSec: 30
+        },
+        /* [ต้องให้นักกายภาพตรวจสอบ]: startAngleDeg: 160°, target: 35°-50°, tolerance: 8°, elbowDriftTolerance: 0.14 */
+        formGate: {
+          minLandmarkVisibility: 0.5,
+          elbowDriftTolerance: 0.14,
+          disallowOutOfFrame: true,
+          missingArmCueTh: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E16\u0E2D\u0E22\u0E2B\u0E25\u0E31\u0E07\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E41\u0E02\u0E19\u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19",
+          missingArmCueEn: "Please step back so your arm and elbow are clearly visible",
+          missingArmCueCn: "\u8BF7\u540E\u9000\u4EE5\u786E\u4FDD\u624B\u81C2\u548C\u624B\u8098\u6E05\u6670\u53EF\u89C1",
+          elbowDriftCueTh: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E41\u0E19\u0E1A\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E01\u0E31\u0E1A\u0E25\u0E33\u0E15\u0E31\u0E27 \u0E2D\u0E22\u0E48\u0E32\u0E22\u0E01\u0E28\u0E2D\u0E01\u0E01\u0E32\u0E07\u0E2D\u0E2D\u0E01",
+          elbowDriftCueEn: "Keep your elbow tucked close to your torso",
+          elbowDriftCueCn: "\u5C48\u8098\u65F6\u8BF7\u5C06\u8098\u90E8\u8D34\u8FD1\u8EAF\u5E72\uFF0C\u907F\u514D\u5411\u5916\u5F20\u5F00",
+          incompleteFlexionCueTh: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E07\u0E2D\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E43\u0E2B\u0E49\u0E21\u0E32\u0E01\u0E02\u0E36\u0E49\u0E19\u0E08\u0E19\u0E16\u0E36\u0E07\u0E21\u0E38\u0E21\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22",
+          incompleteFlexionCueEn: "Please bend your elbow further to target flexion",
+          incompleteFlexionCueCn: "\u8BF7\u7EE7\u7EED\u5411\u4E0A\u5F2F\u66F2\u624B\u8098\u81F3\u76EE\u6807\u89D2\u5EA6",
+          incompleteExtensionCueTh: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E40\u0E2B\u0E22\u0E35\u0E22\u0E14\u0E41\u0E02\u0E19\u0E43\u0E2B\u0E49\u0E2A\u0E38\u0E14\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E04\u0E23\u0E31\u0E49\u0E07\u0E16\u0E31\u0E14\u0E44\u0E1B",
+          incompleteExtensionCueEn: "Please fully extend your arm before the next rep",
+          incompleteExtensionCueCn: "\u8BF7\u5C06\u624B\u81C2\u5B8C\u5168\u4F38\u76F4\u540E\u518D\u5F00\u59CB\u4E0B\u4E00\u6B21\u52A8\u4F5C"
         },
         compensationRules: [
           {
@@ -3514,12 +3549,12 @@ var init_exercises_config = __esm({
           bilateral: [11, 12, 13, 14, 15, 16]
         },
         minLandmarkVisibility: {
-          11: 0.45,
-          12: 0.45,
-          13: 0.4,
-          14: 0.4,
-          15: 0.35,
-          16: 0.35
+          11: 0.5,
+          12: 0.5,
+          13: 0.5,
+          14: 0.5,
+          15: 0.5,
+          16: 0.5
         }
       },
       // 6. Seated Knee Extension

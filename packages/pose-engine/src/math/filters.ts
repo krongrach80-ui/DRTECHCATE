@@ -148,4 +148,10 @@ export class PoseSkeletonFilter {
   public reset(): void {
     this.landmarkFilters.clear();
   }
+
+  public resetLandmarks(indices: number[]): void {
+    for (const idx of indices) {
+      this.landmarkFilters.delete(idx);
+    }
+  }
 }

@@ -74,5 +74,9 @@ export class ClinicalOneEuroLandmarkFilter {
   public reset(): void {
     this.skeletonFilter.reset();
   }
+
+  public resetLandmarks(indices: number[]): void {
+    this.skeletonFilter.resetLandmarks(indices);
+  }
 }
 

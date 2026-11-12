@@ -132,6 +132,82 @@ export interface ElevationPlaneConfig {
   scaptionCueCn?: string;
 }
 
+/**
+ * Biomechanical Form Gate Configuration
+ * Enforces anatomical prerequisites before a repetition can enter or complete the target zone.
+ */
+export interface FormGateConfig {
+  /**
+   * Minimum elbow extension angle (degrees) required for valid arm elevation.
+   * Prevents counting reps when the elbow is bent/folded.
+   * [ต้องให้นักกายภาพตรวจสอบ]
+   */
+  minElbowExtensionDeg?: number;
+
+  /**
+   * Minimum normalized distance between left and right wrists.
+   * Prevents counting when fists/wrists are crossed or clamped together in front of body.
+   * [ต้องให้นักกายภาพตรวจสอบ]
+   */
+  minWristSeparationNorm?: number;
+
+  /**
+   * Minimum landmark visibility required for active arm keypoints (shoulder, elbow, wrist).
+   */
+  minLandmarkVisibility?: number;
+
+  /**
+   * Disallow excessive scapular elevation (hiking) during movement.
+   */
+  disallowScapularHiking?: boolean;
+
+  /**
+   * Maximum allowed trunk lean (degrees) before form gate rejects the rep.
+   */
+  maxTrunkLeanDeg?: number;
+
+  /**
+   * Maximum allowed lateral distance (normalized) between active elbow and shoulder.
+   * Prevents chicken-wing flare or arm drift during elbow flexion/extension.
+   * [ต้องให้นักกายภาพตรวจสอบ]
+   */
+  elbowDriftTolerance?: number;
+
+  /**
+   * Disallow repetitions when active arm landmarks clip camera boundary.
+   */
+  disallowOutOfFrame?: boolean;
+
+  // Localized Coaching Cues (TH / EN / CN)
+  elbowBentCueTh?: string;
+  elbowBentCueEn?: string;
+  elbowBentCueCn?: string;
+
+  wristCrossedCueTh?: string;
+  wristCrossedCueEn?: string;
+  wristCrossedCueCn?: string;
+
+  scapularHikingCueTh?: string;
+  scapularHikingCueEn?: string;
+  scapularHikingCueCn?: string;
+
+  missingArmCueTh?: string;
+  missingArmCueEn?: string;
+  missingArmCueCn?: string;
+
+  elbowDriftCueTh?: string;
+  elbowDriftCueEn?: string;
+  elbowDriftCueCn?: string;
+
+  incompleteFlexionCueTh?: string;
+  incompleteFlexionCueEn?: string;
+  incompleteFlexionCueCn?: string;
+
+  incompleteExtensionCueTh?: string;
+  incompleteExtensionCueEn?: string;
+  incompleteExtensionCueCn?: string;
+}
+
 export interface ExerciseDetectionConfig {
   id?: string;
   exerciseId?: string;
@@ -175,6 +251,7 @@ export interface ExerciseDetectionConfig {
   minLandmarkVisibility?: Record<number, number>;
   coachingCues?: ExerciseCoachingCues;
   elevationPlane?: ElevationPlaneConfig;
+  formGate?: FormGateConfig;
 }
 
 /**
@@ -279,6 +356,10 @@ export interface RepEvaluationResult {
   elevationPlaneDeg?: number;
   isPlaneDegraded?: boolean;
   isSubjectLocked?: boolean;
+  isArmAmbiguous?: boolean;
+  ambiguousReasonTh?: string;
+  ambiguousJoints?: number[];
+  isArmClipping?: boolean;
   isFrameDropped?: boolean;
   frameDropReason?: string;
   readinessStatus?:

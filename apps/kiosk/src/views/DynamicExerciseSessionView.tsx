@@ -31,6 +31,10 @@ import { VoiceFeedbackController } from '../../../../packages/hospital-ui-kit/sr
 import { BacklightCompensator } from '../../../../packages/pose-engine/src/backlightCompensator';
 import { ClinicalOneEuroLandmarkFilter } from '../../../../packages/pose-engine/src/math/oneEuroFilter';
 import {
+  ArmIdentityStabilizer,
+  ARM_STABILIZER_CONFIG,
+} from '../../../../packages/pose-engine/src/math/armIdentityStabilizer';
+import {
   selectSubjectPoseWithIdentity,
   NormalizedBox,
 } from '../../../../packages/pose-engine/src/subjectLock';
@@ -460,6 +464,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const oneEuroFilterRef = useRef<ClinicalOneEuroLandmarkFilter>(
     new ClinicalOneEuroLandmarkFilter({ minCutoff: 1.0, beta: 30.0 })
   );
+  const armStabilizerRef = useRef<ArmIdentityStabilizer>(new ArmIdentityStabilizer());
+  const latestAmbiguousJointsRef = useRef<Set<number>>(new Set());
+  const isArmAmbiguousRef = useRef<boolean>(false);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Loop & Timing Control Refs (Decoupled Dual-Loop Architecture)
@@ -474,6 +481,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const lastUiUpdateMsRef = useRef<number>(0);
   const smoothedFpsRef = useRef<number>(30);
   const lastCompletedRepsRef = useRef<number>(0);
+  // Cumulative verified-rep count at the start of the current set.
+  const setBaseRepsRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sessionStartTimeRef = useRef<number>(0);
   const isFinalizingRef = useRef<boolean>(false);
@@ -1511,7 +1520,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 validCompletedRepsRef.current
               );
 
-              if (evalRes.completedReps > lastCompletedRepsRef.current) {
+              // Rep counting is suspended while resting between sets.
+              if (!isRestingRef.current && evalRes.completedReps > lastCompletedRepsRef.current) {
                 lastCompletedRepsRef.current = evalRes.completedReps;
                 if (isIdentityVerifiedRef.current) {
                   validCompletedRepsRef.current += 1;
@@ -1532,7 +1542,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
               const targetReps = resolvedConfigRef.current.defaultPrescription?.repsPerSet || 10;
               const totalSets = resolvedConfigRef.current.defaultPrescription?.totalSets || 3;
-              const isSetDone = validCompletedRepsRef.current >= targetReps;
+              const isSetDone = validCompletedRepsRef.current - setBaseRepsRef.current >= targetReps;
               const isExerciseDone = isSetDone && evalRes.currentSet >= totalSets;
 
               if (isSetDone && !isExerciseDone && !isRestingRef.current) {
@@ -1594,14 +1604,47 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             selectSubjectPoseWithIdentity(allPoses, verifiedFaceBoxRef.current, lockedSubjectCoMRef.current);
           lockedSubjectCoMRef.current = newLockedCoM;
 
+          // 1.5. Clinical Arm Identity Stabilization & Ambiguity Gate
+          const stabilizerRes = armStabilizerRef.current.stabilize(chosenPose, safeTimestampMs);
+          const stabilizedPose = stabilizerRes.stabilizedLandmarks;
+          const isArmAmbiguous = stabilizerRes.isArmAmbiguous;
+          const ambiguousJoints = stabilizerRes.ambiguousJoints;
+          const swappedJoints = stabilizerRes.swappedJoints;
+          isArmAmbiguousRef.current = isArmAmbiguous;
+          latestAmbiguousJointsRef.current = ambiguousJoints;
+
+          // Prevent Midpoint Floating Drift:
+          // If joints were swapped back or are ambiguous, reset their individual 1€ filter memory
+          // and wipe their 200ms grace period hold immediately to prevent dragging lines across chest
+          if (swappedJoints.length > 0 || isArmAmbiguous) {
+            const jointsToReset = [...swappedJoints, ...Array.from(ambiguousJoints)];
+            oneEuroFilterRef.current.resetLandmarks(jointsToReset);
+            for (const jIdx of jointsToReset) {
+              delete canvasSmoothedPointsRef.current[jIdx];
+            }
+          }
+
           // 2. Clinical One Euro Filter (1€ Filter - low tremor at rest, low latency in motion)
-          const smoothedPose = oneEuroFilterRef.current.filter(chosenPose, safeTimestampMs);
+          const smoothedPose = oneEuroFilterRef.current.filter(stabilizedPose, safeTimestampMs);
           smoothedLandmarksRef.current = smoothedPose;
 
           // 3. Clinical State Machine Evaluation (GROUND TRUTH: strictly using filtered real landmarks + 3D World Landmarks)
           const wdStatus = watchdogRef.current.update(smoothedPose, safeTimestampMs);
           const chosenWorldPose = (result.worldLandmarks && result.worldLandmarks[bestIdx]) || undefined;
-          const evalRes = stateMachineRef.current.evaluateFrame(smoothedPose, chosenWorldPose, safeTimestampMs);
+          const isArmClipping = Boolean(
+            smoothedPose && (
+              (smoothedPose[13] && (smoothedPose[13].x < 0.03 || smoothedPose[13].x > 0.97 || smoothedPose[13].y < 0.03 || smoothedPose[13].y > 0.97)) ||
+              (smoothedPose[14] && (smoothedPose[14].x < 0.03 || smoothedPose[14].x > 0.97 || smoothedPose[14].y < 0.03 || smoothedPose[14].y > 0.97)) ||
+              (smoothedPose[15] && (smoothedPose[15].x < 0.03 || smoothedPose[15].x > 0.97 || smoothedPose[15].y < 0.03 || smoothedPose[15].y > 0.97)) ||
+              (smoothedPose[16] && (smoothedPose[16].x < 0.03 || smoothedPose[16].x > 0.97 || smoothedPose[16].y < 0.03 || smoothedPose[16].y > 0.97))
+            )
+          );
+          const evalRes = stateMachineRef.current.evaluateFrame(
+            smoothedPose,
+            chosenWorldPose,
+            safeTimestampMs,
+            { isArmAmbiguous, ambiguousJoints, isArmClipping }
+          );
           latestEvalResultRef.current = evalRes;
           targetProgressRef.current = computeTargetRingProgress(
             evalRes,
@@ -1646,7 +1689,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
 
           // Rep completion audio chime, TTS & senior celebration pulse
-          if (evalRes.completedReps > lastCompletedRepsRef.current) {
+          // (suspended while resting between sets)
+          if (!isRestingRef.current && evalRes.completedReps > lastCompletedRepsRef.current) {
             lastCompletedRepsRef.current = evalRes.completedReps;
             if (isIdentityVerifiedRef.current) {
               validCompletedRepsRef.current += 1;
@@ -1675,7 +1719,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           // Set & Exercise Completion Transitions (Gated by valid verified reps)
           const targetReps = resolvedConfigRef.current.defaultPrescription?.repsPerSet || 10;
           const totalSets = resolvedConfigRef.current.defaultPrescription?.totalSets || 3;
-          const isSetDone = validCompletedRepsRef.current >= targetReps;
+          const isSetDone = validCompletedRepsRef.current - setBaseRepsRef.current >= targetReps;
           const isExerciseDone = isSetDone && evalRes.currentSet >= totalSets;
 
           if (isSetDone && !isExerciseDone && !isRestingRef.current) {
@@ -1695,8 +1739,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
 
           // Accuracy Percentage EMA Smoothing (0.80 previous + 0.20 raw)
-          const rawAcc = Math.round(evalRes.accuracyPercent ?? evalRes.accuracyPct ?? 0);
-          if (smoothedAccuracyRef.current === 0) {
+          const isAtPreExerciseRest =
+            validCompletedRepsRef.current === 0 &&
+            (evalRes.phase === 'IDLE' ||
+              evalRes.phase === 'WAITING_FOR_FRAMING' ||
+              evalRes.readinessStatus === 'missing_arm_landmarks' ||
+              isArmClipping);
+
+          const rawAcc = isAtPreExerciseRest
+            ? 0
+            : Math.round(evalRes.accuracyPercent ?? evalRes.accuracyPct ?? 0);
+
+          if (isAtPreExerciseRest) {
+            smoothedAccuracyRef.current = 0;
+            lastEmittedAccuracyRef.current = 0;
+          } else if (smoothedAccuracyRef.current === 0) {
             smoothedAccuracyRef.current = rawAcc;
           } else if (rawAcc > 0) {
             smoothedAccuracyRef.current = 0.80 * smoothedAccuracyRef.current + 0.20 * rawAcc;
@@ -1770,15 +1827,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 isPresent: vis >= 0.35,
               };
             });
-
-            const isArmClipping = Boolean(
-              smoothedPose && (
-                (smoothedPose[13] && (smoothedPose[13].x < 0.03 || smoothedPose[13].x > 0.97 || smoothedPose[13].y < 0.03 || smoothedPose[13].y > 0.97)) ||
-                (smoothedPose[14] && (smoothedPose[14].x < 0.03 || smoothedPose[14].x > 0.97 || smoothedPose[14].y < 0.03 || smoothedPose[14].y > 0.97)) ||
-                (smoothedPose[15] && (smoothedPose[15].x < 0.03 || smoothedPose[15].x > 0.97 || smoothedPose[15].y < 0.03 || smoothedPose[15].y > 0.97)) ||
-                (smoothedPose[16] && (smoothedPose[16].x < 0.03 || smoothedPose[16].x > 0.97 || smoothedPose[16].y < 0.03 || smoothedPose[16].y > 0.97))
-              )
-            );
 
             const strokeColor =
               evalRes.formRating === 'error'
@@ -1931,7 +1979,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 currentFitMode
               );
 
-              if (proj && proj.inFrame && vis >= 0.35) {
+              const isAmbiguousJoint = latestAmbiguousJointsRef.current.has(idx);
+              if (proj && proj.inFrame && vis >= ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY && !isAmbiguousJoint) {
                 canvasSmoothedPointsRef.current[idx] = {
                   x: proj.x,
                   y: proj.y,
@@ -1951,8 +2000,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
 
           // Grace Period Decay (200 ms Hold & Fade) for momentarily lost landmarks
+          // IMPORTANT: Ambiguous or swapped joints MUST NOT linger with ghost decay
           const LOST_GRACE_MS = 200;
           for (let idx = 0; idx < 33; idx++) {
+            if (latestAmbiguousJointsRef.current.has(idx)) {
+              delete canvasSmoothedPointsRef.current[idx];
+              continue;
+            }
             if (!renderPoints[idx]) {
               const prevSmoothed = canvasSmoothedPointsRef.current[idx];
               if (prevSmoothed) {
@@ -2053,6 +2107,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             : POSE_CONNECTIONS;
 
           for (const [idxA, idxB] of activeConnections) {
+            if (latestAmbiguousJointsRef.current.has(idxA) || latestAmbiguousJointsRef.current.has(idxB)) {
+              continue;
+            }
             const ptA = renderPoints[idxA];
             const ptB = renderPoints[idxB];
             if (
@@ -2060,8 +2117,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ptB &&
               ptA.inFrame &&
               ptB.inFrame &&
-              (ptA.visibility ?? 0) >= 0.35 &&
-              (ptB.visibility ?? 0) >= 0.35
+              (ptA.visibility ?? 0) >= ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY &&
+              (ptB.visibility ?? 0) >= ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY
             ) {
               const style = getConnectionStyle(idxA, idxB);
               const lineAlpha = Math.min(ptA.decayAlpha ?? 1.0, ptB.decayAlpha ?? 1.0);
@@ -2082,8 +2139,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           const fingerJointIndices = [17, 18, 19, 20, 21, 22];
 
           for (const idx of activeJointIndices) {
+            if (latestAmbiguousJointsRef.current.has(idx)) continue;
             const pt = renderPoints[idx];
-            if (!pt || !pt.inFrame || (pt.visibility ?? 0) < 0.35) continue;
+            if (!pt || !pt.inFrame || (pt.visibility ?? 0) < ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY) continue;
 
             const jointAlpha = pt.decayAlpha ?? 1.0;
             const active = isJointActive(idx);
@@ -2133,8 +2191,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   }, [cleanupResources, playRepChime, speakThai]);
 
   const handleNextSet = useCallback(() => {
+    // Idempotent: only the first call during a rest period starts the next set.
+    if (!isRestingRef.current) return;
     setIsResting(false);
     isRestingRef.current = false;
+    setBaseRepsRef.current = validCompletedRepsRef.current;
+    lastCompletedRepsRef.current = 0;
     stateMachineRef.current.nextSet();
     targetProgressRef.current = 0;
     currentAnimatedProgressRef.current = 0;
@@ -2144,22 +2206,28 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     setRestCountdown(resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30);
   }, [resolvedConfig.defaultPrescription?.restBetweenSetsSec]);
 
-  // Rest Countdown Timer
+  // Rest Countdown Timer: remaining time is derived from a wall-clock deadline,
+  // so throttled or backgrounded tabs cannot drift. The interval is cleared when
+  // rest ends or the component unmounts.
   useEffect(() => {
     if (!isResting) return;
+    const restSec = resolvedConfigRef.current.defaultPrescription?.restBetweenSetsSec || 30;
+    const deadline = Date.now() + restSec * 1000;
+    setRestCountdown(restSec);
     const interval = setInterval(() => {
-      setRestCountdown((prev: number) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          handleNextSet();
-          return resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+      setRestCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    }, 250);
 
     return () => clearInterval(interval);
-  }, [isResting, handleNextSet, resolvedConfig.defaultPrescription?.restBetweenSetsSec]);
+  }, [isResting]);
+
+  // Advance once when the countdown reaches zero. handleNextSet clears
+  // isRestingRef and isResting, so this cannot run twice for one rest period.
+  useEffect(() => {
+    if (isResting && restCountdown <= 0) {
+      handleNextSet();
+    }
+  }, [isResting, restCountdown, handleNextSet]);
 
   // Final Session Telemetry Submission with Idempotency Guard
   const handleFinalizeSession = (mode: 'ai_verified' | 'stopped_pain' | 'skipped_unverified') => {
