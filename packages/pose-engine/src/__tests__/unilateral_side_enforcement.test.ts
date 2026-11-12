@@ -99,7 +99,7 @@ describe('Clinical Unilateral Side Enforcement Test Suite', () => {
       res = machine.evaluate(skelResting, currentTime);
     }
     expect(res.completedReps).toBe(1);
-    expect(res.accuracyPercent).toBe(0);
+    expect(res.accuracyPercent).toBe(100);
   });
 
   // Test 2: Shoulder Abduction prescribed 'left' + raising right arm -> 0 reps, warning

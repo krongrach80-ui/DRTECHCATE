@@ -203,6 +203,7 @@ export interface PlaneOfElevationResult {
   lateralComp: number;     // Projection on coronal axis (> 0 is lateral)
   anteriorComp: number;    // Projection on sagittal axis (> 0 is anterior / forward)
   isConfident: boolean;    // true if required landmarks are usable
+  hasHips: boolean;
 }
 
 /**
@@ -253,15 +254,15 @@ export function calculatePlaneOfElevation(
   const hasHips = h && oppH && (h.visibility ?? 1.0) >= 0.3 && (oppH.visibility ?? 1.0) >= 0.3;
   const midHip: Point3DLike = hasHips
     ? {
-        x: (h.x + oppH.x) / 2.0,
-        y: (h.y + oppH.y) / 2.0,
-        z: ((h.z ?? 0) + (oppH.z ?? 0)) / 2.0,
-      }
+      x: (h.x + oppH.x) / 2.0,
+      y: (h.y + oppH.y) / 2.0,
+      z: ((h.z ?? 0) + (oppH.z ?? 0)) / 2.0,
+    }
     : {
-        x: midShoulder.x,
-        y: midShoulder.y + 0.35, // fallback downwards in image coordinates (+Y)
-        z: midShoulder.z,
-      };
+      x: midShoulder.x,
+      y: midShoulder.y + 0.35, // fallback downwards in image coordinates (+Y)
+      z: midShoulder.z,
+    };
 
   // 2. Trunk Longitudinal Axis (Upward: from midHip to midShoulder)
   let uUp = {
@@ -335,5 +336,6 @@ export function calculatePlaneOfElevation(
     lateralComp,
     anteriorComp,
     isConfident,
+    hasHips: Boolean(hasHips),
   };
 }

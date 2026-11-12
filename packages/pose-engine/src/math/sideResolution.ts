@@ -19,11 +19,19 @@ import { BodySide, LandmarkTriplet, AngleMechanicsConfig, TargetJoint } from '..
 export interface SideTripletsResult {
   targetTriplet: LandmarkTriplet;
   oppositeTriplet?: LandmarkTriplet;
+  leftTriplet?: LandmarkTriplet;
+  rightTriplet?: LandmarkTriplet;
   isUnilateral: boolean;
   effectiveSide: BodySide;
 }
 
 export interface WrongSideCoachingText {
+  th: string;
+  en: string;
+  cn: string;
+}
+
+export interface BilateralSyncCoachingText {
   th: string;
   en: string;
   cn: string;
@@ -67,6 +75,8 @@ export function resolveTripletsForSide(
     return {
       targetTriplet: angleCfg.landmarks.left,
       oppositeTriplet: angleCfg.landmarks.right,
+      leftTriplet: angleCfg.landmarks.left,
+      rightTriplet: angleCfg.landmarks.right,
       isUnilateral: true,
       effectiveSide: 'left',
     };
@@ -76,15 +86,19 @@ export function resolveTripletsForSide(
     return {
       targetTriplet: angleCfg.landmarks.right,
       oppositeTriplet: angleCfg.landmarks.left,
+      leftTriplet: angleCfg.landmarks.left,
+      rightTriplet: angleCfg.landmarks.right,
       isUnilateral: true,
       effectiveSide: 'right',
     };
   }
 
-  // Bilateral default
+  // Bilateral default: provides both left and right triplets for synchronous dual-limb evaluation
   return {
     targetTriplet: angleCfg.landmarks.right,
     oppositeTriplet: undefined,
+    leftTriplet: angleCfg.landmarks.left,
+    rightTriplet: angleCfg.landmarks.right,
     isUnilateral: false,
     effectiveSide: 'bilateral',
   };
@@ -128,5 +142,46 @@ export function getWrongSideCoachingMessage(
     th: prescribedSide === 'left' ? 'กรุณาฝึกข้างซ้าย (ข้างที่สั่งฝึก)' : 'กรุณาฝึกข้างขวา (ข้างที่สั่งฝึก)',
     en: prescribedSide === 'left' ? 'Please train your left side (prescribed side)' : 'Please train your right side (prescribed side)',
     cn: prescribedSide === 'left' ? '请使用左侧进行锻炼（处方侧）' : '请使用右侧进行锻炼（处方侧）',
+  };
+}
+
+/**
+ * Generates trilingual clinical coaching prompts when patient is in bilateral mode
+ * but is only moving one side instead of moving both sides simultaneously.
+ */
+export function getBilateralSyncCoachingMessage(
+  targetJoint?: TargetJoint | string
+): BilateralSyncCoachingText {
+  const isArmJoint =
+    targetJoint === 'shoulder' ||
+    targetJoint === 'elbow' ||
+    targetJoint === 'wrist' ||
+    targetJoint === 'scapula';
+
+  const isLegJoint =
+    targetJoint === 'knee' ||
+    targetJoint === 'hip' ||
+    targetJoint === 'ankle';
+
+  if (isArmJoint) {
+    return {
+      th: 'กรุณาทำพร้อมกันทั้งสองข้าง (ซ้ายและขวา)',
+      en: 'Please move both arms together (left and right)',
+      cn: '请双手同时进行动作（左侧和右侧）',
+    };
+  }
+
+  if (isLegJoint) {
+    return {
+      th: 'กรุณาทำพร้อมกันทั้งสองข้าง (ซ้ายและขวา)',
+      en: 'Please move both legs together (left and right)',
+      cn: '请双腿同时进行动作（左侧和右侧）',
+    };
+  }
+
+  return {
+    th: 'กรุณาทำพร้อมกันทั้งสองข้าง (ซ้ายและขวา)',
+    en: 'Please move both sides together (left and right)',
+    cn: '请双侧同时进行动作（左侧และ右侧）',
   };
 }

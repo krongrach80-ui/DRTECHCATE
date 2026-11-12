@@ -22,6 +22,7 @@ import {
   PoseEngineLandmark,
   RepEvaluationResult,
   BodySide,
+  LateralityMode,
 } from '../../../../packages/pose-engine/src/types/exerciseConfig';
 import { getExerciseCoachingCues } from '../../../../packages/pose-engine/src/presets/exercises.config';
 import { RepStateMachine } from '../../../../packages/pose-engine/src/engine/repStateMachine';
@@ -507,13 +508,24 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [, setModelDelegate] = useState<'GPU' | 'CPU'>('GPU');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const initialSide: BodySide =
-    resolvedConfig.side && resolvedConfig.side !== 'bilateral'
-      ? resolvedConfig.side
-      : ((props.exercise as any)?.target_side as BodySide) ||
-        ((props.exercise as any)?.side as BodySide) ||
-        resolvedConfig.side ||
-        'right';
+  const isInherentlyBilateralExercise =
+    resolvedConfig.lateralityMode === 'inherently_bilateral' ||
+    resolvedConfig.targetJoint === 'neck' ||
+    resolvedConfig.evaluationMode === 'neck_tilt' ||
+    resolvedConfig.evaluationMode === 'heel_raise' ||
+    resolvedConfig.id === 'sit-to-stand' ||
+    resolvedConfig.id === 'wall-pushup' ||
+    resolvedConfig.id === 'scapular-retraction' ||
+    resolvedConfig.id === 'chin-tuck' ||
+    resolvedConfig.id === 'shoulder-shrug' ||
+    resolvedConfig.id === 'mini-squat';
+
+  const initialSide: BodySide = isInherentlyBilateralExercise
+    ? 'bilateral'
+    : ((props.exercise as any)?.target_side as BodySide) ||
+      ((props.exercise as any)?.side as BodySide) ||
+      resolvedConfig.side ||
+      'right';
   const [activeSide, setActiveSide] = useState<BodySide>(initialSide);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [lowPowerMode, setLowPowerMode] = useState<boolean>(false);
@@ -1070,6 +1082,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       if (stateMachineRef.current) {
         stateMachineRef.current.setSide(newSide);
       }
+      smoothedAccuracyRef.current = 0;
+      lastEmittedAccuracyRef.current = 0;
       speakThai(
         newSide === 'right' ? 'ตรวจจับข้างขวา' : newSide === 'left' ? 'ตรวจจับข้างซ้าย' : 'ตรวจจับทั้งสองข้าง',
         'side_toggle',
@@ -1760,7 +1774,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           const rawAcc = isAtPreExerciseRest
             ? 0
-            : Math.round(evalRes.accuracyPercent ?? evalRes.accuracyPct ?? 0);
+            : Math.round(evalRes.accuracyPercent ?? evalRes.accuracyPct ?? 100);
 
           if (isAtPreExerciseRest) {
             smoothedAccuracyRef.current = 0;
@@ -2406,17 +2420,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     resolvedConfig.targetJoint === 'knee' ||
     resolvedConfig.targetJoint === 'ankle' ||
     resolvedConfig.targetJoint === 'hip';
-  const isInherentlyBilateral =
-    resolvedConfig.targetJoint === 'neck' ||
-    resolvedConfig.evaluationMode === 'neck_tilt' ||
-    resolvedConfig.evaluationMode === 'heel_raise' ||
-    resolvedConfig.id === 'sit-to-stand' ||
-    resolvedConfig.id === 'wall-pushup' ||
-    resolvedConfig.id === 'scapular-retraction' ||
-    resolvedConfig.id === 'chin-tuck' ||
-    resolvedConfig.id === 'shoulder-shrug' ||
-    resolvedConfig.id === 'mini-squat';
-  const isBilateral =
+  const lateralityMode: LateralityMode =
+    resolvedConfig.lateralityMode ||
+    (isInherentlyBilateralExercise
+      ? 'inherently_bilateral'
+      : 'unilateral_or_bilateral');
+  const isInherentlyBilateral = lateralityMode === 'inherently_bilateral';
+  const _isBilateral =
     activeSide === 'bilateral' ||
     (activeSide !== 'left' &&
       activeSide !== 'right' &&
@@ -2673,7 +2683,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <span>{t('exit_exercise', '← ออกจากท่าฝึก')}</span>
         </button>
 
-        {/* Center: Full Exercise Name + Patient Badge */}
+        {/* Center: Full Exercise Name + Patient Badge & Laterality Selector */}
         <div
           onClick={handleTitleTap}
           className="flex-1 min-w-0 text-center px-2 cursor-pointer select-none"
@@ -2682,10 +2692,73 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <h1 className="text-lg sm:text-xl md:text-2xl font-black text-slate-900 truncate leading-tight tracking-tight">
             {titleString}
           </h1>
-          <div className="flex items-center justify-center gap-2 mt-0.5">
+          <div className="flex items-center justify-center gap-2 mt-1 flex-wrap">
             <span className="px-3 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold text-xs truncate">
-              คุณ {patient.first_name || 'ผู้ฝึก'} • {isBilateral ? 'ทั้งสองข้าง' : activeSide === 'right' ? 'ฝึกข้างขวา' : 'ฝึกข้างซ้าย'}
+              คุณ {patient.first_name || 'ผู้ฝึก'}
             </span>
+
+            {/* Laterality Mode Pills */}
+            {lateralityMode === 'unilateral_or_bilateral' ? (
+              <div
+                className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 border border-slate-200 gap-1 shadow-xs"
+                onClick={(e) => e.stopPropagation()}
+                role="group"
+                aria-label="เลือกข้างฝึก"
+              >
+                <button
+                  type="button"
+                  id="kiosk-side-left-btn"
+                  data-testid="kiosk-side-left-btn"
+                  onClick={() => handleToggleSide('left')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    activeSide === 'left'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                  }`}
+                  title="ฝึกข้างซ้าย (Left)"
+                >
+                  {lang === 'zh-CN' ? '左侧' : lang === 'en-US' ? 'Left' : 'ซ้าย (L)'}
+                </button>
+                <button
+                  type="button"
+                  id="kiosk-side-right-btn"
+                  data-testid="kiosk-side-right-btn"
+                  onClick={() => handleToggleSide('right')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    activeSide === 'right'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                  }`}
+                  title="ฝึกข้างขวา (Right)"
+                >
+                  {lang === 'zh-CN' ? '右侧' : lang === 'en-US' ? 'Right' : 'ขวา (R)'}
+                </button>
+                <button
+                  type="button"
+                  id="kiosk-side-bilateral-btn"
+                  data-testid="kiosk-side-bilateral-btn"
+                  onClick={() => handleToggleSide('bilateral')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    activeSide === 'bilateral'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                  }`}
+                  title="ฝึกทั้งสองข้างพร้อมกัน (Both)"
+                >
+                  {lang === 'zh-CN' ? '双侧' : lang === 'en-US' ? 'Both' : 'ทั้งสองข้าง (Both)'}
+                </button>
+              </div>
+            ) : lateralityMode === 'inherently_bilateral' ? (
+              <span className="px-3 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs flex items-center gap-1.5 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                {lang === 'zh-CN' ? '双侧同步 (Bilateral)' : lang === 'en-US' ? 'Bilateral (Both)' : 'ตรวจจับทั้งสองข้าง (Bilateral)'}
+              </span>
+            ) : (
+              <span className="px-3 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                {lang === 'zh-CN' ? '双向交替' : lang === 'en-US' ? 'Alternating' : 'สลับข้างตามธรรมชาติ (Alternating)'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -3025,8 +3098,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             {/* Clear label under ring */}
             <div className="mt-3 text-xs sm:text-sm font-bold text-slate-700">
               <span>ความแม่นยำท่าทาง: </span>
-              <span className={hudState.completedReps > 0 || hudState.accuracyPct > 0 ? 'text-emerald-600 font-extrabold' : 'text-slate-500 font-semibold'}>
-                {hudState.completedReps > 0 || hudState.accuracyPct > 0 ? `${hudState.accuracyPct}%` : 'รอเริ่มฝึก'}
+              <span className={hudState.completedReps > 0 || hudState.accuracyPct > 0 || hudState.repPhase !== 'IDLE' ? 'text-emerald-600 font-extrabold' : 'text-slate-500 font-semibold'}>
+                {hudState.completedReps > 0 || hudState.accuracyPct > 0 || hudState.repPhase !== 'IDLE'
+                  ? `${hudState.accuracyPct || 100}%`
+                  : 'รอเริ่มฝึก'}
               </span>
             </div>
           </div>

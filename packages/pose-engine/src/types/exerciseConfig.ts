@@ -16,6 +16,11 @@ export type EvaluationMode =
 
 export type BodySide = 'left' | 'right' | 'bilateral';
 
+export type LateralityMode =
+  | 'unilateral_or_bilateral'
+  | 'inherently_bilateral'
+  | 'bilateral_alternating';
+
 export type TargetJoint =
   | 'shoulder'
   | 'scapula'
@@ -235,6 +240,7 @@ export interface ExerciseDetectionConfig {
   targetMinDegOverride?: number; // Clinical prescription override
   evaluationMode: EvaluationMode;
   side: BodySide;
+  lateralityMode?: LateralityMode;
   targetJoint: TargetJoint;
   cameraGuide: CameraGuideConfig;
   angleMechanics?: AngleMechanicsConfig;
