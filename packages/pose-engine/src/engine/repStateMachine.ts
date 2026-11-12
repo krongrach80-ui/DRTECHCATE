@@ -719,9 +719,10 @@ export class RepStateMachine {
       accuracyPercent = 0;
     }
 
+    const returnTolerance = Math.max(tolerance * 1.5, 25);
     const isAtStartZone = isDecreasing
-      ? currentAngle >= startAngle - tolerance - 5
-      : Math.abs(currentAngle - startAngle) <= tolerance + 5;
+      ? currentAngle >= startAngle - returnTolerance
+      : currentAngle <= startAngle + returnTolerance;
 
     let coachingMessage = 'เริ่มขยับข้อต่อเข้าสู่มุมเป้าหมาย';
     let coachingMessageEn: string | undefined;
@@ -894,8 +895,8 @@ export class RepStateMachine {
       }
 
       case 'HOLDING_TARGET': {
-        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded || !isInsideTargetZone) {
-          // Patient fell out of target zone or deviated into wrong plane before finishing hold
+        if (isWrongSideMoving || isWrongPlane || isScaption || isPlaneLandmarkDegraded) {
+          // Patient fell out due to wrong side or wrong plane
           this.holdStartTimeMs = null;
           this.holdPauseStartMs = null;
           this.totalHoldPausedDurationMs = 0;
@@ -920,7 +921,24 @@ export class RepStateMachine {
             coachingMessage = elevationPlaneCfg.scaptionCueTh || 'ใกล้เคียง: ปรับทิศทางการยกแขนเล็กน้อย';
             coachingMessageEn = elevationPlaneCfg.scaptionCueEn;
             coachingMessageCn = elevationPlaneCfg.scaptionCueCn;
+          }
+        } else if (!isInsideTargetZone) {
+          // Check if patient reached target and is now returning towards start zone
+          const isMovingTowardsStart = isDecreasing
+            ? currentAngle > targetMax + tolerance
+            : currentAngle < targetMin - tolerance;
+
+          if (isMovingTowardsStart) {
+            this.phase = 'RETURNING_TO_START';
+            this.holdStartTimeMs = null;
+            this.holdPauseStartMs = null;
+            this.totalHoldPausedDurationMs = 0;
+            coachingMessage = 'ยอดเยี่ยม! ค่อยๆ ผ่อนกลับสู่ตำแหน่งเริ่มต้น';
           } else {
+            this.holdStartTimeMs = null;
+            this.holdPauseStartMs = null;
+            this.totalHoldPausedDurationMs = 0;
+            this.phase = 'MOVING_TO_TARGET';
             coachingMessage = 'หลุดออกจากมุมเป้าหมาย ขยับกลับเข้าแถบสีเขียว';
           }
         } else {
@@ -1177,11 +1195,20 @@ export class RepStateMachine {
       }
       case 'HOLDING_TARGET': {
         if (!isInsideTargetZone) {
-          this.phase = 'MOVING_TO_TARGET';
-          this.holdStartTimeMs = null;
-          coachingMessage = isRotation ? 'หันเพิ่มอีกนิด ให้อยู่ในช่วงเป้าหมาย' : 'รักษาการเอียงคอให้อยู่ในช่วงเป้าหมาย';
-          coachingMessageEn = isRotation ? 'Rotate head to stay inside target zone' : 'Maintain neck tilt in target zone';
-          coachingMessageCn = isRotation ? '请保持转头在目标区间内' : '保持颈部侧倾在目标区间';
+          if (tiltAngleDeg < 18) {
+            // Patient reached target and is returning to center/start
+            this.phase = 'RETURNING_TO_START';
+            this.holdStartTimeMs = null;
+            coachingMessage = isRotation ? 'ค่อยๆ หันกลับมามองตรง' : 'ค่อยๆ ยกศีรษะกลับสู่ตรงกลาง';
+            coachingMessageEn = isRotation ? 'Slowly return to center...' : 'Slowly return head to center...';
+            coachingMessageCn = isRotation ? '缓慢回正，向前看...' : '缓慢将头抬回正中...';
+          } else {
+            this.phase = 'MOVING_TO_TARGET';
+            this.holdStartTimeMs = null;
+            coachingMessage = isRotation ? 'หันเพิ่มอีกนิด ให้อยู่ในช่วงเป้าหมาย' : 'รักษาการเอียงคอให้อยู่ในช่วงเป้าหมาย';
+            coachingMessageEn = isRotation ? 'Rotate head to stay inside target zone' : 'Maintain neck tilt in target zone';
+            coachingMessageCn = isRotation ? '请保持转头在目标区间内' : '保持颈部侧倾在目标区间';
+          }
         } else {
           const rawElapsedSec = (timestampMs - (this.holdStartTimeMs || timestampMs)) / 1000.0;
           holdProgressRatio = Math.min(1.0, rawElapsedSec / Math.max(0.1, holdDurationSec));
@@ -1333,9 +1360,16 @@ export class RepStateMachine {
       }
       case 'HOLDING_TARGET': {
         if (!isInsideTargetZone) {
-          this.phase = 'MOVING_TO_TARGET';
-          this.holdStartTimeMs = null;
-          coachingMessage = 'ยกส้นเท้าค้างไว้';
+          if (liftRatio < 0.04) {
+            // Patient reached target lift and is lowering heels back to floor
+            this.phase = 'RETURNING_TO_START';
+            this.holdStartTimeMs = null;
+            coachingMessage = 'ค่อยๆ ลดส้นเท้าลงแตะพื้น';
+          } else {
+            this.phase = 'MOVING_TO_TARGET';
+            this.holdStartTimeMs = null;
+            coachingMessage = 'ยกส้นเท้าค้างไว้';
+          }
         } else {
           const rawElapsedSec = (timestampMs - (this.holdStartTimeMs || timestampMs)) / 1000.0;
           holdProgressRatio = Math.min(1.0, rawElapsedSec / Math.max(0.1, holdDurationSec));

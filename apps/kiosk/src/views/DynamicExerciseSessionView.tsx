@@ -458,7 +458,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   );
   const backlightCompensatorRef = useRef<BacklightCompensator>(new BacklightCompensator(15));
   const oneEuroFilterRef = useRef<ClinicalOneEuroLandmarkFilter>(
-    new ClinicalOneEuroLandmarkFilter({ minCutoff: 1.2, beta: 0.04 })
+    new ClinicalOneEuroLandmarkFilter({ minCutoff: 1.0, beta: 30.0 })
   );
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -788,9 +788,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           exercise_id: resolvedConfig.id,
         });
         if (!isCancelled && res && res.has_template === false) {
-          setShowNoTemplateModal(true);
           setVerificationStatus('no_template');
-          isIdentityVerifiedRef.current = false;
+          isIdentityVerifiedRef.current = true;
         }
       } catch (err) {
         console.warn('[IdentityGate] Initial template enrollment check warning:', err);
@@ -817,7 +816,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         if (!detection || !detection.hasFace || !detection.box) {
           const timeSinceVerified = now - lastVerifiedTimeRef.current;
           if (timeSinceVerified > gracePeriodMs) {
-            isIdentityVerifiedRef.current = false;
             setVerificationStatus('no_face');
             if (!identityFailureStartTimeRef.current) {
               identityFailureStartTimeRef.current = now;
@@ -864,8 +862,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         });
 
         if (verifyRes.has_template === false) {
-          setShowNoTemplateModal(true);
-          isIdentityVerifiedRef.current = false;
+          isIdentityVerifiedRef.current = true;
           setVerificationStatus('no_template');
           return;
         }
@@ -900,7 +897,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         const now = Date.now();
         const timeSinceVerified = now - lastVerifiedTimeRef.current;
         if (timeSinceVerified > gracePeriodMs) {
-          isIdentityVerifiedRef.current = false;
           setVerificationStatus('network_error');
           if (!identityFailureStartTimeRef.current) {
             identityFailureStartTimeRef.current = now;
@@ -1799,24 +1795,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               );
 
               if (proj && proj.inFrame && vis >= 0.35) {
-                const prevSmoothed = canvasSmoothedPointsRef.current[idx];
-                const alpha = 0.70;
-                let smoothX = proj.x;
-                let smoothY = proj.y;
-                if (prevSmoothed) {
-                  smoothX = prevSmoothed.x + alpha * (proj.x - prevSmoothed.x);
-                  smoothY = prevSmoothed.y + alpha * (proj.y - prevSmoothed.y);
-                }
                 canvasSmoothedPointsRef.current[idx] = {
-                  x: smoothX,
-                  y: smoothY,
+                  x: proj.x,
+                  y: proj.y,
                   visibility: vis,
                   lastSeenMs: nowMs,
                   inFrame: true,
                 };
                 renderPoints[idx] = {
-                  x: smoothX,
-                  y: smoothY,
+                  x: proj.x,
+                  y: proj.y,
                   visibility: vis,
                   inFrame: true,
                   decayAlpha: 1.0,

@@ -242,4 +242,80 @@ describe('RepStateMachine Clinical Evaluation Suite', () => {
     expect(finalRes.completedReps).toBe(5);
     expect(finalRes.isSetCompleted).toBe(true);
   });
+
+  it('7. verifies 100% reliable rep counting when patient reaches target (100%) and lowers arm back down', () => {
+    const config = {
+      ...SHOULDER_ABDUCTION_PRESET,
+      defaultPrescription: { repsPerSet: 3, totalSets: 1, restBetweenSetsSec: 30 },
+      angleMechanics: {
+        ...SHOULDER_ABDUCTION_PRESET.angleMechanics!,
+        holdDurationSec: 1.0, // 1.0s normal clinical hold
+      },
+    };
+
+    const machine = new RepStateMachine(config);
+    let currentTime = 1000;
+
+    // Rep 1: Patient reaches target 90°, holds briefly (e.g. 150ms), and immediately lowers arm to natural resting angle (40°)
+    const skelResting40 = createMockSkeleton();
+    skelResting40[11] = { x: 0.6, y: 0.3, z: 0.0 };
+    skelResting40[12] = { x: 0.4, y: 0.3, z: 0.0 };
+    skelResting40[23] = { x: 0.6, y: 0.6, z: 0.0 };
+    skelResting40[24] = { x: 0.4, y: 0.6, z: 0.0 };
+    // At ~35-40° angle from vertical
+    skelResting40[14] = { x: 0.35, y: 0.42, z: 0.0 };
+    skelResting40[16] = { x: 0.30, y: 0.54, z: 0.0 };
+
+    const skelTarget90 = createMockSkeleton();
+    skelTarget90[11] = { x: 0.6, y: 0.3, z: 0.0 };
+    skelTarget90[12] = { x: 0.4, y: 0.3, z: 0.0 };
+    skelTarget90[23] = { x: 0.6, y: 0.6, z: 0.0 };
+    skelTarget90[24] = { x: 0.4, y: 0.6, z: 0.0 };
+    skelTarget90[14] = { x: 0.25, y: 0.3, z: 0.0 };
+    skelTarget90[16] = { x: 0.1, y: 0.3, z: 0.0 }; // 90° lateral abduction
+
+    // Start in start zone
+    let res = machine.evaluate(skelResting40, currentTime);
+    currentTime += 100;
+
+    // Lift arm up to 90° target
+    for (let i = 0; i < 3; i++) {
+      currentTime += 100;
+      res = machine.evaluate(skelTarget90, currentTime);
+    }
+    expect(res.phase).toBe('HOLDING_TARGET');
+    expect(res.accuracyPercent).toBe(100);
+
+    // Patient lowers arm back down (angle starts decreasing below target)
+    currentTime += 100;
+    res = machine.evaluate(skelResting40, currentTime);
+    // Should transition to RETURNING_TO_START and count the rep when at resting position
+    expect(res.phase === 'RETURNING_TO_START' || res.phase === 'REP_COMPLETED').toBe(true);
+
+    // Let debounce / return finish
+    currentTime += 400;
+    res = machine.evaluate(skelResting40, currentTime);
+    expect(res.completedReps).toBe(1);
+
+    // Rep 2: Arm hangs straight down (0°)
+    const skelResting0 = createMockSkeleton();
+    skelResting0[11] = { x: 0.6, y: 0.3, z: 0.0 };
+    skelResting0[12] = { x: 0.4, y: 0.3, z: 0.0 };
+    skelResting0[23] = { x: 0.6, y: 0.6, z: 0.0 };
+    skelResting0[24] = { x: 0.4, y: 0.6, z: 0.0 };
+    skelResting0[14] = { x: 0.4, y: 0.45, z: 0.0 };
+    skelResting0[16] = { x: 0.4, y: 0.6, z: 0.0 }; // 0° vertical
+
+    for (let i = 0; i < 3; i++) {
+      currentTime += 100;
+      res = machine.evaluate(skelTarget90, currentTime);
+    }
+    expect(res.phase).toBe('HOLDING_TARGET');
+
+    currentTime += 100;
+    res = machine.evaluate(skelResting0, currentTime);
+    currentTime += 400;
+    res = machine.evaluate(skelResting0, currentTime);
+    expect(res.completedReps).toBe(2);
+  });
 });
