@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -34,6 +34,8 @@ export const ScheduleView: React.FC = () => {
   const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [modpacks, setModpacks] = useState<ModpackRecord[]>([]);
   const [_exercises, setExercises] = useState<ExerciseRecord[]>([]);
+  const [ptsList, setPtsList] = useState<Array<{ id: string; full_name: string; username: string }>>([]);
+  const [selectedPtId, setSelectedPtId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
   // 3-Step Wizard state
@@ -58,27 +60,45 @@ export const ScheduleView: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
 
+  const broadcastScheduleSync = useCallback((patientId?: string): void => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('schedule-updated', { detail: { patientId } }));
+    try {
+      const bc = new BroadcastChannel('drtechcare_schedule');
+      bc.postMessage({ type: 'schedule-updated', patientId, timestamp: Date.now() });
+      bc.close();
+    } catch {}
+    try {
+      localStorage.setItem('drtechcare_schedule_updated', Date.now().toString());
+    } catch {}
+  }, []);
+
   const fetchInitialData = async () => {
     try {
       setLoading(true);
       setErrorMsg(null);
-      const [today, pats, mpacks, exs] = await Promise.all([
+      const [today, pats, mpacks, exs, pts] = await Promise.all([
         defaultApiClient.courses.getToday().catch(() => []),
         defaultApiClient.patients.list().catch(() => []),
         defaultApiClient.modpacks.list().catch(() => []),
         defaultApiClient.exercises.list().catch(() => []),
+        defaultApiClient.directory.listPts().catch(() => []),
       ]);
       setTodayCourses(Array.isArray(today) ? today : []);
-      setPatients(Array.isArray(pats) ? pats : ((pats as any)?.patients || []));
+      const patList = Array.isArray(pats) ? pats : ((pats as any)?.patients || []);
+      setPatients(patList);
       setModpacks(Array.isArray(mpacks) ? mpacks : []);
       setExercises(Array.isArray(exs) ? exs : []);
+      const safePts = Array.isArray(pts) ? pts : [];
+      setPtsList(safePts);
 
       // Also fetch calendar for current month
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-      const cal = await defaultApiClient.courses.getCalendar({ start_date: start, end_date: end }).catch(() => []);
       const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+      const [tY, tM] = todayBkk.split('-').map(Number);
+      const start = `${tY}-${String(tM).padStart(2, '0')}-01`;
+      const endDays = new Date(tY, tM, 0).getDate();
+      const end = `${tY}-${String(tM).padStart(2, '0')}-${String(endDays).padStart(2, '0')}`;
+      const cal = await defaultApiClient.courses.getCalendar({ start_date: start, end_date: end }).catch(() => []);
       const safeCal = (Array.isArray(cal) ? cal : []).filter((c: any) => !c.end_date || c.end_date >= todayBkk);
       setCalendarCourses(safeCal);
     } catch (err: unknown) {
@@ -89,16 +109,42 @@ export const ScheduleView: React.FC = () => {
   };
 
   useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
     const nextMonth = new Date();
     nextMonth.setDate(nextMonth.getDate() + 30);
-    const nextMonthStr = nextMonth.toISOString().split('T')[0];
+    const nextMonthStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(nextMonth);
     setScheduleConfig((prev) => ({
       ...prev,
       start_date: prev.start_date || todayStr,
       end_date: prev.end_date || nextMonthStr,
     }));
     fetchInitialData();
+
+    // Cross-tab and realtime listeners
+    const handleSync = () => {
+      fetchInitialData();
+    };
+    window.addEventListener('schedule-updated', handleSync);
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('drtechcare_schedule');
+      bc.onmessage = () => {
+        handleSync();
+      };
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'drtechcare_schedule_updated') {
+        handleSync();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('schedule-updated', handleSync);
+      window.removeEventListener('storage', handleStorage);
+      if (bc) bc.close();
+    };
   }, []);
 
   const handleWeekdayToggle = (day: number) => {
@@ -155,6 +201,7 @@ export const ScheduleView: React.FC = () => {
       setErrorMsg(null);
       await defaultApiClient.courses.create({
         patient_id: selectedPatientId,
+        pt_id: selectedPtId || undefined,
         start_date: scheduleConfig.start_date,
         end_date: scheduleConfig.end_date,
         weekdays: scheduleConfig.weekdays,
@@ -165,10 +212,12 @@ export const ScheduleView: React.FC = () => {
         items: selectedModpackId ? undefined : selectedCustomExercises,
       });
 
+      broadcastScheduleSync(selectedPatientId);
       setSuccessMsg('สร้างตารางนัดหมายคอร์สกายภาพบำบัดสำเร็จ พร้อม snapshot รายการท่าเรียบร้อย');
       setIsWizardOpen(false);
       setWizardStep(1);
       setSelectedPatientId('');
+      setSelectedPtId('');
       setSelectedModpackId('');
       setSelectedCustomExercises([]);
       await fetchInitialData();
@@ -184,6 +233,7 @@ export const ScheduleView: React.FC = () => {
     try {
       setActionLoading(true);
       await defaultApiClient.courses.update(courseId, { status: 'cancelled', version: 1 });
+      broadcastScheduleSync();
       setSuccessMsg('ยกเลิกคอร์สการรักษาเรียบร้อย');
       await fetchInitialData();
     } catch (err: unknown) {
@@ -512,7 +562,12 @@ export const ScheduleView: React.FC = () => {
                       filteredPatients.map((p) => (
                         <div
                           key={p.id}
-                          onClick={() => setSelectedPatientId(p.id)}
+                          onClick={() => {
+                            setSelectedPatientId(p.id);
+                            if (p.responsible_pt_id) {
+                              setSelectedPtId(p.responsible_pt_id);
+                            }
+                          }}
                           className={`p-3 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition ${
                             selectedPatientId === p.id
                               ? 'bg-blue-50 border-blue-400 text-blue-900 font-semibold'
@@ -672,6 +727,24 @@ export const ScheduleView: React.FC = () => {
                         className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
                       />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      นักกายภาพบำบัดผู้รับผิดชอบ (Assigned Physical Therapist)
+                    </label>
+                    <select
+                      value={selectedPtId}
+                      onChange={(e) => setSelectedPtId(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500"
+                    >
+                      <option value="">-- กำหนดนักกายภาพบำบัดผู้รับผิดชอบ --</option>
+                      {ptsList.map((pt) => (
+                        <option key={pt.id} value={pt.id}>
+                          {pt.full_name} ({pt.username})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               )}

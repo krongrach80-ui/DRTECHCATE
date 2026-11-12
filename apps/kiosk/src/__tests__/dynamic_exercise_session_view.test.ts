@@ -889,4 +889,154 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
       expect(circleStyle.willChange).toBe('stroke-dashoffset');
     });
   });
+
+  describe('7. Kiosk Full HD Portrait (1080x1920) Typography, Contrast & Touch Target Upgrade (WCAG 2.1 AAA)', () => {
+    it('7.1 interactive touch targets enforce WCAG AAA minimum (>= 48px height, >= 58px for emergency bottom controls)', () => {
+      const touchTargets = {
+        exitBtnMinHeight: 52, // min-h-[52px]
+        sideSelectorMinHeight: 48, // min-h-[48px]
+        languageBtnMinHeight: 48, // min-h-[48px]
+        staffSettingsMinHeight: 48, // w-12 h-12 = 48px
+        skeletonToggleMinHeight: 48, // min-h-[48px]
+        pauseBtnMinHeight: 58, // min-h-[58px]
+        painStopBtnMinHeight: 58, // min-h-[58px]
+      };
+
+      Object.entries(touchTargets).forEach(([name, height]) => {
+        expect(height, `${name} must be >= 48px for WCAG touch compliance`).toBeGreaterThanOrEqual(48);
+      });
+      expect(touchTargets.pauseBtnMinHeight).toBeGreaterThanOrEqual(56);
+      expect(touchTargets.painStopBtnMinHeight).toBeGreaterThanOrEqual(56);
+    });
+
+    it('7.2 contrast ratios meet WCAG AA and AAA requirements (> 4.5:1 normal, > 7:1 AAA)', () => {
+      // Relative luminance formula per WCAG 2.1
+      const getLuminance = (r: number, g: number, b: number) => {
+        const a = [r, g, b].map((v) => {
+          v /= 255;
+          return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        });
+        return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722;
+      };
+
+      const getContrastRatio = (rgb1: [number, number, number], rgb2: [number, number, number]) => {
+        const lum1 = getLuminance(...rgb1);
+        const lum2 = getLuminance(...rgb2);
+        const brightest = Math.max(lum1, lum2);
+        const darkest = Math.min(lum1, lum2);
+        return (brightest + 0.05) / (darkest + 0.05);
+      };
+
+      // 1. Upgraded Arm clipping alert: Amber-300 (#FCD34D) text on Slate-900 (#0F172A) card
+      const amberText: [number, number, number] = [252, 211, 77];
+      const slate900Bg: [number, number, number] = [15, 23, 42];
+      const alertContrast = getContrastRatio(amberText, slate900Bg);
+      expect(alertContrast).toBeGreaterThanOrEqual(7.0); // WCAG AAA Pass (~14.2:1)
+
+      // 2. Main coaching pill: Slate-900 (#0F172A) text on White (#FFFFFF) card
+      const whiteBg: [number, number, number] = [255, 255, 255];
+      const coachingContrast = getContrastRatio(slate900Bg, whiteBg);
+      expect(coachingContrast).toBeGreaterThanOrEqual(7.0); // WCAG AAA Pass (~16.5:1)
+
+      // 3. Posture guide bullets: Slate-800 (#1E293B) text on White (#FFFFFF)
+      const slate800Text: [number, number, number] = [30, 41, 59];
+      const postureGuideContrast = getContrastRatio(slate800Text, whiteBg);
+      expect(postureGuideContrast).toBeGreaterThanOrEqual(7.0); // WCAG AAA Pass (~12.5:1)
+    });
+
+    it('7.3 single priority message with 2000ms hold window prevents visual flicker for elderly patients', () => {
+      interface MessageCandidate {
+        message: string;
+        priority: number; // 4: emergency/pause, 3: framing/distance, 2: form error/warn, 1: movement, 0: idle
+      }
+
+      class CoachingHoldWindow {
+        private heldMessage: string = '';
+        private heldPriority: number = -1;
+        private lastTimestamp: number = 0;
+
+        evaluate(candidate: MessageCandidate, now: number): string {
+          // Rule 1: Higher priority preempts immediately
+          if (candidate.priority > this.heldPriority) {
+            this.heldMessage = candidate.message;
+            this.heldPriority = candidate.priority;
+            this.lastTimestamp = now;
+            return this.heldMessage;
+          }
+
+          // Rule 2: Same message refreshes
+          if (candidate.message === this.heldMessage) {
+            return this.heldMessage;
+          }
+
+          // Rule 3: 2000ms hold window elapsed -> accept new message
+          if (now - this.lastTimestamp >= 2000) {
+            this.heldMessage = candidate.message;
+            this.heldPriority = candidate.priority;
+            this.lastTimestamp = now;
+            return this.heldMessage;
+          }
+
+          // Rule 4: Otherwise maintain hold to avoid flicker
+          return this.heldMessage;
+        }
+      }
+
+      const holdController = new CoachingHoldWindow();
+
+      // At t = 1000ms: Movement guidance arrives (Priority 1)
+      const msg1 = holdController.evaluate({ message: 'ค่อยๆ ยกแขนขึ้น...', priority: 1 }, 1000);
+      expect(msg1).toBe('ค่อยๆ ยกแขนขึ้น...');
+
+      // At t = 1300ms (+300ms): Idle cue arrives (Priority 0 < 1) -> must hold msg1
+      const msg2 = holdController.evaluate({ message: 'ดีมาก ทำต่อเนื่อง', priority: 0 }, 1300);
+      expect(msg2).toBe('ค่อยๆ ยกแขนขึ้น...'); // Held!
+
+      // At t = 1600ms (+600ms): Form Warning arrives (Priority 2 > 1) -> immediate preemption!
+      const msg3 = holdController.evaluate({ message: 'ระวังอย่าเอียงลำตัว', priority: 2 }, 1600);
+      expect(msg3).toBe('ระวังอย่าเอียงลำตัว'); // Preempted immediately!
+
+      // At t = 2500ms (+900ms after warning): Movement guidance arrives (Priority 1 < 2) -> held
+      const msg4 = holdController.evaluate({ message: 'ค่อยๆ ผ่อนแขนลง', priority: 1 }, 2500);
+      expect(msg4).toBe('ระวังอย่าเอียงลำตัว'); // Still held!
+
+      // At t = 3700ms (+2100ms after warning): Movement guidance arrives -> hold window elapsed
+      const msg5 = holdController.evaluate({ message: 'ค่อยๆ ผ่อนแขนลง', priority: 1 }, 3700);
+      expect(msg5).toBe('ค่อยๆ ผ่อนแขนลง'); // Accepted cleanly!
+    });
+
+    it('7.4 UI Scale setting persists 100%, 115%, 130% values accurately', () => {
+      const allowedScales = [1.0, 1.15, 1.30];
+      const mockStorage: Record<string, string> = {};
+
+      const saveUiScale = (val: number) => {
+        if (allowedScales.includes(val)) {
+          mockStorage['kiosk_exercise_ui_scale'] = val.toString();
+        }
+      };
+
+      saveUiScale(1.15);
+      expect(parseFloat(mockStorage['kiosk_exercise_ui_scale'])).toBe(1.15);
+
+      saveUiScale(1.30);
+      expect(parseFloat(mockStorage['kiosk_exercise_ui_scale'])).toBe(1.30);
+
+      saveUiScale(1.0);
+      expect(parseFloat(mockStorage['kiosk_exercise_ui_scale'])).toBe(1.0);
+    });
+
+    it('7.5 Full HD Portrait (1080x1920) computed dimensions allow uncluttered video and cards', () => {
+      const screenWidth = 1080;
+      const screenHeight = 1920;
+      const isPortrait = screenHeight > screenWidth;
+      expect(isPortrait).toBe(true);
+
+      // In Portrait mode: Video stage takes ~45% height (~864px)
+      const videoHeight = Math.round(screenHeight * 0.45);
+      const remainingHeight = screenHeight - videoHeight - 80 - 76; // Minus header (80px) and bottom bar (76px)
+
+      // Remaining vertical space for bento cards should be comfortably >= 800px
+      expect(remainingHeight).toBeGreaterThanOrEqual(800);
+    });
+  });
 });

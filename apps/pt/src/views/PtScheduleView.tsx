@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar as CalendarIcon,
   Search,
@@ -85,13 +85,13 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
     kiosk_id: '',
   });
 
-  const fetchInitialData = async () => {
+  const fetchInitialData = useCallback(async () => {
     try {
       setLoading(true);
       setErrorMsg(null);
       const [today, cal, pts, mps, exs, kList] = await Promise.all([
         defaultApiClient.courses.getToday().catch(() => []),
-        defaultApiClient.courses.getCalendar().catch(() => []),
+        defaultApiClient.courses.getCalendar(currentUserId ? { pt_id: currentUserId } : undefined).catch(() => []),
         defaultApiClient.patients.list({ limit: 100 }).catch(() => []),
         defaultApiClient.modpacks.list().catch(() => []),
         defaultApiClient.exercises.list().catch(() => []),
@@ -114,16 +114,44 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUserId]);
 
   useEffect(() => {
     fetchInitialData();
-  }, []);
 
-  // Initialize schedule dates on client mount to avoid impure Date() calls in useState
+    const handleSync = () => {
+      fetchInitialData();
+    };
+    window.addEventListener('schedule-updated', handleSync);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('drtechcare_schedule');
+      bc.onmessage = () => {
+        handleSync();
+      };
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'drtechcare_schedule_updated') {
+        handleSync();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('schedule-updated', handleSync);
+      window.removeEventListener('storage', handleStorage);
+      if (bc) bc.close();
+    };
+  }, [fetchInitialData]);
+
+  // Initialize schedule dates on client mount using Bangkok timezone
   useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const thirtyDaysStr = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+    const thirtyDays = new Date();
+    thirtyDays.setDate(thirtyDays.getDate() + 30);
+    const thirtyDaysStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(thirtyDays);
     setScheduleConfig((prev) => ({
       ...prev,
       start_date: prev.start_date || todayStr,

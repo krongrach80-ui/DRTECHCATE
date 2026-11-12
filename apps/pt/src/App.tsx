@@ -54,6 +54,9 @@ const PtAppContent: React.FC = () => {
         if (event.event === 'kiosk:staff_call') {
           fetchStaffCalls();
         }
+        if (event.event === 'schedule_updated' || event.event === 'schedule-updated' || event.event?.startsWith('course.')) {
+          window.dispatchEvent(new CustomEvent('schedule-updated', { detail: event }));
+        }
       },
       () => {}
     );

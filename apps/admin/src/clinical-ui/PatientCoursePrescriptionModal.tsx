@@ -952,8 +952,11 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
         throw new Error((rxRes as any)?.message || 'ไม่สามารถบันทึกคำสั่งจ่ายคอร์สกายภาพบำบัดได้ (Failed to save prescription)');
       }
 
+      const effectivePtId = selectedPatient.responsible_pt_id || (selectedPatient as any).pt_id || (selectedPatient as any).assigned_pt_id || undefined;
       const schedulePayload = {
         patient_id: targetPid,
+        assigned_pt_id: effectivePtId,
+        pt_id: effectivePtId,
         schedule_mode: finalScheduleMode,
         start_date: finalStartDate,
         end_date: finalEndDate,

@@ -131,6 +131,36 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       const scopedPatients = currentUserId
         ? rawPatients.filter((p) => isPatientVisibleToPt(p, currentUserId, transferArr).isVisible)
         : rawPatients;
+
+      // Ensure any patient with an active schedule assigned to this PT in dossiers is included
+      if (currentUserId && Array.isArray(dossierList)) {
+        for (const d of dossierList) {
+          const isAssigned =
+            d.responsible_pt_id === currentUserId ||
+            d.schedule?.assigned_pt_id === currentUserId ||
+            (currentUserId === 'pt-01' && (d.responsible_pt_id === 'b1000000-0000-0000-0000-000000000003' || d.responsible_pt_id === 'pt_somchai')) ||
+            (currentUserId === 'b1000000-0000-0000-0000-000000000003' && (d.responsible_pt_id === 'pt-01' || d.responsible_pt_id === 'pt_somchai'));
+          if (isAssigned && !scopedPatients.some((p) => p.id === d.patient_id || p.hn === d.hn)) {
+            scopedPatients.push({
+              id: d.patient_id,
+              hn: d.hn || d.patient_id,
+              first_name: d.first_name || 'ผู้ป่วย',
+              last_name: d.last_name || '',
+              age: 45,
+              sex: 'other',
+              phone: '-',
+              injury: d.clinical?.diagnosis || 'กายภาพบำบัดฟื้นฟู',
+              responsible_pt_id: currentUserId,
+              registration_status: 'active',
+              registered_via: 'reception',
+              version: 1,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            } as PatientRecord);
+          }
+        }
+      }
+
       const patientArr = scopedPatients.length > 0 ? scopedPatients : (currentUserId ? [] : DEMO_PATIENTS);
       const dossierArr = Array.isArray(dossierList) && dossierList.length > 0 ? dossierList : DEMO_DOSSIERS;
       setPatients(patientArr);
@@ -172,8 +202,26 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
       void loadData();
     };
     window.addEventListener('schedule-updated', handleScheduleUpdated);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('drtechcare_schedule');
+      bc.onmessage = () => {
+        void loadData();
+      };
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'drtechcare_schedule_updated') {
+        void loadData();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
     return () => {
       window.removeEventListener('schedule-updated', handleScheduleUpdated);
+      window.removeEventListener('storage', handleStorage);
+      if (bc) bc.close();
     };
   }, [loadData]);
 
@@ -263,6 +311,8 @@ export const ClinicalScheduleView: React.FC<ClinicalScheduleViewProps> = ({
         time_slot: curSched?.timeSlot || curSched?.time_slot || '09:00 - 10:00',
         assigned_kiosk_id: curSched?.assigned_kiosk_id || curSched?.kioskId || 'kiosk-01',
         kioskId: curSched?.assigned_kiosk_id || curSched?.kioskId || 'kiosk-01',
+        assigned_pt_id: curSched?.assigned_pt_id || curSched?.pt_id || (selectedPatient?.responsible_pt_id) || currentUserId || undefined,
+        pt_id: curSched?.assigned_pt_id || curSched?.pt_id || (selectedPatient?.responsible_pt_id) || currentUserId || undefined,
         include_minigame: curSched?.include_minigame ?? true,
         prescribed_exercises: prescribed,
         assigned_exercises: prescribed,

@@ -268,7 +268,10 @@ export const SmartScheduleWizardModal: React.FC<SmartScheduleWizardModalProps> =
 
     try {
       const targetPid = selectedPatient.id || (selectedPatient as any).patient_id || selectedPatient.hn;
+      const effectivePtId = selectedPatient.responsible_pt_id || (selectedPatient as any).pt_id || (selectedPatient as any).assigned_pt_id || undefined;
       const schedulePayload = {
+        assigned_pt_id: effectivePtId,
+        pt_id: effectivePtId,
         start_date: startDate,
         end_date: endDate,
         startDate,

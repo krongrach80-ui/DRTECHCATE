@@ -1235,7 +1235,8 @@ export class FakeCourseRepository implements ICourseRepository {
   async getTodayAppointments(
     dateStr: string,
     kioskId?: string | null,
-    accessiblePatientIds?: string[] | null
+    accessiblePatientIds?: string[] | null,
+    ptId?: string
   ): Promise<CourseRecord[]> {
     const [y, m, d] = dateStr.split('-').map(Number);
     const dateObj = new Date(Date.UTC(y, m - 1, d));
@@ -1259,7 +1260,11 @@ export class FakeCourseRepository implements ICourseRepository {
     if (kioskId !== undefined && kioskId !== null) {
       list = list.filter((c) => !c.kiosk_id || c.kiosk_id === kioskId);
     }
-    if (accessiblePatientIds !== null && accessiblePatientIds !== undefined) {
+    if (ptId && accessiblePatientIds && accessiblePatientIds.length > 0) {
+      list = list.filter((c) => c.pt_id === ptId || accessiblePatientIds.includes(c.patient_id));
+    } else if (ptId) {
+      list = list.filter((c) => c.pt_id === ptId);
+    } else if (accessiblePatientIds !== null && accessiblePatientIds !== undefined) {
       list = list.filter((c) => accessiblePatientIds.includes(c.patient_id));
     }
     return list;
@@ -1280,8 +1285,11 @@ export class FakeCourseRepository implements ICourseRepository {
       if (start && end && start <= endDate && end >= startDate) return true;
       return false;
     });
-    if (ptId) list = list.filter((c) => c.pt_id === ptId);
-    if (accessibleIds !== null && accessibleIds !== undefined) {
+    if (ptId && accessibleIds && accessibleIds.length > 0) {
+      list = list.filter((c) => c.pt_id === ptId || accessibleIds.includes(c.patient_id));
+    } else if (ptId) {
+      list = list.filter((c) => c.pt_id === ptId);
+    } else if (accessibleIds !== null && accessibleIds !== undefined) {
       list = list.filter((c) => accessibleIds.includes(c.patient_id));
     }
     return list;

@@ -469,26 +469,44 @@ export function isPatientVisibleToPt(
 
   const cleanPt = ptIdOrUsername.trim().toLowerCase();
 
-  // 1. Direct Ownership / Primary PT match
-  const respPt = String(patient.responsible_pt_id || (patient as any).primary_pt_id || (patient as any).assigned_pt_id || '').trim().toLowerCase();
-  const isPrimary = Boolean(
-    respPt && (
-      respPt === cleanPt ||
-      (cleanPt === 'pt-01' && (respPt === 'b1000000-0000-0000-0000-000000000003' || respPt === 'pt_somchai')) ||
-      (cleanPt === 'pt_somchai' && (respPt === 'b1000000-0000-0000-0000-000000000003' || respPt === 'pt-01')) ||
-      (cleanPt === 'b1000000-0000-0000-0000-000000000003' && (respPt === 'pt-01' || respPt === 'pt_somchai'))
-    )
-  );
+  const isPtMatch = (targetIdOrName?: string | null): boolean => {
+    if (!targetIdOrName) return false;
+    const cleanTarget = String(targetIdOrName).trim().toLowerCase();
+    if (!cleanTarget) return false;
+    return (
+      cleanTarget === cleanPt ||
+      (cleanPt === 'pt-01' && (cleanTarget === 'b1000000-0000-0000-0000-000000000003' || cleanTarget === 'pt_somchai')) ||
+      (cleanPt === 'pt_somchai' && (cleanTarget === 'b1000000-0000-0000-0000-000000000003' || cleanTarget === 'pt-01')) ||
+      (cleanPt === 'b1000000-0000-0000-0000-000000000003' && (cleanTarget === 'pt-01' || cleanTarget === 'pt_somchai'))
+    );
+  };
 
-  // 2. Active Case Delegation / Transfer match
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // 1. Direct Ownership / Primary PT match
+  const respPt = String(patient.responsible_pt_id || (patient as any).primary_pt_id || (patient as any).assigned_pt_id || '').trim();
+  const isPrimary = isPtMatch(respPt);
+
+  // 2. Assigned Course or Schedule match (Admin assigned course/schedule to this PT)
+  const schedPt = String(
+    (patient as any).schedule?.assigned_pt_id ||
+    (patient as any).schedule?.pt_id ||
+    (patient as any).history?.schedule?.assigned_pt_id ||
+    (patient as any).history?.schedule?.pt_id ||
+    (patient as any).pt_id ||
+    ''
+  ).trim();
+  const isAssignedToCourse = isPtMatch(schedPt);
+
+  // 3. Active Case Delegation / Transfer match
+  let todayIso: string;
+  try {
+    todayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+  } catch {
+    todayIso = new Date().toISOString().slice(0, 10);
+  }
+
   const isDelegated = Array.isArray(delegations) && delegations.some((d) => {
-    const toPt = String(d.to_pt_id || (d as any).delegate_pt_id || (d as any).covering_pt_id || '').trim().toLowerCase();
-    const isToThisPt = toPt === cleanPt ||
-      (cleanPt === 'pt-01' && (toPt === 'b1000000-0000-0000-0000-000000000003' || toPt === 'pt_somchai')) ||
-      (cleanPt === 'pt_somchai' && (toPt === 'b1000000-0000-0000-0000-000000000003' || toPt === 'pt-01')) ||
-      (cleanPt === 'b1000000-0000-0000-0000-000000000003' && (toPt === 'pt-01' || toPt === 'pt_somchai'));
-    if (!isToThisPt) return false;
+    const toPt = String(d.to_pt_id || (d as any).delegate_pt_id || (d as any).covering_pt_id || '').trim();
+    if (!isPtMatch(toPt)) return false;
     const patId = String(d.patient_id || '');
     const matchesPatient = patId === patient.id || patId === patient.hn || patId === (patient as any).patient_id;
     if (!matchesPatient) return false;
@@ -500,7 +518,7 @@ export function isPatientVisibleToPt(
   });
 
   return {
-    isVisible: isPrimary || isDelegated,
+    isVisible: isPrimary || isAssignedToCourse || isDelegated,
     isDelegated,
   };
 }

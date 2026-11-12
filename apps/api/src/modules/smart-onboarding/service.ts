@@ -1972,6 +1972,11 @@ export class SmartOnboardingService {
 
         // Resolve valid PT ID
         let effectivePtId = assignedPtId;
+        const candidatePtId = schedule.assigned_pt_id || schedule.pt_id || schedule.therapist_id;
+        if (candidatePtId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidatePtId)) {
+          effectivePtId = candidatePtId;
+        }
+
         if (!effectivePtId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectivePtId)) {
           try {
             const { data: ptRow } = await adminClient
@@ -1992,6 +1997,30 @@ export class SmartOnboardingService {
             }
           } catch {
             effectivePtId = 'b1000000-0000-0000-0000-000000000003';
+          }
+        }
+
+        // Attach assigned_pt_id into schedule object
+        schedule.assigned_pt_id = effectivePtId;
+        schedule.pt_id = effectivePtId;
+
+        // Sync patient responsible_pt_id and patient_pt_assignments
+        if (resolvedPatientUuid && effectivePtId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectivePtId)) {
+          try {
+            if (!assignedPtId) {
+              await adminClient
+                .from('patients')
+                .update({ responsible_pt_id: effectivePtId, updated_at: new Date().toISOString() })
+                .eq('id', resolvedPatientUuid);
+            }
+            await adminClient
+              .from('patient_pt_assignments')
+              .upsert(
+                { patient_id: resolvedPatientUuid, pt_id: effectivePtId, is_primary: true },
+                { onConflict: 'patient_id,pt_id' }
+              );
+          } catch (syncErr) {
+            logger.warn({ syncErr, patientId }, 'Non-blocking patient PT assignment sync in saveSchedule');
           }
         }
 
@@ -3047,7 +3076,8 @@ export class SmartOnboardingService {
             id,
             hn,
             first_name,
-            last_name
+            last_name,
+            responsible_pt_id
           ),
           course_items (
             id,
@@ -3101,6 +3131,8 @@ export class SmartOnboardingService {
             days_of_week: daysOfWeek,
             time_slot: timeSlotStr,
             assigned_kiosk_id: c.kiosk_id || 'kiosk-01',
+            assigned_pt_id: c.pt_id || p.responsible_pt_id,
+            pt_id: c.pt_id || p.responsible_pt_id,
             include_minigame: c.include_minigame ?? true,
             prescribed_exercises: prescribed,
             excluded_dates: preservedExcluded,
@@ -3108,6 +3140,9 @@ export class SmartOnboardingService {
 
           if (existing) {
             existing.schedule = scheduleObj;
+            if (!existing.responsible_pt_id && (c.pt_id || p.responsible_pt_id)) {
+              existing.responsible_pt_id = c.pt_id || p.responsible_pt_id;
+            }
           } else {
             const newDossier = {
               patient_id: pId,
@@ -3115,6 +3150,7 @@ export class SmartOnboardingService {
               last_name: p.last_name,
               hn: pHn,
               profile_face_url: `/uploads/patients/${pId}/profile_face.jpg`,
+              responsible_pt_id: c.pt_id || p.responsible_pt_id,
               schedule: scheduleObj,
               rehab_scores: [],
               clinical: { diagnosis: 'กายภาพบำบัดฟื้นฟู', treatment_plan: 'โปรแกรมฟื้นฟูสมรรถภาพ' },

@@ -55,7 +55,7 @@ export class PatientRepository implements IPatientRepository {
   // 1. PATIENT ACCESS CHECK (PRIMARY ASSIGNMENT OR ACTIVE CASE TRANSFER)
   // =========================================================================
   async isPatientAccessibleByPt(patientId: string, ptId: string): Promise<boolean> {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
 
     try {
       const adminClient = getAdminClient();
@@ -97,7 +97,19 @@ export class PatientRepository implements IPatientRepository {
 
       if (assignment) return true;
 
-      // 2. Active case transfer
+      // 2. Course assigned to this PT (Admin-created or assigned appointment)
+      const { data: courseRow } = await adminClient
+        .from('courses')
+        .select('id')
+        .eq('patient_id', checkUuid)
+        .eq('pt_id', ptId)
+        .neq('status', 'cancelled')
+        .limit(1)
+        .maybeSingle();
+
+      if (courseRow) return true;
+
+      // 3. Active case transfer
       const { data: transfer, error: transferError } = await adminClient
         .from('case_transfers')
         .select('id')
@@ -123,10 +135,12 @@ export class PatientRepository implements IPatientRepository {
 
   async getAccessiblePatientIdsForPt(ptId: string): Promise<string[]> {
     const accessibleIds = new Set<string>();
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
 
     try {
       const adminClient = getAdminClient();
+
+      // 1. Direct assignments in patient_pt_assignments
       const { data: assignments, error: assignError } = await adminClient
         .from('patient_pt_assignments')
         .select('patient_id')
@@ -141,6 +155,28 @@ export class PatientRepository implements IPatientRepository {
         assignments.forEach((a: { patient_id: string }) => accessibleIds.add(a.patient_id));
       }
 
+      // 2. Primary responsible PT on patients table
+      const { data: respPatients, error: respError } = await adminClient
+        .from('patients')
+        .select('id')
+        .eq('responsible_pt_id', ptId);
+
+      if (!respError && respPatients) {
+        respPatients.forEach((p: { id: string }) => accessibleIds.add(p.id));
+      }
+
+      // 3. Active courses/appointments assigned to this PT
+      const { data: ptCourses, error: courseError } = await adminClient
+        .from('courses')
+        .select('patient_id')
+        .eq('pt_id', ptId)
+        .neq('status', 'cancelled');
+
+      if (!courseError && ptCourses) {
+        ptCourses.forEach((c: { patient_id: string }) => accessibleIds.add(c.patient_id));
+      }
+
+      // 4. Active case transfers
       const { data: transfers, error: transferError } = await adminClient
         .from('case_transfers')
         .select('patient_id')

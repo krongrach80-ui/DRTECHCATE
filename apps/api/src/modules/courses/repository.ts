@@ -40,7 +40,8 @@ export interface ICourseRepository {
   getTodayAppointments(
     dateStr: string,
     kioskId?: string | null,
-    accessiblePatientIds?: string[] | null
+    accessiblePatientIds?: string[] | null,
+    ptId?: string
   ): Promise<CourseRecord[]>;
   getCalendarAppointments(
     startDate: string,
@@ -540,7 +541,8 @@ export class CourseRepository implements ICourseRepository {
   async getTodayAppointments(
     dateStr: string,
     kioskId?: string | null,
-    accessiblePatientIds?: string[] | null
+    accessiblePatientIds?: string[] | null,
+    ptId?: string
   ): Promise<CourseRecord[]> {
     const [y, m, d] = dateStr.split('-').map(Number);
     const dateObj = new Date(Date.UTC(y, m - 1, d));
@@ -559,7 +561,11 @@ export class CourseRepository implements ICourseRepository {
         query = query.or(`kiosk_id.is.null,kiosk_id.eq.${kioskId}`);
       }
 
-      if (accessiblePatientIds !== null && accessiblePatientIds !== undefined) {
+      if (ptId && accessiblePatientIds && accessiblePatientIds.length > 0) {
+        query = query.or(`pt_id.eq.${ptId},patient_id.in.(${accessiblePatientIds.join(',')})`);
+      } else if (ptId) {
+        query = query.eq('pt_id', ptId);
+      } else if (accessiblePatientIds !== null && accessiblePatientIds !== undefined) {
         if (accessiblePatientIds.length === 0) return [];
         query = query.in('patient_id', accessiblePatientIds);
       }
@@ -626,11 +632,11 @@ export class CourseRepository implements ICourseRepository {
         .lte('start_date', endDate)
         .gte('end_date', startDate);
 
-      if (ptId) {
+      if (ptId && accessiblePatientIds && accessiblePatientIds.length > 0) {
+        query = query.or(`pt_id.eq.${ptId},patient_id.in.(${accessiblePatientIds.join(',')})`);
+      } else if (ptId) {
         query = query.eq('pt_id', ptId);
-      }
-
-      if (accessiblePatientIds !== null && accessiblePatientIds !== undefined) {
+      } else if (accessiblePatientIds !== null && accessiblePatientIds !== undefined) {
         if (accessiblePatientIds.length === 0) return [];
         query = query.in('patient_id', accessiblePatientIds);
       }

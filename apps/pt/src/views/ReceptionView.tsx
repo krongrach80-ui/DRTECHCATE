@@ -146,6 +146,21 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
     window.addEventListener('drtech:patients_reconciled', handleRefresh);
     window.addEventListener('focus', handleRefresh);
 
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('drtechcare_schedule');
+      bc.onmessage = () => {
+        void fetchData();
+      };
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'drtechcare_schedule_updated') {
+        void fetchData();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
     // Background sync polling: 60 seconds minimum when active, paused when tab is hidden
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) return;
@@ -158,6 +173,8 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
       window.removeEventListener('patients-updated', handleRefresh);
       window.removeEventListener('drtech:patients_reconciled', handleRefresh);
       window.removeEventListener('focus', handleRefresh);
+      window.removeEventListener('storage', handleStorage);
+      if (bc) bc.close();
       clearInterval(pollInterval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

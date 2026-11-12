@@ -76,7 +76,19 @@ export class CourseService {
 
       ptId = actor.id;
     } else if (actor.role === 'admin' || actor.role === 'director' || actor.role === 'superadmin') {
-      ptId = input.pt_id || patient.responsible_pt_id || actor.id;
+      ptId = input.pt_id || patient.responsible_pt_id || '';
+      if (!ptId) {
+        try {
+          const activePts = await this.directoryRepo.listActivePts();
+          if (activePts && activePts.length > 0) {
+            ptId = activePts[0].id;
+          } else {
+            ptId = actor.id;
+          }
+        } catch {
+          ptId = actor.id;
+        }
+      }
     }
 
     // 3. Snapshot exercises from modpack if modpack_id provided and items empty
@@ -94,6 +106,28 @@ export class CourseService {
     }
 
     const course = await this.repo.createCourse(input, ptId, itemsToSave);
+
+    // Sync patient responsible_pt_id and patient_pt_assignments if assigned to a PT
+    if (ptId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ptId)) {
+      try {
+        const { getAdminClient } = await import('../../lib/supabase/adminClient');
+        const adminClient = getAdminClient();
+        if (!patient.responsible_pt_id) {
+          await adminClient
+            .from('patients')
+            .update({ responsible_pt_id: ptId, updated_at: new Date().toISOString() })
+            .eq('id', patient.id);
+        }
+        await adminClient
+          .from('patient_pt_assignments')
+          .upsert(
+            { patient_id: patient.id, pt_id: ptId, is_primary: true },
+            { onConflict: 'patient_id,pt_id' }
+          );
+      } catch {
+        // Safe non-blocking sync
+      }
+    }
 
     await this.auditService.write({
       actor_type: 'staff',
@@ -223,14 +257,17 @@ export class CourseService {
     filter: TodayAppointmentsFilter,
     actor: UserSession
   ): Promise<CourseRecord[]> {
-    const dateStr = filter.date || new Date().toISOString().split('T')[0];
+    const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+    const dateStr = filter.date || todayBkk;
 
     let accessibleIds: string[] | null = null;
+    let ptId: string | undefined = undefined;
     if (actor.role === 'pt') {
       accessibleIds = await this.patientRepo.getAccessiblePatientIdsForPt(actor.id);
+      ptId = actor.id;
     }
 
-    return this.repo.getTodayAppointments(dateStr, filter.kiosk_id, accessibleIds);
+    return this.repo.getTodayAppointments(dateStr, filter.kiosk_id, accessibleIds, ptId);
   }
 
   // =========================================================================
@@ -240,6 +277,7 @@ export class CourseService {
     filter: CalendarViewFilter,
     actor: UserSession
   ): Promise<CourseRecord[]> {
+    const todayBkk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
     let startDate: string;
     let endDate: string;
 
@@ -247,17 +285,21 @@ export class CourseService {
       startDate = `${filter.month}-01`;
       endDate = `${filter.month}-31`;
     } else {
-      const today = new Date().toISOString().split('T')[0];
-      startDate = filter.start_date || today;
-      endDate = filter.end_date || today;
+      startDate = filter.start_date || todayBkk;
+      endDate = filter.end_date || todayBkk;
     }
 
     let accessibleIds: string[] | null = null;
+    let targetPtId = filter.pt_id;
+
     if (actor.role === 'pt') {
       accessibleIds = await this.patientRepo.getAccessiblePatientIdsForPt(actor.id);
+      if (!targetPtId) {
+        targetPtId = actor.id;
+      }
     }
 
-    return this.repo.getCalendarAppointments(startDate, endDate, filter.pt_id, accessibleIds);
+    return this.repo.getCalendarAppointments(startDate, endDate, targetPtId, accessibleIds);
   }
 
   async deleteCourseDay(id: string, date: string, actor: UserSession): Promise<void> {
