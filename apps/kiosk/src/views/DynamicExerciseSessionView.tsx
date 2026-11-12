@@ -549,6 +549,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [evalResult, setEvalResult] = useState<RepEvaluationResult | null>(null);
   const [_watchdogStatus, setWatchdogStatus] = useState<WatchdogHealthStatus | null>(null);
   const [isResting, setIsResting] = useState<boolean>(false);
+  const [completedSetNumber, setCompletedSetNumber] = useState<number>(1);
   const [restCountdown, setRestCountdown] = useState<number>(
     resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30
   );
@@ -696,10 +697,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     isPausedRef.current = isPaused;
   }, [isPaused]);
 
-  const isRestingRef = useRef(isResting);
-  useEffect(() => {
-    isRestingRef.current = isResting;
-  }, [isResting]);
+  // Session Workout State Machine: 'EXERCISING' | 'RESTING' | 'COMPLETED'
+  // Synchronous Single Source of Truth to eliminate phase delays with 60 FPS loops.
+  const sessionWorkoutStateRef = useRef<'EXERCISING' | 'RESTING' | 'COMPLETED'>('EXERCISING');
+  const isRestingRef = useRef<boolean>(false);
 
   const isSummaryOpenRef = useRef(isSummaryOpen);
   useEffect(() => {
@@ -1081,6 +1082,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   // Resource Cleanup on Unmount
   const cleanupResources = useCallback(() => {
     isMountedRef.current = false;
+    sessionWorkoutStateRef.current = 'COMPLETED';
     if (rvfcIdRef.current !== null && videoRef.current && 'cancelVideoFrameCallback' in videoRef.current) {
       try {
         (videoRef.current as any).cancelVideoFrameCallback(rvfcIdRef.current);
@@ -1520,8 +1522,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 validCompletedRepsRef.current
               );
 
-              // Rep counting is suspended while resting between sets.
-              if (!isRestingRef.current && evalRes.completedReps > lastCompletedRepsRef.current) {
+              // Rep counting is strictly gated to EXERCISING state
+              if (sessionWorkoutStateRef.current === 'EXERCISING' && evalRes.completedReps > lastCompletedRepsRef.current) {
                 lastCompletedRepsRef.current = evalRes.completedReps;
                 if (isIdentityVerifiedRef.current) {
                   validCompletedRepsRef.current += 1;
@@ -1545,11 +1547,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               const isSetDone = validCompletedRepsRef.current - setBaseRepsRef.current >= targetReps;
               const isExerciseDone = isSetDone && evalRes.currentSet >= totalSets;
 
-              if (isSetDone && !isExerciseDone && !isRestingRef.current) {
-                setIsResting(true);
+              if (isSetDone && !isExerciseDone && sessionWorkoutStateRef.current === 'EXERCISING') {
+                sessionWorkoutStateRef.current = 'RESTING';
                 isRestingRef.current = true;
+                setCompletedSetNumber(evalRes.currentSet);
+                setIsResting(true);
                 speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`, 'set_complete', 2500);
-              } else if (isExerciseDone && !isSummaryOpenRef.current) {
+              } else if (isExerciseDone && sessionWorkoutStateRef.current !== 'COMPLETED' && !isSummaryOpenRef.current) {
+                sessionWorkoutStateRef.current = 'COMPLETED';
+                isRestingRef.current = false;
+                setIsResting(false);
                 setIsSummaryOpen(true);
                 isSummaryOpenRef.current = true;
                 speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว', 'exercise_complete', 2500);
@@ -1689,8 +1696,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
 
           // Rep completion audio chime, TTS & senior celebration pulse
-          // (suspended while resting between sets)
-          if (!isRestingRef.current && evalRes.completedReps > lastCompletedRepsRef.current) {
+          // (strictly gated to EXERCISING state)
+          if (sessionWorkoutStateRef.current === 'EXERCISING' && evalRes.completedReps > lastCompletedRepsRef.current) {
             lastCompletedRepsRef.current = evalRes.completedReps;
             if (isIdentityVerifiedRef.current) {
               validCompletedRepsRef.current += 1;
@@ -1716,20 +1723,25 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             speakThai(evalRes.coachingMessageTh, 'coaching_warning', 4000);
           }
 
-          // Set & Exercise Completion Transitions (Gated by valid verified reps)
+          // Set & Exercise Completion Transitions (Gated by valid verified reps and EXERCISING state)
           const targetReps = resolvedConfigRef.current.defaultPrescription?.repsPerSet || 10;
           const totalSets = resolvedConfigRef.current.defaultPrescription?.totalSets || 3;
           const isSetDone = validCompletedRepsRef.current - setBaseRepsRef.current >= targetReps;
           const isExerciseDone = isSetDone && evalRes.currentSet >= totalSets;
 
-          if (isSetDone && !isExerciseDone && !isRestingRef.current) {
-            setIsResting(true);
+          if (isSetDone && !isExerciseDone && sessionWorkoutStateRef.current === 'EXERCISING') {
+            sessionWorkoutStateRef.current = 'RESTING';
             isRestingRef.current = true;
+            setCompletedSetNumber(evalRes.currentSet);
+            setIsResting(true);
             speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`, 'set_complete', 2500);
             if (isAccuracyTestModeRef.current) {
               setShowAccuracyVerifyModal(true);
             }
-          } else if (isExerciseDone && !isSummaryOpenRef.current) {
+          } else if (isExerciseDone && sessionWorkoutStateRef.current !== 'COMPLETED' && !isSummaryOpenRef.current) {
+            sessionWorkoutStateRef.current = 'COMPLETED';
+            isRestingRef.current = false;
+            setIsResting(false);
             setIsSummaryOpen(true);
             isSummaryOpenRef.current = true;
             speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว', 'exercise_complete', 2500);
@@ -2191,10 +2203,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   }, [cleanupResources, playRepChime, speakThai]);
 
   const handleNextSet = useCallback(() => {
-    // Idempotent: only the first call during a rest period starts the next set.
-    if (!isRestingRef.current) return;
-    setIsResting(false);
+    // Atomic Idempotent Guard: only transition from RESTING to EXERCISING
+    if (sessionWorkoutStateRef.current !== 'RESTING') return;
+    sessionWorkoutStateRef.current = 'EXERCISING';
     isRestingRef.current = false;
+    setIsResting(false);
     setBaseRepsRef.current = validCompletedRepsRef.current;
     lastCompletedRepsRef.current = 0;
     stateMachineRef.current.nextSet();
@@ -2206,33 +2219,38 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     setRestCountdown(resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30);
   }, [resolvedConfig.defaultPrescription?.restBetweenSetsSec]);
 
-  // Rest Countdown Timer: remaining time is derived from a wall-clock deadline,
-  // so throttled or backgrounded tabs cannot drift. The interval is cleared when
-  // rest ends or the component unmounts.
+  // Rest Countdown Timer & Auto-advance unified into a single atomic controller.
+  // Remaining time is derived from a wall-clock deadline so throttled/backgrounded tabs cannot drift.
+  // Automatically triggers handleNextSet once deadline expires without duplicate invocation.
   useEffect(() => {
     if (!isResting) return;
     const restSec = resolvedConfigRef.current.defaultPrescription?.restBetweenSetsSec || 30;
     const deadline = Date.now() + restSec * 1000;
     setRestCountdown(restSec);
+
+    let isTimerActive = true;
     const interval = setInterval(() => {
-      setRestCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+      if (!isTimerActive || !isMountedRef.current) return;
+      const remainingSec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setRestCountdown(remainingSec);
+      if (remainingSec <= 0) {
+        isTimerActive = false;
+        clearInterval(interval);
+        handleNextSet();
+      }
     }, 250);
 
-    return () => clearInterval(interval);
-  }, [isResting]);
-
-  // Advance once when the countdown reaches zero. handleNextSet clears
-  // isRestingRef and isResting, so this cannot run twice for one rest period.
-  useEffect(() => {
-    if (isResting && restCountdown <= 0) {
-      handleNextSet();
-    }
-  }, [isResting, restCountdown, handleNextSet]);
+    return () => {
+      isTimerActive = false;
+      clearInterval(interval);
+    };
+  }, [isResting, handleNextSet]);
 
   // Final Session Telemetry Submission with Idempotency Guard
   const handleFinalizeSession = (mode: 'ai_verified' | 'stopped_pain' | 'skipped_unverified') => {
     if (isFinalizingRef.current) return;
     isFinalizingRef.current = true;
+    sessionWorkoutStateRef.current = 'COMPLETED';
 
     const totalDurationSec = Math.max(
       1,
@@ -3051,10 +3069,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </h3>
             <p className="text-base sm:text-lg text-slate-600 mt-2 font-medium">
               {lang === 'zh-CN'
-                ? `已完成第 ${hudState.currentSet} 组，请放松肌肉稍作休息`
+                ? `已完成第 ${completedSetNumber} 组，请放松肌肉稍作休息`
                 : lang === 'en-US'
-                  ? `Set ${hudState.currentSet} completed. Relax your muscles before the next set.`
-                  : `ทำครบเซ็ตที่ ${hudState.currentSet} แล้ว พักผ่อนกล้ามเนื้อสักครู่ก่อนเริ่มเซ็ตถัดไป`}
+                  ? `Set ${completedSetNumber} completed. Relax your muscles before the next set.`
+                  : `ทำครบเซ็ตที่ ${completedSetNumber} แล้ว พักผ่อนกล้ามเนื้อสักครู่ก่อนเริ่มเซ็ตถัดไป`}
             </p>
 
             <div className="my-6">

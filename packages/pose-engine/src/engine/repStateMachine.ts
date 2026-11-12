@@ -2483,12 +2483,19 @@ export class RepStateMachine {
     this.holdStartTimeMs = null;
     this.holdPauseStartMs = null;
     this.totalHoldPausedDurationMs = 0;
+    this.lastEvaluationResult = null;
+    this.maxAngleAchievedDeg = 0;
     this.lastRepCompletedTimeMs = 0;
     this.baselineHeelY = null;
     this.baselineHipY = null;
     this.timerStartTimeMs = null;
     this.balanceHoldStartTimeMs = null;
     this.balanceHoldAccumulatedMs = 0;
+    this.recentPlaneAngles = [];
+    this.recentElbowAngles = [];
+    this.recentWristDistances = [];
+    this.hasCurrentRepFormViolation = false;
+    this.compensationDetector.getVelocityGuard().resetRepViolation();
     this.pendulumAnalyzer.reset();
   }
 

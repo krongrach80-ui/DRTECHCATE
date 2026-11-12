@@ -24,6 +24,7 @@ const eslintConfig = defineConfig([
       ...reactHooksPlugin.configs.recommended.rules,
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/exhaustive-deps": "warn",
+      "react-hooks/refs": "warn",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }
