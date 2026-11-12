@@ -136,10 +136,12 @@ export const KIOSK_CAMERA_STANDARDIZATION_CONFIG = {
 export const KIOSK_NOT_FOUND_CONFIG = {
   /** จำนวนรอบที่ต้องตรวจพบว่าไม่ตรงกับคนไข้ใดๆ (เมื่อภาพผ่านเกณฑ์คุณภาพ) เพื่อยืนยันว่าไม่มีบัญชี (2 รอบ) */
   NOT_FOUND_CONFIRM_ROUNDS: 2,
-  /** หน้าต่างเวลาในการสะสมรอบที่ไม่ตรงกัน (15000 มิลลิวินาที หรือ 15 วินาที เพื่อครอบคลุม 2 รอบการสแกน) */
-  NOT_FOUND_WINDOW_MS: 15000,
+  /** หน้าต่างเวลาในการสะสมรอบที่ไม่ตรงกัน (5000 มิลลิวินาที หรือ 5 วินาที เพื่อครอบคลุม 2 รอบการสแกน) */
+  NOT_FOUND_WINDOW_MS: 5000,
   /** เกณฑ์คะแนนคุณภาพภาพต่ำสุด (ความคมชัด) ที่ยอมรับเพื่อตัดสินว่าไม่มีบัญชี ป้องกันการใช้ภาพเบลอมาตัดสิน */
   QUALITY_MIN: 4.0,
+  /** จำนวนรอบสูงสุดที่ยอมให้ภาพคุณภาพไม่ผ่านติดกัน ก่อนแจ้งเตือนให้เรียกเจ้าหน้าที่ (3 รอบ) */
+  QUALITY_RETRY_MAX: 3,
   /** ระยะเวลาคืนสู่สถานะเริ่มต้นอัตโนมัติเมื่อไม่มีการกดปุ่มใดๆ ในป็อปอัพ (30000 มิลลิวินาที หรือ 30 วินาที) */
   NOT_FOUND_IDLE_TIMEOUT_MS: 30000,
   /** ระยะเวลาคูลดาวน์ก่อนเริ่มสแกนใหม่ (1500 มิลลิวินาที หรือ 1.5 วินาที) */
@@ -686,18 +688,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [notFoundRemainingSec, setNotFoundRemainingSec] = useState<number>(30);
   const [isRetryCooldownActive, setIsRetryCooldownActive] = useState<boolean>(false);
   const consecutiveUnmatchedRoundsRef = useRef<{ count: number; firstTimestamp: number }>({ count: 0, firstTimestamp: 0 });
-  const [ambiguousCandidate, setAmbiguousCandidate] = useState<{
-    id: string;
-    hn: string;
-    name: string;
-    score: number;
-  } | null>(null);
-  const ambiguousCandidateRef = useRef<{
-    id: string;
-    hn: string;
-    name: string;
-    score: number;
-  } | null>(null);
+  const consecutiveQualityFailuresRef = useRef<number>(0);
   const [matchedPatient, setMatchedPatient] = useState<PatientRecordFile | null>(null);
   const [identityAnchor, setIdentityAnchor] = useState<SpatialIdentityAnchor | null>(null);
   const [similarityInfo, setSimilarityInfo] = useState<{ percent: number; distance: number } | null>(null);
@@ -810,9 +801,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const [isCallingStaff, setIsCallingStaff] = useState<boolean>(false);
   const lastManualCallStaffTimeRef = useRef<number>(0);
 
-  // Effective pause state (paused while modal/alert/candidate popup is active)
+  // Effective pause state (paused while modal/alert/popup is active)
   const isScanningPaused = Boolean(
-    isPaused || isAboutModalOpen || isPinModalOpen || ambiguousCandidate || userDisabledCamera || isAccountNotFound || unrecognizedAlert
+    isPaused || isAboutModalOpen || isPinModalOpen || userDisabledCamera || isAccountNotFound || unrecognizedAlert
   );
 
   // 30-Second Auto-Reset Timer for "Account Not Found" (Dedicated modal auto-closes to idle)
@@ -1402,12 +1393,23 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       if (!hasValidQualityFrame && bestShotFrames.length > 0) {
         // Quality insufficient: Blurry, too dark/bright, or turned face > 20°
         // Show brief guidance and do NOT count towards "Account Not Found"
-        const qualityAdvice =
-          lang === 'zh-CN'
-            ? '请直视摄像头，增加光线，并摘下帽子/口罩。'
-            : lang === 'en-US'
-            ? 'Please look straight, ensure adequate lighting, and remove hat/mask.'
-            : 'กรุณามองตรง เพิ่มแสง ถอดหมวก/แมสก์';
+        consecutiveQualityFailuresRef.current++;
+        let qualityAdvice: string;
+        if (consecutiveQualityFailuresRef.current >= KIOSK_NOT_FOUND_CONFIG.QUALITY_RETRY_MAX) {
+          qualityAdvice =
+            lang === 'zh-CN'
+              ? '图像质量持续不达标，建议联系或呼叫医护人员协助。'
+              : lang === 'en-US'
+              ? 'Persistent image quality issue. Please ask staff for assistance.'
+              : 'ภาพไม่ชัดเจนต่อเนื่อง กรุณาติดต่อหรือเรียกเจ้าหน้าที่';
+        } else {
+          qualityAdvice =
+            lang === 'zh-CN'
+              ? '请直视摄像头，增加光线，并摘下帽子/口罩。'
+              : lang === 'en-US'
+              ? 'Please look straight, ensure adequate lighting, and remove hat/mask.'
+              : 'กรุณามองตรง เพิ่มแสง ถอดหมวก/แมสก์';
+        }
         setStatusText(qualityAdvice);
         setFloatingToast(qualityAdvice);
         isProcessingScanRef.current = false;
@@ -1431,6 +1433,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         }, KIOSK_NOT_FOUND_CONFIG.RETRY_COOLDOWN_MS);
         return;
       }
+
+      // Valid quality frame passed: reset quality failure counter
+      consecutiveQualityFailuresRef.current = 0;
 
       // Best probe vector prioritizing the sharpest best-shot frame
       const candidateVectors: number[][] = [];
@@ -1570,8 +1575,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           isProcessingScanRef.current = false;
           setIsScanning(false);
           setMatchedPatient(null);
-          setAmbiguousCandidate(null);
-          ambiguousCandidateRef.current = null;
           setUnrecognizedAlert(
             lang === 'zh-CN'
               ? '未找到系统有效账户，该就诊人档案可能已在医院系统中被注销或删除。'
@@ -1594,8 +1597,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         const finalDistance = typeof res?.distance === 'number' ? res.distance : aggregatedDistance;
 
         setUnrecognizedAlert(null);
-        setAmbiguousCandidate(null);
-        ambiguousCandidateRef.current = null;
         setMatchedPatient(authoritativePatient);
         setSimilarityInfo({
           percent: finalPercent,
@@ -1617,64 +1618,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      // Case B: Ambiguous Candidate Match (50% - 79% explicitly flagged by backend with identified candidate)
-      // If backend rejected or did not flag ambiguous candidate, NEVER guess or fall back to local topCand!
-      const isServerAmbiguous = Boolean(
-        res &&
-        !res.matched &&
-        ((res as any).requirePin || ((res.similarityPercentage ?? 0) >= 50 && (res.similarityPercentage ?? 0) < 85)) &&
-        ((res as any).candidate || (res as any).candidateName)
-      );
-
-      if (isServerAmbiguous) {
-        consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
-        scanFailureCountRef.current++;
-        isProcessingScanRef.current = false;
-        setIsScanning(false);
-        const candObj = (res as any)?.candidate;
-        const cName = candObj?.first_name
-          ? `${candObj.first_name} ${candObj.last_name && candObj.last_name !== '-' ? candObj.last_name : ''}`.trim()
-          : (res as any)?.candidateName || 'ผู้ป่วย';
-        const cHn = candObj?.hn || (res as any)?.candidateHn || '';
-        const cId = candObj?.id || candObj?.patient_id || '';
-        const effectiveScore = typeof res?.similarityPercentage === 'number' ? res.similarityPercentage : 0;
-
-        const isCandidateLive =
-          cachedPatientsRef.current.length === 0 ||
-          cachedPatientsRef.current.some((c) => (cId && c.id === cId) || (cHn && c.hn === cHn));
-
-        if (isCandidateLive) {
-          setUnrecognizedAlert(null);
-          ambiguousCandidateRef.current = {
-            id: cId,
-            hn: cHn,
-            name: cName,
-            score: Math.min(98, effectiveScore),
-          };
-          setAmbiguousCandidate({
-            id: cId,
-            hn: cHn,
-            name: cName,
-            score: Math.min(98, effectiveScore),
-          });
-          setStatusText(
-            lang === 'zh-CN'
-              ? '检测到相似度处于复核区间，请输入PIN码以验证身份'
-              : lang === 'en-US'
-              ? 'Borderline match detected. Please enter your PIN to verify identity'
-              : 'ระบบตรวจพบความคล้ายคลึงก้ำกึ่ง กรุณากรอกรหัส PIN เพื่อยืนยันตัวตน'
-          );
-          return;
-        } else {
-          removePatientFromLocalCache(cId);
-          // Candidate is a ghost; continue to Case C below
-        }
-      }
-
-      // Case C: Below threshold / Impostor / Stranger (< 50% or unmatched): Failure path
+      // NO_MATCH Path: All non-matching cases (including former borderline scores or ambiguous margins) fail closed here.
+      // Zero ambiguous/near-match states. Zero automatic additional verification modals.
       setMatchedPatient(null);
-      setAmbiguousCandidate(null);
-      ambiguousCandidateRef.current = null;
       scanFailureCountRef.current++;
       const now = Date.now();
       failedScanTimestampsRef.current.push(now);
@@ -1695,7 +1641,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      // Check consecutive unmatched rounds within NOT_FOUND_WINDOW_MS (5s)
+      // Check consecutive unmatched rounds within NOT_FOUND_WINDOW_MS (5s config)
       if (
         consecutiveUnmatchedRoundsRef.current.count > 0 &&
         now - consecutiveUnmatchedRoundsRef.current.firstTimestamp > KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_WINDOW_MS
@@ -1712,7 +1658,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         consecutiveUnmatchedRoundsRef.current.count >= KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_CONFIRM_ROUNDS;
 
       if (isConfirmedNotFound) {
-        // State (ค) CONFIRMED UNMATCHED STRANGER: Halt scanning loop immediately, clear all pending frames & vectors, and show Account Not Found screen
+        // CONFIRMED NO_MATCH: Halt scanning loop immediately, clear all pending frames & vectors, and show Account Not Found screen
         consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
         sampleFramesRef.current = [];
         lastProbeVectorRef.current = null;
@@ -1730,16 +1676,16 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
         const notFoundMsg =
           lang === 'zh-CN'
-            ? '未找到用户账户，请联系医护人员协助办理登记。'
+            ? '未找到与该面部匹配的用户账户，请联系医护人员协助办理登记。'
             : lang === 'en-US'
-            ? 'No matching patient account found. Please contact hospital staff for registration.'
-            : 'ไม่พบบัญชีผู้ใช้ในระบบ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน';
+            ? 'No matching patient account found for this face. Please contact staff for registration.'
+            : 'ไม่พบบัญชีผู้ใช้ที่ตรงกับใบหน้านี้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน';
         setStatusText(notFoundMsg);
         setIsAccountNotFound(true);
         return;
       }
 
-      // Round 1 (1st unmatched attempt): Neutral prompt WITHOUT any % or raw cosine similarity score
+      // Round 1 (1st unmatched attempt): Neutral prompt WITHOUT any % or candidate clue
       const round1Msg =
         lang === 'zh-CN'
           ? '请直视摄像头并保持静止，正在再次验证...'
@@ -1756,16 +1702,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       sampleFramesRef.current = [];
       lockedTargetRef.current = null;
 
-      // Ephemeral Biometric Invariant: Hold in-memory probe embedding and snapshot only (zero persistent storage)
-      if (lastProbeVectorRef.current && lastProbeVectorRef.current.length > 0) {
-        pendingRegistrationBiometricsRef.current = {
-          probeEmbedding: lastProbeVectorRef.current.slice(),
-          faceCropDataUrl: snapshotBase64 || undefined,
-          capturedAt: new Date().toISOString(),
-        };
-      }
+      // Purge probe vectors immediately - zero persistent storage for non-matches
+      lastProbeVectorRef.current = null;
+      pendingRegistrationBiometricsRef.current = null;
 
-      // Automatically reset stability detector and resume scan after 1.5s cooldown (Zero-Touch)
+      // Automatically reset stability detector and resume scan after cooldown
       setTimeout(() => {
         if (isMountedRef.current) {
           isCoolingDownRef.current = false;
@@ -1775,14 +1716,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           fastLivenessVerifierRef.current.start();
         }
       }, KIOSK_NOT_FOUND_CONFIG.RETRY_COOLDOWN_MS);
-
-      if (scanFailureCountRef.current >= 3) {
-        setTimeout(() => {
-          if (isMountedRef.current && !matchedPatient && !isAccountNotFoundRef.current) {
-            setIsPinModalOpen(true);
-          }
-        }, 600);
-      }
     } catch (err: unknown) {
       if (!isMountedRef.current) return;
       const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการประมวลผลใบหน้า';
@@ -2605,8 +2538,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setUnrecognizedAlert(null);
     setIsAccountNotFound(false);
     consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
-    setAmbiguousCandidate(null);
-    ambiguousCandidateRef.current = null;
     setMatchedPatient(null);
     setLivenessResult(null);
     setSimilarityInfo(null);
@@ -2635,23 +2566,18 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     startCamera();
   };
 
-  // Patient login via PIN
+  // Patient login via manual PIN
   const handlePinLoginSuccess = async () => {
     setIsPinModalOpen(false);
     const pin = enteredPin.trim();
     if (!pin) return;
 
-    const candHn = ambiguousCandidateRef.current?.hn || ambiguousCandidate?.hn || undefined;
-
     try {
       const pinRes = await defaultApiClient.smartOnboarding.pinLogin({
         pin,
-        hn: candHn,
         probe: lastProbeVectorRef.current || undefined,
       });
       if (pinRes?.matched && pinRes.patient) {
-        setAmbiguousCandidate(null);
-        ambiguousCandidateRef.current = null;
         setStatusText(
           lang === 'zh-CN'
             ? '登入成功，已同步更新最新面部特征'
@@ -2668,7 +2594,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       }
     } catch {}
 
-    ambiguousCandidateRef.current = null;
     setUnrecognizedAlert(
       lang === 'zh-CN'
         ? `未找到密码 "${pin}" 对应的有效档案（请核对PIN码或联系医护人员协助办理）`
@@ -3090,7 +3015,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               type="button"
               onClick={() => {
                 setIsPinModalOpen(false);
-                ambiguousCandidateRef.current = null;
               }}
               className="absolute top-4 right-4 p-1.5 rounded-full text-slate-400 hover:text-slate-700 bg-slate-100 transition cursor-pointer"
             >
@@ -3300,82 +3224,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         </div>
       )}
 
-      {/* Modal: Ambiguous Candidate Identity Verification (PIN confirmation) */}
-      {ambiguousCandidate && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white border-2 border-amber-500/50 shadow-2xl p-6 text-center animate-scale-up">
-            <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto mb-3">
-              <KeyRound className="w-8 h-8 text-amber-500" />
-            </div>
-            <h3 className="text-xl font-bold text-slate-900">
-              {lang === 'zh-CN' ? '需进一步身份验证' : lang === 'en-US' ? 'Additional Verification Required' : '🔐 ยืนยันตัวตนเพิ่มเติม'}
-            </h3>
-            {/* Neutral Privacy Message: NO name, NO HN, NO percentage leak */}
-            <div className="mt-3 p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-center">
-              <p className="text-sm text-slate-700 leading-relaxed font-medium">
-                {lang === 'zh-CN'
-                  ? '系统检测到面部特征处于复核区间。为保障就诊隐私与安全，请点击下方输入4位PIN码以验证登入。'
-                  : lang === 'en-US'
-                  ? 'Borderline similarity detected. For patient privacy and safety, please enter your 4-digit PIN to verify and sign in.'
-                  : 'ระบบตรวจพบความคล้ายคลึงก้ำกึ่ง เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณากรอกรหัส PIN 4 หลักเพื่อเข้าสู่ระบบ'}
-              </p>
-              {/* Show similarity % ONLY in Staff Mode or Debug HUD */}
-              {isCalibrationOpen && (
-                <div className="mt-2 text-xs font-mono text-amber-800 bg-amber-100/80 rounded-lg px-2.5 py-1 inline-block border border-amber-300">
-                  [Staff/Debug HUD] Similarity: {ambiguousCandidate.score}%
-                </div>
-              )}
-            </div>
-
-            <div className="mt-5 flex flex-col gap-2.5">
-              <button
-                type="button"
-                id="kiosk-candidate-pin-btn"
-                data-testid="kiosk-candidate-pin-btn"
-                onClick={() => {
-                  setAmbiguousCandidate(null);
-                  setIsPinModalOpen(true);
-                }}
-                className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-sm shadow-lg shadow-amber-500/25 active:scale-95 transition cursor-pointer flex items-center justify-center gap-2"
-              >
-                <KeyRound className="w-4 h-4" />
-                <span>{lang === 'zh-CN' ? '输入4位PIN码直接登入' : lang === 'en-US' ? 'Enter 4-Digit PIN to Sign In' : '🔢 กรอกรหัส PIN 4 หลักเพื่อเข้าใช้งาน'}</span>
-              </button>
-              <button
-                type="button"
-                id="kiosk-candidate-retry-btn"
-                data-testid="kiosk-candidate-retry-btn"
-                onClick={() => {
-                  setAmbiguousCandidate(null);
-          ambiguousCandidateRef.current = null;
-                  handleResetScan();
-                }}
-                className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs active:scale-95 transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>{lang === 'zh-CN' ? '重新对准并扫描' : lang === 'en-US' ? 'Re-align & Scan Again' : '🔄 สแกนใบหน้าใหม่อีกครั้ง'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAmbiguousCandidate(null);
-          ambiguousCandidateRef.current = null;
-                  if (onStaffAssistedRegister) {
-                    onStaffAssistedRegister(pendingRegistrationBiometricsRef.current);
-                  } else if (onOpenStaffLoginModal) {
-                    onOpenStaffLoginModal();
-                  }
-                }}
-                className="w-full py-2.5 px-4 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs active:scale-95 transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>{lang === 'zh-CN' ? '医护人员协助办理' : lang === 'en-US' ? 'Staff-Assisted Support' : '👨‍⚕️ เจ้าหน้าที่ลงทะเบียนให้'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal: Account Not Found (Dedicated Stranger / Unmatched Screen) */}
       {(isAccountNotFound || unrecognizedAlert) && (
         <div
@@ -3400,10 +3248,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             <p id="not-found-dialog-desc" className="text-sm text-slate-600 mt-2 leading-relaxed">
               {unrecognizedAlert ||
                 (lang === 'zh-CN'
-                  ? '未找到用户账户，请联系医护人员协助办理建档登记。'
+                  ? '未找到与该面部匹配的用户账户，请联系医护人员协助办理登记。'
                   : lang === 'en-US'
-                  ? 'No matching patient account found. Please contact hospital staff for registration.'
-                  : 'ไม่พบบัญชีผู้ใช้ในระบบ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน')}
+                  ? 'No matching patient account found for this face. Please contact staff for registration.'
+                  : 'ไม่พบบัญชีผู้ใช้ที่ตรงกับใบหน้านี้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน')}
             </p>
 
             <div className="mt-5 flex flex-col gap-2.5">
