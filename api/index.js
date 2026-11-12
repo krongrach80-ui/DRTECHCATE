@@ -1694,7 +1694,7 @@ var init_repository3 = __esm({
       // 1. PATIENT ACCESS CHECK (PRIMARY ASSIGNMENT OR ACTIVE CASE TRANSFER)
       // =========================================================================
       async isPatientAccessibleByPt(patientId, ptId) {
-        const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(/* @__PURE__ */ new Date());
         try {
           const adminClient = getAdminClient();
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId);
@@ -1722,6 +1722,8 @@ var init_repository3 = __esm({
             return true;
           }
           if (assignment) return true;
+          const { data: courseRow } = await adminClient.from("courses").select("id").eq("patient_id", checkUuid).eq("pt_id", ptId).neq("status", "cancelled").limit(1).maybeSingle();
+          if (courseRow) return true;
           const { data: transfer, error: transferError } = await adminClient.from("case_transfers").select("id").eq("patient_id", checkUuid).eq("to_pt_id", ptId).lte("start_date", today).gte("end_date", today).eq("status", "active").maybeSingle();
           if (transferError) {
             logger.error({ transferError, patientId: checkUuid, ptId }, "Database error checking case transfer");
@@ -1736,7 +1738,7 @@ var init_repository3 = __esm({
       }
       async getAccessiblePatientIdsForPt(ptId) {
         const accessibleIds = /* @__PURE__ */ new Set();
-        const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(/* @__PURE__ */ new Date());
         try {
           const adminClient = getAdminClient();
           const { data: assignments, error: assignError } = await adminClient.from("patient_pt_assignments").select("patient_id").eq("pt_id", ptId);
@@ -1746,6 +1748,14 @@ var init_repository3 = __esm({
           }
           if (assignments) {
             assignments.forEach((a) => accessibleIds.add(a.patient_id));
+          }
+          const { data: respPatients, error: respError } = await adminClient.from("patients").select("id").eq("responsible_pt_id", ptId);
+          if (!respError && respPatients) {
+            respPatients.forEach((p) => accessibleIds.add(p.id));
+          }
+          const { data: ptCourses, error: courseError } = await adminClient.from("courses").select("patient_id").eq("pt_id", ptId).neq("status", "cancelled");
+          if (!courseError && ptCourses) {
+            ptCourses.forEach((c) => accessibleIds.add(c.patient_id));
           }
           const { data: transfers, error: transferError } = await adminClient.from("case_transfers").select("patient_id").eq("to_pt_id", ptId).lte("start_date", today).gte("end_date", today).eq("status", "active");
           if (transferError) {
@@ -6261,7 +6271,7 @@ var init_repository8 = __esm({
           throw new AppError("Database service unavailable", 503, "SERVICE_UNAVAILABLE");
         }
       }
-      async getTodayAppointments(dateStr, kioskId, accessiblePatientIds) {
+      async getTodayAppointments(dateStr, kioskId, accessiblePatientIds, ptId) {
         const [y, m, d] = dateStr.split("-").map(Number);
         const dateObj = new Date(Date.UTC(y, m - 1, d));
         const dayOfWeek = dateObj.getUTCDay();
@@ -6271,7 +6281,11 @@ var init_repository8 = __esm({
           if (kioskId !== void 0 && kioskId !== null) {
             query = query.or(`kiosk_id.is.null,kiosk_id.eq.${kioskId}`);
           }
-          if (accessiblePatientIds !== null && accessiblePatientIds !== void 0) {
+          if (ptId && accessiblePatientIds && accessiblePatientIds.length > 0) {
+            query = query.or(`pt_id.eq.${ptId},patient_id.in.(${accessiblePatientIds.join(",")})`);
+          } else if (ptId) {
+            query = query.eq("pt_id", ptId);
+          } else if (accessiblePatientIds !== null && accessiblePatientIds !== void 0) {
             if (accessiblePatientIds.length === 0) return [];
             query = query.in("patient_id", accessiblePatientIds);
           }
@@ -6318,10 +6332,11 @@ var init_repository8 = __esm({
         try {
           const adminClient = getAdminClient();
           let query = adminClient.from("courses").select("*, items:course_items(*)").eq("status", "active").lte("start_date", endDate).gte("end_date", startDate);
-          if (ptId) {
+          if (ptId && accessiblePatientIds && accessiblePatientIds.length > 0) {
+            query = query.or(`pt_id.eq.${ptId},patient_id.in.(${accessiblePatientIds.join(",")})`);
+          } else if (ptId) {
             query = query.eq("pt_id", ptId);
-          }
-          if (accessiblePatientIds !== null && accessiblePatientIds !== void 0) {
+          } else if (accessiblePatientIds !== null && accessiblePatientIds !== void 0) {
             if (accessiblePatientIds.length === 0) return [];
             query = query.in("patient_id", accessiblePatientIds);
           }
@@ -8830,7 +8845,19 @@ var init_service7 = __esm({
           }
           ptId = actor.id;
         } else if (actor.role === "admin" || actor.role === "director" || actor.role === "superadmin") {
-          ptId = input.pt_id || patient.responsible_pt_id || actor.id;
+          ptId = input.pt_id || patient.responsible_pt_id || "";
+          if (!ptId) {
+            try {
+              const activePts = await this.directoryRepo.listActivePts();
+              if (activePts && activePts.length > 0) {
+                ptId = activePts[0].id;
+              } else {
+                ptId = actor.id;
+              }
+            } catch {
+              ptId = actor.id;
+            }
+          }
         }
         let itemsToSave = input.items || [];
         if (input.modpack_id && itemsToSave.length === 0) {
@@ -8845,6 +8872,20 @@ var init_service7 = __esm({
           }
         }
         const course = await this.repo.createCourse(input, ptId, itemsToSave);
+        if (ptId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ptId)) {
+          try {
+            const { getAdminClient: getAdminClient2 } = await Promise.resolve().then(() => (init_adminClient(), adminClient_exports));
+            const adminClient = getAdminClient2();
+            if (!patient.responsible_pt_id) {
+              await adminClient.from("patients").update({ responsible_pt_id: ptId, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", patient.id);
+            }
+            await adminClient.from("patient_pt_assignments").upsert(
+              { patient_id: patient.id, pt_id: ptId, is_primary: true },
+              { onConflict: "patient_id,pt_id" }
+            );
+          } catch {
+          }
+        }
         await this.auditService.write({
           actor_type: "staff",
           action: "course.create",
@@ -8946,32 +8987,39 @@ var init_service7 = __esm({
       // 6. TODAY'S APPOINTMENTS (CANDIDATE SET PRUNING & RECEPTION DASHBOARD)
       // =========================================================================
       async getTodayAppointments(filter, actor) {
-        const dateStr = filter.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const todayBkk = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(/* @__PURE__ */ new Date());
+        const dateStr = filter.date || todayBkk;
         let accessibleIds = null;
+        let ptId = void 0;
         if (actor.role === "pt") {
           accessibleIds = await this.patientRepo.getAccessiblePatientIdsForPt(actor.id);
+          ptId = actor.id;
         }
-        return this.repo.getTodayAppointments(dateStr, filter.kiosk_id, accessibleIds);
+        return this.repo.getTodayAppointments(dateStr, filter.kiosk_id, accessibleIds, ptId);
       }
       // =========================================================================
       // 7. CALENDAR APPOINTMENTS VIEW
       // =========================================================================
       async getCalendarView(filter, actor) {
+        const todayBkk = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(/* @__PURE__ */ new Date());
         let startDate;
         let endDate;
         if (filter.month) {
           startDate = `${filter.month}-01`;
           endDate = `${filter.month}-31`;
         } else {
-          const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-          startDate = filter.start_date || today;
-          endDate = filter.end_date || today;
+          startDate = filter.start_date || todayBkk;
+          endDate = filter.end_date || todayBkk;
         }
         let accessibleIds = null;
+        let targetPtId = filter.pt_id;
         if (actor.role === "pt") {
           accessibleIds = await this.patientRepo.getAccessiblePatientIdsForPt(actor.id);
+          if (!targetPtId) {
+            targetPtId = actor.id;
+          }
         }
-        return this.repo.getCalendarAppointments(startDate, endDate, filter.pt_id, accessibleIds);
+        return this.repo.getCalendarAppointments(startDate, endDate, targetPtId, accessibleIds);
       }
       async deleteCourseDay(id, date, actor) {
         const course = await this.repo.getCourseById(id);
@@ -10850,7 +10898,7 @@ var init_fakeRepositories = __esm({
         }
         return null;
       }
-      async getTodayAppointments(dateStr, kioskId, accessiblePatientIds) {
+      async getTodayAppointments(dateStr, kioskId, accessiblePatientIds, ptId) {
         const [y, m, d] = dateStr.split("-").map(Number);
         const dateObj = new Date(Date.UTC(y, m - 1, d));
         const dayOfWeek = dateObj.getUTCDay();
@@ -10871,7 +10919,11 @@ var init_fakeRepositories = __esm({
         if (kioskId !== void 0 && kioskId !== null) {
           list = list.filter((c) => !c.kiosk_id || c.kiosk_id === kioskId);
         }
-        if (accessiblePatientIds !== null && accessiblePatientIds !== void 0) {
+        if (ptId && accessiblePatientIds && accessiblePatientIds.length > 0) {
+          list = list.filter((c) => c.pt_id === ptId || accessiblePatientIds.includes(c.patient_id));
+        } else if (ptId) {
+          list = list.filter((c) => c.pt_id === ptId);
+        } else if (accessiblePatientIds !== null && accessiblePatientIds !== void 0) {
           list = list.filter((c) => accessiblePatientIds.includes(c.patient_id));
         }
         return list;
@@ -10886,8 +10938,11 @@ var init_fakeRepositories = __esm({
           if (start && end && start <= endDate && end >= startDate) return true;
           return false;
         });
-        if (ptId) list = list.filter((c) => c.pt_id === ptId);
-        if (accessibleIds !== null && accessibleIds !== void 0) {
+        if (ptId && accessibleIds && accessibleIds.length > 0) {
+          list = list.filter((c) => c.pt_id === ptId || accessibleIds.includes(c.patient_id));
+        } else if (ptId) {
+          list = list.filter((c) => c.pt_id === ptId);
+        } else if (accessibleIds !== null && accessibleIds !== void 0) {
           list = list.filter((c) => accessibleIds.includes(c.patient_id));
         }
         return list;
@@ -13827,6 +13882,10 @@ var init_service10 = __esm({
             const days = schedule.daysOfWeek || schedule.days_of_week || [];
             const weekdays = days.map((d) => typeof d === "number" ? d : dayAliasesMap[d]).filter((n) => typeof n === "number" && !isNaN(n));
             let effectivePtId = assignedPtId;
+            const candidatePtId = schedule.assigned_pt_id || schedule.pt_id || schedule.therapist_id;
+            if (candidatePtId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidatePtId)) {
+              effectivePtId = candidatePtId;
+            }
             if (!effectivePtId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectivePtId)) {
               try {
                 const { data: ptRow } = await adminClient.from("profiles").select("id").eq("role", "pt").limit(1).maybeSingle();
@@ -13838,6 +13897,21 @@ var init_service10 = __esm({
                 }
               } catch {
                 effectivePtId = "b1000000-0000-0000-0000-000000000003";
+              }
+            }
+            schedule.assigned_pt_id = effectivePtId;
+            schedule.pt_id = effectivePtId;
+            if (resolvedPatientUuid && effectivePtId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectivePtId)) {
+              try {
+                if (!assignedPtId) {
+                  await adminClient.from("patients").update({ responsible_pt_id: effectivePtId, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", resolvedPatientUuid);
+                }
+                await adminClient.from("patient_pt_assignments").upsert(
+                  { patient_id: resolvedPatientUuid, pt_id: effectivePtId, is_primary: true },
+                  { onConflict: "patient_id,pt_id" }
+                );
+              } catch (syncErr) {
+                logger.warn({ syncErr, patientId }, "Non-blocking patient PT assignment sync in saveSchedule");
               }
             }
             let effectiveKioskId = null;
@@ -14603,7 +14677,8 @@ var init_service10 = __esm({
             id,
             hn,
             first_name,
-            last_name
+            last_name,
+            responsible_pt_id
           ),
           course_items (
             id,
@@ -14646,12 +14721,17 @@ var init_service10 = __esm({
                   days_of_week: daysOfWeek,
                   time_slot: timeSlotStr,
                   assigned_kiosk_id: c.kiosk_id || "kiosk-01",
+                  assigned_pt_id: c.pt_id || p.responsible_pt_id,
+                  pt_id: c.pt_id || p.responsible_pt_id,
                   include_minigame: c.include_minigame ?? true,
                   prescribed_exercises: prescribed,
                   excluded_dates: preservedExcluded
                 };
                 if (existing) {
                   existing.schedule = scheduleObj;
+                  if (!existing.responsible_pt_id && (c.pt_id || p.responsible_pt_id)) {
+                    existing.responsible_pt_id = c.pt_id || p.responsible_pt_id;
+                  }
                 } else {
                   const newDossier = {
                     patient_id: pId,
@@ -14659,6 +14739,7 @@ var init_service10 = __esm({
                     last_name: p.last_name,
                     hn: pHn,
                     profile_face_url: `/uploads/patients/${pId}/profile_face.jpg`,
+                    responsible_pt_id: c.pt_id || p.responsible_pt_id,
                     schedule: scheduleObj,
                     rehab_scores: [],
                     clinical: { diagnosis: "\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39", treatment_plan: "\u0E42\u0E1B\u0E23\u0E41\u0E01\u0E23\u0E21\u0E1F\u0E37\u0E49\u0E19\u0E1F\u0E39\u0E2A\u0E21\u0E23\u0E23\u0E16\u0E20\u0E32\u0E1E" }

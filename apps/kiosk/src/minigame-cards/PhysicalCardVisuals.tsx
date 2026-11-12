@@ -512,7 +512,7 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
         if (size === 'large' || (!compact && size !== 'normal')) {
           return (
             <div className="w-full h-full flex items-center justify-center text-center select-none">
-              <span className="text-[96px] sm:text-[100px] xl:text-[104px] leading-none select-none drop-shadow-md">
+              <span className="text-[140px] sm:text-[170px] md:text-[200px] leading-none select-none drop-shadow-md">
                 {getIconEmoji(visualKey)}
               </span>
             </div>

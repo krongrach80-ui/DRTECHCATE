@@ -815,10 +815,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 const isScreenRight = isMirrored
                   ? detectedSide === 'right'
                   : detectedSide === 'left';
-                popupContainerRef.current.className = `absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-100 ${
+                popupContainerRef.current.className = `absolute z-30 pointer-events-none px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-white shadow-xl flex items-center gap-3 border-2 min-h-[48px] sm:min-h-[52px] whitespace-nowrap transition-all duration-150 opacity-100 ${
                   isScreenRight
-                    ? 'top-10 sm:top-11 right-2.5 sm:right-3'
-                    : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
+                    ? 'top-10 sm:top-12 right-3 sm:right-4'
+                    : 'top-3 sm:top-4 left-3 sm:left-4'
                 } ${
                   currentHand.answerSide === 'yes'
                     ? 'bg-emerald-600/95 border-emerald-300'
@@ -866,10 +866,10 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                     const isScreenRight = isMirrored
                       ? activeSide === 'right'
                       : activeSide === 'left';
-                    popupContainerRef.current.className = `absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-100 ${
+                    popupContainerRef.current.className = `absolute z-30 pointer-events-none px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-white shadow-xl flex items-center gap-3 border-2 min-h-[48px] sm:min-h-[52px] whitespace-nowrap transition-all duration-150 opacity-100 ${
                       isScreenRight
-                        ? 'top-10 sm:top-11 right-2.5 sm:right-3'
-                        : 'top-2.5 sm:top-3 left-2.5 sm:left-3'
+                        ? 'top-10 sm:top-12 right-3 sm:right-4'
+                        : 'top-3 sm:top-4 left-3 sm:left-4'
                     } ${
                       currentHand.answerSide === 'yes'
                         ? 'bg-emerald-600/95 border-emerald-300'
@@ -1072,24 +1072,24 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
   // Centralized CSS variables for single-line hand popups
   const popupCssVars: React.CSSProperties = {
-    '--popup-max-h': '44px',
-    '--popup-font-size': '20px',
-    '--popup-icon-size': '22px',
-    '--popup-percent-size': '15px',
-    '--popup-bar-h': '4px',
-    '--popup-pad-y': '8px',
-    '--popup-pad-x': '14px',
+    '--popup-max-h': '52px',
+    '--popup-font-size': '22px',
+    '--popup-icon-size': '24px',
+    '--popup-percent-size': '16px',
+    '--popup-bar-h': '5px',
+    '--popup-pad-y': '10px',
+    '--popup-pad-x': '18px',
   } as React.CSSProperties;
 
   return (
-    <div className="w-full h-full flex flex-col justify-between pt-2.5 pb-2.5 px-3 sm:pt-3 sm:pb-3 sm:px-5 md:px-6 bg-[#EDF7F1] text-slate-800 select-none overflow-hidden font-sans relative">
+    <div className="w-full h-full flex flex-col justify-between bg-[#EDF7F1] text-slate-800 select-none overflow-hidden font-sans relative p-3 sm:p-5 md:p-6">
       {/* Top Header Bar */}
-      <div className="w-full max-w-4xl mx-auto flex items-center justify-between gap-2 shrink-0 pt-0.5">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-xl sm:text-2xl font-black text-[#134E43] tracking-normal">
+      <div className="w-full max-w-5xl mx-auto flex items-center justify-between gap-3 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#134E43] tracking-normal leading-[1.45]">
             {t('card_minigame_title')}
           </h1>
-          <span className="text-xs font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300/80 px-3 py-1 rounded-full shadow-xs">
+          <span className="text-base sm:text-lg md:text-xl font-extrabold text-emerald-900 bg-emerald-100 border-2 border-emerald-300 px-4 sm:px-5 py-1.5 rounded-full shadow-xs whitespace-nowrap">
             {lang === 'zh-CN'
               ? `题目 ${currentIndex + 1} / ${filteredList.length}`
               : lang === 'en-US'
@@ -1098,22 +1098,23 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
           </span>
         </div>
 
-        {/* Right Controls: Sound, Exit & Score Pill */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Right Controls: Sound, Score Pill & Exit Button */}
+        <div className="flex items-center gap-3 shrink-0">
           {/* Sound Toggle */}
           <button
             type="button"
             onClick={() => setSoundEnabled((prev) => !prev)}
-            className="w-9 h-9 rounded-full bg-white border border-emerald-200/80 shadow-sm flex items-center justify-center text-emerald-800 hover:bg-emerald-50 transition cursor-pointer"
+            className="min-h-[56px] min-w-[56px] w-14 h-14 rounded-full bg-white border-2 border-emerald-200/80 shadow-sm flex items-center justify-center text-emerald-800 hover:bg-emerald-50 transition active:scale-95 cursor-pointer"
             title={soundEnabled ? 'ปิดเสียง' : 'เปิดเสียง'}
+            aria-label={soundEnabled ? 'ปิดเสียง' : 'เปิดเสียง'}
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+            {soundEnabled ? <Volume2 className="w-6 h-6 sm:w-7 sm:h-7" /> : <VolumeX className="w-6 h-6 sm:w-7 sm:h-7 text-slate-400" />}
           </button>
 
           {/* Score Pill Badge */}
-          <div className="flex items-center gap-2 bg-[#134E43] text-white pl-4 pr-1.5 py-1 rounded-full shadow-md border border-emerald-800">
-            <span className="text-xs sm:text-sm font-bold tracking-wide">{t('card_score_label')}</span>
-            <div className="w-7 h-7 rounded-full bg-white text-[#134E43] font-black flex items-center justify-center text-sm shadow-inner">
+          <div className="flex items-center gap-3 bg-[#134E43] text-white pl-5 pr-2 py-1.5 rounded-full shadow-md border-2 border-emerald-800">
+            <span className="text-base sm:text-lg font-bold tracking-wide whitespace-nowrap">{t('card_score_label')}</span>
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white text-[#134E43] font-black flex items-center justify-center text-lg sm:text-xl shadow-inner">
               {score}
             </div>
           </div>
@@ -1122,10 +1123,11 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             <button
               type="button"
               onClick={onExit}
-              className="w-8 h-8 rounded-full bg-emerald-900/10 hover:bg-emerald-900/20 text-emerald-900 flex items-center justify-center transition cursor-pointer"
+              className="min-h-[56px] min-w-[56px] w-14 h-14 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 border-2 border-rose-200 shadow-sm flex items-center justify-center transition active:scale-95 cursor-pointer"
               title="ออกจากมินิเกม"
+              aria-label="ออกจากมินิเกม"
             >
-              <X className="w-4 h-4" />
+              <X className="w-6 h-6 sm:w-7 sm:h-7" />
             </button>
           )}
         </div>
@@ -1133,29 +1135,36 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
       {/* Main Game Screen */}
       {!isGameOver ? (
-        <div className="w-full max-w-4xl mx-auto flex-1 flex flex-col items-center justify-between gap-1.5 sm:gap-2 my-auto min-h-0">
+        <div className="w-full max-w-5xl mx-auto flex-1 flex flex-col items-center justify-between gap-3 sm:gap-4 md:gap-5 my-auto min-h-0 w-full py-1">
           {/* Question Banner */}
-          <div className="w-full max-w-3xl bg-white rounded-2xl sm:rounded-3xl p-2.5 sm:p-3 text-center shadow-xs border border-emerald-100/90 transition animate-fade-in relative overflow-hidden min-h-[50px] sm:min-h-[56px] flex items-center justify-center shrink-0">
-            <h2 className="text-xl sm:text-2xl xl:text-3xl font-extrabold text-[#113C34] tracking-normal leading-tight">
+          <div className="w-full max-w-5xl bg-white rounded-3xl p-5 sm:p-7 md:p-8 text-center shadow-md border-2 border-emerald-100/90 transition animate-fade-in relative overflow-hidden min-h-[96px] sm:min-h-[120px] flex items-center justify-center shrink-0">
+            <h2
+              className="font-extrabold text-[#0B231C] tracking-normal break-words"
+              style={{
+                fontSize: 'clamp(2.25rem, 4.5vw, 3.375rem)',
+                lineHeight: 1.45,
+              }}
+            >
               {activeQuestion.prompt}
             </h2>
 
             {/* Answer Result Banner Alert */}
             {answerState !== 'idle' && (
               <div
-                className={`absolute inset-0 flex items-center justify-center gap-2 text-base sm:text-lg font-bold text-white transition animate-scale-up px-4 py-2 z-30 ${
+                className={`absolute inset-0 flex items-center justify-center gap-3 text-2xl sm:text-3xl md:text-4xl font-extrabold text-white transition animate-scale-up px-6 py-4 z-30 ${
                   answerState === 'correct' ? 'bg-emerald-600' : 'bg-rose-600'
                 }`}
+                style={{ lineHeight: 1.45 }}
               >
                 {answerState === 'correct' ? (
-                  <div className="flex items-center justify-center gap-2 py-1">
-                    <CheckCircle2 className="w-6 h-6 animate-bounce shrink-0" />
-                    <span className="leading-normal tracking-wide">ถูกต้อง! ยอดเยี่ยมมาก 🎉</span>
+                  <div className="flex items-center justify-center gap-3 py-1">
+                    <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10 animate-bounce shrink-0" />
+                    <span className="tracking-wide">ถูกต้อง! ยอดเยี่ยมมาก 🎉</span>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center gap-2 py-1">
-                    <XCircle className="w-6 h-6 shrink-0" />
-                    <span className="leading-normal tracking-wide">
+                  <div className="flex items-center justify-center gap-3 py-1">
+                    <XCircle className="w-8 h-8 sm:w-10 sm:h-10 shrink-0" />
+                    <span className="tracking-wide">
                       ยังไม่ถูกต้อง (คำตอบคือ: {activeQuestion.correctAnswer === 'yes' ? 'ใช่' : 'ไม่'})
                     </span>
                   </div>
@@ -1166,21 +1175,24 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
           {/* Explanation Tooltip (แสดงเมื่อตอบแล้ว) */}
           {showExplanation && (
-            <div className="p-2 rounded-xl bg-white border border-emerald-200 text-center text-xs font-semibold text-emerald-900 shadow-xs animate-fade-in flex items-center justify-center gap-1.5 shrink-0">
-              <HelpCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div
+              className="w-full max-w-5xl p-4 sm:p-5 rounded-2xl bg-white border-2 border-emerald-200 text-center text-lg sm:text-xl md:text-2xl font-bold text-emerald-950 shadow-sm animate-fade-in flex items-center justify-center gap-3 shrink-0"
+              style={{ lineHeight: 1.45 }}
+            >
+              <HelpCircle className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-600 shrink-0" />
               <span>{activeQuestion.explanation}</span>
             </div>
           )}
 
-          {/* 🆕 Question Illustration Section (Hug Content, Centered directly below Question Box) */}
+          {/* Question Illustration Section (Hero Illustration Card - Takes Middle Space) */}
           {hasIllustration && (
             <div
-              className="mx-auto w-fit max-w-[640px] h-[112px] sm:h-[118px] flex items-center justify-center gap-5 sm:gap-6 px-6 py-2.5 sm:py-3 bg-white border-2 border-emerald-200/90 rounded-2xl shadow-sm shrink-0 transition-all duration-300"
+              className="w-full max-w-5xl flex-1 min-h-[220px] sm:min-h-[260px] max-h-[460px] flex flex-col md:flex-row items-center justify-center gap-6 sm:gap-10 px-6 sm:px-8 py-5 sm:py-6 bg-white border-2 border-emerald-200/90 rounded-3xl shadow-md shrink-0 transition-all duration-300"
               role="region"
               aria-label={t('card_illustration_label')}
             >
               <div
-                className="w-[96px] h-[96px] sm:w-[104px] sm:h-[104px] flex items-center justify-center shrink-0 select-none overflow-hidden"
+                className="w-56 h-56 sm:w-64 sm:h-64 md:w-72 md:h-72 min-w-[200px] min-h-[200px] max-w-[300px] max-h-[300px] flex items-center justify-center shrink-0 select-none overflow-hidden"
                 role="img"
                 aria-label={`${t('card_illustration_label')}: ${localizedCaption}`}
               >
@@ -1190,21 +1202,41 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                   size="large"
                 />
               </div>
-              <div className="flex flex-col items-start justify-center text-left overflow-hidden">
-                <span className="text-[13px] sm:text-[14px] font-bold text-emerald-700 uppercase tracking-wider leading-tight">
+              <div className="flex flex-col items-center md:items-start justify-center text-center md:text-left overflow-hidden">
+                <span className="text-xl sm:text-2xl font-black text-emerald-700 uppercase tracking-wider mb-1 sm:mb-2">
                   {t('card_illustration_label')}
                 </span>
-                <span className="text-[30px] sm:text-[32px] font-black text-slate-900 leading-tight tracking-tight">
+                <span
+                  className="font-extrabold text-slate-900 tracking-tight break-words"
+                  style={{
+                    fontSize: 'clamp(2rem, 4vw, 2.875rem)',
+                    lineHeight: 1.45,
+                  }}
+                >
                   {localizedCaption}
                 </span>
               </div>
             </div>
           )}
 
-          {/* Center Area: Full Camera Viewport with Top Animated Dynamic Popups (Locked to ~665x375px) */}
-          <div className="w-full flex flex-col items-center justify-center relative shrink-0">
+          {/* Bottom Interactive Area: Instruction Banner + Camera + Action Buttons */}
+          <div className="w-full max-w-5xl flex flex-col items-center justify-center relative shrink-0 pt-1">
+            {/* Instruction Hint Bar (Above camera, prominent & uncluttered) */}
+            <div className="w-full max-w-4xl text-center px-6 py-2.5 sm:py-3 rounded-full bg-white/95 border-2 border-emerald-300/80 shadow-sm mb-3 sm:mb-4 shrink-0">
+              <span
+                className="font-extrabold text-[#134E43] tracking-wide inline-block"
+                style={{
+                  fontSize: 'clamp(1.5rem, 2.5vw, 1.75rem)',
+                  lineHeight: 1.45,
+                }}
+              >
+                {t('card_bottom_hint')}
+              </span>
+            </div>
+
+            {/* Center Area: Full Camera Viewport with Top Animated Dynamic Popups */}
             <div
-              className="w-[665px] max-w-full h-[375px] max-h-[375px] bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center shrink-0"
+              className="w-[665px] max-w-full h-[280px] sm:h-[320px] md:h-[350px] max-h-[350px] bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center shrink-0"
               style={{
                 aspectRatio: `${cameraAspectRatio}`,
                 ...popupCssVars,
@@ -1228,7 +1260,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 type="button"
                 onClick={() => setIsMirrored((prev) => !prev)}
                 title="สลับมุมมองกล้องกระจก"
-                className="absolute top-3 right-3 z-25 px-2.5 py-1 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/30 text-[11px] font-bold flex items-center gap-1 shadow-md transition active:scale-95 cursor-pointer"
+                className="absolute top-3 right-3 z-25 px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/30 text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md transition active:scale-95 cursor-pointer"
               >
                 <span>🪞 {isMirrored ? 'กระจก (เปิด)' : 'กระจก (ปิด)'}</span>
               </button>
@@ -1241,21 +1273,21 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               {/* Model Loading Status Badge */}
               {cameraActive && isModelLoading && (
-                <div className="absolute top-14 z-20 px-3 py-1 rounded-full bg-emerald-950/85 text-emerald-200 border border-emerald-700/60 text-[10px] sm:text-xs font-bold flex items-center gap-1.5 shadow-md">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <div className="absolute top-14 z-20 px-4 py-1.5 rounded-full bg-emerald-950/85 text-emerald-200 border border-emerald-700/60 text-xs sm:text-sm font-bold flex items-center gap-2 shadow-md">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                   <span>กำลังเตรียมระบบตรวจจับมือจริง...</span>
                 </div>
               )}
 
               {/* Model Error Fallback Alert Banner */}
               {modelError && (
-                <div className="absolute top-14 z-25 px-3.5 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs font-bold flex items-center gap-1.5 shadow-lg max-w-[90%]">
-                  <AlertTriangle className="w-4 h-4 text-amber-900 shrink-0" />
+                <div className="absolute top-14 z-25 px-4 py-2 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg max-w-[90%]">
+                  <AlertTriangle className="w-5 h-5 text-amber-900 shrink-0" />
                   <span className="truncate">{modelError} (แตะปุ่มด้านล่างเพื่อตอบแทนได้)</span>
                 </div>
               )}
 
-              {/* Staff Diagnostic Latency & FPS HUD (Toggle with Key 'D' or Staff Mode) */}
+              {/* Staff Diagnostic Latency & FPS HUD */}
               {showStaffDebug && (
                 <div className="absolute top-3 left-12 z-30 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-emerald-400 text-emerald-300 font-mono text-[11px] font-bold shadow-2xl pointer-events-none flex flex-col gap-0.5">
                   <div className="flex items-center gap-1.5 text-white text-[10px]">
@@ -1269,9 +1301,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
               {/* Camera Inactive placeholder */}
               {!cameraActive && (
-                <div className="relative z-10 flex flex-col items-center justify-center gap-1.5 text-emerald-300/70 pointer-events-none">
-                  <Camera className="w-7 h-7 opacity-60 animate-pulse" />
-                  <span className="text-xs sm:text-sm font-semibold">กำลังเชื่อมต่อกล้อง หรือแตะปุ่มด้านล่างเพื่อตอบ</span>
+                <div className="relative z-10 flex flex-col items-center justify-center gap-2 text-emerald-300/70 pointer-events-none">
+                  <Camera className="w-8 h-8 opacity-60 animate-pulse" />
+                  <span className="text-sm sm:text-base font-semibold">กำลังเชื่อมต่อกล้อง หรือแตะปุ่มด้านล่างเพื่อตอบ</span>
                 </div>
               )}
 
@@ -1280,145 +1312,147 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               <div className="absolute bottom-3 left-3 w-6 h-6 border-b-3 border-l-3 border-[#6EE7B7] rounded-bl-lg pointer-events-none z-15" />
               <div className="absolute bottom-3 right-3 w-6 h-6 border-b-3 border-r-3 border-[#6EE7B7] rounded-br-lg pointer-events-none z-15" />
 
-              {/* ANIMATED DYNAMIC POPUPS (Single-line pills, <= 44-48px height, 220-340px width) */}
-              {/* 1. Confirmed Answer Banner (Top Center, Single-line) */}
+              {/* ANIMATED DYNAMIC POPUPS */}
+              {/* 1. Confirmed Answer Banner */}
               {confirmedAnswer && (
                 <div
-                  className={`absolute top-2.5 sm:top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-2 rounded-full text-white shadow-xl flex items-center gap-2 animate-scale-up border max-w-[90%] whitespace-nowrap h-[42px] sm:h-[44px] ${
+                  className={`absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-5 py-2.5 rounded-full text-white shadow-xl flex items-center gap-2.5 animate-scale-up border-2 max-w-[90%] whitespace-nowrap min-h-[48px] sm:min-h-[52px] ${
                     confirmedAnswer === 'yes'
                       ? 'bg-emerald-600/95 border-emerald-300'
                       : 'bg-orange-600/95 border-orange-300'
                   }`}
                 >
-                  <CheckCircle2 className="w-5 h-5 text-white shrink-0 animate-bounce" />
-                  <span className="text-[20px] sm:text-[21px] font-black leading-none">
+                  <CheckCircle2 className="w-6 h-6 text-white shrink-0 animate-bounce" />
+                  <span className="text-xl sm:text-2xl font-black leading-none">
                     {confirmedAnswer === 'yes' ? t('card_confirmed_yes') : t('card_confirmed_no')}
                   </span>
                 </div>
               )}
 
-              {/* 2. Both Hands Warning Banner (Always Mounted DOM, Controlled via Ref) */}
+              {/* 2. Both Hands Warning Banner */}
               <div
                 ref={warningContainerRef}
-                className="absolute top-2.5 sm:top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-2 rounded-full bg-rose-600/95 text-white border border-rose-300 shadow-xl flex items-center gap-2 max-w-[90%] whitespace-nowrap h-[42px] sm:h-[44px] transition-all duration-150 opacity-0 pointer-events-none"
+                className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-5 py-2.5 rounded-full bg-rose-600/95 text-white border-2 border-rose-300 shadow-xl flex items-center gap-2.5 max-w-[90%] whitespace-nowrap min-h-[48px] sm:min-h-[52px] transition-all duration-150 opacity-0 pointer-events-none"
               >
-                <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0" />
-                <span className="text-[20px] sm:text-[21px] font-black leading-none">
+                <AlertTriangle className="w-6 h-6 text-amber-300 shrink-0" />
+                <span className="text-xl sm:text-2xl font-black leading-none">
                   {t('card_both_hands_warning')}
                 </span>
               </div>
 
-              {/* 3. Active Hand Raised Dwell Progress Popup (Always Mounted DOM, Zero 0% Stuck) */}
+              {/* 3. Active Hand Raised Dwell Progress Popup */}
               <div
                 ref={popupContainerRef}
-                className="absolute z-30 pointer-events-none px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-xl flex items-center gap-2.5 border h-[42px] sm:h-[44px] whitespace-nowrap transition-all duration-150 opacity-0 pointer-events-none top-2.5 sm:top-3 left-2.5 sm:left-3 bg-emerald-600/95 border-emerald-300"
+                className="absolute z-30 pointer-events-none px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-white shadow-xl flex items-center gap-3 border-2 min-h-[48px] sm:min-h-[52px] whitespace-nowrap transition-all duration-150 opacity-0 pointer-events-none top-3 left-3 bg-emerald-600/95 border-emerald-300"
               >
-                <Hand className="w-5 h-5 text-white shrink-0 animate-pulse" />
-                <span ref={popupTitleRef} className="text-[20px] sm:text-[21px] font-black tracking-wide leading-none">
+                <Hand className="w-6 h-6 text-white shrink-0 animate-pulse" />
+                <span ref={popupTitleRef} className="text-xl sm:text-2xl font-black tracking-wide leading-none">
                   {t('card_right_hand_yes')}
                 </span>
-                {/* 4px Progress Bar */}
-                <div className="w-12 sm:w-16 bg-black/30 rounded-full h-1 overflow-hidden border border-white/40 shrink-0">
+                <div className="w-16 sm:w-20 bg-black/30 rounded-full h-1.5 overflow-hidden border border-white/40 shrink-0">
                   <div
                     ref={popupProgressBarRef}
                     className="h-full bg-white rounded-full transition-[width] duration-75"
                     style={{ width: '0%' }}
                   />
                 </div>
-                <span ref={popupProgressPercentRef} className="text-sm sm:text-[15px] font-black font-mono shrink-0">
+                <span ref={popupProgressPercentRef} className="text-base sm:text-lg font-black font-mono shrink-0">
                   0%
                 </span>
               </div>
 
-              {/* 4. Question 1 Intro Banner (3 seconds, Single-line, Top Center) */}
+              {/* 4. Question 1 Intro Banner */}
               {!confirmedAnswer && showIntroBanner && (
-                <div className="absolute top-2.5 sm:top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-4 py-2 sm:px-5 sm:py-2 rounded-full bg-white/95 border border-emerald-400 shadow-xl flex items-center gap-2 animate-fade-in whitespace-nowrap h-[42px] sm:h-[44px]">
-                  <span className="text-[20px] sm:text-[21px] font-extrabold text-[#134E43] leading-none">
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-5 py-2.5 rounded-full bg-white/95 border-2 border-emerald-400 shadow-xl flex items-center gap-2.5 animate-fade-in whitespace-nowrap min-h-[48px] sm:min-h-[52px]">
+                  <span className="text-xl sm:text-2xl font-extrabold text-[#134E43] leading-none">
                     {t('card_intro_popup_hint')}
                   </span>
                 </div>
               )}
 
-              {/* Near Edge Warning (Floating at bottom-center) */}
+              {/* Near Edge Warning */}
               <div
                 ref={nearEdgeContainerRef}
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-25 px-4 py-1.5 rounded-full bg-amber-500/90 text-amber-950 border border-amber-300 text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-lg pointer-events-none transition-opacity duration-150 opacity-0"
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-25 px-5 py-2 rounded-full bg-amber-500/95 text-amber-950 border-2 border-amber-300 text-sm sm:text-base font-black flex items-center gap-2 shadow-lg pointer-events-none transition-opacity duration-150 opacity-0"
               >
-                <AlertTriangle className="w-4 h-4 text-amber-950 shrink-0" />
+                <AlertTriangle className="w-5 h-5 text-amber-950 shrink-0" />
                 <span>{t('card_move_to_center')}</span>
               </div>
             </div>
 
-            {/* Compact Touch Fallback Buttons under camera */}
-            <div className="flex items-center justify-center gap-3 sm:gap-6 mt-2 shrink-0">
+            {/* Senior-Friendly Extra-Large Touch Answer Buttons under camera */}
+            <div className="flex items-center justify-center gap-5 mt-4 sm:mt-5 shrink-0 w-full max-w-4xl">
               <button
                 type="button"
                 onClick={() => handleAnswer('no')}
-                className={`px-5 sm:px-8 py-2 sm:py-2.5 rounded-2xl border-2 font-extrabold text-base sm:text-lg shadow-sm hover:shadow-md transition active:scale-95 flex items-center gap-2 cursor-pointer ${
+                className={`flex-1 min-h-[80px] sm:min-h-[88px] px-6 sm:px-10 py-4 rounded-3xl border-4 font-extrabold shadow-md hover:shadow-lg transition active:scale-95 flex items-center justify-center gap-3 sm:gap-4 cursor-pointer ${
                   selectedSide === 'no'
                     ? answerState === 'correct'
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                      : 'border-rose-500 bg-rose-50 text-rose-800'
+                      ? 'border-emerald-500 bg-emerald-100 text-emerald-900 shadow-emerald-200'
+                      : 'border-rose-500 bg-rose-100 text-rose-900 shadow-rose-200'
                     : 'bg-white hover:bg-orange-50 border-[#EA580C] text-[#EA580C]'
                 }`}
+                style={{
+                  fontSize: 'clamp(1.75rem, 3vw, 2.125rem)',
+                  lineHeight: 1.45,
+                }}
               >
-                <Hand className="w-5 h-5 text-[#EA580C]" />
+                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#EA580C] shrink-0" />
                 <span>{t('card_btn_tap_no')}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleAnswer('yes')}
-                className={`px-5 sm:px-8 py-2 sm:py-2.5 rounded-2xl border-2 font-extrabold text-base sm:text-lg shadow-sm hover:shadow-md transition active:scale-95 flex items-center gap-2 cursor-pointer ${
+                className={`flex-1 min-h-[80px] sm:min-h-[88px] px-6 sm:px-10 py-4 rounded-3xl border-4 font-extrabold shadow-md hover:shadow-lg transition active:scale-95 flex items-center justify-center gap-3 sm:gap-4 cursor-pointer ${
                   selectedSide === 'yes'
                     ? answerState === 'correct'
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                      : 'border-rose-500 bg-rose-50 text-rose-800'
+                      ? 'border-emerald-500 bg-emerald-100 text-emerald-900 shadow-emerald-200'
+                      : 'border-rose-500 bg-rose-100 text-rose-900 shadow-rose-200'
                     : 'bg-white hover:bg-emerald-50 border-[#16A34A] text-[#16A34A]'
                 }`}
+                style={{
+                  fontSize: 'clamp(1.75rem, 3vw, 2.125rem)',
+                  lineHeight: 1.45,
+                }}
               >
-                <Hand className="w-5 h-5 text-[#16A34A]" />
+                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#16A34A] shrink-0" />
                 <span>{t('card_btn_tap_yes')}</span>
               </button>
-            </div>
-
-            {/* Assistive Hint */}
-            <div className="flex items-center justify-center gap-2 pt-1.5 text-xs sm:text-sm text-slate-600 font-bold shrink-0">
-              <span>{t('card_bottom_hint')}</span>
             </div>
           </div>
         </div>
       ) : (
         /* Game Over / Summary Screen */
-        <div className="w-full max-w-md mx-auto my-auto p-6 sm:p-8 rounded-3xl bg-white border border-emerald-200 text-center shadow-xl animate-scale-up space-y-4">
-          <div className="w-20 h-20 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto text-3xl shadow-inner">
-            <Trophy className="w-10 h-10" />
+        <div className="w-full max-w-lg mx-auto my-auto p-8 sm:p-10 rounded-3xl bg-white border-2 border-emerald-200 text-center shadow-xl animate-scale-up space-y-6">
+          <div className="w-24 h-24 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto text-4xl shadow-inner">
+            <Trophy className="w-12 h-12" />
           </div>
 
           <div>
-            <h3 className="text-2xl font-black text-slate-900">ยอดเยี่ยมมาก! จบรอบฝึกแล้ว</h3>
-            <p className="text-xs text-slate-500 mt-1">
+            <h3 className="text-3xl sm:text-4xl font-black text-slate-900 leading-[1.45]">ยอดเยี่ยมมาก! จบรอบฝึกแล้ว</h3>
+            <p className="text-base sm:text-lg text-slate-600 mt-2 font-medium leading-[1.45]">
               ฝึกประสาทสัมผัส การรับรู้ และการเคลื่อนไหวร่างกายครบ {filteredList.length} ข้อ
             </p>
           </div>
 
-          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200/80">
-            <div className="text-xs font-semibold text-emerald-800">ผลการประเมิน</div>
-            <div className="text-xl sm:text-2xl font-black text-emerald-700 my-1 font-mono">
+          <div className="p-6 rounded-3xl bg-emerald-50 border-2 border-emerald-200/80">
+            <div className="text-base font-bold text-emerald-800">ผลการประเมิน</div>
+            <div className="text-2xl sm:text-3xl font-black text-emerald-700 my-2 font-mono">
               คะแนนที่ได้: {score} / {filteredList.length} คะแนน
             </div>
-            <div className="text-xs text-emerald-700 font-semibold">
+            <div className="text-base sm:text-lg text-emerald-700 font-bold">
               ความถูกต้อง {Math.round((score / filteredList.length) * 100)}%
             </div>
           </div>
 
-          <div className="flex flex-col gap-2.5 pt-2">
+          <div className="flex flex-col gap-3.5 pt-2">
             <button
               type="button"
               onClick={handleRestart}
-              className="w-full py-3.5 rounded-xl bg-[#134E43] hover:bg-[#0f3d34] text-white font-bold text-sm shadow-md transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full min-h-[64px] py-4 rounded-2xl bg-[#134E43] hover:bg-[#0f3d34] text-white font-extrabold text-xl shadow-md transition active:scale-95 flex items-center justify-center gap-3 cursor-pointer"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-6 h-6" />
               <span>🔄 เล่นรอบใหม่ (สุ่ม 10 ข้อใหม่)</span>
             </button>
 
@@ -1426,7 +1460,7 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               <button
                 type="button"
                 onClick={onExit}
-                className="w-full py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full min-h-[56px] py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-lg transition cursor-pointer flex items-center justify-center gap-2"
               >
                 <span>✅ เสร็จสิ้น / ปิดหน้าต่าง</span>
               </button>
