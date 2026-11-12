@@ -31,10 +31,11 @@ import {
 import {
   calculateAngle3D,
   calculateAngle2D,
+  distance3D,
   normalizeLandmarksDepth,
   calculatePlaneOfElevation,
 } from '../math/geometry3d';
-import { PoseSkeletonFilter } from '../math/filters';
+import { PoseSkeletonFilter, OneEuroScalarFilter } from '../math/filters';
 import { ShoulderPendulumAnalyzer } from '../math/pendulumAnalyzer';
 import { CompensationDetector } from '../compensation';
 import { ForegroundSubjectLocker, SubjectLockResult } from '../subjectLock';
@@ -91,6 +92,51 @@ export class RepStateMachine {
   private balanceHoldStartTimeMs: number | null = null;
   private balanceHoldAccumulatedMs: number = 0;
   private recentPlaneAngles: number[] = [];
+  private repStartTimeMs: number | null = null;
+  private lastUpperArmLen: number | null = null;
+  private lastForearmLen: number | null = null;
+  private outlierStreak: number = 0;
+
+  private isBoneLengthOutlier(
+    shoulder: PoseEngineLandmark,
+    elbow: PoseEngineLandmark,
+    wrist: PoseEngineLandmark | null
+  ): boolean {
+    if (!shoulder || !elbow) return false;
+    const upperArm = distance3D(shoulder, elbow);
+    let outlier = false;
+
+    if (this.lastUpperArmLen !== null && this.lastUpperArmLen > 0.05) {
+      if (Math.abs(upperArm - this.lastUpperArmLen) / this.lastUpperArmLen > 0.35) {
+        outlier = true;
+      }
+    }
+
+    if (wrist && !outlier) {
+      const forearm = distance3D(elbow, wrist);
+      if (this.lastForearmLen !== null && this.lastForearmLen > 0.05) {
+        if (Math.abs(forearm - this.lastForearmLen) / this.lastForearmLen > 0.35) {
+          outlier = true;
+        }
+      }
+    }
+
+    if (outlier) {
+      this.outlierStreak++;
+      if (this.outlierStreak >= 1) {
+        this.outlierStreak = 0;
+        this.lastUpperArmLen = upperArm;
+        if (wrist) this.lastForearmLen = distance3D(elbow, wrist);
+        return false;
+      }
+      return true;
+    }
+
+    this.outlierStreak = 0;
+    this.lastUpperArmLen = upperArm;
+    if (wrist) this.lastForearmLen = distance3D(elbow, wrist);
+    return false;
+  }
 
   constructor(config: ExerciseDetectionConfig) {
     this.config = config;
@@ -137,15 +183,16 @@ export class RepStateMachine {
 
   public evaluateFrame(
     normLandmarks: PoseEngineLandmark[],
-    _worldLandmarks?: PoseEngineLandmark[],
+    worldLandmarks?: PoseEngineLandmark[],
     timestampMs: number = Date.now()
   ): RepEvaluationResult {
-    return this.evaluate(normLandmarks, timestampMs);
+    return this.evaluate(normLandmarks, timestampMs, worldLandmarks);
   }
 
   public evaluate(
     rawLandmarks: PoseEngineLandmark[],
-    timestampMs: number = Date.now()
+    timestampMs: number = Date.now(),
+    worldLandmarks?: PoseEngineLandmark[]
   ): RepEvaluationResult {
     // 0. Anti-hijack & foreground subject lock evaluation
     const lockResult = this.subjectLocker.processFrame(rawLandmarks, timestampMs);
@@ -181,7 +228,7 @@ export class RepStateMachine {
     } else if (this.config.evaluationMode === 'heel_raise') {
       result = this.evaluateHeelRaise(filteredLandmarks, timestampMs, lockResult);
     } else {
-      result = this.evaluateAngleRepHold(filteredLandmarks, timestampMs, lockResult);
+      result = this.evaluateAngleRepHold(filteredLandmarks, timestampMs, lockResult, worldLandmarks);
     }
 
     this.lastEvaluationResult = result;
@@ -277,7 +324,8 @@ export class RepStateMachine {
     triplet: LandmarkTriplet,
     normalizedLandmarks: PoseEngineLandmark[],
     landmarks: PoseEngineLandmark[],
-    angleCfg: AngleMechanicsConfig
+    angleCfg: AngleMechanicsConfig,
+    worldLandmarks?: PoseEngineLandmark[]
   ): {
     angle: number;
     readiness: RepEvaluationResult['readinessStatus'];
@@ -317,44 +365,82 @@ export class RepStateMachine {
         const hasWrist = isCamUsable(wristIdx, policy.wristMinVis);
         const hasHip = isCamUsable(hipIdx, policy.hipMinVis);
 
-        const effectivePA = hasHip
-          ? pA
+        const isFlexion =
+          this.config.id === 'shoulder-flexion' ||
+          (this.config.id && this.config.id.includes('flexion')) ||
+          this.config.elevationPlane?.requiredPlane === 'flexion';
+
+        // Prefer true metric 3D World Landmarks if available from MediaPipe
+        const useWorld = Boolean(
+          triplet.use3DWorld &&
+          worldLandmarks &&
+          worldLandmarks.length > Math.max(triplet.pointA, triplet.vertex, triplet.pointB, elbowIdx)
+        );
+
+        const getPt = (idx: number, fallback: PoseEngineLandmark): PoseEngineLandmark => {
+          if (useWorld && worldLandmarks && worldLandmarks[idx]) {
+            return worldLandmarks[idx];
+          }
+          return fallback;
+        };
+
+        const effectivePA: PoseEngineLandmark = hasHip
+          ? getPt(hipIdx, pA)
           : {
-              x: pV.x,
-              y: pV.y + 0.35,
-              z: pV.z ?? 0,
+              x: (getPt(shoulderIdx, pV)).x,
+              y: (getPt(shoulderIdx, pV)).y + 0.35,
+              z: (getPt(shoulderIdx, pV)).z ?? 0,
               visibility: 0.85,
             };
 
+        const wPV = getPt(shoulderIdx, pV);
+        const wPB = getPt(wristIdx, pB);
+        const wElbow = getPt(elbowIdx, normalizedLandmarks[elbowIdx]);
+
         const isTargetElbow = triplet.pointB === elbowIdx;
+
+        // Bone length outlier filter for upper arm (Shoulder -> Elbow) and forearm (Elbow -> Wrist)
+        if (hasShoulder && hasElbow) {
+          const realWristLm = (!isTargetElbow && hasWrist) ? (normalizedLandmarks[wristIdx] || null) : null;
+          const isOutlier = this.isBoneLengthOutlier(pV, normalizedLandmarks[elbowIdx], realWristLm);
+          if (isOutlier && this.lastEvaluationResult?.currentAngleDeg !== undefined) {
+            return {
+              angle: this.lastEvaluationResult.currentAngleDeg,
+              readiness: 'ready',
+              isDeskActive: false,
+            };
+          }
+        }
 
         if (hasShoulder && hasElbow && (hasWrist || isTargetElbow)) {
           // Tier 1: Full arm visible
           currentAngle = triplet.use3DWorld
-            ? calculateAngle3D(effectivePA, pV, pB)
+            ? calculateAngle3D(effectivePA, wPV, wPB)
             : calculateAngle2D(effectivePA, pV, pB);
           readinessStatus = 'ready';
         } else if (hasShoulder && hasElbow && !hasWrist && !isTargetElbow) {
-          // Tier 2: Partial Arm Visible (Shoulder + Elbow usable, Wrist out of frame)
-          const elbowLm = normalizedLandmarks[elbowIdx];
+          // Tier 2: Partial Arm Visible (Shoulder + Elbow usable, Wrist out of frame/clipped)
           currentAngle = triplet.use3DWorld
-            ? calculateAngle3D(effectivePA, pV, elbowLm)
-            : calculateAngle2D(effectivePA, pV, elbowLm);
+            ? calculateAngle3D(effectivePA, wPV, wElbow)
+            : calculateAngle2D(effectivePA, pV, normalizedLandmarks[elbowIdx]);
           readinessStatus = 'partial_upper_body';
         } else if (hasShoulder && (!hasElbow || !hasWrist)) {
-          // Tier 3: Close-Up Desk Mode (Only Shoulders visible; Elbow & Wrist out of frame)
-          isUpperBodyDeskActive = true;
-          readinessStatus = 'partial_upper_body';
-
+          // Tier 3: Close-Up Desk Mode
           const isAbduction =
             this.config.id === 'shoulder-abduction' ||
             (this.config.id && this.config.id.includes('abduction')) ||
             this.config.elevationPlane?.requiredPlane === 'abduction';
 
-          if (isAbduction) {
+          if (isFlexion) {
+            // CLINICAL SAFETY GUARD: In shoulder flexion, if elbow is missing or out of frame,
+            // DO NOT fabricate arm elevation from shoulder shrugs! Arm is out of frame.
+            currentAngle = angleCfg.startAngleDeg;
+            readinessStatus = 'missing_arm_landmarks';
+            isUpperBodyDeskActive = false;
+          } else if (isAbduction) {
             // Lateral Humerus Vector Fallback (Coronal Abduction):
-            // In abduction, arm moves laterally toward frame boundaries.
-            // Estimate angle from directional vector of upper arm (Shoulder -> Elbow/Edge intersection)
+            isUpperBodyDeskActive = true;
+            readinessStatus = 'partial_upper_body';
             const rawElbow = landmarks[elbowIdx] || normalizedLandmarks[elbowIdx];
             const shLm = landmarks[shoulderIdx] || normalizedLandmarks[shoulderIdx];
 
@@ -366,8 +452,6 @@ export class RepStateMachine {
               const mag = Math.sqrt(dx * dx + dy * dy);
 
               if (mag > 0.04) {
-                // Angle with downward vertical torso vector (0, 1):
-                // cos(theta) = (0*dx + 1*dy) / mag = dy / mag
                 const cosVal = Math.max(-1.0, Math.min(1.0, dy / mag));
                 const humerusAngleDeg = (Math.acos(cosVal) * 180) / Math.PI;
                 currentAngle = Math.round(humerusAngleDeg);
@@ -378,6 +462,8 @@ export class RepStateMachine {
               currentAngle = angleCfg.startAngleDeg;
             }
           } else {
+            isUpperBodyDeskActive = true;
+            readinessStatus = 'partial_upper_body';
             const oppShoulderIdx = shoulderIdx === 11 ? 12 : 11;
             const oppShoulder = landmarks[oppShoulderIdx];
             const nose = landmarks[0];
@@ -474,7 +560,8 @@ export class RepStateMachine {
   private evaluateAngleRepHold(
     landmarks: PoseEngineLandmark[],
     timestampMs: number,
-    lockResult?: SubjectLockResult
+    lockResult?: SubjectLockResult,
+    worldLandmarks?: PoseEngineLandmark[]
   ): RepEvaluationResult {
     const angleCfg = this.config.angleMechanics;
     const targetReps = this.config.defaultPrescription?.repsPerSet || 10;
@@ -502,7 +589,7 @@ export class RepStateMachine {
       triplet = rightConf >= leftConf ? angleCfg.landmarks.right : angleCfg.landmarks.left;
     }
 
-    const targetComp = this.computeAngleForTriplet(triplet, normalizedLandmarks, landmarks, angleCfg);
+    const targetComp = this.computeAngleForTriplet(triplet, normalizedLandmarks, landmarks, angleCfg, worldLandmarks);
     let currentAngle = targetComp.angle;
     let readinessStatus = targetComp.readiness;
     let isUpperBodyDeskActive = targetComp.isDeskActive;
@@ -522,6 +609,10 @@ export class RepStateMachine {
     // Biomechanical Anti-Cheat Guards
     const isSitToStand = this.config.id === 'sit-to-stand';
     const isHipAbduction = this.config.id === 'standing-hip-abduction' || this.config.id === 'standing-hip-abd';
+    const isShoulderFlexion =
+      this.config.id === 'shoulder-flexion' ||
+      this.config.id === 'active-shoulder-flexion' ||
+      (this.config.targetJoint === 'shoulder' && this.config.elevationPlane?.requiredPlane === 'flexion');
 
     // Check compensation rules with normalized landmarks
     const compResult = this.compensationDetector.evaluate(
@@ -536,6 +627,13 @@ export class RepStateMachine {
       isHipAbductionCheating = true;
     }
 
+    // Trunk backward lean compensation check for shoulder flexion
+    let isTrunkCheating = false;
+    const hasTrunkLeanWarning = activeWarnings.some((w) => w.type === 'trunk_lean');
+    if (isShoulderFlexion && hasTrunkLeanWarning) {
+      isTrunkCheating = true;
+    }
+
     // Wrong-Side Movement Guard for Unilateral Exercises
     let isWrongSideMoving = false;
     let oppositeAngle = 0;
@@ -545,7 +643,8 @@ export class RepStateMachine {
         sideInfo.oppositeTriplet,
         normalizedLandmarks,
         landmarks,
-        angleCfg
+        angleCfg,
+        worldLandmarks
       );
       oppositeAngle = oppComp.angle;
 
@@ -577,6 +676,11 @@ export class RepStateMachine {
     const safetyCap = this.config.safetyContraindications?.maxSafeAngleCapDeg || 175;
     const isExceedingSafetyCap = currentAngle > safetyCap;
 
+    const returnTolerance = Math.max(tolerance * 1.5, 25);
+    const isAtStartZone = isDecreasing
+      ? currentAngle >= startAngle - returnTolerance
+      : currentAngle <= startAngle + returnTolerance;
+
     // Calculate real-time smooth accuracy percent (0%–100%)
     let accuracyPercent = 0;
     if (isDecreasing) {
@@ -605,6 +709,34 @@ export class RepStateMachine {
       }
     }
     if (Number.isNaN(accuracyPercent)) {
+      accuracyPercent = 0;
+    }
+
+    // At rest / neutral starting posture: display 100% readiness (never 19% or random partial scores at rest)
+    if (isAtStartZone && (this.phase === 'IDLE' || this.phase === 'REP_COMPLETED')) {
+      accuracyPercent = 100;
+    } else if (this.phase === 'HOLDING_TARGET') {
+      let penalty = 0;
+      if (isTrunkCheating) penalty += 20;
+      if (compResult.isVelocityViolated) penalty += 15;
+      for (const w of activeWarnings) {
+        if (w.severity === 'error') penalty += 15;
+      }
+      accuracyPercent = Math.max(70, 100 - penalty);
+    } else if (accuracyPercent > 0) {
+      // Movement phase: factor in form quality penalties
+      let penalty = 0;
+      if (isTrunkCheating) penalty += 20;
+      if (compResult.isVelocityViolated) penalty += 15;
+      for (const w of activeWarnings) {
+        if (w.severity === 'error') penalty += 15;
+      }
+      if (penalty > 0) {
+        accuracyPercent = Math.max(10, Math.round(accuracyPercent * ((100 - penalty) / 100)));
+      }
+    }
+
+    if (isWrongSideMoving) {
       accuracyPercent = 0;
     }
 
@@ -639,6 +771,12 @@ export class RepStateMachine {
       isInsideTargetZone = false;
     }
     if (isWrongSideMoving) {
+      isInsideTargetZone = false;
+    }
+    if (isShoulderFlexion && isTrunkCheating) {
+      isInsideTargetZone = false;
+    }
+    if (readinessStatus === 'missing_arm_landmarks') {
       isInsideTargetZone = false;
     }
 
@@ -718,11 +856,6 @@ export class RepStateMachine {
     if (isWrongPlane) {
       accuracyPercent = 0;
     }
-
-    const returnTolerance = Math.max(tolerance * 1.5, 25);
-    const isAtStartZone = isDecreasing
-      ? currentAngle >= startAngle - returnTolerance
-      : currentAngle <= startAngle + returnTolerance;
 
     let coachingMessage = 'เริ่มขยับข้อต่อเข้าสู่มุมเป้าหมาย';
     let coachingMessageEn: string | undefined;

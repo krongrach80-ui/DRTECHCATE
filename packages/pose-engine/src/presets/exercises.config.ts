@@ -36,9 +36,9 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     cameraGuide: {
       recommendedView: 'side_90',
       recommendedDistanceMeters: [1.8, 2.8],
-      instructionTextTh: 'ยืนหรือนั่งหันข้าง 45°–90° ให้เห็นลำตัวและแขนข้างที่ฝึกตั้งแต่สะโพกถึงข้อมือ',
-      instructionTextEn: 'Position side-on (45°–90°), 1.8–2.8m from camera, ensuring hip, shoulder, and wrist are visible.',
-      instructionTextCn: '侧身45°至90°就坐或站立，距离1.8-2.8米，确保髋、肩、腕清晰可见。',
+      instructionTextTh: 'นั่งหรือยืนให้เห็นลำตัวและแขนข้างที่ฝึกชัดเจน โดยให้แขนและข้อศอกอยู่ในกรอบภาพ',
+      instructionTextEn: 'Sit or stand ensuring trunk and exercise arm (including elbow) are fully visible in frame.',
+      instructionTextCn: '端坐或站立，确保躯干及训练手臂（包含手肘）完整在画面内。',
     },
     angleMechanics: {
       landmarks: {

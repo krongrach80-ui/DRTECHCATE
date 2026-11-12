@@ -546,6 +546,41 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
   const [painReportedState, setPainReportedState] = useState<boolean>(false);
 
+  // Staff Accuracy Test Mode State & Telemetry Refs
+  const [isAccuracyTestMode, setIsAccuracyTestMode] = useState<boolean>(false);
+  const isAccuracyTestModeRef = useRef<boolean>(false);
+  useEffect(() => {
+    isAccuracyTestModeRef.current = isAccuracyTestMode;
+  }, [isAccuracyTestMode]);
+
+  const accuracyTelemetryRef = useRef<Array<{
+    timestamp: number;
+    timeStr: string;
+    phase: string;
+    angle: number;
+    targetAngle: number;
+    accuracyScore: number;
+    isCompleteJoints: boolean;
+    fps: number;
+    detectedReps: number;
+  }>>([]);
+  const accuracyTotalFramesRef = useRef<number>(0);
+  const accuracyCompleteJointFramesRef = useRef<number>(0);
+  const accuracyFpsSamplesRef = useRef<number[]>([]);
+  const lastAccuracySampleMsRef = useRef<number>(0);
+
+  const [showAccuracyVerifyModal, setShowAccuracyVerifyModal] = useState<boolean>(false);
+  const [actualRepsInput, setActualRepsInput] = useState<string>('10');
+  const [accuracyVerificationReport, setAccuracyVerificationReport] = useState<{
+    actualReps: number;
+    detectedReps: number;
+    falsePositives: number;
+    falseNegatives: number;
+    completeRatioPct: number;
+    avgFps: number;
+    totalFrames: number;
+  } | null>(null);
+
   // Camera FOV, Aspect Ratio & Zoom States
   const [zoomInfo, setZoomInfo] = useState<{
     supported: boolean;
@@ -702,6 +737,75 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       stateMachineRef.current.setSide(currentSide);
     }
   }, [resolvedConfig]);
+
+  const handleCalculateAccuracy = useCallback(() => {
+    const actual = parseInt(actualRepsInput, 10) || 0;
+    const detected = validCompletedRepsRef.current;
+    const fp = Math.max(0, detected - actual);
+    const fn = Math.max(0, actual - detected);
+    const totalF = accuracyTotalFramesRef.current || 1;
+    const completeRatio = Math.round((accuracyCompleteJointFramesRef.current / totalF) * 100);
+    const avgFps = accuracyFpsSamplesRef.current.length > 0
+      ? accuracyFpsSamplesRef.current.reduce((a, b) => a + b, 0) / accuracyFpsSamplesRef.current.length
+      : 0;
+    setAccuracyVerificationReport({
+      actualReps: actual,
+      detectedReps: detected,
+      falsePositives: fp,
+      falseNegatives: fn,
+      completeRatioPct: completeRatio,
+      avgFps: Math.round(avgFps * 10) / 10,
+      totalFrames: accuracyTotalFramesRef.current,
+    });
+  }, [actualRepsInput]);
+
+  const handleExportAccuracyCsv = useCallback(() => {
+    const records = accuracyTelemetryRef.current;
+    if (!records || records.length === 0) {
+      alert('ยังไม่มีข้อมูลบันทึกในรอบนี้');
+      return;
+    }
+    const headers = [
+      'TimestampMs',
+      'DateTime',
+      'Phase',
+      'CurrentAngleDeg',
+      'TargetAngleDeg',
+      'PostureAccuracyScore',
+      'IsCompleteJointsVisible',
+      'InferenceFPS',
+      'DetectedRepsCount',
+    ];
+    const rows = records.map((r) => [
+      r.timestamp,
+      `"${r.timeStr}"`,
+      `"${r.phase}"`,
+      r.angle,
+      r.targetAngle,
+      r.accuracyScore,
+      r.isCompleteJoints ? 'YES' : 'NO',
+      r.fps,
+      r.detectedReps,
+    ]);
+    const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `drtech_accuracy_test_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleResetAccuracyData = useCallback(() => {
+    accuracyTelemetryRef.current = [];
+    accuracyTotalFramesRef.current = 0;
+    accuracyCompleteJointFramesRef.current = 0;
+    accuracyFpsSamplesRef.current = [];
+    setAccuracyVerificationReport(null);
+  }, []);
 
   // 1. ตัดเสียงพูดทั้งหมดในหน้าสแกนท่าฝึก และล้างคิวเสียงค้างทันทีที่เข้าหน้า/เปลี่ยนท่า/ออกจากหน้า
   useEffect(() => {
@@ -1197,7 +1301,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           let landmarker: any = null;
           let selectedDelegate: 'GPU' | 'CPU' = 'GPU';
 
-          // Try GPU delegate first across sources (numPoses: 1, outputSegmentationMasks: false)
+          // Try GPU delegate first across sources (numPoses: 2 for active subject locking, outputSegmentationMasks: false)
           for (const modelPath of modelSources) {
             try {
               landmarker = await vision.PoseLandmarker.createFromOptions(cachedFilesetResolver, {
@@ -1206,7 +1310,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   delegate: 'GPU',
                 },
                 runningMode: 'VIDEO',
-                numPoses: 1,
+                numPoses: 2,
                 outputSegmentationMasks: false,
                 minPoseDetectionConfidence: 0.5,
                 minPosePresenceConfidence: 0.5,
@@ -1231,7 +1335,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                     delegate: 'CPU',
                   },
                   runningMode: 'VIDEO',
-                  numPoses: 1,
+                  numPoses: 2,
                   outputSegmentationMasks: false,
                   minPoseDetectionConfidence: 0.5,
                   minPosePresenceConfidence: 0.5,
@@ -1494,9 +1598,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           const smoothedPose = oneEuroFilterRef.current.filter(chosenPose, safeTimestampMs);
           smoothedLandmarksRef.current = smoothedPose;
 
-          // 3. Clinical State Machine Evaluation (GROUND TRUTH: strictly using filtered real landmarks)
+          // 3. Clinical State Machine Evaluation (GROUND TRUTH: strictly using filtered real landmarks + 3D World Landmarks)
           const wdStatus = watchdogRef.current.update(smoothedPose, safeTimestampMs);
-          const evalRes = stateMachineRef.current.evaluate(smoothedPose, safeTimestampMs);
+          const chosenWorldPose = (result.worldLandmarks && result.worldLandmarks[bestIdx]) || undefined;
+          const evalRes = stateMachineRef.current.evaluateFrame(smoothedPose, chosenWorldPose, safeTimestampMs);
           latestEvalResultRef.current = evalRes;
           targetProgressRef.current = computeTargetRingProgress(
             evalRes,
@@ -1513,6 +1618,32 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             timestampMs: safeTimestampMs,
             inFrame: true,
           };
+
+          // Telemetry tracking for Staff Accuracy Test Mode
+          if (isAccuracyTestModeRef.current && smoothedPose) {
+            accuracyTotalFramesRef.current += 1;
+            const hasSh = (smoothedPose[11]?.visibility ?? 0) > 0.4 || (smoothedPose[12]?.visibility ?? 0) > 0.4;
+            const hasEl = (smoothedPose[13]?.visibility ?? 0) > 0.4 || (smoothedPose[14]?.visibility ?? 0) > 0.4;
+            const hasWr = (smoothedPose[15]?.visibility ?? 0) > 0.4 || (smoothedPose[16]?.visibility ?? 0) > 0.4;
+            const isComplete = hasSh && hasEl && hasWr;
+            if (isComplete) accuracyCompleteJointFramesRef.current += 1;
+            accuracyFpsSamplesRef.current.push(smoothedFpsRef.current);
+
+            if (safeTimestampMs - lastAccuracySampleMsRef.current >= 100) {
+              lastAccuracySampleMsRef.current = safeTimestampMs;
+              accuracyTelemetryRef.current.push({
+                timestamp: safeTimestampMs,
+                timeStr: new Date(safeTimestampMs).toISOString(),
+                phase: evalRes.phase,
+                angle: evalRes.currentAngleDeg,
+                targetAngle: evalRes.targetAngleDeg,
+                accuracyScore: evalRes.accuracyPercent ?? 0,
+                isCompleteJoints: isComplete,
+                fps: Math.round(smoothedFpsRef.current * 10) / 10,
+                detectedReps: validCompletedRepsRef.current,
+              });
+            }
+          }
 
           // Rep completion audio chime, TTS & senior celebration pulse
           if (evalRes.completedReps > lastCompletedRepsRef.current) {
@@ -1551,10 +1682,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             setIsResting(true);
             isRestingRef.current = true;
             speakThai(`จบเซ็ตที่ ${evalRes.currentSet} พักสักครู่ค่ะ`, 'set_complete', 2500);
+            if (isAccuracyTestModeRef.current) {
+              setShowAccuracyVerifyModal(true);
+            }
           } else if (isExerciseDone && !isSummaryOpenRef.current) {
             setIsSummaryOpen(true);
             isSummaryOpenRef.current = true;
             speakThai('ยินดีด้วยค่ะ คุณทำครบทุกเซ็ตแล้ว', 'exercise_complete', 2500);
+            if (isAccuracyTestModeRef.current) {
+              setShowAccuracyVerifyModal(true);
+            }
           }
 
           // Accuracy Percentage EMA Smoothing (0.80 previous + 0.20 raw)
@@ -2547,6 +2684,17 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           {/* Patient-accessible Quick Skeleton Toggle Button (Glassmorphism) */}
           <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+            {isAccuracyTestMode && (
+              <button
+                type="button"
+                onClick={() => setShowAccuracyVerifyModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-mono font-bold bg-emerald-500/90 hover:bg-emerald-400 text-slate-950 border border-emerald-300 shadow-lg cursor-pointer active:scale-95 animate-pulse"
+                title="คลิกเพื่อดูและส่งออกรายงานการทดสอบความแม่นยำ"
+              >
+                <span>🧪 TEST</span>
+                <span className="opacity-80">({accuracyTotalFramesRef.current}f)</span>
+              </button>
+            )}
             <button
               type="button"
               id="kiosk-quick-toggle-skeleton-btn"
@@ -2598,11 +2746,17 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               <div className="bg-amber-500/95 backdrop-blur-md text-white border-2 border-amber-300 px-6 py-2.5 rounded-2xl shadow-xl font-bold text-xs sm:text-sm flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-white shrink-0 animate-pulse" />
                 <span>
-                  {lang === 'zh-CN'
-                    ? '📷 请后退至距离摄像头1.8-2.5米处，确保双臂完整入镜'
-                    : lang === 'en-US'
-                      ? '📷 Please step back 1.8–2.5m so both arms are clearly visible'
-                      : '📷 กรุณาถอยห่างจากกล้อง 1.8–2.5 เมตร เพื่อให้เห็นแขนทั้งสองข้าง'}
+                  {hudState.shoulderWidthPct > 50
+                    ? (lang === 'zh-CN'
+                      ? '🪑 请稍微后退，确保训练手臂完整入镜'
+                      : lang === 'en-US'
+                        ? '🪑 Step back slightly so your exercise arm is visible'
+                        : '🪑 ถอยหลังอีกนิด ให้เห็นแขนข้างที่ฝึกชัดเจน')
+                    : (lang === 'zh-CN'
+                      ? '📷 请调整位置，确保手肘在画面内'
+                      : lang === 'en-US'
+                        ? '📷 Adjust position so your elbow and arm remain in frame'
+                        : '📷 ขยับถอยหลังอีกนิด ให้เห็นแขนถึงข้อศอก')}
                 </span>
               </div>
             </div>
@@ -2613,7 +2767,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             <div className="absolute top-4 inset-x-4 z-20 flex justify-center pointer-events-none">
               <div className="bg-white/95 backdrop-blur-md text-slate-900 border-2 border-amber-400 px-5 py-2.5 rounded-2xl shadow-lg font-bold text-xs sm:text-sm flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                <span>{hudState.distanceWarning || 'กรุณาขยับถอยหลังให้อยู่ในกรอบ 1.5–2 เมตร'}</span>
+                <span>
+                  {hudState.distanceWarning || (lang === 'zh-CN'
+                    ? '请调整位置，确保上身与训练手臂在画面中'
+                    : lang === 'en-US'
+                      ? 'Adjust position so upper body and arm are centered in frame'
+                      : 'กรุณาขยับจัดตำแหน่งให้เห็นลำตัวและแขนข้างที่ฝึกในกรอบภาพ')}
+                </span>
               </div>
             </div>
           )}
@@ -3254,6 +3414,68 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   </div>
                 )}
               </div>
+
+              {/* 9. Staff Accuracy Test Mode */}
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-white text-base">📊 โหมดทดสอบความแม่นยำ (Staff Accuracy Test Mode)</div>
+                    <div className="text-xs text-slate-400">บันทึกเฟรม, ข้อต่อ, FPS, และเปรียบเทียบ Actual vs Detected Reps</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAccuracyTestMode((prev) => !prev)}
+                    className={`px-4 py-2 rounded-xl font-bold text-xs cursor-pointer transition ${
+                      isAccuracyTestMode
+                        ? 'bg-emerald-500 text-slate-950 shadow-md'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {isAccuracyTestMode ? '🟢 เปิดใช้งานอยู่' : '⚪ ปิดอยู่'}
+                  </button>
+                </div>
+                {isAccuracyTestMode && (
+                  <div className="space-y-2 pt-2 border-t border-slate-800/80 text-xs">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                        <div className="text-slate-400 text-[10px]">เฟรมทั้งหมด</div>
+                        <div className="font-mono font-bold text-teal-400 text-sm">{accuracyTotalFramesRef.current}</div>
+                      </div>
+                      <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                        <div className="text-slate-400 text-[10px]">ข้อต่อครบ</div>
+                        <div className="font-mono font-bold text-emerald-400 text-sm">
+                          {accuracyTotalFramesRef.current > 0
+                            ? Math.round((accuracyCompleteJointFramesRef.current / accuracyTotalFramesRef.current) * 100)
+                            : 0}%
+                        </div>
+                      </div>
+                      <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                        <div className="text-slate-400 text-[10px]">นับได้ขณะนี้</div>
+                        <div className="font-mono font-bold text-amber-400 text-sm">{validCompletedRepsRef.current} ครั้ง</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowStaffSettingsModal(false);
+                          setShowAccuracyVerifyModal(true);
+                        }}
+                        className="flex-1 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs cursor-pointer text-center transition"
+                      >
+                        📋 ตรวจสอบผล & ส่งออก CSV
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleResetAccuracyData}
+                        className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer transition"
+                      >
+                        รีเซ็ต
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <button
@@ -3263,6 +3485,105 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             >
               เสร็จสิ้น (บันทึกและปิดหน้าต่าง)
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Staff Accuracy Verification & CSV Export Modal */}
+      {showAccuracyVerifyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">📊</span>
+                <h3 className="font-black text-white text-lg">Staff Accuracy Verification Report</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAccuracyVerifyModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-sm">
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                <label className="block text-xs font-bold text-slate-300">
+                  จำนวนครั้งที่ผู้ป่วยทำจริง (Actual Reps Completed by Patient):
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={actualRepsInput}
+                    onChange={(e) => setActualRepsInput(e.target.value)}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold text-base focus:border-teal-500 focus:outline-none"
+                    placeholder="เช่น 10"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCalculateAccuracy}
+                    className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs cursor-pointer transition"
+                  >
+                    คำนวณผล
+                  </button>
+                </div>
+              </div>
+
+              {accuracyVerificationReport && (
+                <div className="space-y-3 p-4 rounded-2xl bg-slate-950/80 border border-slate-800">
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-slate-400">ทำจริง vs AI นับได้</div>
+                      <div className="font-bold text-base text-white">
+                        {accuracyVerificationReport.actualReps} vs <span className="text-teal-400">{accuracyVerificationReport.detectedReps}</span>
+                      </div>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-slate-400">เฟรมข้อต่อครบ (Completeness)</div>
+                      <div className="font-bold text-base text-emerald-400">
+                        {accuracyVerificationReport.completeRatioPct}%
+                      </div>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-slate-400">False Positives (นับเกิน)</div>
+                      <div className={`font-bold text-base ${accuracyVerificationReport.falsePositives === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {accuracyVerificationReport.falsePositives} ครั้ง
+                      </div>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-slate-400">False Negatives (นับหลุด)</div>
+                      <div className={`font-bold text-base ${accuracyVerificationReport.falseNegatives === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {accuracyVerificationReport.falseNegatives} ครั้ง
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-slate-400 px-1">
+                    <span>ความเร็วเฉลี่ย: <strong className="text-white">{accuracyVerificationReport.avgFps} FPS</strong></span>
+                    <span>เฟรมทั้งหมด: <strong className="text-white">{accuracyVerificationReport.totalFrames} เฟรม</strong></span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={handleExportAccuracyCsv}
+                className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm cursor-pointer shadow-lg active:scale-98 transition flex items-center justify-center gap-2"
+              >
+                📥 ส่งออกรายงาน CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAccuracyVerifyModal(false)}
+                className="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm cursor-pointer transition"
+              >
+                ปิด
+              </button>
+            </div>
           </div>
         </div>
       )}
