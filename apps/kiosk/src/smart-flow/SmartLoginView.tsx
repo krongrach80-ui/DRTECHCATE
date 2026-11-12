@@ -5,7 +5,7 @@
  * Trilingual (TH/EN/CN), Calibration Mode HUD, Touchless Gesture & PIN Backup
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 import {
   FaceDetector,
@@ -780,9 +780,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const cancelCountdownRef = useRef<(reason?: string) => void>(() => {});
   const finishCountdownAndVerifyRef = useRef<() => Promise<void>>(async () => {});
   const onLoginSuccessRef = useRef(onLoginSuccess);
-  useEffect(() => {
+  useLayoutEffect(() => {
     onLoginSuccessRef.current = onLoginSuccess;
   }, [onLoginSuccess]);
+  // Latest language/translator for long-lived callbacks (camera start, face detection loop)
+  const langRef = useRef(lang);
+  useLayoutEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
 
   const fastLivenessVerifierRef = useRef<FastLoginLivenessVerifier>(new FastLoginLivenessVerifier(350));
   const stabilityDetectorRef = useRef<FaceStabilityDetector>(
@@ -1899,7 +1904,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             if (!detection.hasFace || !detection.box) {
               if (Date.now() - lastFaceSeenDuringCountdownRef.current > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
                 lockedTargetRef.current = null;
-                cancelCountdown(lang === 'zh-CN' ? '未检测到人脸，已重置' : lang === 'en-US' ? 'Face lost, reset' : 'ไม่พบใบหน้า ระบบได้รีเซ็ตการสแกน');
+                cancelCountdown(langRef.current === 'zh-CN' ? '未检测到人脸，已重置' : langRef.current === 'en-US' ? 'Face lost, reset' : 'ไม่พบใบหน้า ระบบได้รีเซ็ตการสแกน');
                 stabilityDetectorRef.current.reset();
               }
               return;
@@ -1910,7 +1915,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             if (isSeverelyTilted) {
               if (Date.now() - lastFaceSeenDuringCountdownRef.current > KIOSK_CAMERA_STANDARDIZATION_CONFIG.FACE_LOST_TIMEOUT_MS) {
                 lockedTargetRef.current = null;
-                cancelCountdownRef.current?.(lang === 'zh-CN' ? '请直视摄像头，已重置' : lang === 'en-US' ? 'Please look straight, reset' : 'กรุณามองตรงที่กล้อง ระบบได้รีเซ็ตการสแกน');
+                cancelCountdownRef.current?.(langRef.current === 'zh-CN' ? '请直视摄像头，已重置' : langRef.current === 'en-US' ? 'Please look straight, reset' : 'กรุณามองตรงที่กล้อง ระบบได้รีเซ็ตการสแกน');
                 stabilityDetectorRef.current.reset();
               }
               return;
@@ -2058,9 +2063,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 setMatchedPatient(matchedPatientObj as any);
                 const finalPercent = Math.round(highestSimilarity * 100);
                 const welcomeMsg =
-                  lang === 'zh-CN'
+                  langRef.current === 'zh-CN'
                     ? `欢迎，คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
-                    : lang === 'en-US'
+                    : langRef.current === 'en-US'
                     ? `Welcome, คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
                     : `ยินดีต้อนรับ คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`;
                 setStatusText(welcomeMsg);
