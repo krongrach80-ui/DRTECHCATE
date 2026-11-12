@@ -388,6 +388,35 @@ const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
 );
 ExercisePostureGuideCard.displayName = 'ExercisePostureGuideCard';
 
+// Module-level singleton caches for zero-freeze exercise transitions
+let cachedVisionModule: any = null;
+let cachedFilesetResolver: any = null;
+let cachedPoseLandmarker: any = null;
+let cachedDelegate: 'GPU' | 'CPU' = 'GPU';
+
+// Helper to apply dynamic alpha decay to hex, rgb, or rgba color strings
+function applyAlphaToColor(color: string, alpha: number): string {
+  if (alpha >= 1) return color;
+  if (alpha <= 0) return 'transparent';
+  if (color.startsWith('#')) {
+    let hex = color.slice(1);
+    if (hex.length === 3) {
+      hex = hex.split('').map((c) => c + c).join('');
+    }
+    const r = parseInt(hex.slice(0, 2), 16) || 0;
+    const g = parseInt(hex.slice(2, 4), 16) || 0;
+    const b = parseInt(hex.slice(4, 6), 16) || 0;
+    return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`;
+  }
+  if (color.startsWith('rgba(')) {
+    return color.replace(/[\d\.]+\)$/, `${alpha.toFixed(2)})`);
+  }
+  if (color.startsWith('rgb(')) {
+    return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha.toFixed(2)})`);
+  }
+  return color;
+}
+
 export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProps> = (props) => {
   const {
     patient = { first_name: 'ผู้ฝึก' },
@@ -433,9 +462,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   );
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Loop & Timing Control Refs
+  // Loop & Timing Control Refs (Decoupled Dual-Loop Architecture)
   const rafIdRef = useRef<number | null>(null);
+  const rvfcIdRef = useRef<number | null>(null);
+  const renderRafIdRef = useRef<number | null>(null);
   const isMountedRef = useRef<boolean>(true);
+  const isInferenceBusyRef = useRef<boolean>(false);
+  const lastVideoTimeRef = useRef<number>(-1);
   const lastTimestampMsRef = useRef<number>(0);
   const lastInferenceTimeRef = useRef<number>(0);
   const lastUiUpdateMsRef = useRef<number>(0);
@@ -445,6 +478,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const sessionStartTimeRef = useRef<number>(0);
   const isFinalizingRef = useRef<boolean>(false);
   const isReportingPainRef = useRef<boolean>(false);
+
+  // Decoupled Pose Frame State for 60-120 FPS Interpolation & Prediction in Render Loop
+  const currentPoseStateRef = useRef<{
+    landmarks: PoseEngineLandmark[] | null;
+    timestampMs: number;
+    inFrame: boolean;
+  } | null>(null);
+  const previousPoseStateRef = useRef<{
+    landmarks: PoseEngineLandmark[] | null;
+    timestampMs: number;
+    inFrame: boolean;
+  } | null>(null);
 
   // Dynamic States
   const [cameraStatus, setCameraStatus] = useState<'initializing' | 'ready' | 'error'>('initializing');
@@ -680,8 +725,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     showSkeletonRef.current = showSkeletonOverlay;
   }, [showSkeletonOverlay]);
 
-  // Sub-pixel EMA lerp smoothing buffer strictly for canvas rendering (prevents jitter without touching evaluation)
-  const canvasSmoothedPointsRef = useRef<{ [idx: number]: { x: number; y: number } }>({});
+  // Sub-pixel EMA lerp smoothing buffer strictly for canvas rendering with 200ms Grace Period Decay
+  const canvasSmoothedPointsRef = useRef<{
+    [idx: number]: {
+      x: number;
+      y: number;
+      visibility: number;
+      lastSeenMs: number;
+      inFrame: boolean;
+    };
+  }>({});
 
   // --- Continuous Identity Verification State & Refs ---
   const patientId = patient?.patient_id || patient?.hn || '';
@@ -919,6 +972,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   // Resource Cleanup on Unmount
   const cleanupResources = useCallback(() => {
     isMountedRef.current = false;
+    if (rvfcIdRef.current !== null && videoRef.current && 'cancelVideoFrameCallback' in videoRef.current) {
+      try {
+        (videoRef.current as any).cancelVideoFrameCallback(rvfcIdRef.current);
+      } catch {}
+      rvfcIdRef.current = null;
+    }
+    if (renderRafIdRef.current !== null) {
+      cancelAnimationFrame(renderRafIdRef.current);
+      renderRafIdRef.current = null;
+    }
     if (rafIdRef.current !== null) {
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = null;
@@ -930,6 +993,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         // ignore
       }
       landmarkerRef.current = null;
+      cachedPoseLandmarker = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -979,51 +1043,68 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           videoEl.muted = true;
           videoEl.playsInline = true;
         } else {
-          // 1. Initialize Webcam Stream (1280x720, 16:9 widescreen)
+          // 1. Initialize Webcam Stream (1280x720, 16:9 widescreen, 60fps ideal with track reuse)
           let stream: MediaStream;
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                aspectRatio: { ideal: 16 / 9 },
-                facingMode: 'user',
-              },
-              audio: false,
-            });
-          } catch {
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: true,
-              audio: false,
-            });
-          }
-
-          if (!isMountedRef.current) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
-
-          streamRef.current = stream;
-          videoEl.srcObject = stream;
-          videoEl.muted = true;
-          videoEl.playsInline = true;
-
-          // Immediately enforce minimum hardware zoom (widest FOV without crop) to clear any residual zoom
-          const initialVideoTrack = stream.getVideoTracks()[0];
-          if (initialVideoTrack && typeof initialVideoTrack.getCapabilities === 'function') {
+          if (streamRef.current && streamRef.current.getVideoTracks().some((t) => t.readyState === 'live')) {
+            stream = streamRef.current;
+            videoEl.srcObject = stream;
+          } else {
             try {
-              const caps: any = initialVideoTrack.getCapabilities();
-              if (caps && 'zoom' in caps && typeof caps.zoom === 'object') {
-                const minZoom = Number(caps.zoom.min ?? 1);
-                await initialVideoTrack.applyConstraints({
-                  advanced: [{ zoom: minZoom } as any],
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                  aspectRatio: { ideal: 16 / 9 },
+                  frameRate: { ideal: 60, min: 30 },
+                  facingMode: 'user',
+                },
+                audio: false,
+              });
+            } catch {
+              try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                  video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 60, min: 30 },
+                  },
+                  audio: false,
+                });
+              } catch {
+                stream = await navigator.mediaDevices.getUserMedia({
+                  video: true,
+                  audio: false,
                 });
               }
-            } catch {}
-          }
+            }
 
-          // Attempt hardware exposure compensation for backlight
-          backlightCompensatorRef.current.applyHardwareExposure(stream);
+            if (!isMountedRef.current) {
+              stream.getTracks().forEach((t) => t.stop());
+              return;
+            }
+
+            streamRef.current = stream;
+            videoEl.srcObject = stream;
+            videoEl.muted = true;
+            videoEl.playsInline = true;
+
+            // Immediately enforce minimum hardware zoom (widest FOV without crop) to clear any residual zoom
+            const initialVideoTrack = stream.getVideoTracks()[0];
+            if (initialVideoTrack && typeof initialVideoTrack.getCapabilities === 'function') {
+              try {
+                const caps: any = initialVideoTrack.getCapabilities();
+                if (caps && 'zoom' in caps && typeof caps.zoom === 'object') {
+                  const minZoom = Number(caps.zoom.min ?? 1);
+                  await initialVideoTrack.applyConstraints({
+                    advanced: [{ zoom: minZoom } as any],
+                  });
+                }
+              } catch {}
+            }
+
+            // Attempt hardware exposure compensation for backlight
+            backlightCompensatorRef.current.applyHardwareExposure(stream);
+          }
         }
 
         // Explicitly wait until video metadata is loaded and videoWidth is valid (> 0)
@@ -1079,146 +1160,176 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         setZoomInfo(supportedZoom);
         setCameraStatus('ready');
 
-        // 2. Load MediaPipe Tasks-Vision with Multi-CDN & Local Fallbacks
-        const vision = await import('@mediapipe/tasks-vision');
-        const wasmSources = [
-          '/models/wasm',
-          '/wasm',
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm',
-          'https://unpkg.com/@mediapipe/tasks-vision@0.10.14/wasm',
-        ];
-
-        let filesetResolver: any = null;
-        for (const wasmUrl of wasmSources) {
-          try {
-            filesetResolver = await vision.FilesetResolver.forVisionTasks(wasmUrl);
-            if (filesetResolver) break;
-          } catch (wasmErr) {
-            console.warn('[PoseEngine] WASM source attempt failed:', wasmUrl, wasmErr);
+        // 2. Load MediaPipe Tasks-Vision with Module-Level Caching (Zero-Freeze Transition)
+        if (!cachedPoseLandmarker) {
+          if (!cachedVisionModule) {
+            cachedVisionModule = await import('@mediapipe/tasks-vision');
           }
-        }
+          const vision = cachedVisionModule;
 
-        if (!filesetResolver) {
-          throw new Error('ไม่สามารถโหลดไฟล์ WebAssembly ของระบบตรวจจับได้ (กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ CSP)');
-        }
+          if (!cachedFilesetResolver) {
+            const wasmSources = [
+              '/models/wasm',
+              '/wasm',
+              'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm',
+              'https://unpkg.com/@mediapipe/tasks-vision@0.10.14/wasm',
+            ];
 
-        // Model Sources: Full CDN -> Local Full/Default -> Lite Local -> Lite CDN
-        const modelSources = [
-          'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
-          '/models/pose_landmarker_full.task',
-          '/models/pose_landmarker.task',
-          '/models/pose_landmarker_lite.task',
-          'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
-        ];
-
-        let landmarker: any = null;
-        let selectedDelegate: 'GPU' | 'CPU' = 'GPU';
-
-        // Try GPU delegate first across sources (numPoses: 3 for multi-person support)
-        for (const modelPath of modelSources) {
-          try {
-            landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
-              baseOptions: {
-                modelAssetPath: modelPath,
-                delegate: 'GPU',
-              },
-              runningMode: 'VIDEO',
-              numPoses: 3,
-              minPoseDetectionConfidence: 0.5,
-              minPosePresenceConfidence: 0.5,
-              minTrackingConfidence: 0.5,
-            });
-            if (landmarker) {
-              selectedDelegate = 'GPU';
-              break;
+            for (const wasmUrl of wasmSources) {
+              try {
+                cachedFilesetResolver = await vision.FilesetResolver.forVisionTasks(wasmUrl);
+                if (cachedFilesetResolver) break;
+              } catch (wasmErr) {
+                console.warn('[PoseEngine] WASM source attempt failed:', wasmUrl, wasmErr);
+              }
             }
-          } catch (gpuErr) {
-            console.warn(`[PoseEngine] GPU init failed for ${modelPath}:`, gpuErr);
           }
-        }
 
-        // If GPU fails, fallback immediately to CPU delegate
-        if (!landmarker) {
+          if (!cachedFilesetResolver) {
+            throw new Error('ไม่สามารถโหลดไฟล์ WebAssembly ของระบบตรวจจับได้ (กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ CSP)');
+          }
+
+          // Model Sources: Local Lite (fastest, zero network delay) -> Full CDN -> Local Full -> Lite CDN
+          const modelSources = [
+            '/models/pose_landmarker.task',
+            '/models/pose_landmarker_lite.task',
+            'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
+            '/models/pose_landmarker_full.task',
+            'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+          ];
+
+          let landmarker: any = null;
+          let selectedDelegate: 'GPU' | 'CPU' = 'GPU';
+
+          // Try GPU delegate first across sources (numPoses: 1, outputSegmentationMasks: false)
           for (const modelPath of modelSources) {
             try {
-              landmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+              landmarker = await vision.PoseLandmarker.createFromOptions(cachedFilesetResolver, {
                 baseOptions: {
                   modelAssetPath: modelPath,
-                  delegate: 'CPU',
+                  delegate: 'GPU',
                 },
                 runningMode: 'VIDEO',
-                numPoses: 3,
+                numPoses: 1,
+                outputSegmentationMasks: false,
                 minPoseDetectionConfidence: 0.5,
                 minPosePresenceConfidence: 0.5,
                 minTrackingConfidence: 0.5,
               });
               if (landmarker) {
-                selectedDelegate = 'CPU';
+                selectedDelegate = 'GPU';
                 break;
               }
-            } catch (cpuErr) {
-              console.warn(`[PoseEngine] CPU init failed for ${modelPath}:`, cpuErr);
+            } catch (gpuErr) {
+              console.warn(`[PoseEngine] GPU init failed for ${modelPath}:`, gpuErr);
             }
           }
+
+          // If GPU fails, fallback immediately to CPU delegate
+          if (!landmarker) {
+            for (const modelPath of modelSources) {
+              try {
+                landmarker = await vision.PoseLandmarker.createFromOptions(cachedFilesetResolver, {
+                  baseOptions: {
+                    modelAssetPath: modelPath,
+                    delegate: 'CPU',
+                  },
+                  runningMode: 'VIDEO',
+                  numPoses: 1,
+                  outputSegmentationMasks: false,
+                  minPoseDetectionConfidence: 0.5,
+                  minPosePresenceConfidence: 0.5,
+                  minTrackingConfidence: 0.5,
+                });
+                if (landmarker) {
+                  selectedDelegate = 'CPU';
+                  break;
+                }
+              } catch (cpuErr) {
+                console.warn(`[PoseEngine] CPU init failed for ${modelPath}:`, cpuErr);
+              }
+            }
+          }
+
+          if (!landmarker) {
+            throw new Error('ไม่สามารถโหลดไฟล์โมเดลตรวจจับท่าทางได้ (ตรวจสอบสิทธิ์การเข้าถึงไฟล์โมเดล)');
+          }
+
+          cachedPoseLandmarker = landmarker;
+          cachedDelegate = selectedDelegate;
         }
 
-        if (!landmarker) {
-          throw new Error('ไม่สามารถโหลดไฟล์โมเดลตรวจจับท่าทางได้ (ตรวจสอบสิทธิ์การเข้าถึงไฟล์โมเดล)');
-        }
+        if (!isMountedRef.current) return;
 
-        if (!isMountedRef.current) {
-          landmarker.close();
-          return;
-        }
-
-        landmarkerRef.current = landmarker;
-        setModelDelegate(selectedDelegate);
+        landmarkerRef.current = cachedPoseLandmarker;
+        setModelDelegate(cachedDelegate);
         setModelStatus('ready');
 
-        // 3. Start Continuous Detection & Render Loop (requestAnimationFrame)
-        const detectFrame = () => {
-          if (!isMountedRef.current) return;
-          rafIdRef.current = requestAnimationFrame(detectFrame);
+        // 3. Start Decoupled Dual-Loop Architecture:
+        // - Loop A: AI Inference Loop (requestVideoFrameCallback, 0% duplicate frames)
+        // - Loop B: High-Refresh Overlay Render Loop (requestAnimationFrame, 60-165Hz)
 
+        // Loop A Scheduler
+        const scheduleInference = () => {
+          if (!isMountedRef.current || !videoRef.current) return;
+          const v = videoRef.current;
+          if ('requestVideoFrameCallback' in v) {
+            rvfcIdRef.current = (v as any).requestVideoFrameCallback(() => {
+              runInferenceLoop();
+            });
+          } else {
+            rafIdRef.current = requestAnimationFrame(() => {
+              runInferenceLoop();
+            });
+          }
+        };
+
+        const runInferenceLoop = () => {
+          if (!isMountedRef.current) return;
           const vEl = videoRef.current;
-          const cEl = canvasRef.current;
           const detector = landmarkerRef.current;
 
-          if (!vEl || !cEl || !detector || vEl.readyState < 2 || vEl.videoWidth === 0) {
+          if (!vEl || !detector || vEl.readyState < 2 || vEl.videoWidth === 0) {
+            scheduleInference();
             return;
           }
 
-          // 1:1 CSS pixel synchronization to prevent DPI coordinate shift
-          const displayW = cEl.clientWidth || vEl.clientWidth || 1280;
-          const displayH = cEl.clientHeight || vEl.clientHeight || 720;
-          if (cEl.width !== displayW || cEl.height !== displayH) {
-            cEl.width = displayW;
-            cEl.height = displayH;
+          // Fallback guard for non-rVFC browsers: check if video frame actually advanced
+          const hasRvfc = typeof (vEl as any).requestVideoFrameCallback === 'function';
+          if (!hasRvfc) {
+            if (vEl.currentTime === lastVideoTimeRef.current) {
+              scheduleInference();
+              return;
+            }
+            lastVideoTimeRef.current = vEl.currentTime;
           }
+
+          if (isInferenceBusyRef.current) {
+            scheduleInference();
+            return;
+          }
+          isInferenceBusyRef.current = true;
 
           const nowMs = performance.now();
 
-          // 1. Measure 60 FPS Display / Render Frame Time
-          const renderDtMs = Math.max(nowMs - lastRenderTimeRef.current, 1);
-          lastRenderTimeRef.current = nowMs;
-          smoothedRenderFpsRef.current = 0.9 * smoothedRenderFpsRef.current + 0.1 * (1000 / renderDtMs);
-
-          // 2. Continuous 60 FPS Ring Lerp Interpolation & Direct DOM Update
-          const targetProgress = targetProgressRef.current;
-          const currentProgress = currentAnimatedProgressRef.current;
-          const dtSec = Math.min(renderDtMs / 1000, 0.05);
-          // Lambda = 16 gives ~60-80ms smooth response time without perceptible lag
-          const lerpFactor = 1 - Math.exp(-16 * dtSec);
-          const nextProgress = Math.abs(targetProgress - currentProgress) < 0.0005
-            ? targetProgress
-            : currentProgress + (targetProgress - currentProgress) * lerpFactor;
-          currentAnimatedProgressRef.current = nextProgress;
-
-          if (progressCircleRef.current) {
-            const circ = 2 * Math.PI * 42;
-            const offset = circ * (1 - Math.max(0, Math.min(1, nextProgress)));
-            progressCircleRef.current.style.strokeDashoffset = `${offset}px`;
+          // AI Inference Interval Throttle only in low-power mode
+          if (lowPowerRef.current && nowMs - lastInferenceTimeRef.current < 66) {
+            isInferenceBusyRef.current = false;
+            scheduleInference();
+            return;
           }
+
+          const dtMs = Math.max(nowMs - lastInferenceTimeRef.current, 1);
+          lastInferenceTimeRef.current = nowMs;
+          smoothedFpsRef.current = 0.85 * smoothedFpsRef.current + 0.15 * (1000 / dtMs);
+
+          // Strictly increasing integer timestamp for MediaPipe stream calculator
+          const rawNowMs = Math.round(nowMs);
+          const safeTimestampMs =
+            rawNowMs > lastTimestampMsRef.current
+              ? rawNowMs
+              : lastTimestampMsRef.current + 1;
+          lastTimestampMsRef.current = safeTimestampMs;
 
           // Continuous Face Verification Trigger (Every ~2.5s)
           if (
@@ -1244,23 +1355,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             speakThai('หยุดการฝึกชั่วคราวเนื่องจากไม่สามารถยืนยันตัวตนได้', 'identity_timeout', 0);
           }
 
-          // 3. AI Inference Interval Throttle (50 FPS standard / 15 FPS low power)
-          const minIntervalMs = lowPowerRef.current ? 66 : 20; // 15 FPS in low-power, 50 FPS standard
-          if (nowMs - lastInferenceTimeRef.current < minIntervalMs) {
-            return;
-          }
-
-          const dtMs = Math.max(nowMs - lastInferenceTimeRef.current, 1);
-          lastInferenceTimeRef.current = nowMs;
-          smoothedFpsRef.current = 0.85 * smoothedFpsRef.current + 0.15 * (1000 / dtMs);
-
-          // Strictly increasing integer timestamp for MediaPipe stream calculator
-          let monotonicTs = Math.floor(nowMs);
-          if (monotonicTs <= lastTimestampMsRef.current) {
-            monotonicTs = lastTimestampMsRef.current + 1;
-          }
-          lastTimestampMsRef.current = monotonicTs;
-
           // Non-blocking detection with backlight compensation
           const backlightRes = backlightCompensatorRef.current.analyzeLuminance(vEl);
           let inputSource: CanvasImageSource = vEl;
@@ -1281,24 +1375,33 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           let result: any = null;
           try {
-            result = detector.detectForVideo(inputSource, monotonicTs);
+            result = detector.detectForVideo(inputSource, safeTimestampMs);
           } catch (detectErr) {
             console.warn('[PoseEngine] detectForVideo transient frame warning:', detectErr);
+            isInferenceBusyRef.current = false;
+            scheduleInference();
             return;
           }
 
-          const ctx = cEl.getContext('2d');
-          if (!ctx) return;
-          ctx.clearRect(0, 0, cEl.width, cEl.height);
-
           const hasPose = Boolean(result && result.landmarks && result.landmarks.length > 0);
-          const isTimerExercise = (resolvedConfigRef.current as any).mode === 'timer' || resolvedConfigRef.current.evaluationMode === 'timer';
-          const isPendulumExercise = resolvedConfigRef.current.evaluationMode === 'pendulum_circular' || Boolean((resolvedConfigRef.current as any).isPendulum);
+          const isTimerExercise =
+            (resolvedConfigRef.current as any).mode === 'timer' ||
+            resolvedConfigRef.current.evaluationMode === 'timer';
+          const isPendulumExercise =
+            resolvedConfigRef.current.evaluationMode === 'pendulum_circular' ||
+            Boolean((resolvedConfigRef.current as any).isPendulum);
 
           if (!hasPose) {
-            canvasSmoothedPointsRef.current = {};
+            // Update pose state to indicate missing pose without wiping smoothed canvas buffer
+            previousPoseStateRef.current = currentPoseStateRef.current;
+            currentPoseStateRef.current = {
+              landmarks: null,
+              timestampMs: safeTimestampMs,
+              inFrame: false,
+            };
+
             if (isTimerExercise) {
-              const evalRes = stateMachineRef.current.evaluate([], monotonicTs);
+              const evalRes = stateMachineRef.current.evaluate([], safeTimestampMs);
               latestEvalResultRef.current = evalRes;
               targetProgressRef.current = computeTargetRingProgress(
                 evalRes,
@@ -1358,6 +1461,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 }));
                 setEvalResult(evalRes);
               }
+              isInferenceBusyRef.current = false;
+              scheduleInference();
               return;
             }
 
@@ -1377,10 +1482,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 statusColor: '#f59e0b',
               }));
             }
+            isInferenceBusyRef.current = false;
+            scheduleInference();
             return;
           }
 
-          // 1. Multi-Pose Subject Locking with Verified Face Identity Binding
+          // 1. Multi-Pose Subject Locking
           const allPoses = result.landmarks;
           const detectedPeopleCount = allPoses.length;
           const { selectedPose: chosenPose, selectedIndex: bestIdx, newLockedCoM } =
@@ -1388,12 +1495,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lockedSubjectCoMRef.current = newLockedCoM;
 
           // 2. Clinical One Euro Filter (1€ Filter - low tremor at rest, low latency in motion)
-          const smoothedPose = oneEuroFilterRef.current.filter(chosenPose, monotonicTs);
+          const smoothedPose = oneEuroFilterRef.current.filter(chosenPose, safeTimestampMs);
           smoothedLandmarksRef.current = smoothedPose;
 
-          // Hardware Watchdog & Clinical State Machine Update
-          const wdStatus = watchdogRef.current.update(smoothedPose, monotonicTs);
-          const evalRes = stateMachineRef.current.evaluate(smoothedPose, monotonicTs);
+          // 3. Clinical State Machine Evaluation (GROUND TRUTH: strictly using filtered real landmarks)
+          const wdStatus = watchdogRef.current.update(smoothedPose, safeTimestampMs);
+          const evalRes = stateMachineRef.current.evaluate(smoothedPose, safeTimestampMs);
           latestEvalResultRef.current = evalRes;
           targetProgressRef.current = computeTargetRingProgress(
             evalRes,
@@ -1403,182 +1510,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             validCompletedRepsRef.current
           );
 
-          // Project landmarks into 1:1 canvas pixels with mirror support and fitMode
-          const currentFitMode = fitModeRef.current;
-          const projectedPoints = smoothedPose.map((lm: any) =>
-            projectLandmarkToCanvas(lm, vEl, cEl, true, currentFitMode)
-          );
-
-          // Exponential Moving Average (EMA) / Lerp smoothing strictly for canvas rendering
-          // Keeps motion silky smooth without touching raw coordinates or state machine evaluations
-          const alpha = 0.65;
-          const renderPoints = projectedPoints.map((pt: any, idx: number) => {
-            if (!pt || !pt.inFrame || (pt.visibility ?? 0) < 0.40) {
-              delete canvasSmoothedPointsRef.current[idx];
-              return pt;
-            }
-            const prev = canvasSmoothedPointsRef.current[idx];
-            if (!prev) {
-              canvasSmoothedPointsRef.current[idx] = { x: pt.x, y: pt.y };
-              return pt;
-            }
-            const smoothX = prev.x + alpha * (pt.x - prev.x);
-            const smoothY = prev.y + alpha * (pt.y - prev.y);
-            canvasSmoothedPointsRef.current[idx] = { x: smoothX, y: smoothY };
-            return {
-              ...pt,
-              x: smoothX,
-              y: smoothY,
-            };
-          });
-
-          // Shoulder width & distance estimation from clinical evaluation
-          const shoulderWidthPct = Math.round((evalRes.shoulderWidthRatio ?? 0.28) * 100);
-          const distanceStatus = evalRes.distanceStatus || 'ระยะเหมาะสม';
-          const distanceWarning = evalRes.phase === 'WAITING_FOR_FRAMING' ? evalRes.coachingMessageTh : null;
-
-          const strokeColor =
-            evalRes.formRating === 'error'
-              ? '#fbbf24'
-              : evalRes.formRating === 'warning'
-                ? '#00f5d4'
-                : '#10b981';
-
-          // 3. ในลูป requestAnimationFrame:
-          // - การตรวจจับ (detector.detectForVideo) และการคำนวณนับครั้ง (stateMachineRef.current.evaluateFrame)
-          //   ทำงานเบื้องหลัง 100% ทุกเฟรมแม้ showSkeletonRef.current === false
-          // - จะวาดเส้นและจุดลงบน <canvas> เฉพาะเมื่อ showSkeletonRef.current === true เท่านั้น!
-          ctx.clearRect(0, 0, cEl.width, cEl.height);
-
-          if (showSkeletonRef.current) {
-            const currentActiveSide = activeSideRef.current || resolvedConfig.side || 'right';
-            const isBilateral =
-              currentActiveSide === 'bilateral' ||
-              (currentActiveSide !== 'left' &&
-                currentActiveSide !== 'right' &&
-                (resolvedConfig.side === 'bilateral' || Boolean((resolvedConfig as any).bilateral)));
-
-            // Active side dynamic stroke color from form rating
-            const activeColor = strokeColor;
-
-            const inactiveColor = 'rgba(148, 163, 184, 0.65)'; // slate-400 with high contrast against camera feed
-            const torsoBridgeColor = 'rgba(56, 189, 248, 0.75)'; // sky-400
-
-            // Helper to determine connection style (Active side vs Inactive side vs Torso bridge vs Head/Neck)
-            const isNeckExercise = resolvedConfig.targetJoint === 'neck' || resolvedConfig.framing === 'head_shoulders';
-
-            const getConnectionStyle = (idxA: number, idxB: number) => {
-              const isHeadConn =
-                (idxA === 0 || idxA === 7 || idxA === 8) &&
-                (idxB === 0 || idxB === 7 || idxB === 8 || idxB === 11 || idxB === 12);
-
-              if (isNeckExercise) {
-                if (isHeadConn) {
-                  return { lineWidth: 5, strokeStyle: activeColor, isActive: true };
-                }
-                // Shoulders bridge
-                if (idxA === 11 && idxB === 12) {
-                  return { lineWidth: 4, strokeStyle: torsoBridgeColor, isActive: false };
-                }
-                // For neck exercises, arms and legs are inactive
-                return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
-              }
-
-              if (isHeadConn) {
-                return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
-              }
-
-              if (isBilateral) {
-                return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
-              }
-              // Torso bridges connecting left and right
-              if ((idxA === 11 && idxB === 12) || (idxA === 23 && idxB === 24)) {
-                return { lineWidth: 4, strokeStyle: torsoBridgeColor, isActive: false };
-              }
-              const isAOdd = idxA % 2 === 1;
-              const isBOdd = idxB % 2 === 1;
-              const isLeftConn = isAOdd && isBOdd;
-              const isRightConn = !isAOdd && !isBOdd;
-
-              if (currentActiveSide === 'left' && isLeftConn) {
-                return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
-              }
-              if (currentActiveSide === 'right' && isRightConn) {
-                return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
-              }
-              return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
-            };
-
-            const isJointActive = (idx: number) => {
-              if (isNeckExercise) {
-                return idx === 0 || idx === 7 || idx === 8;
-              }
-              if (isBilateral) return true;
-              if (currentActiveSide === 'left') return idx % 2 === 1;
-              if (currentActiveSide === 'right') return idx % 2 === 0;
-              return true;
-            };
-
-            // 1. Draw Skeleton Lines (Torso, Arms, Hands, Legs, + Head when neck exercise)
-            const activeConnections = isNeckExercise
-              ? [...HEAD_POSE_CONNECTIONS, ...POSE_CONNECTIONS]
-              : POSE_CONNECTIONS;
-
-            for (const [idxA, idxB] of activeConnections) {
-              const ptA = renderPoints[idxA];
-              const ptB = renderPoints[idxB];
-              // Strictly draw ONLY when both joints are in-frame with sufficient visibility
-              // Hides legs automatically when sitting / half-body mode without extrapolating outside
-              if (
-                ptA &&
-                ptB &&
-                ptA.inFrame &&
-                ptB.inFrame &&
-                (ptA.visibility ?? 0) >= 0.35 &&
-                (ptB.visibility ?? 0) >= 0.35
-              ) {
-                const style = getConnectionStyle(idxA, idxB);
-                ctx.lineWidth = style.lineWidth;
-                ctx.strokeStyle = style.strokeStyle;
-                ctx.beginPath();
-                ctx.moveTo(ptA.x, ptA.y);
-                ctx.lineTo(ptB.x, ptB.y);
-                ctx.stroke();
-              }
-            }
-
-            // 2. Draw Joint Circular Dots (Shoulders, Elbows, Wrists, Hips, Knees, Ankles, Fingers, + Head when neck)
-            const activeJointIndices = isNeckExercise
-              ? [...HEAD_JOINT_INDICES, ...BODY_JOINT_INDICES]
-              : BODY_JOINT_INDICES;
-
-            const fingerJointIndices = [17, 18, 19, 20, 21, 22];
-
-            for (const idx of activeJointIndices) {
-              const pt = renderPoints[idx];
-              if (!pt || !pt.inFrame || (pt.visibility ?? 0) < 0.35) continue;
-
-              const active = isJointActive(idx);
-              const isFinger = fingerJointIndices.includes(idx);
-              const radius = isFinger ? (active ? 4 : 2.5) : active ? 7.5 : 4.5;
-              const fillColor = active ? activeColor : '#94a3b8';
-
-              ctx.beginPath();
-              ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
-              ctx.fillStyle = fillColor;
-              ctx.fill();
-              ctx.lineWidth = active ? 2 : 1.5;
-              ctx.strokeStyle = '#ffffff';
-              ctx.stroke();
-
-              // Draw debug label if staff debug is enabled
-              if (showDebugRef.current && (idx >= 11 || isNeckExercise)) {
-                ctx.font = 'bold 11px sans-serif';
-                ctx.fillStyle = '#38bdf8';
-                ctx.fillText(`#${idx} (${pt.visibility.toFixed(2)})`, pt.x + 10, pt.y - 6);
-              }
-            }
-          }
+          // Update Decoupled Pose State for Loop B (Render Loop)
+          previousPoseStateRef.current = currentPoseStateRef.current;
+          currentPoseStateRef.current = {
+            landmarks: smoothedPose,
+            timestampMs: safeTimestampMs,
+            inFrame: true,
+          };
 
           // Rep completion audio chime, TTS & senior celebration pulse
           if (evalRes.completedReps > lastCompletedRepsRef.current) {
@@ -1608,8 +1546,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
 
           // Set & Exercise Completion Transitions (Gated by valid verified reps)
-          const targetReps = resolvedConfig.defaultPrescription?.repsPerSet || 10;
-          const totalSets = resolvedConfig.defaultPrescription?.totalSets || 3;
+          const targetReps = resolvedConfigRef.current.defaultPrescription?.repsPerSet || 10;
+          const totalSets = resolvedConfigRef.current.defaultPrescription?.totalSets || 3;
           const isSetDone = validCompletedRepsRef.current >= targetReps;
           const isExerciseDone = isSetDone && evalRes.currentSet >= totalSets;
 
@@ -1641,17 +1579,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             lastAccuracyEmitTimeRef.current = nowMs;
           }
 
-          // Meaningful Change Detection Guard:
-          // Update React State ONLY when visible UI properties actually change or periodic debug refresh
+          // UI update guard (throttled to avoid redundant state updates)
           const prevUi = lastRenderedUiValuesRef.current;
           const isRepsChanged = validCompletedRepsRef.current !== prevUi.completedReps;
           const isSetChanged = evalRes.currentSet !== prevUi.currentSet;
           const isPhaseChanged = evalRes.phase !== prevUi.repPhase;
-          const isLightingChanged = (backlightRes.isBacklightDetected || backlightRes.isSubjectDark) !== prevUi.hasLightingWarning;
-          const isDistanceStatusChanged = (evalRes.distanceStatus || 'ระยะเหมาะสม') !== prevUi.distanceStatus;
+          const isLightingChanged =
+            (backlightRes.isBacklightDetected || backlightRes.isSubjectDark) !== prevUi.hasLightingWarning;
+          const isDistanceStatusChanged =
+            (evalRes.distanceStatus || 'ระยะเหมาะสม') !== prevUi.distanceStatus;
           const isCoachingChanged = (evalRes.coachingMessageTh || '') !== prevUi.coachingMessage;
           const isReadinessChanged = (evalRes.readinessStatus || '') !== prevUi.readinessStatus;
-          const isDebugIntervalPassed = showDebugRef.current && (nowMs - lastUiUpdateMsRef.current >= 250);
+          const isDebugIntervalPassed = showDebugRef.current && nowMs - lastUiUpdateMsRef.current >= 250;
           const isFallbackIntervalPassed = nowMs - lastUiUpdateMsRef.current >= 400;
 
           const shouldUpdateUi =
@@ -1679,7 +1618,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               readinessStatus: evalRes.readinessStatus || '',
             };
 
-            const requiredJoints = getRequiredKeypointsForExercise(resolvedConfig);
+            const requiredJoints = getRequiredKeypointsForExercise(resolvedConfigRef.current);
             const avgVis =
               requiredJoints.reduce(
                 (acc, idx) => acc + (smoothedPose[idx]?.visibility ?? 0),
@@ -1708,6 +1647,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               )
             );
 
+            const strokeColor =
+              evalRes.formRating === 'error'
+                ? '#fbbf24'
+                : evalRes.formRating === 'warning'
+                  ? '#00f5d4'
+                  : '#10b981';
+
+            const shoulderWidthPct = Math.round((evalRes.shoulderWidthRatio ?? 0.28) * 100);
+            const distanceStatus = evalRes.distanceStatus || 'ระยะเหมาะสม';
+            const distanceWarning =
+              evalRes.phase === 'WAITING_FOR_FRAMING' ? evalRes.coachingMessageTh : null;
+
             setHudState({
               fps: Math.round(smoothedFpsRef.current),
               renderFps: Math.round(smoothedRenderFpsRef.current),
@@ -1727,17 +1678,314 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               lockedTargetIdx: bestIdx,
               hasLightingWarning: backlightRes.isBacklightDetected || backlightRes.isSubjectDark,
               requiredKeypointsStatus,
-              readinessReason: evalRes.blockingReason || (evalRes.phase === 'WAITING_FOR_FRAMING' ? 'รอจัดตำแหน่ง' : 'พร้อมเริ่มฝึก'),
+              readinessReason:
+                evalRes.blockingReason ||
+                (evalRes.phase === 'WAITING_FOR_FRAMING' ? 'รอจัดตำแหน่ง' : 'พร้อมเริ่มฝึก'),
               isArmClipping,
               isPlaneDegraded: Boolean(evalRes.isPlaneDegraded),
-              targetThreshold: evalRes.targetAngleDeg ?? resolvedConfig.angleMechanics?.targetMinDeg ?? 80,
+              targetThreshold:
+                evalRes.targetAngleDeg ?? resolvedConfigRef.current.angleMechanics?.targetMinDeg ?? 80,
             });
             setEvalResult(evalRes);
             setWatchdogStatus(wdStatus);
           }
+
+          isInferenceBusyRef.current = false;
+          scheduleInference();
         };
 
-        rafIdRef.current = requestAnimationFrame(detectFrame);
+        // Loop B: High-Refresh Overlay Render Loop (runs at 60-165 Hz display refresh rate)
+        const renderOverlayLoop = () => {
+          if (!isMountedRef.current) return;
+          renderRafIdRef.current = requestAnimationFrame(renderOverlayLoop);
+
+          const cEl = canvasRef.current;
+          const vEl = videoRef.current;
+          if (!cEl || !vEl || vEl.readyState < 2) return;
+
+          const nowMs = performance.now();
+
+          // 1. Measure 60-165 FPS Display Render Frame Time
+          const renderDtMs = Math.max(nowMs - lastRenderTimeRef.current, 1);
+          lastRenderTimeRef.current = nowMs;
+          smoothedRenderFpsRef.current =
+            0.9 * smoothedRenderFpsRef.current + 0.1 * (1000 / renderDtMs);
+
+          // 2. High-Refresh Ring Lerp Interpolation & Direct DOM Update
+          const targetProgress = targetProgressRef.current;
+          const currentProgress = currentAnimatedProgressRef.current;
+          const dtSec = Math.min(renderDtMs / 1000, 0.05);
+          const lerpFactor = 1 - Math.exp(-16 * dtSec);
+          const nextProgress =
+            Math.abs(targetProgress - currentProgress) < 0.0005
+              ? targetProgress
+              : currentProgress + (targetProgress - currentProgress) * lerpFactor;
+          currentAnimatedProgressRef.current = nextProgress;
+
+          if (progressCircleRef.current) {
+            const circ = 2 * Math.PI * 42;
+            const offset = circ * (1 - Math.max(0, Math.min(1, nextProgress)));
+            progressCircleRef.current.style.strokeDashoffset = `${offset}px`;
+          }
+
+          const ctx = cEl.getContext('2d');
+          if (!ctx) return;
+
+          // HiDPI DevicePixelRatio Scaling & Canvas Resolution
+          const displayW = cEl.clientWidth || vEl.clientWidth || 1280;
+          const displayH = cEl.clientHeight || vEl.clientHeight || 720;
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const targetW = Math.round(displayW * dpr);
+          const targetH = Math.round(displayH * dpr);
+
+          if (cEl.width !== targetW || cEl.height !== targetH) {
+            cEl.width = targetW;
+            cEl.height = targetH;
+          }
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+          // If user toggled "Hide Skeleton", clear canvas and skip heavy drawing
+          if (!showSkeletonRef.current) {
+            ctx.clearRect(0, 0, displayW, displayH);
+            return;
+          }
+
+          ctx.clearRect(0, 0, displayW, displayH);
+
+          // Interpolate and extrapolate landmarks for silky-smooth 60-120 FPS overlay
+          const currState = currentPoseStateRef.current;
+          const prevState = previousPoseStateRef.current;
+          const currentFitMode = fitModeRef.current;
+          const renderPoints: {
+            [idx: number]: {
+              x: number;
+              y: number;
+              visibility: number;
+              inFrame: boolean;
+              decayAlpha: number;
+            };
+          } = {};
+
+          if (currState && currState.landmarks && currState.inFrame) {
+            const currLms = currState.landmarks;
+            const prevLms = prevState?.landmarks;
+            const tCurr = currState.timestampMs;
+            const tPrev = prevState?.timestampMs ?? tCurr - 33;
+            const dtInference = Math.max(tCurr - tPrev, 10);
+            const elapsedSinceInference = Math.max(0, nowMs - tCurr);
+            // Short predictive extrapolation horizon: clamp to max 35ms
+            const predictDt = Math.min(elapsedSinceInference, 35);
+
+            currLms.forEach((lm: any, idx: number) => {
+              let normX = lm.x;
+              let normY = lm.y;
+              const vis = lm.visibility ?? 1.0;
+
+              if (prevLms && prevLms[idx] && predictDt > 0) {
+                const vx = (lm.x - prevLms[idx].x) / dtInference;
+                const vy = (lm.y - prevLms[idx].y) / dtInference;
+                normX = Math.max(-0.05, Math.min(1.05, lm.x + vx * predictDt));
+                normY = Math.max(-0.05, Math.min(1.05, lm.y + vy * predictDt));
+              }
+
+              const proj = projectLandmarkToCanvas(
+                { x: normX, y: normY, visibility: vis },
+                vEl.videoWidth || 1280,
+                vEl.videoHeight || 720,
+                displayW,
+                displayH,
+                true,
+                currentFitMode
+              );
+
+              if (proj && proj.inFrame && vis >= 0.35) {
+                const prevSmoothed = canvasSmoothedPointsRef.current[idx];
+                const alpha = 0.70;
+                let smoothX = proj.x;
+                let smoothY = proj.y;
+                if (prevSmoothed) {
+                  smoothX = prevSmoothed.x + alpha * (proj.x - prevSmoothed.x);
+                  smoothY = prevSmoothed.y + alpha * (proj.y - prevSmoothed.y);
+                }
+                canvasSmoothedPointsRef.current[idx] = {
+                  x: smoothX,
+                  y: smoothY,
+                  visibility: vis,
+                  lastSeenMs: nowMs,
+                  inFrame: true,
+                };
+                renderPoints[idx] = {
+                  x: smoothX,
+                  y: smoothY,
+                  visibility: vis,
+                  inFrame: true,
+                  decayAlpha: 1.0,
+                };
+              }
+            });
+          }
+
+          // Grace Period Decay (200 ms Hold & Fade) for momentarily lost landmarks
+          const LOST_GRACE_MS = 200;
+          for (let idx = 0; idx < 33; idx++) {
+            if (!renderPoints[idx]) {
+              const prevSmoothed = canvasSmoothedPointsRef.current[idx];
+              if (prevSmoothed) {
+                const elapsedSinceSeen = nowMs - prevSmoothed.lastSeenMs;
+                if (elapsedSinceSeen <= LOST_GRACE_MS) {
+                  const decayAlpha = Math.max(0, 1 - elapsedSinceSeen / LOST_GRACE_MS);
+                  renderPoints[idx] = {
+                    x: prevSmoothed.x,
+                    y: prevSmoothed.y,
+                    visibility: prevSmoothed.visibility * decayAlpha,
+                    inFrame: prevSmoothed.inFrame,
+                    decayAlpha,
+                  };
+                } else {
+                  delete canvasSmoothedPointsRef.current[idx];
+                }
+              }
+            }
+          }
+
+          // Active dynamic colors and styles
+          const currentEval = latestEvalResultRef.current;
+          const strokeColor =
+            currentEval?.formRating === 'error'
+              ? '#fbbf24'
+              : currentEval?.formRating === 'warning'
+                ? '#00f5d4'
+                : '#10b981';
+
+          const currentActiveSide =
+            activeSideRef.current || resolvedConfigRef.current.side || 'right';
+          const isBilateral =
+            currentActiveSide === 'bilateral' ||
+            (currentActiveSide !== 'left' &&
+              currentActiveSide !== 'right' &&
+              (resolvedConfigRef.current.side === 'bilateral' ||
+                Boolean((resolvedConfigRef.current as any).bilateral)));
+          const isNeckExercise =
+            resolvedConfigRef.current.targetJoint === 'neck' ||
+            resolvedConfigRef.current.framing === 'head_shoulders';
+
+          const activeColor = strokeColor;
+          const inactiveColor = 'rgba(148, 163, 184, 0.65)';
+          const torsoBridgeColor = 'rgba(56, 189, 248, 0.75)';
+
+          const getConnectionStyle = (idxA: number, idxB: number) => {
+            const isHeadConn =
+              (idxA === 0 || idxA === 7 || idxA === 8) &&
+              (idxB === 0 || idxB === 7 || idxB === 8 || idxB === 11 || idxB === 12);
+
+            if (isNeckExercise) {
+              if (isHeadConn) {
+                return { lineWidth: 5, strokeStyle: activeColor, isActive: true };
+              }
+              if (idxA === 11 && idxB === 12) {
+                return { lineWidth: 4, strokeStyle: torsoBridgeColor, isActive: false };
+              }
+              return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
+            }
+
+            if (isHeadConn) {
+              return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
+            }
+
+            if (isBilateral) {
+              return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
+            }
+            if ((idxA === 11 && idxB === 12) || (idxA === 23 && idxB === 24)) {
+              return { lineWidth: 4, strokeStyle: torsoBridgeColor, isActive: false };
+            }
+            const isAOdd = idxA % 2 === 1;
+            const isBOdd = idxB % 2 === 1;
+            const isLeftConn = isAOdd && isBOdd;
+            const isRightConn = !isAOdd && !isBOdd;
+
+            if (currentActiveSide === 'left' && isLeftConn) {
+              return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
+            }
+            if (currentActiveSide === 'right' && isRightConn) {
+              return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
+            }
+            return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
+          };
+
+          const isJointActive = (idx: number) => {
+            if (isNeckExercise) {
+              return idx === 0 || idx === 7 || idx === 8;
+            }
+            if (isBilateral) return true;
+            if (currentActiveSide === 'left') return idx % 2 === 1;
+            if (currentActiveSide === 'right') return idx % 2 === 0;
+            return true;
+          };
+
+          // 1. Draw Skeleton Lines (Torso, Arms, Hands, Legs, + Head when neck)
+          const activeConnections = isNeckExercise
+            ? [...HEAD_POSE_CONNECTIONS, ...POSE_CONNECTIONS]
+            : POSE_CONNECTIONS;
+
+          for (const [idxA, idxB] of activeConnections) {
+            const ptA = renderPoints[idxA];
+            const ptB = renderPoints[idxB];
+            if (
+              ptA &&
+              ptB &&
+              ptA.inFrame &&
+              ptB.inFrame &&
+              (ptA.visibility ?? 0) >= 0.35 &&
+              (ptB.visibility ?? 0) >= 0.35
+            ) {
+              const style = getConnectionStyle(idxA, idxB);
+              const lineAlpha = Math.min(ptA.decayAlpha ?? 1.0, ptB.decayAlpha ?? 1.0);
+              ctx.lineWidth = style.lineWidth;
+              ctx.strokeStyle = applyAlphaToColor(style.strokeStyle, lineAlpha);
+              ctx.beginPath();
+              ctx.moveTo(ptA.x, ptA.y);
+              ctx.lineTo(ptB.x, ptB.y);
+              ctx.stroke();
+            }
+          }
+
+          // 2. Draw Joint Circular Dots
+          const activeJointIndices = isNeckExercise
+            ? [...HEAD_JOINT_INDICES, ...BODY_JOINT_INDICES]
+            : BODY_JOINT_INDICES;
+
+          const fingerJointIndices = [17, 18, 19, 20, 21, 22];
+
+          for (const idx of activeJointIndices) {
+            const pt = renderPoints[idx];
+            if (!pt || !pt.inFrame || (pt.visibility ?? 0) < 0.35) continue;
+
+            const jointAlpha = pt.decayAlpha ?? 1.0;
+            const active = isJointActive(idx);
+            const isFinger = fingerJointIndices.includes(idx);
+            const radius = isFinger ? (active ? 4 : 2.5) : active ? 7.5 : 4.5;
+            const fillColor = active ? activeColor : '#94a3b8';
+
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = applyAlphaToColor(fillColor, jointAlpha);
+            ctx.fill();
+            ctx.lineWidth = active ? 2 : 1.5;
+            ctx.strokeStyle = applyAlphaToColor('#ffffff', jointAlpha);
+            ctx.stroke();
+
+            // Draw debug label if staff debug is enabled
+            if (showDebugRef.current && (idx >= 11 || isNeckExercise)) {
+              ctx.font = 'bold 11px sans-serif';
+              ctx.fillStyle = applyAlphaToColor('#38bdf8', jointAlpha);
+              ctx.fillText(`#${idx} (${pt.visibility.toFixed(2)})`, pt.x + 10, pt.y - 6);
+            }
+          }
+        };
+
+        // Start both decoupled loops simultaneously
+        scheduleInference();
+        renderRafIdRef.current = requestAnimationFrame(renderOverlayLoop);
       } catch (err: any) {
         if (!isMountedRef.current) return;
         console.error('[PoseEngine] Session boot error:', err);
@@ -1757,7 +2005,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       cleanupResources();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cleanupResources, playRepChime, speakThai, resolvedConfig.framing]);
+  }, [cleanupResources, playRepChime, speakThai]);
 
   const handleNextSet = useCallback(() => {
     setIsResting(false);
