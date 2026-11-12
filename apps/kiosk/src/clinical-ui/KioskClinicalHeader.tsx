@@ -6,13 +6,10 @@
 import React, { useState } from 'react';
 import {
   HeartPulse,
-  Shield,
-  Wifi,
-  PhoneCall,
 } from 'lucide-react';
 import { StaffLoginModal } from '../../../admin/src/clinical-ui/StaffLoginModal';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
-import { LanguageSwitcher, useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
+import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 
 interface KioskClinicalHeaderProps {
   kioskId?: string;

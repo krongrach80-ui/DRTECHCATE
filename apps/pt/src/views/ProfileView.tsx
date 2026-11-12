@@ -34,7 +34,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onProfileUpdated,
   onNavigateToTab,
 }) => {
-  const { lang, t } = useClinicalI18n();
+  const { lang } = useClinicalI18n();
   const isEn = lang === 'en-US';
   const isZh = lang === 'zh-CN';
 
@@ -75,7 +75,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setFormData(nextData);
       setAvatarCacheBuster(Date.now());
     }
-  }, [currentUser?.id]);
+  }, [currentUser]);
 
   // Track unsaved form changes (dirty state)
   const isDirty =

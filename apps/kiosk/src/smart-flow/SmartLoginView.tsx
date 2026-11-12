@@ -692,6 +692,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     name: string;
     score: number;
   } | null>(null);
+  const ambiguousCandidateRef = useRef<{
+    id: string;
+    hn: string;
+    name: string;
+    score: number;
+  } | null>(null);
   const [matchedPatient, setMatchedPatient] = useState<PatientRecordFile | null>(null);
   const [identityAnchor, setIdentityAnchor] = useState<SpatialIdentityAnchor | null>(null);
   const [similarityInfo, setSimilarityInfo] = useState<{ percent: number; distance: number } | null>(null);
@@ -1560,6 +1566,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           setIsScanning(false);
           setMatchedPatient(null);
           setAmbiguousCandidate(null);
+          ambiguousCandidateRef.current = null;
           setUnrecognizedAlert(
             lang === 'zh-CN'
               ? '未找到系统有效账户，该就诊人档案可能已在医院系统中被注销或删除。'
@@ -1583,6 +1590,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
         setUnrecognizedAlert(null);
         setAmbiguousCandidate(null);
+        ambiguousCandidateRef.current = null;
         setMatchedPatient(authoritativePatient);
         setSimilarityInfo({
           percent: finalPercent,
@@ -1632,6 +1640,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
         if (isCandidateLive) {
           setUnrecognizedAlert(null);
+          ambiguousCandidateRef.current = {
+            id: cId,
+            hn: cHn,
+            name: cName,
+            score: Math.min(98, effectiveScore),
+          };
           setAmbiguousCandidate({
             id: cId,
             hn: cHn,
@@ -1640,10 +1654,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           });
           setStatusText(
             lang === 'zh-CN'
-              ? `匹配度 ${effectiveScore}%（需PIN验证）：${cName}`
+              ? '检测到相似度处于复核区间，请输入PIN码以验证身份'
               : lang === 'en-US'
-              ? `Similarity ${effectiveScore}% (PIN Required): ${cName}`
-              : `ความแม่นยำ ${effectiveScore}% (ก้ำกึ่ง) กรุณายืนยัน PIN: คุณ ${cName}`
+              ? 'Borderline match detected. Please enter your PIN to verify identity'
+              : 'ระบบตรวจพบความคล้ายคลึงก้ำกึ่ง กรุณากรอกรหัส PIN เพื่อยืนยันตัวตน'
           );
           return;
         } else {
@@ -1655,6 +1669,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       // Case C: Below threshold / Impostor / Stranger (< 50% or unmatched): Failure path
       setMatchedPatient(null);
       setAmbiguousCandidate(null);
+      ambiguousCandidateRef.current = null;
       scanFailureCountRef.current++;
       const now = Date.now();
       failedScanTimestampsRef.current.push(now);
@@ -2586,6 +2601,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setIsAccountNotFound(false);
     consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
     setAmbiguousCandidate(null);
+    ambiguousCandidateRef.current = null;
     setMatchedPatient(null);
     setLivenessResult(null);
     setSimilarityInfo(null);
@@ -2620,7 +2636,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     const pin = enteredPin.trim();
     if (!pin) return;
 
-    const candHn = ambiguousCandidate?.hn || undefined;
+    const candHn = ambiguousCandidateRef.current?.hn || ambiguousCandidate?.hn || undefined;
 
     try {
       const pinRes = await defaultApiClient.smartOnboarding.pinLogin({
@@ -2630,7 +2646,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       });
       if (pinRes?.matched && pinRes.patient) {
         setAmbiguousCandidate(null);
-        setStatusText('เข้าสู่ระบบสำเร็จ พร้อมอัปเดตข้อมูลชีวมาตรใบหน้าล่าสุด (Auto-Healed)');
+        ambiguousCandidateRef.current = null;
+        setStatusText(
+          lang === 'zh-CN'
+            ? '登入成功，已同步更新最新面部特征'
+            : lang === 'en-US'
+            ? 'Sign in successful. Biometric features updated.'
+            : 'เข้าสู่ระบบสำเร็จ พร้อมอัปเดตข้อมูลชีวมาตรใบหน้าล่าสุด (Auto-Healed)'
+        );
         const norm = normalizePatientRecord(pinRes.patient);
         setIsTransitioning(true);
         setTimeout(() => {
@@ -2640,7 +2663,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       }
     } catch {}
 
-    setUnrecognizedAlert(`ไม่พบข้อมูลผู้ป่วยสำหรับรหัส "${pin}" (กรุณาตรวจสอบรหัส PIN หรือลงทะเบียนคนไข้ใหม่)`);
+    ambiguousCandidateRef.current = null;
+    setUnrecognizedAlert(
+      lang === 'zh-CN'
+        ? `未找到密码 "${pin}" 对应的有效档案（请核对PIN码或联系医护人员协助办理）`
+        : lang === 'en-US'
+        ? `No patient record matched PIN "${pin}". Please verify your PIN or contact staff.`
+        : `ไม่พบข้อมูลผู้ป่วยสำหรับรหัส "${pin}" (กรุณาตรวจสอบรหัส PIN หรือลงทะเบียนคนไข้ใหม่)`
+    );
   };
 
   const handlePinKey = (digit: string) => {
@@ -3053,7 +3083,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           <div className="w-full max-w-sm rounded-3xl bg-white border border-emerald-500/30 p-6 text-center shadow-2xl relative animate-scale-up">
             <button
               type="button"
-              onClick={() => setIsPinModalOpen(false)}
+              onClick={() => {
+                setIsPinModalOpen(false);
+                ambiguousCandidateRef.current = null;
+              }}
               className="absolute top-4 right-4 p-1.5 rounded-full text-slate-400 hover:text-slate-700 bg-slate-100 transition cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -3062,8 +3095,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto mb-2 text-xl font-bold">
               🔑
             </div>
-            <h3 className="text-lg font-bold text-slate-800">ยืนยันตัวตนด้วยรหัส PIN</h3>
-            <p className="text-xs text-slate-500 mt-0.5">กรอกรหัส PIN 4 หลักประจำตัวผู้ป่วยเพื่อเริ่มฝึก</p>
+            <h3 className="text-lg font-bold text-slate-800">
+              {lang === 'zh-CN' ? 'PIN码身份验证' : lang === 'en-US' ? 'Verify Identity with PIN' : 'ยืนยันตัวตนด้วยรหัส PIN'}
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {lang === 'zh-CN' ? '请输入就诊患者的4位PIN码以开始训练' : lang === 'en-US' ? 'Enter 4-digit patient PIN to begin' : 'กรอกรหัส PIN 4 หลักประจำตัวผู้ป่วยเพื่อเริ่มฝึก'}
+            </p>
 
             <div className="flex justify-center gap-3 my-5">
               {[0, 1, 2, 3].map((idx) => (
@@ -3268,24 +3305,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             <h3 className="text-xl font-bold text-slate-900">
               {lang === 'zh-CN' ? '需进一步身份验证' : lang === 'en-US' ? 'Additional Verification Required' : '🔐 ยืนยันตัวตนเพิ่มเติม'}
             </h3>
-            <div className="mt-2 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-left">
-              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-                {lang === 'zh-CN' ? '匹配患者' : lang === 'en-US' ? 'Candidate Patient' : 'ข้อมูลคนไข้ที่ตรวจพบ'}
-              </div>
-              <div className="text-base font-extrabold text-slate-900 mt-0.5">
-                คุณ {ambiguousCandidate.name}
-              </div>
-              <div className="text-xs text-slate-500 font-mono">
-                HN: @{ambiguousCandidate.hn}
-              </div>
+            {/* Neutral Privacy Message: NO name, NO HN, NO percentage leak */}
+            <div className="mt-3 p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-center">
+              <p className="text-sm text-slate-700 leading-relaxed font-medium">
+                {lang === 'zh-CN'
+                  ? '系统检测到面部特征处于复核区间。为保障就诊隐私与安全，请点击下方输入4位PIN码以验证登入。'
+                  : lang === 'en-US'
+                  ? 'Borderline similarity detected. For patient privacy and safety, please enter your 4-digit PIN to verify and sign in.'
+                  : 'ระบบตรวจพบความคล้ายคลึงก้ำกึ่ง เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณากรอกรหัส PIN 4 หลักเพื่อเข้าสู่ระบบ'}
+              </p>
+              {/* Show similarity % ONLY in Staff Mode or Debug HUD */}
+              {isCalibrationOpen && (
+                <div className="mt-2 text-xs font-mono text-amber-800 bg-amber-100/80 rounded-lg px-2.5 py-1 inline-block border border-amber-300">
+                  [Staff/Debug HUD] Similarity: {ambiguousCandidate.score}%
+                </div>
+              )}
             </div>
-            <p className="text-xs text-slate-600 mt-3 leading-relaxed">
-              {lang === 'zh-CN'
-                ? `面部相似度为 ${ambiguousCandidate.score}%（处于临床复核区间）。为保障医疗隐私与安全，请点击下方输入4位PIN码以完成登入。`
-                : lang === 'en-US'
-                ? `Face similarity is ${ambiguousCandidate.score}% (Clinical borderline). For patient safety, please enter your 4-digit PIN to sign in.`
-                : `ความแม่นยำผลสแกนใบหน้า ${ambiguousCandidate.score}% (ก้ำกึ่ง) เพื่อความปลอดภัยทางคลินิก กรุณากรอกรหัส PIN 4 หลักเพื่อเข้าสู่ระบบ`}
-            </p>
 
             <div className="mt-5 flex flex-col gap-2.5">
               <button
@@ -3307,6 +3342,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 data-testid="kiosk-candidate-retry-btn"
                 onClick={() => {
                   setAmbiguousCandidate(null);
+          ambiguousCandidateRef.current = null;
                   handleResetScan();
                 }}
                 className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs active:scale-95 transition cursor-pointer flex items-center justify-center gap-1.5"
@@ -3318,6 +3354,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                 type="button"
                 onClick={() => {
                   setAmbiguousCandidate(null);
+          ambiguousCandidateRef.current = null;
                   if (onStaffAssistedRegister) {
                     onStaffAssistedRegister(pendingRegistrationBiometricsRef.current);
                   } else if (onOpenStaffLoginModal) {

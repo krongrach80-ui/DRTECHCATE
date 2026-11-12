@@ -9,7 +9,6 @@ import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import { PatientRecordFile } from '../../../../packages/smart-biometric-core/src/index.js';
 import {
   CheckCircle2,
-  Trophy,
   Activity,
   ArrowRight,
   LogOut,
@@ -21,7 +20,6 @@ import {
   Gamepad2 as _Gamepad2,
   PhoneCall,
   AlertTriangle,
-  Hand,
   Sparkles,
   KeyRound,
   ShieldAlert,
@@ -47,6 +45,27 @@ import {
   OverrideReason,
 } from '../components/StaffExerciseOverrideModal';
 
+// Elderly-Friendly Kiosk Ergonomic Typography (~1.4-1.6x Scale) & High-Contrast Side Highlight
+const KIOSK_GESTURE_DESC_CLASS = 'text-base sm:text-2xl text-slate-800 font-medium leading-relaxed';
+const KIOSK_GESTURE_STATUS_CLASS = 'text-sm sm:text-xl text-slate-700 font-semibold';
+const KIOSK_GESTURE_SIDE_HIGHLIGHT = 'font-black text-blue-700';
+
+const renderHighlightedStatus = (msg: string) => {
+  if (!msg) return null;
+  const regex = /(ทั้งสองข้าง|2 มือ|มือซ้าย|มือขวา|ซ้าย|ขวา|RIGHT|LEFT|BOTH|右手|左手|双手)/i;
+  const parts = msg.split(regex);
+  return parts.map((part, idx) => {
+    if (regex.test(part)) {
+      return (
+        <strong key={idx} className={KIOSK_GESTURE_SIDE_HIGHLIGHT}>
+          {part}
+        </strong>
+      );
+    }
+    return part;
+  });
+};
+
 interface SmartDailyPlanViewProps {
   patient: PatientRecordFile;
   onLogout: () => void;
@@ -60,7 +79,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [isScheduledToday, setIsScheduledToday] = useState(false);
   const [isCompletedToday, setIsCompletedToday] = useState(false);
-  const [restReason, setRestReason] = useState<string>('');
+  const [, setRestReason] = useState<string>('');
   const [exercises, setExercises] = useState<any[]>([]);
   const [includeMinigame, setIncludeMinigame] = useState(false);
   const [callStaffStatus, setCallStaffStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
@@ -90,7 +109,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   }, [isPlayingQuiz]);
   const isInitialLoadRef = useRef(true);
   const [_quizQuestionIndex, _setQuizQuestionIndex] = useState(0);
-  const [quizScore, _setQuizScore] = useState(0);
+  const [, _setQuizScore] = useState(0);
 
   // Final session completed state
   const [isSessionCompleted, setIsSessionCompleted] = useState(false);
@@ -135,6 +154,10 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
   ];
 
   // Fetch daily plan (with realtime event integration)
+  // Primitive copies so loadPlan depends on values, not on a new patient object per render
+  const patientAltId = (patient as any).id as string | undefined;
+  const patientTargetJoint = (patient as any).target_joint as string | undefined;
+
   const loadPlan = useCallback(async () => {
     if (activeSessionRef.current || isPlayingQuizRef.current) return;
     try {
@@ -142,7 +165,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         setLoading(true);
       }
       setLoadError(null);
-      const targetId = patient.patient_id || patient.hn || (patient as any).id || '';
+      const targetId = patient.patient_id || patient.hn || patientAltId || '';
       const res = await defaultApiClient.smartOnboarding.getDailyPlan(targetId);
       if (!isMountedRef.current) return;
 
@@ -181,7 +204,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
           name_th: ex.name_th || ex.name || 'ท่ากายภาพบำบัด',
           name_en: ex.name_en || ex.name || 'Physical Therapy Exercise',
           name_cn: ex.name_cn || ex.name || '康复动作',
-          target_joint: ex.target_joint || (patient as any).target_joint || 'general',
+          target_joint: ex.target_joint || patientTargetJoint || 'general',
           sets: Number(ex.sets) || 3,
           reps: Number(ex.reps) || 10,
           side: ex.side || 'both',
@@ -204,7 +227,7 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
         setLoading(false);
       }
     }
-  }, [patient.patient_id, patient.hn]);
+  }, [patient.patient_id, patient.hn, patientAltId, patientTargetJoint]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -574,37 +597,6 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     return () => clearInterval(timer);
   }, [isSessionCompleted, isCompletedToday, onLogout]);
 
-  // Helper for localized rest reason description
-  const getLocalizedRestReason = (reason: string, currentLang: string) => {
-    switch (reason) {
-      case 'not_scheduled_today':
-        return currentLang === 'zh-CN'
-          ? '今日无预约康复训练安排，请好好休息。'
-          : currentLang === 'en-US'
-          ? 'No physical therapy session scheduled for you today. Please feel free to rest.'
-          : 'วันนี้ไม่มีนัดหมายในตารางฝึกกายภาพบำบัดของคุณ เชิญพักผ่อนตามอัธยาศัยครับ';
-      case 'archived_or_suspended':
-        return currentLang === 'zh-CN'
-          ? '您的账户处于暂停或归档状态，请联系医护人员'
-          : currentLang === 'en-US'
-          ? 'Your account is paused or archived. Please contact hospital staff.'
-          : 'บัญชีของคุณอยู่ระหว่างระงับหรือพักการรักษา กรุณาติดต่อเจ้าหน้าที่';
-      case 'no_plan_found':
-        return currentLang === 'zh-CN'
-          ? '未找到今日训练方案，请联系医护人员'
-          : currentLang === 'en-US'
-          ? 'No rehabilitation schedule found. Please contact staff.'
-          : 'ไม่พบข้อมูลตารางฝึกประจำวันนี้ กรุณาติดต่อเจ้าหน้าที่';
-      case 'rest_day_default':
-      default:
-        return currentLang === 'zh-CN'
-          ? '今日是您的休息日，暂无训练安排'
-          : currentLang === 'en-US'
-          ? 'Today is your scheduled rest day'
-          : 'วันนี้เป็นวันพักผ่อนของคุณ หรือไม่มีรายการฝึกกายภาพสำหรับวันนี้';
-    }
-  };
-
   // Compute Next Appointment Date String
   const nextApptDateStr = React.useMemo(() => {
     const nextDate = dailyPlanResponse?.next_appointment_date;
@@ -651,12 +643,9 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
     holdProgress,
     detectedSide,
     secondsLeft,
-    attemptCount,
-    showFailureHelp,
     isCameraActive,
     statusMessage,
     videoRef,
-    handleRetry,
     handleStaffOverride: _handleStaffOverride,
   } = useTouchlessGestureStarter({
     enabled: isGestureStarterEnabled,
@@ -1158,14 +1147,22 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             </h1>
 
             {/* Clear Ergonomic Instruction */}
-            <p className="text-sm sm:text-base text-slate-700 font-medium leading-relaxed flex items-center gap-2">
-              <span className="text-xl">🙌</span>
-              <span>
-                {lang === 'zh-CN'
-                  ? `举起${isTargetLeft ? '左' : '右'}手保持 0.6 秒以开始训练，或轻触下方按钮开始`
-                  : lang === 'en-US'
-                  ? `Raise your ${isTargetLeft ? 'left' : 'right'} hand and hold for 0.6s to start, or tap the button below`
-                  : `ยกมือ${isTargetLeft ? 'ซ้าย' : 'ขวา'}ค้างไว้ 0.6 วินาทีเพื่อเริ่มฝึก หรือแตะปุ่ม "เริ่มฝึกท่านี้ทันที" ด้านล่าง`}
+            <p className={`${KIOSK_GESTURE_DESC_CLASS} flex items-start gap-2.5`}>
+              <span className="text-2xl sm:text-3xl shrink-0">🙌</span>
+              <span className="flex-1">
+                {lang === 'zh-CN' ? (
+                  <>
+                    举起<strong className={KIOSK_GESTURE_SIDE_HIGHLIGHT}>{targetSide === 'left' ? '左' : targetSide === 'right' ? '右' : '双'}</strong>手保持 0.6 秒以开始训练，或轻触下方按钮开始
+                  </>
+                ) : lang === 'en-US' ? (
+                  <>
+                    Raise your <strong className={KIOSK_GESTURE_SIDE_HIGHLIGHT}>{targetSide === 'left' ? 'left' : targetSide === 'right' ? 'right' : 'both'}</strong> hand and hold for 0.6s to start, or tap the button below
+                  </>
+                ) : (
+                  <>
+                    ยกมือ<strong className={KIOSK_GESTURE_SIDE_HIGHLIGHT}>{targetSide === 'left' ? 'ซ้าย' : targetSide === 'right' ? 'ขวา' : 'ทั้งสองข้าง'}</strong>ค้างไว้ 0.6 วินาทีเพื่อเริ่มฝึก หรือแตะปุ่ม "เริ่มฝึกท่านี้ทันที" ด้านล่าง
+                  </>
+                )}
               </span>
             </p>
 
@@ -1178,12 +1175,14 @@ export const SmartDailyPlanView: React.FC<SmartDailyPlanViewProps> = ({
             </div>
 
             {/* Real-time Status Caption */}
-            <div className="flex items-center justify-between text-xs sm:text-sm text-slate-600 px-1 font-semibold">
+            <div className={`flex items-center justify-between px-1 ${KIOSK_GESTURE_STATUS_CLASS}`}>
               <span>
-                {statusMessage ||
-                  (detectedSide
-                    ? `ตรวจพบ: ${detectedSide === 'both' ? '2 มือ' : detectedSide === 'left' ? 'มือซ้าย' : 'มือขวา'}`
-                    : `กำลังรอยกมือ${isTargetLeft ? 'ซ้าย' : 'ขวา'}...`)}
+                {renderHighlightedStatus(
+                  statusMessage ||
+                    (detectedSide
+                      ? `ตรวจพบ: ${detectedSide === 'both' ? '2 มือ' : detectedSide === 'left' ? 'มือซ้าย' : 'มือขวา'}`
+                      : `กำลังรอยกมือ${targetSide === 'left' ? 'ซ้าย' : targetSide === 'right' ? 'ขวา' : 'ทั้งสองข้าง'}...`)
+                )}
               </span>
               <span className="font-mono font-extrabold text-blue-700">
                 {Math.round(holdProgress * 100)}%

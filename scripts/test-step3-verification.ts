@@ -6,9 +6,6 @@
 import {
   evaluateBiometricMatch,
   cosineSimilarity,
-  euclideanDistance,
-  l2Normalize,
-  calibrateCosineSimilarity,
 } from '../packages/smart-biometric-core/src/vectorMath';
 import { BIOMETRIC_CONFIG } from '../packages/smart-biometric-core/src/biometricConfig';
 import { FastLoginLivenessVerifier } from '../packages/face-client/src/liveness';

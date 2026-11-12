@@ -182,7 +182,7 @@ export function useRaiseBothHandsConfirm({
   onConfirm,
   config,
 }: UseRaiseBothHandsConfirmProps): UseRaiseBothHandsConfirmReturn {
-  const [progress, setProgress] = useState<number>(0.0);
+  const [, setProgress] = useState<number>(0.0);
   const [status, setStatus] = useState<RaiseBothHandsStatus>('searching');
   const [thaiMessage, setThaiMessage] = useState<string>(
     '👀 กำลังมองหามือของคุณ... ยก 2 มือชูขึ้นเหนือไหล่เพื่อเริ่ม'

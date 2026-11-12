@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { isUsableCamera, selectOptimalCamera, KIOSK_CAMERA_STORAGE_KEY } from '../smart-flow/SmartLoginView';
+import { isUsableCamera, selectOptimalCamera } from '../smart-flow/SmartLoginView';
 import { CameraManager } from '../../../../packages/face-client/src/index.js';
 
 describe('Kiosk Camera Selection & Exposure Standardization', () => {

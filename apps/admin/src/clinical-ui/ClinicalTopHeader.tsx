@@ -9,7 +9,6 @@ import {
   Zap,
   LogOut,
   ShieldCheck,
-  User,
   Menu,
   Monitor,
 } from 'lucide-react';

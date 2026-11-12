@@ -28,13 +28,11 @@ import {
 } from './PhysicalCardGameData.js';
 import { PhysicalCardVisual } from './PhysicalCardVisuals.js';
 import {
-  HAND_ANSWER_MAP,
   MinigameHandEvaluation,
   MinigameFrameResult,
   evaluateMinigameFrame,
   drawAllMinigameHands,
   interpolateHands,
-  HandLandmarkPoint,
 } from './HandGestureVerifier.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
@@ -166,7 +164,6 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const targetActiveHandRef = useRef<MinigameHandEvaluation | null>(null);
   const currentDwellProgressRef = useRef<number>(0);
   const isBothHandsWarningRef = useRef<boolean>(false);
-  const rafIdRef = useRef<number>(0);
   const rollingLatencyRef = useRef<number>(35);
   const [showStaffDebug, setShowStaffDebug] = useState<boolean>(false);
   const [staffMetrics, setStaffMetrics] = useState<{ fps: number; inferMs: number; latencyMs: number }>({
@@ -1027,17 +1024,20 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
     animFrame = requestAnimationFrame(frameLoop);
 
+    // Capture the elements this effect run used so cleanup acts on the same nodes
+    const videoEl = videoRef.current as any;
+    const overlayCanvasEl = overlayCanvasRef.current;
+
     return () => {
       isLoopRunning = false;
       cancelAnimationFrame(animFrame);
-      const v = videoRef.current as any;
-      if (rvfcId !== null && v && typeof v.cancelVideoFrameCallback === 'function') {
-        v.cancelVideoFrameCallback(rvfcId);
+      if (rvfcId !== null && videoEl && typeof videoEl.cancelVideoFrameCallback === 'function') {
+        videoEl.cancelVideoFrameCallback(rvfcId);
       }
       resetProgressDom();
-      if (overlayCanvasRef.current) {
-        const ctx = overlayCanvasRef.current.getContext('2d');
-        if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+      if (overlayCanvasEl) {
+        const ctx = overlayCanvasEl.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, overlayCanvasEl.width, overlayCanvasEl.height);
       }
     };
   }, [cameraActive, isGameOver, answerState, isMirrored, t]);

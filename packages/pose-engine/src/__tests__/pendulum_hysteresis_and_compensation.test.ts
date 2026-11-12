@@ -10,7 +10,7 @@
  * 5. One Euro Filter Jitter Suppression & Backlight Compensation Engine
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { ShoulderPendulumAnalyzer } from '../math/pendulumAnalyzer';
 import { RepStateMachine } from '../engine/repStateMachine';
 import { SHOULDER_PENDULUM_PRESET } from '../presets/shoulderPendulumPreset';
@@ -52,11 +52,6 @@ function createLandmarks(overrides: Partial<Record<number, Partial<PoseEngineLan
 }
 
 describe('Clinical-Grade Pose Detection & Rep Counting Overhaul', () => {
-  let analyzer: ShoulderPendulumAnalyzer;
-
-  beforeEach(() => {
-    analyzer = new ShoulderPendulumAnalyzer();
-  });
 
   // TEST 1: 10 Real Pendulum Reps (Left & Right Arm)
   it('Test 1: Counts exactly 10/10 reps for valid pendulum swings on Right and Left arms', () => {

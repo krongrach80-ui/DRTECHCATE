@@ -9,7 +9,7 @@ export const AdminApp: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
-  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [, setLogoutError] = useState<string | null>(null);
 
   // Check auth session on load
   const checkSession = async () => {

@@ -177,12 +177,9 @@ describe('Step 3 Verification: 9 Performance and Behavioral Tests', () => {
 
   // Test 6: Circuit Breaker on EventSource (prevents 2,000+ console errors)
   it('6. defaultApiClient.connectEvents has a circuit breaker after consecutive connection errors', () => {
-    let mockErrorCalls = 0;
     const unsub = defaultApiClient.connectEvents(
       () => {},
-      () => {
-        mockErrorCalls++;
-      }
+      () => {}
     );
     expect(typeof unsub).toBe('function');
     unsub();

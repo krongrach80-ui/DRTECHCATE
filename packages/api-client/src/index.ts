@@ -1011,7 +1011,6 @@ export class ApiClient {
         const urlParams = new URLSearchParams(qs);
         const targetHn = (urlParams.get('hn') || '').trim();
         const targetName = (urlParams.get('full_name') || urlParams.get('name') || '').trim().toLowerCase();
-        const targetDob = (urlParams.get('birth_date') || '').trim();
 
         let duplicateHn = false;
         let duplicateNameDob = false;
@@ -2430,7 +2429,6 @@ export class ApiClient {
         // Sort scored candidates descending by raw cosine similarity
         scoredPatients.sort((a, b) => b.rawCos - a.rawCos);
         const top1 = scoredPatients[0] || null;
-        const top2 = scoredPatients[1] || null;
         const isSingleUserInDb = livePatientsMap.size === 1;
 
         if (top1) {

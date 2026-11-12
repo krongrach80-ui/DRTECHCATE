@@ -33,7 +33,6 @@ import {
   calculateAngle2D,
   normalizeLandmarksDepth,
   calculatePlaneOfElevation,
-  PlaneOfElevationResult,
 } from '../math/geometry3d';
 import { PoseSkeletonFilter } from '../math/filters';
 import { ShoulderPendulumAnalyzer } from '../math/pendulumAnalyzer';

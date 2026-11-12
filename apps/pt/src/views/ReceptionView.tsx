@@ -29,7 +29,7 @@ import {
   isPatientVisibleToPt,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
-import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
+
 
 interface ReceptionViewProps {
   staffCalls: StaffCallRecord[];
@@ -97,8 +97,6 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
     phone: '',
     injury: '',
   });
-
-  const { lang, t } = useClinicalI18n();
 
   const fetchData = async () => {
     try {

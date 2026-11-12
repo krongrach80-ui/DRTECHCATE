@@ -22,7 +22,6 @@ import {
   isPatientVisibleToPt,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
-import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 import {
   ClinicalExecutiveDashboardModal,
   HistoricalSessionMetric,
@@ -83,7 +82,6 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
   initialPatientId,
   currentUserId,
 }) => {
-  const { lang, t } = useClinicalI18n();
   const [patients, setPatients] = useState<PatientRecord[]>(DEMO_PATIENTS);
   const [caseTransfers, setCaseTransfers] = useState<CaseTransferRecord[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string>(initialPatientId || (DEMO_PATIENTS[0]?.id || ''));

@@ -319,7 +319,6 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
   onSuccess,
   staffUser,
   initialBiometrics,
-  mode = 'kiosk',
   existingPatient,
 }) => {
   const effectiveStaffUser = staffUser || defaultApiClient.getUserProfile() || undefined;
@@ -605,15 +604,20 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     }
   };
 
+  // Primitive copies so the effect depends on values, not on a new object identity per render
+  const existingPatientId = existingPatient?.id;
+  const existingPatientHn = existingPatient?.hn;
+  const existingPatientName = existingPatient?.name;
+
   // Generate automatic HN & seed initial biometrics on modal open
   useEffect(() => {
     if (isOpen) {
-      if (existingPatient) {
+      if (existingPatientId) {
         setStep(2);
-        setCreatedPatientId(existingPatient.id);
-        createdPatientIdRef.current = existingPatient.id;
-        setHn(existingPatient.hn);
-        setName(existingPatient.name);
+        setCreatedPatientId(existingPatientId);
+        createdPatientIdRef.current = existingPatientId;
+        setHn(existingPatientHn ?? '');
+        setName(existingPatientName ?? '');
         isSubmittingRef.current = false;
         setErrorMsg(null);
         setCameraError(null);
@@ -727,7 +731,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
     } else {
       stopCamera();
     }
-  }, [isOpen, initialBiometrics]);
+  }, [isOpen, initialBiometrics, existingPatientId, existingPatientHn, existingPatientName]);
 
   const handleImmediateNavigate = useCallback((action: 'course' | 'list') => {
     if (hasNavigatedRef.current) return;

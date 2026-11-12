@@ -11,7 +11,7 @@ describe('Staff Creation RPC Signature & Fallback Suite', () => {
 
   it('omits p_caller_id by default to match public.admin_create_staff_account signature', async () => {
     let rpcCalled = false;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init?: any) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init?: any) => {
       const urlStr = String(url);
       if (urlStr.includes('/api/staff') || urlStr.endsWith('/staff')) {
         // Backend server offline/404 -> triggers direct Supabase RPC fallback

@@ -31,7 +31,6 @@ import { VoiceFeedbackController } from '../../../../packages/hospital-ui-kit/sr
 import { BacklightCompensator } from '../../../../packages/pose-engine/src/backlightCompensator';
 import { ClinicalOneEuroLandmarkFilter } from '../../../../packages/pose-engine/src/math/oneEuroFilter';
 import {
-  selectPrimarySubjectPose,
   selectSubjectPoseWithIdentity,
   NormalizedBox,
 } from '../../../../packages/pose-engine/src/subjectLock';
@@ -45,15 +44,12 @@ import {
   ArrowRight,
   ArrowLeft,
   ShieldAlert,
-  ShieldCheck,
   AlertTriangle,
   KeyRound,
   Settings,
   Globe,
   Check,
   X,
-  PhoneCall,
-  RefreshCw,
 } from 'lucide-react';
 import { useClinicalI18n, LANGUAGE_OPTIONS } from '../../../../packages/clinical-i18n/src/index';
 
@@ -436,8 +432,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     new ClinicalOneEuroLandmarkFilter({ minCutoff: 1.2, beta: 0.04 })
   );
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const consecutiveLowFpsFramesRef = useRef<number>(0);
-  const currentModelVariantRef = useRef<'full' | 'lite'>('full');
 
   // Loop & Timing Control Refs
   const rafIdRef = useRef<number | null>(null);
@@ -455,8 +449,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   // Dynamic States
   const [cameraStatus, setCameraStatus] = useState<'initializing' | 'ready' | 'error'>('initializing');
   const [modelStatus, setModelStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [cameraDimensions, setCameraDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
-  const [modelDelegate, setModelDelegate] = useState<'GPU' | 'CPU'>('GPU');
+  const [, setCameraDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [, setModelDelegate] = useState<'GPU' | 'CPU'>('GPU');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const initialSide: BodySide =
@@ -515,7 +509,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     step: number;
     current: number;
   }>({ supported: false, min: 1, max: 1, step: 0.1, current: 1 });
-  const [fitMode, setFitMode] = useState<'contain' | 'cover'>('cover');
+  const [fitMode, setFitMode] = useState<'contain' | 'cover'>('contain');
   const [boostLighting, setBoostLighting] = useState<boolean>(false);
   const [showGuideSilhouette, setShowGuideSilhouette] = useState<boolean>(true);
   const [replayVideoSrc, setReplayVideoSrc] = useState<string | null>(() => {
@@ -723,9 +717,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const validCompletedRepsRef = useRef<number>(0);
 
   // Auto-pause modal when verification fails > 20s
-  const [showIdentityFailureModal, setShowIdentityFailureModal] = useState<boolean>(false);
+  const [, setShowIdentityFailureModal] = useState<boolean>(false);
   // Blocking modal when patient has no enrolled face template in system (Choice A)
-  const [showNoTemplateModal, setShowNoTemplateModal] = useState<boolean>(false);
+  const [, setShowNoTemplateModal] = useState<boolean>(false);
 
   // Pre-session check: Ensure patient has face template enrolled (Choice A)
   useEffect(() => {
@@ -985,13 +979,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           videoEl.muted = true;
           videoEl.playsInline = true;
         } else {
-          // 1. Initialize Webcam Stream (1280x720)
+          // 1. Initialize Webcam Stream (1280x720, 16:9 widescreen)
           let stream: MediaStream;
           try {
             stream = await navigator.mediaDevices.getUserMedia({
               video: {
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
+                aspectRatio: { ideal: 16 / 9 },
                 facingMode: 'user',
               },
               audio: false,
@@ -1012,6 +1007,20 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           videoEl.srcObject = stream;
           videoEl.muted = true;
           videoEl.playsInline = true;
+
+          // Immediately enforce minimum hardware zoom (widest FOV without crop) to clear any residual zoom
+          const initialVideoTrack = stream.getVideoTracks()[0];
+          if (initialVideoTrack && typeof initialVideoTrack.getCapabilities === 'function') {
+            try {
+              const caps: any = initialVideoTrack.getCapabilities();
+              if (caps && 'zoom' in caps && typeof caps.zoom === 'object') {
+                const minZoom = Number(caps.zoom.min ?? 1);
+                await initialVideoTrack.applyConstraints({
+                  advanced: [{ zoom: minZoom } as any],
+                });
+              }
+            } catch {}
+          }
 
           // Attempt hardware exposure compensation for backlight
           backlightCompensatorRef.current.applyHardwareExposure(stream);
@@ -1692,10 +1701,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
             const isArmClipping = Boolean(
               smoothedPose && (
-                (smoothedPose[13] && (smoothedPose[13].x < 0.03 || smoothedPose[13].x > 0.97 || smoothedPose[13].y < 0.03)) ||
-                (smoothedPose[14] && (smoothedPose[14].x < 0.03 || smoothedPose[14].x > 0.97 || smoothedPose[14].y < 0.03)) ||
-                (smoothedPose[15] && (smoothedPose[15].x < 0.03 || smoothedPose[15].x > 0.97 || smoothedPose[15].y < 0.03)) ||
-                (smoothedPose[16] && (smoothedPose[16].x < 0.03 || smoothedPose[16].x > 0.97 || smoothedPose[16].y < 0.03))
+                (smoothedPose[13] && (smoothedPose[13].x < 0.03 || smoothedPose[13].x > 0.97 || smoothedPose[13].y < 0.03 || smoothedPose[13].y > 0.97)) ||
+                (smoothedPose[14] && (smoothedPose[14].x < 0.03 || smoothedPose[14].x > 0.97 || smoothedPose[14].y < 0.03 || smoothedPose[14].y > 0.97)) ||
+                (smoothedPose[15] && (smoothedPose[15].x < 0.03 || smoothedPose[15].x > 0.97 || smoothedPose[15].y < 0.03 || smoothedPose[15].y > 0.97)) ||
+                (smoothedPose[16] && (smoothedPose[16].x < 0.03 || smoothedPose[16].x > 0.97 || smoothedPose[16].y < 0.03 || smoothedPose[16].y > 0.97))
               )
             );
 

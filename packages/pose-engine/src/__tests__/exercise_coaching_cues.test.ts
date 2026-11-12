@@ -8,7 +8,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   getExerciseCoachingCues,
-  EXERCISE_COACHING_REGISTRY,
 } from '../presets/exercises.config';
 import {
   HEAD_POSE_CONNECTIONS,

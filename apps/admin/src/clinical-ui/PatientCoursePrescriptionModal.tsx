@@ -640,7 +640,7 @@ export const PatientCoursePrescriptionModal: React.FC<PatientCoursePrescriptionM
     }
 
     loadExistingCourse();
-  }, [selectedPatient]);
+  }, [selectedPatient, defaultStart, defaultEnd]);
 
   // Compute scheduled dates for Mode A using safe local date arithmetic (no UTC day-shift)
   const computeDatesFromRangeAndDays = useCallback(

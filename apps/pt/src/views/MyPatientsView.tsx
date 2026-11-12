@@ -24,7 +24,6 @@ import {
   isPatientVisibleToPt,
   defaultApiClient
 } from '../../../../packages/api-client/src/index.js';
-import { useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
 import { SmartPendingPatientsBanner } from '../smart-portal/index.js';
 import {
   ClinicalExecutiveDashboardModal,

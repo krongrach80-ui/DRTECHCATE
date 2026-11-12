@@ -135,7 +135,7 @@ export const ClinicalPtShell: React.FC<ClinicalPtShellProps> = ({
     setActiveTab(tab);
   };
 
-  const { lang, t } = useClinicalI18n();
+  const { lang } = useClinicalI18n();
 
   const getPageMeta = (tab: ClinicalMenuId): { title: string; subtitle: string } => {
     const isEn = lang === 'en-US';
