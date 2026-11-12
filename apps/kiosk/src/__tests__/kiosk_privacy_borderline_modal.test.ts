@@ -69,7 +69,7 @@ describe('Biometric Privacy & Borderline Verification Suite (Step 3: Tests 1-7)'
       candidateHn: 'HN-001',
       similarityPercentage: 68,
       message: 'เพื่อความปลอดภัยของผู้ป่วย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก',
-    });
+    } as any);
 
     vi.spyOn(defaultApiClient.smartOnboarding, 'pinLogin').mockResolvedValueOnce({
       matched: false,
@@ -142,14 +142,14 @@ describe('Biometric Privacy & Borderline Verification Suite (Step 3: Tests 1-7)'
     const onLoginSuccess = vi.fn();
     const onStaffAssistedRegister = vi.fn();
 
-    const element = React.createElement(SmartLoginView, {
+    const element = React.createElement(SmartLoginView as any, {
       onLoginSuccess,
       onStaffAssistedRegister,
       lang: 'th-TH',
     });
 
     expect(element).toBeDefined();
-    expect(element.props.onLoginSuccess).toBe(onLoginSuccess);
-    expect(element.props.onStaffAssistedRegister).toBe(onStaffAssistedRegister);
+    expect((element.props as any).onLoginSuccess).toBe(onLoginSuccess);
+    expect((element.props as any).onStaffAssistedRegister).toBe(onStaffAssistedRegister);
   });
 });
