@@ -121,12 +121,13 @@ export class SmartOnboardingController {
 
   scanLogin = async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
     try {
-      const { probe, snapshot } = req.body;
+      // Security invariant: Extract only probe vector; ignore any client-supplied userId/patient_id/snapshot
+      const probe = req.body?.probe;
       if (!probe || !Array.isArray(probe) || probe.length === 0) {
         res.status(400).json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Probe vector is required' } });
         return;
       }
-      const result = await this.service.scanLogin(probe, snapshot);
+      const result = await this.service.scanLogin(probe);
       res.status(200).json({
         ok: true,
         ...result,

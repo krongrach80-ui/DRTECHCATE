@@ -1019,7 +1019,7 @@ export class SmartOnboardingService {
    */
   public async scanLogin(
     probeVector: number[],
-    snapshotBase64?: string
+    _snapshotBase64?: string
   ): Promise<{
     matched: boolean;
     patient?: PatientRecordFile;
@@ -1330,18 +1330,7 @@ export class SmartOnboardingService {
         `[FACE-AUTH] Genuine Match: ${patient.first_name} (${patient.hn}) | Cosine: ${top1Match.similarity.toFixed(4)} | Dist: ${top1Match.distance.toFixed(4)}`
       );
 
-      // Record snapshot to login_history/ (audit purpose only)
-      if (snapshotBase64) {
-        try {
-          const rawBase64 = snapshotBase64.replace(/^data:image\/\w+;base64,/, '');
-          const buf = Buffer.from(rawBase64, 'base64');
-          this.vaultService.recordLoginSnapshot(patient.patient_id, buf);
-        } catch (err) {
-          logger.warn({ err }, 'Failed to save login snapshot');
-        }
-      }
-
-      // NOTE: Zero adaptive_templates pollution - never write live probe vectors to patient record on login
+      // Privacy invariant: Zero login snapshot photo persistence and zero adaptive_templates pollution
 
       return {
         matched: true,

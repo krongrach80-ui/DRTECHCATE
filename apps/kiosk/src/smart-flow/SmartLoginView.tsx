@@ -1917,7 +1917,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               qualityScore: frameVec && frameVec.length === 512 ? sharpNorm : 0,
               detection: det,
               vector: frameVec && frameVec.length === 512 ? frameVec : [],
-              snapshotBase64: i === 0 || quality.sharpness > 25 ? tCanvas.toDataURL('image/jpeg', 0.85) : '',
+              snapshotBase64: '',
             });
           }
         } catch {
@@ -2029,11 +2029,10 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       bestShotVector = null;
       wipeTemporaryBiometricBuffers(false);
 
-      // Server-Side Verification call
+      // Server-Side Verification call (descriptor only - zero face snapshot image transmitted)
       const res = await defaultApiClient.smartOnboarding
         .scanLogin({
           probe: finalProbe,
-          snapshot: snapshotBase64,
         })
         .catch(() => null);
 

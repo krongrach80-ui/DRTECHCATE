@@ -13910,7 +13910,7 @@ var init_service10 = __esm({
       /**
        * 1. Auto-Presence & 5s Cooldown Face Scan Login (Master Prompt v4 Section 2 Step 1)
        */
-      async scanLogin(probeVector, snapshotBase64) {
+      async scanLogin(probeVector, _snapshotBase64) {
         if (!probeVector || !Array.isArray(probeVector) || probeVector.length !== 512 || probeVector.every((v) => Math.abs(v) < 1e-4 || Math.abs(v - 0.01) < 1e-4)) {
           return {
             matched: false,
@@ -14150,15 +14150,6 @@ var init_service10 = __esm({
           logger.info(
             `[FACE-AUTH] Genuine Match: ${patient.first_name} (${patient.hn}) | Cosine: ${top1Match.similarity.toFixed(4)} | Dist: ${top1Match.distance.toFixed(4)}`
           );
-          if (snapshotBase64) {
-            try {
-              const rawBase64 = snapshotBase64.replace(/^data:image\/\w+;base64,/, "");
-              const buf = Buffer.from(rawBase64, "base64");
-              this.vaultService.recordLoginSnapshot(patient.patient_id, buf);
-            } catch (err) {
-              logger.warn({ err }, "Failed to save login snapshot");
-            }
-          }
           return {
             matched: true,
             patient,
@@ -18797,12 +18788,12 @@ var SmartOnboardingController = class {
     };
     this.scanLogin = async (req, res, _next) => {
       try {
-        const { probe, snapshot } = req.body;
+        const probe = req.body?.probe;
         if (!probe || !Array.isArray(probe) || probe.length === 0) {
           res.status(400).json({ ok: false, error: { code: "BAD_REQUEST", message: "Probe vector is required" } });
           return;
         }
-        const result = await this.service.scanLogin(probe, snapshot);
+        const result = await this.service.scanLogin(probe);
         res.status(200).json({
           ok: true,
           ...result

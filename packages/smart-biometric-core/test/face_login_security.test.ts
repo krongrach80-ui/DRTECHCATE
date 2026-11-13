@@ -66,6 +66,22 @@ describe('Face Login Security & Biometric Gate (MATCH_THRESHOLD / MIN_MARGIN / C
     expect(decision.showStaffRegisterButton).toBe(true);
   });
 
+  it('rejects stranger even when database has only 1 enrolled account and distance exceeds MATCH_THRESHOLD (0.45)', () => {
+    const vecOnlyUser = makeUnitBasis(128, 0);
+    const strangerVec = makeUnitBasis(128, 7);
+
+    const decision = matchFace(strangerVec, [
+      { userId: 'only_user', status: 'face_enrolled', faceConfirmed: true, descriptor: vecOnlyUser },
+    ]);
+
+    expect(decision.matched).toBe(false);
+    expect(decision.status).toBe('NOT_FOUND');
+    expect(decision.userId).toBeNull();
+    expect(decision.distance).toBeGreaterThan(MATCH_THRESHOLD);
+    expect(decision.message).toBe('ไม่พบบัญชี');
+    expect(decision.showStaffRegisterButton).toBe(true);
+  });
+
   it('rejects ambiguous match when distance <= 0.45 but margin between 1st and 2nd account < MIN_MARGIN (0.08)', () => {
     // Construct A and B so probe sits nearly halfway between them, with distances ~0.36 and ~0.40 (margin ~0.04 < 0.08)
     const probe = makeUnitBasis(128, 0);
