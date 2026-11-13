@@ -1200,7 +1200,6 @@ export class SmartOnboardingService {
       const extraFrames = (record as any).enrolled_frames || (record as any).history?.frames;
       if (extraFrames && Array.isArray(extraFrames)) {
         for (const ef of extraFrames) {
-          if (ef.pose && ef.pose !== 'front') continue;
           if (ef.embedding && Array.isArray(ef.embedding) && ef.embedding.length === 512) {
             candidateVectors.push(ef.embedding);
           }

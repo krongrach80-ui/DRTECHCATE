@@ -513,7 +513,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({ onNavigateToTab }) =
                       ) : patient.registration_status === 'awaiting_face' ? (
                         <span className="whitespace-nowrap inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1 rounded-full text-xs font-bold">
                           <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          <span>รอสแกนหน้า 10 เฟรม</span>
+                          <span>รอสแกนหน้า 120 เฟรม</span>
                         </span>
                       ) : (
                         <span className="whitespace-nowrap inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 border border-slate-200 px-3 py-1 rounded-full text-xs font-semibold">
@@ -529,7 +529,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({ onNavigateToTab }) =
                             type="button"
                             onClick={() => setReEnrollPatient(patient)}
                             className="whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm hover:shadow-md cursor-pointer active:scale-95"
-                            title="เปิดขั้นตอนสแกนใบหน้าใหม่ 10 เฟรม (Face ID)"
+                            title="เปิดขั้นตอนสแกนใบหน้าใหม่ 120 เฟรม (Apple Face ID)"
                           >
                             <Camera className="w-3.5 h-3.5 shrink-0" />
                             <span className="whitespace-nowrap">📷 สแกนใบหน้าใหม่</span>
@@ -652,7 +652,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({ onNavigateToTab }) =
                         className="col-span-2 p-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition cursor-pointer active:scale-98 animate-pulse"
                       >
                         <Camera className="w-4 h-4" />
-                        <span>📷 สแกนใบหน้าใหม่ (Face ID 10 เฟรม)</span>
+                        <span>📷 สแกนใบหน้าใหม่ (Face ID 120 เฟรม)</span>
                       </button>
                     )}
                     <button
@@ -927,7 +927,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({ onNavigateToTab }) =
             setPrescriptionPatientId(newPatientId);
             setIsPrescriptionModalOpen(true);
           } else {
-            setSuccessMsg('ลงทะเบียนคนไข้ใหม่และบันทึกใบหน้าชีวมิติ 10 เฟรมสำเร็จเรียบร้อย');
+            setSuccessMsg('ลงทะเบียนคนไข้ใหม่และบันทึกใบหน้าชีวมิติ 120 เฟรมสำเร็จเรียบร้อย');
           }
         }}
       />
@@ -953,7 +953,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({ onNavigateToTab }) =
           if (selectedPatient && selectedPatient.id === patientId) {
             setSelectedPatient((prev) => (prev ? { ...prev, registration_status: 'active' } : null));
           }
-          setSuccessMsg('บันทึกข้อมูลใบหน้าใหม่ 10 เฟรมสำเร็จแล้ว (สถานะเปลี่ยนเป็นลงทะเบียนหน้าแล้ว)');
+          setSuccessMsg('บันทึกข้อมูลใบหน้าใหม่ 120 เฟรมสำเร็จแล้ว (สถานะเปลี่ยนเป็นลงทะเบียนหน้าแล้ว)');
         }}
       />
 

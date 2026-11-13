@@ -196,6 +196,7 @@ export interface LivenessTelemetryBadgeProps {
   depthScore?: number;
   ear?: number;
   isBlinking?: boolean;
+  hideTelemetryValues?: boolean;
   className?: string;
 }
 
@@ -205,6 +206,7 @@ export const LivenessTelemetryBadge: React.FC<LivenessTelemetryBadgeProps> = ({
   depthScore,
   ear,
   isBlinking,
+  hideTelemetryValues = false,
   className = '',
 }) => {
   let badgeColor = 'bg-slate-950/85 text-amber-200 border-amber-400/60 shadow-[0_4px_16px_rgba(0,0,0,0.6)]';
@@ -234,14 +236,14 @@ export const LivenessTelemetryBadge: React.FC<LivenessTelemetryBadgeProps> = ({
     },
     React.createElement('span', { className: `w-2 h-2 rounded-full shrink-0 ${dotColor}` }),
     React.createElement('span', { className: 'text-white/95 font-semibold drop-shadow-sm' }, label),
-    depthScore !== undefined
+    !hideTelemetryValues && depthScore !== undefined
       ? React.createElement(
           'span',
           { className: 'text-[10px] text-emerald-300 font-mono font-bold ml-1 drop-shadow-sm' },
           `3D:${(depthScore * 100).toFixed(0)}%`
         )
       : null,
-    ear !== undefined
+    !hideTelemetryValues && ear !== undefined
       ? React.createElement(
           'span',
           { className: 'text-[10px] text-emerald-300 font-mono font-bold drop-shadow-sm' },

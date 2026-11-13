@@ -1201,45 +1201,127 @@ export class ApiClient {
           responsible_pt_id: body.responsible_pt_id || null,
           registration_status: 'face_enrolled',
           registered_via: 'reception',
-          history: {
-            pin: body.pin || '1234',
-            target_joint: body.target_joint || 'ข้อไหล่',
-            contraindications: body.contraindications || '-',
-            chronic_diseases: body.underlying_diseases || '-',
-            allergies: body.allergies || '-',
-            notes: body.doctor_notes || '-',
-            emergency_contact: {
-              name: body.emergency_contact_name || '-',
-              relation: body.emergency_contact_relation || '-',
-              phone: body.emergency_contact_phone || '-',
-            },
-            pdpa_consent: body.pdpa_consent ?? true,
-            pdpa_consented_at: body.pdpa_consented_at || now,
-            registered_by_staff: {
-              id: body.registered_by_staff_id || null,
-              name: body.registered_by_staff_name || null,
-            },
-            frames: (body.frames || []).map((f: any) => ({
-              pose: f.pose,
+          history: (() => {
+            const cleanFrames = (body.frames || []).map((f: any) => ({
+              pose: f.pose || 'front',
               embedding: f.embedding,
-            })),
-          },
+            }));
+            const bSummary = body.biometrics_summary && typeof body.biometrics_summary === 'object' ? body.biometrics_summary : null;
+            let frontalCentroid: number[] | undefined =
+              Array.isArray(bSummary?.frontal_centroid) && bSummary.frontal_centroid.length === 512
+                ? bSummary.frontal_centroid
+                : undefined;
+            if (!frontalCentroid) {
+              const frontVecs = cleanFrames
+                .filter((f: any) => f.pose === 'front' && Array.isArray(f.embedding) && f.embedding.length === 512)
+                .map((f: any) => f.embedding as number[]);
+              const pool: number[][] = frontVecs.length > 0 ? frontVecs : cleanFrames.filter((f: any) => Array.isArray(f.embedding) && f.embedding.length === 512).map((f: any) => f.embedding as number[]);
+              if (pool.length > 0) {
+                frontalCentroid = l2Normalize(
+                  pool[0].map((_: number, d: number) => pool.reduce((s: number, v: number[]) => s + v[d], 0) / pool.length)
+                );
+              }
+            }
+            const overallCentroid: number[] | undefined =
+              Array.isArray(bSummary?.overall_centroid) && bSummary.overall_centroid.length === 512
+                ? bSummary.overall_centroid
+                : frontalCentroid;
+
+            return {
+              pin: body.pin || '1234',
+              target_joint: body.target_joint || 'ข้อไหล่',
+              contraindications: body.contraindications || '-',
+              chronic_diseases: body.underlying_diseases || '-',
+              allergies: body.allergies || '-',
+              notes: body.doctor_notes || '-',
+              emergency_contact: {
+                name: body.emergency_contact_name || '-',
+                relation: body.emergency_contact_relation || '-',
+                phone: body.emergency_contact_phone || '-',
+              },
+              pdpa_consent: body.pdpa_consent ?? true,
+              pdpa_consented_at: body.pdpa_consented_at || now,
+              registered_by_staff: {
+                id: body.registered_by_staff_id || null,
+                name: body.registered_by_staff_name || null,
+              },
+              ...(frontalCentroid ? { frontal_centroid: frontalCentroid, face_vector: frontalCentroid } : {}),
+              ...(overallCentroid ? { overall_centroid: overallCentroid } : {}),
+              ...(bSummary ? { biometrics_summary: bSummary } : {}),
+              frames: cleanFrames,
+            };
+          })(),
           version: 1,
           created_at: now,
         };
 
-        // Try updating existing draft or inserting directly into Supabase Cloud
+        // Try SECURITY DEFINER RPC first for atomic patients + face_enrollments + face_templates sync when authenticated,
+        // or updating existing draft / direct REST fallback into Supabase Cloud.
         let persistedId = patientId;
+        const supaAuthHeader = this.getSupabaseAuthHeader();
         try {
           let supaRes: Response | null = null;
-          if (body.patient_id) {
+          let syncedViaAtomicRpc = false;
+
+          if (!body.patient_id && supaAuthHeader !== `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`) {
+            const validRpcFrames = (body.frames || []).filter((f: any) => Array.isArray(f.embedding) && f.embedding.length === 512);
+            if (validRpcFrames.length > 0) {
+              try {
+                const rpcRegRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/rpc/register_patient_with_biometrics`, {
+                  method: 'POST',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: supaAuthHeader,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    p_first_name: newPatient.first_name,
+                    p_last_name: newPatient.last_name,
+                    p_hn: patientHn,
+                    p_birth_date: newPatient.birth_date,
+                    p_age: newPatient.age,
+                    p_gender: newPatient.gender,
+                    p_phone: newPatient.phone || '-',
+                    p_target_joint: newPatient.target_joint,
+                    p_injury: newPatient.injury || 'กายภาพบำบัดฟื้นฟู',
+                    p_contraindications: newPatient.contraindications,
+                    p_underlying_diseases: newPatient.underlying_diseases,
+                    p_allergies: newPatient.allergies,
+                    p_doctor_notes: newPatient.doctor_notes,
+                    p_responsible_pt_id: newPatient.responsible_pt_id,
+                    p_emergency_contact_name: newPatient.emergency_contact_name,
+                    p_emergency_contact_relation: newPatient.emergency_contact_relation,
+                    p_emergency_contact_phone: newPatient.emergency_contact_phone,
+                    p_pdpa_consent: newPatient.pdpa_consent,
+                    p_registered_by_staff_id: newPatient.registered_by_staff_id,
+                    p_registered_by_staff_name: newPatient.registered_by_staff_name,
+                    p_history: newPatient.history,
+                    p_model_version: body.model_version || 'w600k_r50',
+                    p_poses: validRpcFrames.map((f: any) => f.pose || 'front'),
+                    p_embeddings: validRpcFrames.map((f: any) => JSON.stringify(f.embedding)),
+                  }),
+                });
+                if (rpcRegRes.ok) {
+                  const rpcJson = await rpcRegRes.json().catch(() => null);
+                  if (rpcJson?.ok && rpcJson?.patient_id) {
+                    persistedId = rpcJson.patient_id;
+                    syncedViaAtomicRpc = true;
+                  }
+                }
+              } catch {
+                // Fall back to direct REST tables below
+              }
+            }
+          }
+
+          if (!syncedViaAtomicRpc && body.patient_id) {
             const updatePayload = { ...newPatient };
             delete (updatePayload as any).id;
             supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(patientId)}`, {
               method: 'PATCH',
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                Authorization: supaAuthHeader,
                 'Content-Type': 'application/json',
                 Prefer: 'return=representation',
               },
@@ -1257,14 +1339,14 @@ export class ApiClient {
             }
           }
 
-          if (!supaRes) {
+          if (!syncedViaAtomicRpc && !supaRes) {
             // First check if a patient with this HN already exists (e.g. from draft or previous attempt)
             const checkRes = await fetch(
               `${DEFAULT_SUPABASE_URL}/rest/v1/patients?hn=ilike.${encodeURIComponent(patientHn)}&select=id,registration_status&limit=1`,
               {
                 headers: {
                   apikey: DEFAULT_SUPABASE_ANON_KEY,
-                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  Authorization: supaAuthHeader,
                 },
               }
             ).catch(() => null);
@@ -1279,7 +1361,7 @@ export class ApiClient {
                   method: 'PATCH',
                   headers: {
                     apikey: DEFAULT_SUPABASE_ANON_KEY,
-                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    Authorization: supaAuthHeader,
                     'Content-Type': 'application/json',
                     Prefer: 'return=representation',
                   },
@@ -1298,7 +1380,7 @@ export class ApiClient {
                 method: 'POST',
                 headers: {
                   apikey: DEFAULT_SUPABASE_ANON_KEY,
-                  Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                  Authorization: supaAuthHeader,
                   'Content-Type': 'application/json',
                   Prefer: 'return=representation',
                 },
@@ -1313,30 +1395,59 @@ export class ApiClient {
             }
           }
 
-          if (supaRes && supaRes.ok) {
-            // Sync face templates directly into public.face_templates table for 1:N RPC biometric matching
+          if (!syncedViaAtomicRpc && supaRes && supaRes.ok) {
+            // Sync parent face_enrollments + face_templates rows using a valid UUID & required pose column
             if (body.frames && Array.isArray(body.frames) && body.frames.length > 0) {
-              const templateRows = body.frames
+              const enrollmentId =
+                typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                  ? crypto.randomUUID()
+                  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                      const r = (Math.random() * 16) | 0;
+                      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+                    });
+
+              const validTemplates = body.frames
                 .filter((f: any) => Array.isArray(f.embedding) && f.embedding.length === 512)
                 .map((f: any) => ({
                   patient_id: persistedId,
+                  enrollment_id: enrollmentId,
+                  pose: f.pose === 'left' || f.pose === 'right' || f.pose === 'nod' ? f.pose : 'front',
                   embedding: JSON.stringify(f.embedding),
-                  quality: { pose: f.pose, confidence: 0.95 },
-                  model_version: 'w600k_r50',
+                  quality: { pose: f.pose || 'front', confidence: 0.96 },
+                  model_version: body.model_version || 'w600k_r50',
                 }));
-              if (templateRows.length > 0) {
-                await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_templates`, {
+
+              if (validTemplates.length > 0) {
+                const enrRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_enrollments`, {
                   method: 'POST',
                   headers: {
                     apikey: DEFAULT_SUPABASE_ANON_KEY,
-                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    Authorization: supaAuthHeader,
                     'Content-Type': 'application/json',
                   },
-                  body: JSON.stringify(templateRows),
-                }).catch(() => {});
+                  body: JSON.stringify({
+                    id: enrollmentId,
+                    patient_id: persistedId,
+                    status: 'active',
+                    model_version: body.model_version || 'w600k_r50',
+                    created_at: now,
+                  }),
+                }).catch(() => null);
+
+                if (enrRes && enrRes.ok) {
+                  await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_templates`, {
+                    method: 'POST',
+                    headers: {
+                      apikey: DEFAULT_SUPABASE_ANON_KEY,
+                      Authorization: supaAuthHeader,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(validTemplates),
+                  }).catch(() => {});
+                }
               }
             }
-          } else if (supaRes && !supaRes.ok) {
+          } else if (!syncedViaAtomicRpc && supaRes && !supaRes.ok) {
             const errTxt = await supaRes.text();
             throw new Error(`ไม่สามารถบันทึกคนไข้ลงฐานข้อมูล Supabase ได้ (${supaRes.status}): ${errTxt}`);
           }
@@ -2250,6 +2361,15 @@ export class ApiClient {
             }
             if (Array.isArray(h.frontal_centroid) && h.frontal_centroid.length === probe.length) {
               vectors.push(h.frontal_centroid);
+            }
+            if (Array.isArray(h.overall_centroid) && h.overall_centroid.length === probe.length) {
+              vectors.push(h.overall_centroid);
+            }
+            if (Array.isArray(h.biometrics_summary?.frontal_centroid) && h.biometrics_summary.frontal_centroid.length === probe.length) {
+              vectors.push(h.biometrics_summary.frontal_centroid);
+            }
+            if (Array.isArray(h.biometrics_summary?.overall_centroid) && h.biometrics_summary.overall_centroid.length === probe.length) {
+              vectors.push(h.biometrics_summary.overall_centroid);
             }
             if (Array.isArray(h.face_vector) && h.face_vector.length === probe.length) {
               vectors.push(h.face_vector);
@@ -3867,18 +3987,19 @@ export class ApiClient {
         return { ok: true, success: true, message: 'รีเซ็ตข้อมูลชีวมาตรสำเร็จ' } as T;
       }
 
-      // 6.1.1 Fallback for /face/enroll (Atomic 10-Frame Re-enrollment into Supabase Cloud)
+      // 6.1.1 Fallback for /face/enroll (Atomic Multi-Prototype Re-enrollment into Supabase Cloud)
       if ((endpointPath === '/face/enroll' || endpointPath.startsWith('/face/enroll')) && options.method === 'POST') {
         const body = options.body ? JSON.parse(options.body as string) : {};
         const patientId = body.patient_id;
         if (patientId) {
+          const authHeader = this.getSupabaseAuthHeader();
           try {
             // 1. Purge any stale vectors/templates and previous enrollments
             await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_templates?patient_id=eq.${patientId}`, {
               method: 'DELETE',
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                Authorization: authHeader,
               },
             }).catch(() => {});
 
@@ -3886,17 +4007,24 @@ export class ApiClient {
               method: 'DELETE',
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                Authorization: authHeader,
               },
             }).catch(() => {});
 
-            // 2. Insert new face enrollment record
-            const enrollmentId = `enr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_enrollments`, {
+            // 2. Insert new face enrollment record using canonical UUID v4 and schema columns only
+            const enrollmentId =
+              typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                    const r = (Math.random() * 16) | 0;
+                    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+                  });
+
+            const enrRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_enrollments`, {
               method: 'POST',
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                Authorization: authHeader,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
@@ -3904,44 +4032,105 @@ export class ApiClient {
                 patient_id: patientId,
                 status: 'active',
                 model_version: body.model_version || 'w600k_r50',
-                frame_count: body.frames?.length || 0,
                 created_at: new Date().toISOString(),
               }),
-            }).catch(() => {});
+            }).catch(() => null);
 
-            // 3. Insert new 10-frame templates
-            if (body.frames && Array.isArray(body.frames) && body.frames.length > 0) {
-              const templateRows = body.frames
-                .filter((f: any) => Array.isArray(f.embedding) && f.embedding.length === 512)
-                .map((f: any) => ({
-                  patient_id: patientId,
-                  enrollment_id: enrollmentId,
-                  embedding: JSON.stringify(f.embedding),
-                  quality: { pose: f.pose, confidence: 0.95 },
-                  model_version: body.model_version || 'w600k_r50',
-                }));
-              if (templateRows.length > 0) {
-                await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_templates`, {
-                  method: 'POST',
+            // 3. Insert denoised prototype templates with required enrollment_id & pose
+            const cleanFrames = (Array.isArray(body.frames) ? body.frames : [])
+              .filter((f: any) => Array.isArray(f.embedding) && f.embedding.length === 512)
+              .map((f: any) => ({
+                pose: (f.pose === 'left' || f.pose === 'right' || f.pose === 'nod' ? f.pose : 'front') as 'front' | 'left' | 'right' | 'nod',
+                embedding: f.embedding as number[],
+              }));
+
+            if (cleanFrames.length > 0 && enrRes && enrRes.ok) {
+              const templateRows = cleanFrames.map((f: any) => ({
+                patient_id: patientId,
+                enrollment_id: enrollmentId,
+                pose: f.pose,
+                embedding: JSON.stringify(f.embedding),
+                quality: { pose: f.pose, confidence: 0.96 },
+                model_version: body.model_version || 'w600k_r50',
+              }));
+              await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_templates`, {
+                method: 'POST',
+                headers: {
+                  apikey: DEFAULT_SUPABASE_ANON_KEY,
+                  Authorization: authHeader,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(templateRows),
+              }).catch(() => {});
+            }
+
+            // 4. Sync updated biometric vectors + registration_status = 'active' into patients.history
+            //    so Kiosk fallback matching sees re-enrolled 120-frame prototypes immediately
+            let mergedHistory: Record<string, any> = {};
+            try {
+              const pRes = await fetch(
+                `${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(patientId)}&select=history&limit=1`,
+                {
                   headers: {
                     apikey: DEFAULT_SUPABASE_ANON_KEY,
-                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json',
+                    Authorization: authHeader,
                   },
-                  body: JSON.stringify(templateRows),
-                }).catch(() => {});
+                }
+              );
+              if (pRes.ok) {
+                const pRows = await pRes.json().catch(() => []);
+                const rawH = pRows?.[0]?.history;
+                if (rawH && typeof rawH === 'object') {
+                  mergedHistory = { ...rawH };
+                } else if (typeof rawH === 'string') {
+                  try {
+                    mergedHistory = JSON.parse(rawH);
+                  } catch {
+                    mergedHistory = {};
+                  }
+                }
+              }
+            } catch {}
+
+            if (cleanFrames.length > 0) {
+              const bSummary = body.biometrics_summary && typeof body.biometrics_summary === 'object' ? body.biometrics_summary : null;
+              let frontalCentroid: number[] | undefined =
+                Array.isArray(bSummary?.frontal_centroid) && bSummary.frontal_centroid.length === 512
+                  ? bSummary.frontal_centroid
+                  : undefined;
+              if (!frontalCentroid) {
+                const frontPool = cleanFrames.filter((f: any) => f.pose === 'front').map((f: any) => f.embedding);
+                const pool = frontPool.length > 0 ? frontPool : cleanFrames.map((f: any) => f.embedding);
+                frontalCentroid = l2Normalize(
+                  pool[0].map((_: number, d: number) => pool.reduce((s: number, v: number[]) => s + v[d], 0) / pool.length)
+                );
+              }
+              const overallCentroid: number[] =
+                Array.isArray(bSummary?.overall_centroid) && bSummary.overall_centroid.length === 512
+                  ? bSummary.overall_centroid
+                  : frontalCentroid;
+
+              mergedHistory.frames = cleanFrames;
+              mergedHistory.frontal_centroid = frontalCentroid;
+              mergedHistory.overall_centroid = overallCentroid;
+              mergedHistory.face_vector = frontalCentroid;
+              if (bSummary) {
+                mergedHistory.biometrics_summary = bSummary;
               }
             }
 
-            // 4. Update patients table: registration_status = 'active'
-            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${patientId}`, {
+            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(patientId)}`, {
               method: 'PATCH',
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                Authorization: authHeader,
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({ registration_status: 'active', updated_at: new Date().toISOString() }),
+              body: JSON.stringify({
+                registration_status: 'active',
+                ...(cleanFrames.length > 0 ? { history: mergedHistory } : {}),
+                updated_at: new Date().toISOString(),
+              }),
             }).catch(() => {});
           } catch {}
         }
@@ -6561,6 +6750,7 @@ export class ApiClient {
       consent_id?: string;
       frames: Array<{ pose: 'front' | 'left' | 'right' | 'nod'; embedding: number[]; jpeg_base64?: string }>;
       model_version?: string;
+      biometrics_summary?: Record<string, unknown>;
     }) => {
       return this.request<{
         enrollment_id: string;
@@ -6885,6 +7075,7 @@ export class ApiClient {
       model_version?: string;
       liveness_score?: number;
       liveness_passed?: boolean;
+      biometrics_summary?: Record<string, unknown>;
     }) => {
       return this.request<{
         ok: boolean;

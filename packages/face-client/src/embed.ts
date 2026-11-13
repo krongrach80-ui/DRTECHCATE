@@ -150,12 +150,17 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
       vChroma[j] = 0.615 * r - 0.51499 * g - 0.10001 * b;
     }
 
-    // 1.1 Clothing-Invariant Biometric Facial Oval Mask
+    // 1.1 Clothing-Invariant Biometric Facial Oval Mask + Planar Illumination Detrending
     // Isolate facial skin area: center (56, 52), horizontal rx = 44, vertical ry = 42,
     // cutoff y in [16..94] strictly excluding neck, collar, clothing, and background.
+    // Fits a 2D linear luminance plane inside the oval to cancel harsh side-window lighting ramps
+    // while preserving high-frequency facial geometry (eyes, brows, nose ridge, mouth).
     const isFace = new Uint8Array(totalPixels);
     let facePixelsCount = 0;
-    let sumG = 0, sumG2 = 0;
+    let sumG = 0;
+    let sumGx = 0, sumGy = 0;
+    let sumX = 0, sumY = 0;
+    let sumX2 = 0, sumY2 = 0, sumXY = 0;
     let sumU = 0, sumU2 = 0;
     let sumV = 0, sumV2 = 0;
 
@@ -170,7 +175,13 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
           facePixelsCount++;
           const g = gray[idx];
           sumG += g;
-          sumG2 += g * g;
+          sumGx += g * nx;
+          sumGy += g * ny;
+          sumX += nx;
+          sumY += ny;
+          sumX2 += nx * nx;
+          sumY2 += ny * ny;
+          sumXY += nx * ny;
           const u = uChroma[idx];
           sumU += u;
           sumU2 += u * u;
@@ -181,11 +192,53 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
       }
     }
 
-    // Use face pixels for contrast normalization so shirt color/brightness does not affect facial embedding
+    // Solve centered 2D linear illumination plane g(nx, ny) ≈ intercept + slopeX * (nx - mx) + slopeY * (ny - my)
     const count = facePixelsCount > 100 ? facePixelsCount : totalPixels;
-    const meanG = (facePixelsCount > 100 ? sumG : gray.reduce((a, b) => a + b, 0)) / count;
+    let slopeX = 0;
+    let slopeY = 0;
+    let ovalMeanG = (facePixelsCount > 100 ? sumG : gray.reduce((a, b) => a + b, 0)) / count;
+    let mx = 0;
+    let my = 0;
+    if (facePixelsCount > 100) {
+      mx = sumX / facePixelsCount;
+      my = sumY / facePixelsCount;
+      const cxx = Math.max(1e-4, sumX2 / facePixelsCount - mx * mx);
+      const cyy = Math.max(1e-4, sumY2 / facePixelsCount - my * my);
+      const cxy = sumXY / facePixelsCount - mx * my;
+      const covGx = sumGx / facePixelsCount - ovalMeanG * mx;
+      const covGy = sumGy / facePixelsCount - ovalMeanG * my;
+      const det = cxx * cyy - cxy * cxy;
+      if (Math.abs(det) > 1e-6) {
+        slopeX = (covGx * cyy - covGy * cxy) / det;
+        slopeY = (covGy * cxx - covGx * cxy) / det;
+      }
+    }
+
+    // Subtract 96% of fitted side-lighting ramp inside the facial oval before computing Z-score statistics
+    const detrendedGray = new Float32Array(totalPixels);
+    let dtSumG = 0;
+    let dtSumG2 = 0;
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+      const ny = (y - 52) / 42;
+      for (let x = 0; x < width; x++) {
+        const idx = row + x;
+        if (facePixelsCount > 100 && isFace[idx] === 1) {
+          const nx = (x - 56) / 44;
+          const corrected = gray[idx] - 0.96 * (slopeX * (nx - mx) + slopeY * (ny - my));
+          detrendedGray[idx] = corrected;
+          dtSumG += corrected;
+          dtSumG2 += corrected * corrected;
+        } else {
+          detrendedGray[idx] = gray[idx];
+        }
+      }
+    }
+
+    // Use detrended face pixels for contrast normalization so shirt color and side-window lighting do not distort embedding
+    const meanG = (facePixelsCount > 100 ? dtSumG : ovalMeanG * totalPixels) / count;
     const stdG = Math.sqrt(
-      Math.max(1e-4, (facePixelsCount > 100 ? sumG2 : gray.reduce((a, b) => a + b * b, 0)) / count - meanG * meanG)
+      Math.max(1e-4, (facePixelsCount > 100 ? dtSumG2 : gray.reduce((a, b) => a + b * b, 0)) / count - meanG * meanG)
     );
     const meanU = (facePixelsCount > 100 ? sumU : uChroma.reduce((a, b) => a + b, 0)) / count;
     const stdU = Math.sqrt(
@@ -201,7 +254,7 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
     const normV = new Float32Array(totalPixels);
     for (let i = 0; i < totalPixels; i++) {
       if (facePixelsCount > 100 ? isFace[i] === 1 : true) {
-        normGray[i] = (gray[i] - meanG) / stdG;
+        normGray[i] = (detrendedGray[i] - meanG) / stdG;
         normU[i] = (uChroma[i] - meanU) / stdU;
         normV[i] = (vChroma[i] - meanV) / stdV;
       } else {
@@ -323,7 +376,8 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
         vector[baseOut + 3] = uSum / safeCount;
         vector[baseOut + 4] = vSum / safeCount;
         vector[baseOut + 5] = contrastSum / safeCount;
-        vector[baseOut + 6] = Math.atan2(dySum, dxSum + 1e-5);
+        // Smooth orientation anisotropy cos(2*theta): eliminates atan2 +/-pi branch cut instability
+        vector[baseOut + 6] = (dxSum * dxSum - dySum * dySum) / (dxSum * dxSum + dySum * dySum + 1e-4);
         vector[baseOut + 7] = Math.sqrt((dxSum * dxSum + dySum * dySum) / (safeCount * safeCount));
       }
     }
@@ -331,7 +385,20 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
     // 4. Radial Geometric Contour & Facial Proportions (128 components: indices 384 to 511)
     const cx = width / 2;
     const cy = 52;
-    // 32 radial angles x 4 concentric radii = 128 samples
+    // Compute 5x5 local mean at nose-bridge center instead of single noisy pixel
+    let centerSum = 0;
+    let centerCount = 0;
+    const cxInt = Math.floor(cx);
+    const cyInt = Math.floor(cy);
+    for (let oy = -2; oy <= 2; oy++) {
+      for (let ox = -2; ox <= 2; ox++) {
+        centerSum += normGray[(cyInt + oy) * width + (cxInt + ox)];
+        centerCount++;
+      }
+    }
+    const centerBaseline = centerSum / (centerCount || 1);
+
+    // 32 radial angles x 4 concentric radii = 128 smoothed 3x3 samples
     const radii = [0.2, 0.4, 0.6, 0.8];
     let outIdx = 384;
     for (let rIdx = 0; rIdx < 4; rIdx++) {
@@ -343,9 +410,12 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
         // Clamp strictly within biometric face boundaries (y <= 94 to avoid clothing collar)
         const clampedX = Math.max(12, Math.min(width - 13, sx));
         const clampedY = Math.max(16, Math.min(94, sy));
-        const pVal = normGray[clampedY * width + clampedX];
-        const centerDiff = pVal - normGray[Math.floor(cy) * width + Math.floor(cx)];
-        vector[outIdx++] = centerDiff;
+        let pSum = 0;
+        for (let oy = -1; oy <= 1; oy++) {
+          const rowOffset = (clampedY + oy) * width;
+          pSum += normGray[rowOffset + clampedX - 1] + normGray[rowOffset + clampedX] + normGray[rowOffset + clampedX + 1];
+        }
+        vector[outIdx++] = pSum / 9 - centerBaseline;
       }
     }
 
@@ -454,5 +524,294 @@ export function getSharedEmbeddingModel(): EmbeddingModel {
   }
   return sharedEmbeddingModelInstance;
 }
+
+export type BiometricPoseZone = 'front' | 'left' | 'right' | 'nod' | 'up';
+
+export interface CapturedEmbeddingSample {
+  embedding: number[];
+  poseZone: BiometricPoseZone;
+  qualityScore: number;
+  yaw?: number;
+  pitch?: number;
+  roll?: number;
+}
+
+export interface AggregatedPrototype {
+  pose: 'front' | 'left' | 'right' | 'nod';
+  subPose: BiometricPoseZone;
+  embedding: number[];
+  frameCount: number;
+  rejectedOutliers: number;
+  meanQuality: number;
+  intraClusterConsistency: number;
+}
+
+export interface MultiFrameAggregationResult {
+  prototypes: AggregatedPrototype[];
+  frontalCentroid: number[];
+  overallCentroid: number[];
+  totalInputFrames: number;
+  acceptedFrames: number;
+  rejectedOutliers: number;
+  meanQuality: number;
+  consistencyScore: number;
+}
+
+function isValid512Vector(v: unknown): v is number[] {
+  if (!Array.isArray(v) || v.length !== 512) return false;
+  let normSq = 0;
+  for (let i = 0; i < 512; i++) {
+    const val = v[i];
+    if (typeof val !== 'number' || !Number.isFinite(val)) return false;
+    normSq += val * val;
+  }
+  return normSq > 1e-8;
+}
+
+export function weightedAverageAndNormalize(vectors: number[][], weights?: number[]): number[] {
+  const validPairs: Array<{ vec: number[]; w: number }> = [];
+  for (let i = 0; i < vectors.length; i++) {
+    if (!isValid512Vector(vectors[i])) continue;
+    const rawW = weights && typeof weights[i] === 'number' && Number.isFinite(weights[i]) ? weights[i] : 1;
+    validPairs.push({ vec: l2Normalize(vectors[i]), w: Math.max(0.05, rawW) });
+  }
+  if (validPairs.length === 0) {
+    throw new Error('Cannot aggregate empty embeddings');
+  }
+  const sum = new Array<number>(512).fill(0);
+  for (const { vec, w } of validPairs) {
+    for (let j = 0; j < 512; j++) {
+      sum[j] += vec[j] * w;
+    }
+  }
+  return l2Normalize(sum);
+}
+
+function trimOutlierSamples(
+  samples: CapturedEmbeddingSample[],
+  minKeepFraction = 0.65,
+  hardMinCosine = 0.6
+): { kept: CapturedEmbeddingSample[]; rejected: number; centroid: number[] } {
+  if (samples.length <= 2) {
+    const centroid = weightedAverageAndNormalize(
+      samples.map((s) => s.embedding),
+      samples.map((s) => Math.pow(Math.max(0.1, s.qualityScore), 1.5))
+    );
+    return { kept: samples, rejected: 0, centroid };
+  }
+
+  const weights = samples.map((s) => Math.pow(Math.max(0.1, s.qualityScore), 1.5));
+  const preliminary = weightedAverageAndNormalize(
+    samples.map((s) => s.embedding),
+    weights
+  );
+  const scored = samples.map((s) => ({
+    sample: s,
+    sim: cosineSimilarity(s.embedding, preliminary),
+  }));
+
+  const meanSim = scored.reduce((acc, item) => acc + item.sim, 0) / scored.length;
+  const variance = scored.reduce((acc, item) => acc + (item.sim - meanSim) ** 2, 0) / scored.length;
+  const stdSim = Math.sqrt(variance);
+  const adaptiveFloor = Math.max(hardMinCosine, meanSim - 1.5 * stdSim);
+
+  let kept = scored.filter((item) => item.sim >= adaptiveFloor).map((item) => item.sample);
+  const minKeep = Math.max(1, Math.ceil(samples.length * minKeepFraction));
+  if (kept.length < minKeep) {
+    kept = scored
+      .slice()
+      .sort((a, b) => b.sim - a.sim)
+      .slice(0, minKeep)
+      .map((item) => item.sample);
+  }
+
+  const centroid = weightedAverageAndNormalize(
+    kept.map((s) => s.embedding),
+    kept.map((s) => Math.pow(Math.max(0.1, s.qualityScore), 1.5))
+  );
+  return {
+    kept,
+    rejected: samples.length - kept.length,
+    centroid,
+  };
+}
+
+function buildClusterPrototype(
+  clusterSamples: CapturedEmbeddingSample[],
+  pose: 'front' | 'left' | 'right' | 'nod',
+  subPose: BiometricPoseZone,
+  fallbackSamples: CapturedEmbeddingSample[]
+): AggregatedPrototype {
+  const source = clusterSamples.length > 0 ? clusterSamples : fallbackSamples;
+  const trimmed = trimOutlierSamples(source, 0.7, 0.58);
+  const sims = trimmed.kept.map((s) => cosineSimilarity(s.embedding, trimmed.centroid));
+  const intraClusterConsistency = sims.reduce((a, b) => a + b, 0) / Math.max(1, sims.length);
+  const meanQuality =
+    trimmed.kept.reduce((acc, s) => acc + Math.max(0, Math.min(1, s.qualityScore)), 0) /
+    Math.max(1, trimmed.kept.length);
+
+  return {
+    pose,
+    subPose,
+    embedding: trimmed.centroid,
+    frameCount: trimmed.kept.length,
+    rejectedOutliers: trimmed.rejected,
+    meanQuality,
+    intraClusterConsistency,
+  };
+}
+
+/**
+ * Aggregates up to 120 quality-gated enrollment frames into 10 crisp,
+ * outlier-filtered multi-pose prototypes (`4 front, 2 left, 2 right, 2 nod`)
+ * plus denoised `frontalCentroid` & `overallCentroid`.
+ * Maintains strict DB `pose_type` and 10-slot `/api/face/enroll` schema parity.
+ */
+export function aggregateCapturedFrames(rawSamples: CapturedEmbeddingSample[]): MultiFrameAggregationResult {
+  const validSamples = rawSamples
+    .filter((s) => isValid512Vector(s.embedding))
+    .map((s) => ({
+      ...s,
+      embedding: l2Normalize(s.embedding),
+      qualityScore: Number.isFinite(s.qualityScore) ? Math.max(0.05, Math.min(1, s.qualityScore)) : 0.75,
+    }));
+
+  if (validSamples.length === 0) {
+    throw new Error('No valid 512-D face embeddings captured');
+  }
+
+  // Stage 1: Global identity coherence filter anchored on highest-quality frontal (or top) frames
+  const frontalPool = validSamples.filter((s) => s.poseZone === 'front');
+  const anchorPool = (frontalPool.length >= 3 ? frontalPool : validSamples)
+    .slice()
+    .sort((a, b) => b.qualityScore - a.qualityScore);
+  const anchorCount = Math.max(1, Math.min(anchorPool.length, Math.ceil(anchorPool.length * 0.6)));
+  const preliminaryAnchor = weightedAverageAndNormalize(
+    anchorPool.slice(0, anchorCount).map((s) => s.embedding),
+    anchorPool.slice(0, anchorCount).map((s) => Math.pow(s.qualityScore, 1.5))
+  );
+
+  // Drop severe spoofing / frame-glitch outliers globally (below 0.52 cosine to anchor)
+  const globallyClean = validSamples.filter(
+    (s) => cosineSimilarity(s.embedding, preliminaryAnchor) >= 0.52
+  );
+  const workingPool =
+    globallyClean.length >= Math.max(1, Math.ceil(validSamples.length * 0.45))
+      ? globallyClean
+      : validSamples
+          .slice()
+          .sort(
+            (a, b) =>
+              cosineSimilarity(b.embedding, preliminaryAnchor) - cosineSimilarity(a.embedding, preliminaryAnchor)
+          )
+          .slice(0, Math.max(1, Math.ceil(validSamples.length * 0.7)));
+  const globalRejected = validSamples.length - workingPool.length;
+
+  const frontFrames = workingPool.filter((s) => s.poseZone === 'front');
+  const leftFrames = workingPool.filter((s) => s.poseZone === 'left');
+  const rightFrames = workingPool.filter((s) => s.poseZone === 'right');
+  const nodFrames = workingPool.filter((s) => s.poseZone === 'nod');
+  const upFrames = workingPool.filter((s) => s.poseZone === 'up');
+
+  const safeFrontalFallback = frontFrames.length > 0 ? frontFrames : workingPool;
+
+  // Partition frontal frames into 4 clean sub-clusters (sorted by yaw/pitch variation when present)
+  const sortedFront = safeFrontalFallback.slice().sort((a, b) => (a.yaw ?? 0) - (b.yaw ?? 0));
+  const frontBuckets: CapturedEmbeddingSample[][] = [[], [], [], []];
+  sortedFront.forEach((sample, idx) => {
+    const bucketIdx = Math.min(3, Math.floor((idx * 4) / Math.max(1, sortedFront.length)));
+    frontBuckets[bucketIdx].push(sample);
+  });
+
+  // Partition left & right frames by yaw magnitude into mild & full turn sub-clusters
+  const sortedLeft = leftFrames.slice().sort((a, b) => Math.abs(a.yaw ?? 0) - Math.abs(b.yaw ?? 0));
+  const leftMid = Math.max(1, Math.ceil(sortedLeft.length / 2));
+  const leftMild = sortedLeft.slice(0, leftMid);
+  const leftFull = sortedLeft.slice(leftMid);
+
+  const sortedRight = rightFrames.slice().sort((a, b) => Math.abs(a.yaw ?? 0) - Math.abs(b.yaw ?? 0));
+  const rightMid = Math.max(1, Math.ceil(sortedRight.length / 2));
+  const rightMild = sortedRight.slice(0, rightMid);
+  const rightFull = sortedRight.slice(rightMid);
+
+  // Combine nod (chin down) + up (chin up) into 2 vertical-angle prototypes (both pose:'nod')
+  let nodDownBucket = nodFrames;
+  let nodUpBucket = upFrames;
+  if (nodDownBucket.length === 0 && nodUpBucket.length > 1) {
+    const half = Math.ceil(nodUpBucket.length / 2);
+    nodDownBucket = nodUpBucket.slice(0, half);
+    nodUpBucket = nodUpBucket.slice(half);
+  } else if (nodUpBucket.length === 0 && nodDownBucket.length > 1) {
+    const half = Math.ceil(nodDownBucket.length / 2);
+    nodUpBucket = nodDownBucket.slice(half);
+    nodDownBucket = nodDownBucket.slice(0, half);
+  }
+
+  const prototypes: AggregatedPrototype[] = [
+    buildClusterPrototype(frontBuckets[0], 'front', 'front', safeFrontalFallback),
+    buildClusterPrototype(frontBuckets[1], 'front', 'front', safeFrontalFallback),
+    buildClusterPrototype(frontBuckets[2], 'front', 'front', safeFrontalFallback),
+    buildClusterPrototype(frontBuckets[3], 'front', 'front', safeFrontalFallback),
+    buildClusterPrototype(leftMild, 'left', 'left', leftFrames.length > 0 ? leftFrames : safeFrontalFallback),
+    buildClusterPrototype(leftFull, 'left', 'left', leftFrames.length > 0 ? leftFrames : safeFrontalFallback),
+    buildClusterPrototype(rightMild, 'right', 'right', rightFrames.length > 0 ? rightFrames : safeFrontalFallback),
+    buildClusterPrototype(rightFull, 'right', 'right', rightFrames.length > 0 ? rightFrames : safeFrontalFallback),
+    buildClusterPrototype(nodDownBucket, 'nod', 'nod', safeFrontalFallback),
+    buildClusterPrototype(nodUpBucket, 'nod', 'up', safeFrontalFallback),
+  ];
+
+  const frontalTrimmed = trimOutlierSamples(safeFrontalFallback, 0.7, 0.62);
+  const overallCentroid = weightedAverageAndNormalize(
+    workingPool.map((s) => s.embedding),
+    workingPool.map((s) => Math.pow(s.qualityScore, 1.5))
+  );
+
+  const frontalSims = frontalTrimmed.kept.map((s) => cosineSimilarity(s.embedding, frontalTrimmed.centroid));
+  const consistencyScore = frontalSims.reduce((a, b) => a + b, 0) / Math.max(1, frontalSims.length);
+  const meanQuality = workingPool.reduce((acc, s) => acc + s.qualityScore, 0) / Math.max(1, workingPool.length);
+
+  return {
+    prototypes,
+    frontalCentroid: frontalTrimmed.centroid,
+    overallCentroid,
+    totalInputFrames: rawSamples.length,
+    acceptedFrames: workingPool.length,
+    rejectedOutliers: globalRejected + frontalTrimmed.rejected,
+    meanQuality,
+    consistencyScore,
+  };
+}
+
+/**
+ * Outlier-filtered quality-weighted probe stabilization for Kiosk Face Login.
+ * Rejects single motion-blurred or blink outliers before averaging the burst.
+ */
+export function aggregateProbeEmbeddings(
+  rawSamples: Array<{ embedding: number[]; qualityScore: number }>
+): { centroid: number[]; consistency: number; usedFrames: number; rejectedOutliers: number } {
+  const mapped: CapturedEmbeddingSample[] = rawSamples
+    .filter((s) => isValid512Vector(s.embedding))
+    .map((s) => ({
+      embedding: l2Normalize(s.embedding),
+      poseZone: 'front',
+      qualityScore: Number.isFinite(s.qualityScore) ? Math.max(0.1, Math.min(1, s.qualityScore)) : 0.75,
+    }));
+
+  if (mapped.length === 0) {
+    throw new Error('No valid 512-D probe embeddings');
+  }
+
+  const trimmed = trimOutlierSamples(mapped, 0.6, 0.68);
+  const sims = trimmed.kept.map((s) => cosineSimilarity(s.embedding, trimmed.centroid));
+  const consistency = sims.reduce((a, b) => a + b, 0) / Math.max(1, sims.length);
+
+  return {
+    centroid: trimmed.centroid,
+    consistency,
+    usedFrames: trimmed.kept.length,
+    rejectedOutliers: trimmed.rejected,
+  };
+}
+
 
 
