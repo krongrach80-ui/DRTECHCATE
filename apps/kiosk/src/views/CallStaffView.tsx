@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import { BellRing, CheckCircle, Home } from 'lucide-react';
 
 interface CallStaffViewProps {
@@ -12,6 +12,14 @@ export const CallStaffView: React.FC<CallStaffViewProps> = ({
   errorMessage,
   onReset,
 }) => {
+  const isResettingRef = useRef<boolean>(false);
+
+  const handleReset = useCallback(() => {
+    if (isResettingRef.current) return;
+    isResettingRef.current = true;
+    onReset();
+  }, [onReset]);
+
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-12 px-8 select-none bg-slate-950">
       <div className="my-auto w-full max-w-lg p-10 rounded-3xl bg-slate-900/90 border border-rose-500/30 shadow-2xl flex flex-col items-center text-center">
@@ -43,7 +51,7 @@ export const CallStaffView: React.FC<CallStaffViewProps> = ({
       {/* Cancel Action */}
       <div className="w-full max-w-md pb-4">
         <button
-          onClick={onReset}
+          onClick={handleReset}
           className="touch-btn w-full py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-base flex items-center justify-center gap-2"
         >
           <Home className="w-5 h-5" />

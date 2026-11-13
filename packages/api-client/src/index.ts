@@ -5393,24 +5393,17 @@ export class ApiClient {
 
     if (!res.ok) {
       if (res.status === 405 || res.status === 404 || res.status === 402 || res.status >= 500) {
-        if (cleanEndpoint.startsWith('/staff') || cleanEndpoint.includes('/staff') || cleanEndpoint.includes('/questions')) {
-          const fallback = await this.executeDirectSupabaseFallback<T>(cleanEndpoint, options);
-          if (fallback !== undefined) {
-            return fallback;
-          }
-        }
         try {
           const fallback = await this.executeDirectSupabaseFallback<T>(cleanEndpoint, options);
           if (fallback !== undefined) {
             return fallback;
           }
         } catch (fbErr: any) {
-          if (fbErr?.message) throw fbErr;
+          // Ignore browser network/CSP TypeError when server already gave a response; rethrow explicit API/domain errors
+          if (fbErr && !(fbErr instanceof TypeError) && fbErr.message && !String(fbErr.message).includes('Failed to fetch')) {
+            throw fbErr;
+          }
         }
-        if (options.method && options.method.toUpperCase() !== 'GET') {
-          throw new Error(`ไม่สามารถดำเนินการ ${options.method.toUpperCase()} บน ${cleanEndpoint} ได้เนื่องจากการเชื่อมต่อเครือข่ายหรือฐานข้อมูลล้มเหลว`);
-        }
-        return { ok: true, data: [] } as T;
       }
       let errorMessage = data?.error?.message || data?.message;
       if (!errorMessage) {
@@ -5420,16 +5413,11 @@ export class ApiClient {
           errorMessage = 'ไม่มีสิทธิ์ในการเข้าถึงข้อมูลหรือดำเนินการส่วนนี้ (403 Forbidden)';
         } else if (res.status === 404) {
           errorMessage = 'ไม่พบปลายทาง API ที่เรียก (404 Not Found - ระบบหลังบ้านอาจยังไม่ได้เชื่อมต่อ)';
-        } else if (res.status === 405) {
-          return { ok: true, message: 'ดำเนินการสำเร็จ (Resilient Edge Mode)' } as T;
         } else if (res.status >= 500) {
           errorMessage = `เซิร์ฟเวอร์เกิดข้อผิดพลาดภายใน (HTTP ${res.status} Internal Server Error)`;
         } else {
           errorMessage = `เกิดข้อผิดพลาดในการเชื่อมต่อ (HTTP ${res.status}: ${res.statusText || 'Error'})`;
         }
-      }
-      if (res.status === 405 || (errorMessage && (errorMessage.includes('405') || errorMessage.includes('Method Not Allowed')))) {
-        return { ok: true, message: 'ดำเนินการสำเร็จ (Resilient Edge Mode)' } as T;
       }
       const err = new Error(errorMessage) as Error & { code?: string; status?: number };
       err.code = data?.error?.code || `HTTP_${res.status}`;
@@ -5448,58 +5436,39 @@ export class ApiClient {
       const creds = typeof credentials === 'string'
         ? { username: credentials, password: maybePassword || '' }
         : credentials;
-      try {
-        const res = await this.request<{
-          ok?: boolean;
-          role?: 'admin' | 'pt';
+      const res = await this.request<{
+        ok?: boolean;
+        role?: 'admin' | 'pt';
+        user?: UserProfile;
+        token?: string;
+        accessToken?: string;
+        access_token?: string;
+        data?: {
           user?: UserProfile;
           token?: string;
-          accessToken?: string;
-          access_token?: string;
-          data?: {
-            user?: UserProfile;
-            token?: string;
-          };
-        }>('/auth/login', {
-          method: 'POST',
-          body: JSON.stringify(creds),
-        });
-
-        const token = res.token || res.accessToken || res.access_token || res.data?.token;
-        if (token) {
-          this.setAuthToken(token);
-        }
-        const rawUser = res.user || res.data?.user || (res as unknown as UserProfile);
-        const uname = rawUser?.username || creds.username.trim().toLowerCase();
-        const rawRole = (res.role || rawUser?.role || (uname.includes('admin') || uname === 'director' ? 'admin' : 'pt')) as 'admin' | 'pt';
-        const user: UserProfile = {
-          ...rawUser,
-          id: rawUser?.id || (rawRole === 'admin' ? 'd1000000-0000-0000-0000-000000000001' : 'b1000000-0000-0000-0000-000000000003'),
-          username: uname,
-          full_name: rawUser?.full_name || (rawRole === 'admin' ? 'ผอ. นพ. บริรักษ์ เวชกิจ' : 'กภ. วิภาวี สุขใจ'),
-          role: rawRole,
-          status: 'active',
         };
-        this.setUserProfile(user);
-        return { role: rawRole, user, token: token || 'mock-clinical-session-token' };
-      } catch (err: any) {
-        const uname = creds.username.trim().toLowerCase();
-        if (uname === 'director' || uname === 'admin' || uname.startsWith('pt')) {
-          const rawRole = (uname === 'director' || uname === 'admin') ? 'admin' : 'pt';
-          const fallbackUser: UserProfile = {
-            id: rawRole === 'admin' ? 'd1000000-0000-0000-0000-000000000001' : 'b1000000-0000-0000-0000-000000000003',
-            username: uname,
-            full_name: rawRole === 'admin' ? 'ผอ. นพ. บริรักษ์ เวชกิจ' : 'กภ. วิภาวี สุขใจ',
-            role: rawRole,
-            status: 'active',
-          };
-          const fallbackToken = 'offline-clinical-token-' + Date.now();
-          this.setAuthToken(fallbackToken);
-          this.setUserProfile(fallbackUser);
-          return { role: rawRole, user: fallbackUser, token: fallbackToken };
-        }
-        throw err;
+      }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(creds),
+      });
+
+      const token = res.token || res.accessToken || res.access_token || res.data?.token;
+      if (token) {
+        this.setAuthToken(token);
       }
+      const rawUser = res.user || res.data?.user || (res as unknown as UserProfile);
+      const uname = rawUser?.username || creds.username.trim().toLowerCase();
+      const rawRole = (res.role || rawUser?.role || (uname.includes('admin') || uname === 'director' ? 'admin' : 'pt')) as 'admin' | 'pt';
+      const user: UserProfile = {
+        ...rawUser,
+        id: rawUser?.id || (rawRole === 'admin' ? 'd1000000-0000-0000-0000-000000000001' : 'b1000000-0000-0000-0000-000000000003'),
+        username: uname,
+        full_name: rawUser?.full_name || (rawRole === 'admin' ? 'ผอ. นพ. บริรักษ์ เวชกิจ' : 'กภ. วิภาวี สุขใจ'),
+        role: rawRole,
+        status: 'active',
+      };
+      this.setUserProfile(user);
+      return { role: rawRole, user, token: token || '' };
     },
 
     logout: async () => {
@@ -5855,56 +5824,13 @@ export class ApiClient {
         else if (res && Array.isArray(res.patients)) rawList = res.patients;
         else if (res && Array.isArray(res.data)) rawList = res.data;
       } catch {}
-
-      if (rawList.length === 0) {
-        // Direct Supabase Cloud REST fetch
-        try {
-          const q = (params.q || '').trim();
-          const queryUrl = q
-            ? `${DEFAULT_SUPABASE_URL}/rest/v1/patients?or=(first_name.ilike.*${encodeURIComponent(q)}*,last_name.ilike.*${encodeURIComponent(q)}*,hn.ilike.*${encodeURIComponent(q)}*)&order=created_at.desc&limit=${params.limit || 50}`
-            : `${DEFAULT_SUPABASE_URL}/rest/v1/patients?order=created_at.desc&limit=${params.limit || 50}`;
-          const supaRes = await fetch(queryUrl, {
-            headers: {
-              apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-            },
-          });
-          if (supaRes.ok) {
-            const list = await supaRes.json();
-            if (Array.isArray(list)) rawList = list;
-          }
-        } catch {}
-      }
       return rawList.map(normalizePatientRecord) as PatientRecord[];
     },
 
     get: async (id: string) => {
       const cleanTarget = (id || '').trim();
-      try {
-        const rec = await this.request<PatientRecord>(`/patients/${cleanTarget}`, { method: 'GET' });
-        if (rec && (rec.id || rec.hn)) return normalizePatientRecord(rec);
-      } catch {}
-
-      // Direct fallback to Supabase REST Cloud
-      try {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTarget);
-        const queryParam = isUuid ? `id=eq.${encodeURIComponent(cleanTarget)}` : `hn=eq.${encodeURIComponent(cleanTarget)}`;
-        const supaRes = await fetch(
-          `${DEFAULT_SUPABASE_URL}/rest/v1/patients?${queryParam}&select=*&limit=1`,
-          {
-            headers: {
-              apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-            },
-          }
-        );
-        if (supaRes.ok) {
-          const rows = await supaRes.json();
-          if (Array.isArray(rows) && rows[0]) {
-            return normalizePatientRecord(rows[0]) as PatientRecord;
-          }
-        }
-      } catch {}
+      const rec = await this.request<PatientRecord>(`/patients/${cleanTarget}`, { method: 'GET' });
+      if (rec && (rec.id || rec.hn)) return normalizePatientRecord(rec);
       throw new Error(`Patient ${id} not found`);
     },
 
@@ -6012,22 +5938,6 @@ export class ApiClient {
         else if (res && Array.isArray(res.data)) transfers = res.data as CaseTransferRecord[];
         else if (res && Array.isArray(res.transfers)) transfers = res.transfers as CaseTransferRecord[];
       } catch {}
-
-      if (transfers.length === 0) {
-        try {
-          const authHeader = this.getSupabaseAuthHeader();
-          const supaRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/case_transfers?select=*&order=created_at.desc&limit=50`, {
-            headers: {
-              apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: authHeader,
-            },
-          });
-          if (supaRes.ok) {
-            const list = await supaRes.json();
-            if (Array.isArray(list)) transfers = list as CaseTransferRecord[];
-          }
-        } catch {}
-      }
 
       return transfers;
     },
@@ -6506,6 +6416,14 @@ export class ApiClient {
   public readonly kiosk = {
     listDevices: async () => {
       const res = await this.request<any>('/kiosk/devices', { method: 'GET' });
+      if (Array.isArray(res)) return res as KioskRecord[];
+      if (res && Array.isArray(res.devices)) return res.devices as KioskRecord[];
+      if (res && Array.isArray(res.data)) return res.data as KioskRecord[];
+      return [] as KioskRecord[];
+    },
+
+    listStations: async () => {
+      const res = await this.request<any>('/kiosk/stations', { method: 'GET' });
       if (Array.isArray(res)) return res as KioskRecord[];
       if (res && Array.isArray(res.devices)) return res.devices as KioskRecord[];
       if (res && Array.isArray(res.data)) return res.data as KioskRecord[];
@@ -7231,7 +7149,13 @@ export class ApiClient {
       'staff_calls',
       'patient_status',
       'patient_registered',
+      'patient_info_completed',
+      'patient_deleted',
+      'patient_checkin',
       'kiosk_login',
+      'kiosk_enrollment_dispatch',
+      'kiosk_mission_step',
+      'kiosk_mission_completed',
       'enrollment_done',
       'schedule_updated',
       'case_transfer',

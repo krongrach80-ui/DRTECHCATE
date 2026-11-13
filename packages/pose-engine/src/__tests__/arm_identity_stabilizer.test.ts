@@ -12,7 +12,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   ArmIdentityStabilizer,
-  ARM_STABILIZER_CONFIG,
 } from '../math/armIdentityStabilizer';
 import { ClinicalOneEuroLandmarkFilter } from '../math/oneEuroFilter';
 import { RepStateMachine } from '../engine/repStateMachine';
@@ -144,7 +143,7 @@ describe('Arm Identity Stabilizer & Ambiguity State Gate Test Suite', () => {
         },
         {
           name: '6. แขนชิดลำตัว (Arms Close to Body)',
-          generateFrame: (f: number) => {
+          generateFrame: (_f: number) => {
             const skel = createStandardSkeleton();
             skel[15] = { x: 0.58, y: 0.68, z: 0.0, visibility: 0.96 };
             skel[16] = { x: 0.42, y: 0.68, z: 0.0, visibility: 0.96 };

@@ -13,11 +13,9 @@ import {
   FastLoginLivenessVerifier,
   LivenessTelemetryBadge,
   LivenessVerificationResult,
-  checkFaceROIInCircle,
   SpatialIdentityAnchor,
   purgeStaleBiometricCache,
   purgeAllLocalBiometricCaches,
-  reconcileBiometricCacheWithLivePatients,
   removePatientFromLocalCache,
   computeLaplacianVariance,
   FaceLandmarks,
@@ -25,21 +23,17 @@ import {
 } from '../../../../packages/face-client/src/index.js';
 import { useRaiseBothHandsConfirm } from '../hooks/useRaiseBothHandsConfirm';
 import {
-  DEFAULT_SUPABASE_URL,
-  DEFAULT_SUPABASE_ANON_KEY,
   defaultApiClient,
   normalizePatientRecord,
 } from '../../../../packages/api-client/src/index.js';
 import {
   BIOMETRIC_CONFIG,
   calibrateCosineSimilarity,
-  evaluateBiometricMatch,
 } from '../../../../packages/smart-biometric-core/src/index.js';
 import { getFaceClientServices, preloadFaceModels } from '../services/faceClientService';
 import {
   RefreshCw,
   CheckCircle2,
-  AlertTriangle,
   UserPlus,
   Info,
   X,
@@ -50,7 +44,6 @@ import {
   Activity,
   Bell,
   UserCheck,
-  UserX,
   Clock,
 } from 'lucide-react';
 import { PatientRecordFile } from '../../../../packages/smart-biometric-core/src/index.js';
@@ -679,8 +672,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   isPaused = false,
 }) => {
   const { t, lang } = useClinicalI18n();
+  const tRef = useRef(t);
+  useLayoutEffect(() => {
+    tRef.current = t;
+  }, [t]);
   const [presenceDetected, setPresenceDetected] = useState<boolean>(false);
-  const [faceInCircle, setFaceInCircle] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [cameraReady, setCameraReady] = useState<boolean>(false);
   const [statusText, setStatusText] = useState<string>('กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น');
@@ -972,29 +968,22 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       const items: CachedPatientBiometric[] = [];
 
-      // 1. Fetch live active patients from Supabase Cloud with cache-busting headers
+      // 1. Fetch live active patients from backend API when staff token is available
+      // (Unauthenticated kiosk verifies matches server-side via /api/smart-onboarding/scan-login)
       let cloudPatients: any[] = [];
-      try {
-        const supaRes = await fetch(
-          `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=id,hn,first_name,last_name,history,registration_status&registration_status=neq.archived&limit=100`,
-          {
-            headers: {
-              apikey: DEFAULT_SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-            },
+      if (defaultApiClient.getAuthToken()) {
+        try {
+          const apiRes = await defaultApiClient.patients.list({ limit: 100 });
+          if (Array.isArray(apiRes)) {
+            cloudPatients = apiRes;
+          } else if (apiRes && Array.isArray((apiRes as any).patients)) {
+            cloudPatients = (apiRes as any).patients;
+          } else if (apiRes && Array.isArray((apiRes as any).data)) {
+            cloudPatients = (apiRes as any).data;
           }
-        );
-        if (supaRes.ok) {
-          cloudPatients = await supaRes.json();
-        } else {
-          const apiRes = await defaultApiClient.request<any[]>('/patients?select=id,hn,first_name,last_name,history,registration_status&registration_status=neq.archived&limit=100').catch(() => []);
-          if (Array.isArray(apiRes)) cloudPatients = apiRes;
+        } catch {
+          cloudPatients = [];
         }
-      } catch {
-        const apiRes = await defaultApiClient.request<any[]>('/patients?select=id,hn,first_name,last_name,history,registration_status&registration_status=neq.archived&limit=100').catch(() => []);
-        if (Array.isArray(apiRes)) cloudPatients = apiRes;
       }
 
       // 2. Populate verified vectors strictly from Supabase Cloud
@@ -1089,9 +1078,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     isCameraStartingRef.current = true;
     setCameraDisconnectedError(null);
     setStatusText(
-      lang === 'zh-CN'
+      langRef.current === 'zh-CN'
         ? '请站在摄像头前开始扫描'
-        : lang === 'en-US'
+        : langRef.current === 'en-US'
         ? 'Please stand in front of camera to begin'
         : 'กรุณาก้าวมายืนหน้าตู้เพื่อเริ่มต้น'
     );
@@ -1270,20 +1259,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
       const grouped = Object.values(candCounts).sort((a, b) => b.samples.length - a.samples.length);
       const topGroup = grouped[0];
-      const secondGroup = grouped[1];
-
-      // Calculate Agreement Ratio
-      const totalSamples = samples.length;
-      const agreementRatio = topGroup ? topGroup.samples.length / totalSamples : 0;
-      const MIN_FRAME_AGREEMENT = 0.70; // Approved requirement >= 70%
 
       // 2. Compute Top-3 Highest-Scoring Frames Score
-      let aggregatedScore = 0;
-      let aggregatedPercent = 0;
-      let aggregatedDistance = 2.0;
-      const topCand = topGroup?.cand || null;
-
-      // Filter for frames that passed genuine liveness
       const livenessPool = (topGroup ? topGroup.samples : samples).filter(
         (s) => s.liveness?.isLive !== false
       );
@@ -1291,39 +1268,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       const sortedPool = evalPool.slice().sort((a, b) => b.score - a.score);
       const top3Samples = sortedPool.slice(0, Math.min(3, sortedPool.length));
 
-      aggregatedScore =
+      const aggregatedScore =
         top3Samples.reduce((sum, s) => sum + s.score, 0) / (top3Samples.length || 1);
-      aggregatedPercent = Math.max(0, Math.min(100, Math.round(aggregatedScore * 100)));
-      aggregatedDistance = Math.sqrt(Math.max(0, 2 - 2 * aggregatedScore));
-
-      // Candidate 2 score & Margin check
-      let secondCandScore = 0;
-      if (secondGroup && secondGroup.samples.length > 0) {
-        const secondSorted = secondGroup.samples.map((s) => s.score).sort((a, b) => b - a);
-        const top3Second = secondSorted.slice(0, Math.min(3, secondSorted.length));
-        secondCandScore = top3Second.reduce((sum, s) => sum + s, 0) / (top3Second.length || 1);
-      }
-      const margin = aggregatedScore - secondCandScore;
-      const isMarginAmbiguous = topGroup && secondGroup && margin < BIOMETRIC_CONFIG.MARGIN_MIN;
-
-      // Non-blocking log to Supabase face_scan_logs ONLY for genuine verified matches (Zero stranger logging per Part 5 & 6)
-      if (topCand && topCand.id && aggregatedPercent >= 80 && !isMarginAmbiguous) {
-        defaultApiClient.request('/face_scan_logs', {
-          method: 'POST',
-          body: JSON.stringify({
-            patient_id: topCand?.id || null,
-            hn: topCand?.hn || null,
-            cosine_similarity: aggregatedScore,
-            euclidean_distance: aggregatedDistance,
-            similarity_percentage: aggregatedPercent,
-            samples_count: totalSamples,
-            agreement_ratio: agreementRatio,
-            margin,
-            passed: aggregatedPercent >= 80 && agreementRatio >= MIN_FRAME_AGREEMENT && !isMarginAmbiguous,
-            timestamp: new Date().toISOString(),
-          }),
-        }).catch(() => {});
-      }
+      const aggregatedDistance = Math.sqrt(Math.max(0, 2 - 2 * aggregatedScore));
 
       // Multi-Frame Best-Shot Capture: Collect 4 consecutive video frames over 150ms
       const services = getFaceClientServices(customDetectorRef.current ? { customDetector: customDetectorRef.current } : undefined);
@@ -1538,48 +1485,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         const patient = normalizePatientRecord(rawPatient);
         const pId = patient.id || patient.patient_id;
 
-        // Mandatory Pre-Login Live Supabase Existence Check (Rule 1 & 2)
-        let isVerifiedLive = false;
-        let authoritativePatient = patient;
-
-        try {
-          const verifyRes = await fetch(
-            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${pId}&registration_status=neq.archived&select=id,hn,first_name,last_name,age,sex,registration_status`,
-            {
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-              },
-            }
-          );
-          if (verifyRes.ok) {
-            const data = await verifyRes.json();
-            if (Array.isArray(data) && data.length > 0 && data[0].id === pId) {
-              isVerifiedLive = true;
-              authoritativePatient = {
-                ...patient,
-                id: data[0].id,
-                hn: data[0].hn,
-                first_name: data[0].first_name,
-                last_name: data[0].last_name,
-                age: data[0].age,
-                gender: data[0].sex === 'female' ? 'female' : 'male',
-                registration_status: data[0].registration_status,
-              };
-            }
-          }
-        } catch {
-          // If in test environment without network
-          if (process.env.NODE_ENV === 'test') {
-            isVerifiedLive = true;
-          }
-        }
-
-        if (!isVerifiedLive && cachedPatientsRef.current.some((c) => c.id === pId || (patient.hn && c.hn === patient.hn))) {
-          isVerifiedLive = true;
-        }
+        // Server-side scanLogin already verified live DB state; ensure record is active and not archived
+        const isVerifiedLive = Boolean(
+          pId &&
+            rawPatient &&
+            (rawPatient as any).registration_status !== 'archived'
+        );
+        const authoritativePatient = patient;
 
         if (!isVerifiedLive) {
           // GHOST PATIENT DETECTED: Immediately purge and refuse login
@@ -1627,7 +1539,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         setIsTransitioning(true);
         setTimeout(() => {
           if (isMountedRef.current) {
-            onLoginSuccess(authoritativePatient);
+            onLoginSuccessRef.current(authoritativePatient);
           }
         }, 600);
         return;
@@ -1743,7 +1655,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         isCountingDownRef.current = false;
       }
     }
-  }, [isScanningPaused, matchedPatient, lang]);
+  }, [isScanningPaused, lang, t]);
   useEffect(() => {
     finishCountdownAndVerifyRef.current = finishCountdownAndVerify;
   }, [finishCountdownAndVerify]);
@@ -2076,7 +1988,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     }, 100);
 
     countdownIntervalRef.current = interval;
-  }, [cancelCountdown, finishCountdownAndVerify, isScanning, isScanningPaused, matchedPatient, rateLimitCooldownSec, lang, t]);
+  }, [cancelCountdown, isScanning, isScanningPaused, matchedPatient, rateLimitCooldownSec, lang, t]);
   useEffect(() => {
     startCountdownRef.current = startCountdown;
   }, [startCountdown]);
@@ -2248,7 +2160,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   }, [cameraReady, isScanningPaused, matchedPatient]);
 
   // DETECTION & PRESENCE LOOP (160ms throttled)
-  const prevFaceInCircleRef = useRef<boolean>(false);
   const prevPresenceDetectedRef = useRef<boolean>(false);
   const prevLivenessStateRef = useRef<string>('');
   const lastLivenessBadgeUpdateRef = useRef<number>(0);
@@ -2350,24 +2261,11 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               brightness: imageQuality.brightness,
             });
 
-            // Closed-Loop Bidirectional Hardware Exposure Controller & Anti-Burnout Guard
-            const isScanningOrCountingDown =
-              isCountingDownRef.current ||
-              countdownValue !== null ||
-              isScanning ||
-              isProcessingScanRef.current ||
-              isAutoScanCoolingDown ||
-              isCoolingDownRef.current;
-
             // 2. Automated Pose & Size Quality Gate
             const quality = checkKioskFaceQuality(res, dw, dh, imageQuality);
             if (!quality.passed) {
               consecutiveSteadyFramesRef.current = 0;
               lockedTargetRef.current = null;
-              if (prevFaceInCircleRef.current !== false) {
-                prevFaceInCircleRef.current = false;
-                setFaceInCircle(false);
-              }
               if (prevStatusTextRef.current !== quality.statusMessageThai) {
                 prevStatusTextRef.current = quality.statusMessageThai;
                 setStatusText(quality.statusMessageThai);
@@ -2404,11 +2302,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               }
             }
 
-            if (prevFaceInCircleRef.current !== true) {
-              prevFaceInCircleRef.current = true;
-              setFaceInCircle(true);
-            }
-
             // 4. Liveness Verification & Anti-Spoofing
             const liv = fastLivenessVerifierRef.current.evaluate(res);
             const nowTelemetryMs = performance.now();
@@ -2426,9 +2319,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               stabilityDetectorRef.current.reset();
               consecutiveSteadyFramesRef.current = 0;
               if (isCountingDownRef.current) {
-                cancelCountdownRef.current?.(t('kiosk_spoof_blocked'));
+                cancelCountdownRef.current?.(tRef.current('kiosk_spoof_blocked'));
               }
-              const msg = t('kiosk_spoof_blocked');
+              const msg = tRef.current('kiosk_spoof_blocked');
               if (prevStatusTextRef.current !== msg) {
                 prevStatusTextRef.current = msg;
                 setStatusText(msg);
@@ -2477,13 +2370,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             } else if (!isCountingDownRef.current && !isScanning && !isCoolingDownRef.current) {
               let promptMsg = '🔍 ตรวจพบใบหน้า กรุณามองตรงและอยู่นิ่งๆ...';
               if (stability.reason === 'MOVING') {
-                promptMsg = lang === 'zh-CN' ? '👤 请保持静止并直视摄像头...' : lang === 'en-US' ? '👤 Please hold still and look straight...' : '👤 กรุณายืนนิ่งๆ มองตรงที่กล้อง';
+                promptMsg = langRef.current === 'zh-CN' ? '👤 请保持静止并直视摄像头...' : langRef.current === 'en-US' ? '👤 Please hold still and look straight...' : '👤 กรุณายืนนิ่งๆ มองตรงที่กล้อง';
               } else if (stability.reason === 'FACE_TOO_FAR') {
-                promptMsg = lang === 'zh-CN' ? '请靠近摄像头...' : lang === 'en-US' ? 'Please move closer...' : 'กรุณาขยับเข้าใกล้กล้องอีกนิด';
+                promptMsg = langRef.current === 'zh-CN' ? '请靠近摄像头...' : langRef.current === 'en-US' ? 'Please move closer...' : 'กรุณาขยับเข้าใกล้กล้องอีกนิด';
               } else if (stability.reason === 'FACE_TOO_CLOSE') {
-                promptMsg = lang === 'zh-CN' ? '请稍微后退...' : lang === 'en-US' ? 'Please step back slightly...' : 'กรุณาถอยห่างจากกล้องเล็กน้อย';
+                promptMsg = langRef.current === 'zh-CN' ? '请稍微后退...' : langRef.current === 'en-US' ? 'Please step back slightly...' : 'กรุณาถอยห่างจากกล้องเล็กน้อย';
               } else if (stability.reason === 'NOT_FRONTAL') {
-                promptMsg = lang === 'zh-CN' ? '请直视摄像头...' : lang === 'en-US' ? 'Please look straight at camera...' : 'กรุณามองตรงที่กล้อง';
+                promptMsg = langRef.current === 'zh-CN' ? '请直视摄像头...' : langRef.current === 'en-US' ? 'Please look straight at camera...' : 'กรุณามองตรงที่กล้อง';
               }
               if (prevStatusTextRef.current !== promptMsg) {
                 prevStatusTextRef.current = promptMsg;
@@ -2507,17 +2400,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
             }
             consecutiveSteadyFramesRef.current = 0;
             const noFaceMsg =
-              lang === 'zh-CN'
+              langRef.current === 'zh-CN'
                 ? '👤 请站在摄像头前以自动登录'
-                : lang === 'en-US'
+                : langRef.current === 'en-US'
                 ? '👤 Please stand in front of camera for auto-login'
                 : '👤 กรุณาก้าวยืนหน้ากล้องเพื่อเข้าสู่ระบบอัตโนมัติ';
             if (isCountingDownRef.current) {
               cancelCountdownRef.current?.(noFaceMsg);
-            }
-            if (prevFaceInCircleRef.current !== false) {
-              prevFaceInCircleRef.current = false;
-              setFaceInCircle(false);
             }
             if (prevPresenceDetectedRef.current !== false) {
               prevPresenceDetectedRef.current = false;
@@ -2850,7 +2739,7 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                     </button>
                   </div>
                   <div className="text-[10px] text-cyan-300 pb-0.5 border-b border-slate-800 flex items-center justify-between">
-                    <span>Host: <b className="text-white">mctegvnrvmglbibuuczi.supabase.co</b></span>
+                    <span>Host: <b className="text-white">{typeof window !== 'undefined' ? window.location.host : 'kiosk-local'}</b></span>
                     <span>Camera: <b className="text-emerald-400 truncate max-w-[150px] inline-block align-bottom">{activeCameraLabel}</b></span>
                   </div>
                   <div className="text-[10px] text-slate-300 pb-0.5 border-b border-slate-800 grid grid-cols-2 gap-x-2 gap-y-0.5">

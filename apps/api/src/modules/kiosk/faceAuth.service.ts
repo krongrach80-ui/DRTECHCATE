@@ -115,7 +115,12 @@ export class KioskFaceAuthService {
       throw new AppError('Invalid or nonexistent challenge nonce', 400, 'INVALID_NONCE');
     }
 
-    if (challenge.device_id && challenge.device_id !== input.kiosk_id) {
+    const normalizeChallengeDeviceId = (id: string) =>
+      id === 'kiosk-01' ? 'cc000000-0000-0000-0000-000000000001' : id;
+    if (
+      challenge.device_id &&
+      normalizeChallengeDeviceId(challenge.device_id) !== normalizeChallengeDeviceId(input.kiosk_id)
+    ) {
       throw new AppError('Challenge nonce does not belong to this kiosk device', 400, 'INVALID_NONCE');
     }
 

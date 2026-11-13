@@ -56,13 +56,13 @@ export const AdminApp: React.FC = () => {
 
   useEffect(() => {
     checkSession();
-    fetchStaffCalls();
   }, []);
 
   // Real-time SSE Connection
   useEffect(() => {
     if (!currentUser) return;
 
+    fetchStaffCalls();
     const disconnect = defaultApiClient.connectEvents(
       (event: { event: string; data: unknown }) => {
         if (event.event === 'staff_call') {
@@ -142,24 +142,6 @@ export const AdminApp: React.FC = () => {
       setCurrentUser(userToSet as UserProfile);
       await fetchStaffCalls();
     } catch (err: any) {
-      const uname = credentials.username.toLowerCase();
-      // Offline / Static deployment fallback: Allow director/admin/pt login if API is offline or 404
-      if (
-        (uname === 'director' || uname === 'admin' || uname.includes('pt')) &&
-        (credentials.password === 'Admin12345678!' || credentials.password.length >= 6 || err?.message?.includes('404') || err?.message?.includes('ไม่พบปลายทาง API'))
-      ) {
-        const isPt = uname.includes('pt');
-        const defaultStaff: UserProfile = {
-          id: isPt ? 'b1000000-0000-0000-0000-000000000003' : 'd1000000-0000-0000-0000-000000000001',
-          username: uname,
-          full_name: isPt ? 'กภ. วิภาวี สุขใจ' : (uname === 'director' ? 'ผอ. นพ. บริรักษ์ เวชกิจ' : 'ผู้ดูแลระบบ'),
-          role: isPt ? 'pt' : 'admin',
-          status: 'active',
-        };
-        defaultApiClient.setUserProfile(defaultStaff);
-        setCurrentUser(defaultStaff);
-        return;
-      }
       throw err;
     }
   };

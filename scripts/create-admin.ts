@@ -4,13 +4,15 @@ import readline from 'readline';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 
-// Load .env.local or .env
-const envLocalPath = path.resolve(process.cwd(), '.env.local');
-const envPath = path.resolve(process.cwd(), '.env');
-if (fs.existsSync(envLocalPath)) {
-  dotenv.config({ path: envLocalPath });
-} else {
-  dotenv.config({ path: envPath });
+// Load .env.local or .env (never in test/Vitest mode per Item H7)
+if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') {
+  const envLocalPath = path.resolve(process.cwd(), '.env.local');
+  const envPath = path.resolve(process.cwd(), '.env');
+  if (fs.existsSync(envLocalPath)) {
+    dotenv.config({ path: envLocalPath });
+  } else {
+    dotenv.config({ path: envPath });
+  }
 }
 
 function promptQuestion(query: string, hideInput: boolean = false): Promise<string> {

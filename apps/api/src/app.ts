@@ -62,7 +62,7 @@ export function createApp(
           scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
           workerSrc: ["'self'", 'blob:'],
           styleSrc: ["'self'"],
-          fontSrc: ["'self'"],
+          fontSrc: ["'self'", 'data:'],
           imgSrc: ["'self'", 'data:', 'blob:', ...(storageHost ? [storageHost] : [])],
           connectSrc: ["'self'"],
           frameAncestors: ["'none'"],
@@ -144,6 +144,9 @@ export function createApp(
   });
 
   // 10. Static Assets & SPA Client Fallbacks
+  app.get('/favicon.ico', (_req: Request, res: Response) => {
+    res.status(204).end();
+  });
   const publicDir = path.resolve(process.cwd(), 'public');
   app.use('/models', express.static(path.join(publicDir, 'models')));
   app.use('/admin', express.static(path.join(publicDir, 'admin')));

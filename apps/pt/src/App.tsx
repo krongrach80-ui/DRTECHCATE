@@ -51,7 +51,7 @@ const PtAppContent: React.FC = () => {
 
     const cleanup = defaultApiClient.connectEvents(
       (event) => {
-        if (event.event === 'kiosk:staff_call') {
+        if (event.event === 'staff_call' || event.event === 'kiosk:staff_call') {
           fetchStaffCalls();
         }
         if (event.event === 'schedule_updated' || event.event === 'schedule-updated' || event.event?.startsWith('course.')) {

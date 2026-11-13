@@ -3,6 +3,16 @@ import { getAdminClient } from '../../lib/supabase/adminClient';
 import { logger } from '../../middleware/logger';
 import { AppError } from '../../middleware/errorHandler';
 
+export const DEFAULT_KIOSK_UUID = 'cc000000-0000-0000-0000-000000000001';
+const KIOSK_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function resolveKioskUuid(kioskId?: string | null): string {
+  if (kioskId && KIOSK_UUID_RE.test(kioskId.trim())) {
+    return kioskId.trim();
+  }
+  return DEFAULT_KIOSK_UUID;
+}
+
 export interface PairingRecord {
   kioskId: string;
   codeHash: string; // HMAC-SHA256 hex string ONLY
@@ -88,11 +98,19 @@ export class KioskRepository implements IKioskRepository {
   async getKioskById(kioskId: string): Promise<KioskDeviceRecord | null> {
     try {
       const adminClient = getAdminClient();
-      const { data, error } = await adminClient
+      let query = adminClient
         .from('kiosk_devices')
-        .select('id, name, location, token_hash, pairing_code_hash, paired_at, is_active')
-        .eq('id', kioskId)
-        .maybeSingle();
+        .select('id, name, location, token_hash, pairing_code_hash, paired_at, is_active');
+
+      if (KIOSK_UUID_RE.test(kioskId)) {
+        query = query.eq('id', kioskId);
+      } else if (kioskId === 'kiosk-01') {
+        query = query.eq('id', DEFAULT_KIOSK_UUID);
+      } else {
+        query = query.eq('name', kioskId);
+      }
+
+      const { data, error } = await query.maybeSingle();
 
       if (error) {
         logger.error({ error, kioskId }, 'Failed to query kiosk_devices from Supabase');
@@ -353,9 +371,10 @@ export class KioskRepository implements IKioskRepository {
   async saveChallenge(nonce: string, kioskId: string, steps: string[], expiresAt: Date): Promise<void> {
     try {
       const adminClient = getAdminClient();
+      const targetDeviceId = resolveKioskUuid(kioskId);
       const { error } = await adminClient.from('face_challenges').insert({
         nonce,
-        device_id: kioskId,
+        device_id: targetDeviceId,
         steps,
         expires_at: expiresAt.toISOString(),
       });
@@ -569,7 +588,7 @@ export class KioskRepository implements IKioskRepository {
         .limit(50);
 
       if (kioskId) {
-        query = query.eq('kiosk_id', kioskId);
+        query = query.eq('kiosk_id', resolveKioskUuid(kioskId));
       }
 
       const { data, error } = await query;
@@ -610,7 +629,7 @@ export class KioskRepository implements IKioskRepository {
       // Atomic update only when handled_at is null
       const { data, error } = await adminClient
         .from('staff_calls')
-        .update({ status: 'resolved', handled_by: staffId, handled_at: handledAt })
+        .update({ handled_by: staffId, handled_at: handledAt })
         .eq('id', id)
         .is('handled_at', null)
         .select();

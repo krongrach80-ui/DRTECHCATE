@@ -10,7 +10,7 @@
  * 5. Calls /api/kiosk/enroll to record templates and update registration status.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
   FaceFlowManager,
@@ -20,7 +20,7 @@ import {
   LivenessTelemetryBadge,
 } from '../../../../packages/face-client/src/index.js';
 import { getFaceClientServices, FaceClientServices } from '../services/faceClientService';
-import { ShieldCheck, RefreshCw, Bell, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, RefreshCw, Bell, AlertCircle, CheckCircle2, RotateCcw } from 'lucide-react';
 
 interface EnrollViewProps {
   ticketId?: string | null;
@@ -51,11 +51,14 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
   const [livenessState, setLivenessState] = useState<'checking' | 'live_verified' | 'spoof_blocked'>('checking');
   const [livenessDepthScore, setLivenessDepthScore] = useState<number | undefined>(undefined);
   const [livenessEar, setLivenessEar] = useState<number | undefined>(undefined);
+  const [retryCount, setRetryCount] = useState<number>(0);
+  const [staffCallCooldown, setStaffCallCooldown] = useState<boolean>(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const isMountedRef = useRef<boolean>(true);
   const hasFinishedRef = useRef<boolean>(false);
+  const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onFrameCapturedRef = useRef(onFrameCaptured);
   const onCompleteRef = useRef(onComplete);
@@ -64,6 +67,27 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
     onCompleteRef.current = onComplete;
   });
 
+  const handleRetryEnrollment = useCallback(() => {
+    setEnrollError(null);
+    setIsSubmitting(false);
+    setIsCompleted(false);
+    setCurrentFrameIndex(0);
+    setCurrentPose('front');
+    hasFinishedRef.current = false;
+    setRetryCount((c) => c + 1);
+  }, []);
+
+  const handleCallStaffSafe = useCallback(() => {
+    if (!onCallStaff || staffCallCooldown) return;
+    setStaffCallCooldown(true);
+    onCallStaff();
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        setStaffCallCooldown(false);
+      }
+    }, 10000);
+  }, [onCallStaff, staffCallCooldown]);
+
   useEffect(() => {
     isMountedRef.current = true;
     hasFinishedRef.current = false;
@@ -71,9 +95,13 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
     const { camera, detector, aligner, qualityChecker, embeddingModel } = services;
 
     let animFrameId: number;
+    const videoEl = videoRef.current;
 
     async function startEnrollmentFlow() {
       try {
+        setEnrollError(null);
+        setCameraReady(false);
+
         // 1. Start camera feed
         if (videoRef.current) {
           await camera.start(videoRef.current);
@@ -146,14 +174,18 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
         if (!isMountedRef.current || hasFinishedRef.current) return;
         hasFinishedRef.current = true;
 
+        setIsSubmitting(false);
         setIsCompleted(true);
         setStatusText('ลงทะเบียนใบหน้าสำเร็จเรียบร้อยแล้ว!');
 
-        setTimeout(() => {
-          onCompleteRef.current();
+        completeTimerRef.current = setTimeout(() => {
+          if (isMountedRef.current) {
+            onCompleteRef.current();
+          }
         }, 1200);
       } catch (err: unknown) {
         if (!isMountedRef.current || hasFinishedRef.current) return;
+        setIsSubmitting(false);
         const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลงทะเบียนใบหน้า';
         setEnrollError(msg);
         setStatusText(msg);
@@ -164,10 +196,18 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
 
     return () => {
       isMountedRef.current = false;
+      if (completeTimerRef.current) {
+        clearTimeout(completeTimerRef.current);
+      }
       cancelAnimationFrame(animFrameId);
       camera.stop();
+      if (videoEl && videoEl.srcObject) {
+        const stream = videoEl.srcObject as MediaStream;
+        stream.getTracks().forEach((t) => t.stop());
+        videoEl.srcObject = null;
+      }
     };
-  }, [ticketId, patientId, injectedServices]);
+  }, [ticketId, patientId, injectedServices, retryCount]);
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950">
@@ -214,9 +254,19 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
         </div>
 
         {enrollError && (
-          <div className="mt-2 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold">
-            <AlertCircle className="w-4 h-4" />
-            <span>{enrollError}</span>
+          <div className="mt-3 flex flex-col items-center gap-2">
+            <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{enrollError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleRetryEnrollment}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md transition cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>ลองสแกนใหม่อีกครั้ง</span>
+            </button>
           </div>
         )}
       </div>
@@ -232,7 +282,7 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
             }`}
           />
 
-          {!cameraReady && (
+          {!cameraReady && !enrollError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-950">
               <RefreshCw className="w-10 h-10 text-blue-400 animate-spin mb-4" />
               <p className="text-base font-medium text-slate-300">กำลังเชื่อมต่อกล้องหน้าตู้...</p>
@@ -276,11 +326,12 @@ export const EnrollView: React.FC<EnrollViewProps> = ({
           {onCallStaff && (
             <button
               type="button"
-              onClick={onCallStaff}
-              className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 transition"
+              onClick={handleCallStaffSafe}
+              disabled={staffCallCooldown}
+              className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 disabled:opacity-50 transition cursor-pointer"
             >
               <Bell className="w-3.5 h-3.5" />
-              <span>ขอความช่วยเหลือ</span>
+              <span>{staffCallCooldown ? 'แจ้งเจ้าหน้าที่แล้ว' : 'ขอความช่วยเหลือ'}</span>
             </button>
           )}
         </div>

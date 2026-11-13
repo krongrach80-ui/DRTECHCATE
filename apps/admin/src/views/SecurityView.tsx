@@ -54,7 +54,7 @@ const DEMO_AUDITS: AuditRecord[] = [
     actor_id: 'supabase-realtime',
     action: 'SYNC_COMPLETED',
     entity: 'database',
-    entity_id: 'mctegvnrvmglbibuuczi',
+    entity_id: 'primary-db',
     ip: 'cloud',
     device_id: 'kiosk-01',
     metadata: { synced_tables: ['patients', 'courses', 'staff'] },

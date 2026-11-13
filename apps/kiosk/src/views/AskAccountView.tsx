@@ -7,6 +7,7 @@
  * 2. OneEuroFilter2D tremor suppression: Cancels jitter and resting tremor.
  * 3. 1,000ms edge-zone dwell: Left zone (x < 0.25) -> No Account, Right zone (x > 0.75) -> Has Account.
  * 4. Touch fallback: Direct touch/click is always active and triggers immediately.
+ * 5. Input Mode Guard: When typing ticket number, edge gestures are suspended to prevent accidental jumps.
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -32,6 +33,17 @@ export const AskAccountView: React.FC<AskAccountViewProps> = ({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hasTriggeredRef = useRef<boolean>(false);
+  const showTicketInputRef = useRef<boolean>(showTicketInput);
+
+  useEffect(() => {
+    showTicketInputRef.current = showTicketInput;
+    if (showTicketInput) {
+      const services = getFaceClientServices();
+      services.inputManager.processHandLandmarks(null, performance.now());
+      setHoverZone(null);
+      setHoverProgress(0);
+    }
+  }, [showTicketInput]);
 
   const handleHasAccount = useCallback(() => {
     if (hasTriggeredRef.current) return;
@@ -39,10 +51,10 @@ export const AskAccountView: React.FC<AskAccountViewProps> = ({
     onHasAccount();
   }, [onHasAccount]);
 
-  const handleNoAccount = useCallback(() => {
+  const handleNoAccount = useCallback((ticket?: string) => {
     if (hasTriggeredRef.current) return;
     hasTriggeredRef.current = true;
-    onNoAccount();
+    onNoAccount(ticket);
   }, [onNoAccount]);
 
   useEffect(() => {
@@ -51,7 +63,7 @@ export const AskAccountView: React.FC<AskAccountViewProps> = ({
     inputManager.setIdleMode(false);
 
     const unsubscribe = inputManager.subscribe((event: KioskInputEvent) => {
-      if (hasTriggeredRef.current) return;
+      if (hasTriggeredRef.current || showTicketInputRef.current) return;
 
       if (event.type === 'ZONE_HOVER_START') {
         setHoverZone(event.zone);
@@ -74,12 +86,13 @@ export const AskAccountView: React.FC<AskAccountViewProps> = ({
 
     return () => {
       unsubscribe();
+      services.inputManager.processHandLandmarks(null, performance.now());
     };
   }, [handleHasAccount, handleNoAccount]);
 
   // Handle pointer / mouse movement to feed One Euro Filter & Hand Tracker
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (hasTriggeredRef.current) return;
+    if (hasTriggeredRef.current || showTicketInputRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
       const normalizedPoint = {
@@ -101,8 +114,7 @@ export const AskAccountView: React.FC<AskAccountViewProps> = ({
   const handleTicketSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (ticketInput.trim()) {
-      hasTriggeredRef.current = true;
-      onNoAccount(ticketInput.trim());
+      handleNoAccount(ticketInput.trim());
     }
   };
 
@@ -300,6 +312,13 @@ export const AskAccountView: React.FC<AskAccountViewProps> = ({
               className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500"
             >
               ใช้บัตรคิว
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowTicketInput(false)}
+              className="px-3 py-2 rounded-xl bg-slate-800 text-slate-400 text-sm hover:bg-slate-700"
+            >
+              ยกเลิก
             </button>
           </form>
         )}

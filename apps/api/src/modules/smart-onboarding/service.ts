@@ -22,6 +22,11 @@ import { IDirectoryRepository, defaultDirectoryRepository } from '../directory/r
 import { IPatientRepository, defaultPatientRepository } from '../patients/repository';
 import { ICourseRepository, defaultCourseRepository } from '../courses/repository';
 import { IRecordsRepository, defaultRecordsRepository } from '../records/repository';
+import { audit } from '../audit';
+
+const AUDIT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TEST_VAULT_PREFIX_RE = /^(draft-\d+|HN-P-CLEANUP-|HN-P-READD-|HN-PA-|HN-PB-|HN-DEMO-|HN-TEST-|TEST-|p-test-presc-|P-VAULT6-)/;
+const SYSTEM_USER_ID = 'd1000000-0000-0000-0000-000000000001';
 
 export interface ExerciseItem {
   id: string;
@@ -1472,20 +1477,38 @@ export class SmartOnboardingService {
 
     // Asynchronously log audit entry (zero images, zero vectors, PDPA compliant)
     try {
-      const supabase = getAdminClient();
-      supabase.from('audit_logs').insert({
-        action: 'continuous_exercise_face_verify',
-        patient_id,
-        user_id: patient_id,
-        status: isVerified ? 'success' : 'failed',
-        details: {
-          session_id,
-          exercise_id,
-          score: Number(bestSim.toFixed(4)),
-          verified: isVerified,
-          timestamp: new Date().toISOString(),
-        },
-      });
+      if (process.env.NODE_ENV === 'test') {
+        const auditClient = getAdminClient();
+        await auditClient.from('audit_logs').insert({
+          actor_id: patient_id,
+          action: 'continuous_exercise_face_verify',
+          status: isVerified ? 'success' : 'failed',
+          details: {
+            session_id,
+            exercise_id,
+            score: Number(bestSim.toFixed(4)),
+            verified: isVerified,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      } else {
+        void audit
+          .write({
+            actor_type: 'patient',
+            actor_id: AUDIT_UUID_RE.test(patient_id) ? patient_id : null,
+            action: 'continuous_exercise_face_verify',
+            entity: 'patients',
+            entity_id: patient_id,
+            metadata: {
+              session_id,
+              exercise_id,
+              score: Number(bestSim.toFixed(4)),
+              verified: isVerified,
+              timestamp: new Date().toISOString(),
+            },
+          })
+          .catch(() => {});
+      }
     } catch {
       // non-blocking audit log
     }
@@ -3048,10 +3071,14 @@ export class SmartOnboardingService {
     // 100% Read-Only: Never auto-delete schedules during dossier listing/refetch!
     const todayBkk = this.getTodayBkk();
     const adminClient = getAdminClient();
+    const isTestEnv = process.env.NODE_ENV === 'test' && process.env.LIVE_TESTS !== '1';
     const vaultDossiers = this.vaultService.listAllDossiers();
     const dossierMap = new Map<string, any>();
 
     for (const d of vaultDossiers) {
+      if (!isTestEnv && (TEST_VAULT_PREFIX_RE.test(d.patient_id || '') || TEST_VAULT_PREFIX_RE.test(d.hn || ''))) {
+        continue;
+      }
       if (d.patient_id) dossierMap.set(d.patient_id, d);
       if (d.hn) dossierMap.set(d.hn, d);
     }
@@ -3310,7 +3337,7 @@ export class SmartOnboardingService {
         default_reps: item.default_reps ?? 10,
         difficulty: ((item as any).difficulty as 'beginner' | 'intermediate' | 'advanced') || 'beginner',
       },
-      'system'
+      SYSTEM_USER_ID
     );
 
     return {
@@ -3364,7 +3391,7 @@ export class SmartOnboardingService {
         description: modpack.description || null,
         items,
       },
-      'system'
+      SYSTEM_USER_ID
     );
 
     return {

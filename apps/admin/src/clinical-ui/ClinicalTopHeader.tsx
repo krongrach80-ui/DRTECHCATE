@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { SmoothButton } from '../../../../packages/hospital-ui-kit/src/index.js';
 import { LanguageSwitcher, useClinicalI18n } from '../../../../packages/clinical-i18n/src/index';
-import { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../../../packages/api-client/src/index.js';
 
 interface ClinicalTopHeaderProps {
   title: string;
@@ -50,24 +49,19 @@ export const ClinicalTopHeader: React.FC<ClinicalTopHeaderProps> = ({
 
   useEffect(() => {
     let isMounted = true;
-    const checkSupabase = async () => {
+    const checkBackendHealth = async () => {
       try {
-        const res = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/exercises?select=id&limit=1`, {
-          headers: {
-            apikey: DEFAULT_SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-          },
-        });
+        const res = await fetch('/api/health', { cache: 'no-store' });
         if (isMounted) setSupabaseOnline(res.ok);
       } catch {
         if (isMounted) setSupabaseOnline(false);
       }
     };
 
-    checkSupabase();
+    checkBackendHealth();
     const timer = setInterval(() => {
       if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) return;
-      checkSupabase();
+      checkBackendHealth();
     }, 60000);
     return () => {
       isMounted = false;

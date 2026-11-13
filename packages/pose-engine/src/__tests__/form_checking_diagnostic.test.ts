@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CLINICAL_EXERCISES_CONFIG } from '../presets/exercises.config';
 import { RepStateMachine } from '../engine/repStateMachine';
-import { PoseEngineLandmark, RepEvaluationResult } from '../types/exerciseConfig';
+import { PoseEngineLandmark } from '../types/exerciseConfig';
 
 function createBaseSkeleton(): PoseEngineLandmark[] {
   const landmarks: PoseEngineLandmark[] = [];

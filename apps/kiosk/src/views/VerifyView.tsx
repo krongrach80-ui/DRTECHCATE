@@ -1,16 +1,16 @@
 /**
  * apps/kiosk/src/views/VerifyView.tsx
- * Real-Time Face Biometric Verification View per Master Prompt v3 Spec 7.4 & 12
+ * Real-Time Face Biometric Verification View
  *
  * Invariants:
  * 1. Camera preview is mirrored for natural user experience via CameraManager.renderPreview().
  * 2. Frames passed to MediaPipe / FaceFlowManager are raw, unmirrored via CameraManager.captureRotatedFrame().
  * 3. Dynamic 2-step challenge (e.g. left -> nod) before collecting 3-5 frontal probe frames.
- * 4. Memory Wipe: Probe vector is wiped (.fill(0)) immediately after submission.
- * 5. Fail-Closed & 3-attempt limit: After 3 failed attempts, automatically creates staff_call and routes to staff.
+ * 4. Memory Wipe: Probe vector is wiped (.fill(0)) immediately after submission or abort.
+ * 5. Fail-Closed & Explicit Staff Call: Never auto-triggers staff_call without explicit button click.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
   FaceFlowManager,
@@ -18,7 +18,15 @@ import {
   LivenessTelemetryBadge,
 } from '../../../../packages/face-client/src/index.js';
 import { getFaceClientServices, FaceClientServices } from '../services/faceClientService';
-import { AlertCircle, Bell, RefreshCw, CheckCircle2, ShieldCheck } from 'lucide-react';
+import {
+  AlertCircle,
+  Bell,
+  RefreshCw,
+  CheckCircle2,
+  ShieldCheck,
+  UserCheck,
+  RotateCcw,
+} from 'lucide-react';
 
 interface VerifyViewProps {
   kioskId?: string;
@@ -33,7 +41,32 @@ interface VerifyViewProps {
   onFailure: (error?: string) => void;
   onCallStaff: () => void;
   services?: FaceClientServices;
+  lang?: 'th' | 'en' | 'cn';
 }
+
+const NOT_FOUND_TEXT = {
+  th: {
+    title: 'ไม่พบบัญชีผู้ใช้ในระบบ',
+    desc: 'กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน หรือกดลองสแกนอีกครั้ง',
+    callStaffBtn: '🔔 เรียกเจ้าหน้าที่',
+    staffNotifiedBtn: '✓ ส่งคำเรียกเจ้าหน้าที่แล้ว',
+    retryBtn: '🔄 ลองสแกนอีกครั้ง',
+  },
+  en: {
+    title: 'Account Not Found',
+    desc: 'Please contact hospital staff for registration or try scanning again.',
+    callStaffBtn: '🔔 Call Staff',
+    staffNotifiedBtn: '✓ Staff Notified',
+    retryBtn: '🔄 Try Scanning Again',
+  },
+  cn: {
+    title: '未找到用户账户',
+    desc: '请联系医护人员办理建档登记，或点击重新扫描。',
+    callStaffBtn: '🔔 呼叫医护人员',
+    staffNotifiedBtn: '✓ 已呼叫医护人员',
+    retryBtn: '🔄 重新扫描',
+  },
+} as const;
 
 export const VerifyView: React.FC<VerifyViewProps> = ({
   kioskId = 'kiosk-01',
@@ -43,6 +76,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
   onFailure,
   onCallStaff,
   services: injectedServices,
+  lang = 'th',
 }) => {
   const [nonce, setNonce] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string>('กำลังเชื่อมต่อกล้องและเซิร์ฟเวอร์...');
@@ -53,6 +87,9 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
   const [flowPhase, setFlowPhase] = useState<'connecting' | 'challenge' | 'probe' | 'done'>('connecting');
   const [cameraReady, setCameraReady] = useState<boolean>(false);
   const [livenessState, setLivenessState] = useState<'checking' | 'live_verified' | 'spoof_blocked'>('checking');
+  const [isAccountNotFoundModal, setIsAccountNotFoundModal] = useState<boolean>(false);
+  const [staffCallCooldown, setStaffCallCooldown] = useState<boolean>(false);
+  const [retrySeq, setRetrySeq] = useState<number>(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -63,6 +100,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
   const onFailureRef = useRef(onFailure);
   const onCallStaffRef = useRef(onCallStaff);
   const failedCountRef = useRef(failedCount);
+
   useEffect(() => {
     onSuccessRef.current = onSuccess;
     onFailureRef.current = onFailure;
@@ -70,7 +108,31 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
     failedCountRef.current = failedCount;
   });
 
+  const handleExplicitCallStaff = useCallback(() => {
+    if (staffCallCooldown) return;
+    setStaffCallCooldown(true);
+    onCallStaffRef.current();
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        setStaffCallCooldown(false);
+      }
+    }, 15000);
+  }, [staffCallCooldown]);
+
+  const handleManualRetry = useCallback(() => {
+    setIsAccountNotFoundModal(false);
+    setChallengeError(null);
+    hasFinishedRef.current = false;
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        setRetrySeq((s) => s + 1);
+      }
+    }, 500);
+  }, []);
+
   useEffect(() => {
+    if (isAccountNotFoundModal) return;
+
     isMountedRef.current = true;
     hasFinishedRef.current = false;
     const services = injectedServices || getFaceClientServices();
@@ -118,7 +180,6 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
         setFlowPhase('challenge');
 
         // 3. Execute Verification Probe Flow
-        // Capture frame function passes RAW, UNMIRRORED canvas to face detector & aligner
         const captureFrameFn = () => {
           if (!videoRef.current) {
             throw new Error('Video stream is unavailable');
@@ -154,6 +215,8 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
 
         // 4. Submit Probe Vector to /api/kiosk/verify
         let verifyRes: {
+          matched?: boolean;
+          message?: string;
           session_token?: string;
           sessionToken?: string;
           patient_id?: string;
@@ -180,9 +243,19 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
         }
 
         if (!isMountedRef.current || hasFinishedRef.current) return;
-        hasFinishedRef.current = true;
 
-        const pId = verifyRes.candidate?.id || verifyRes.patient_id || '';
+        const pId = verifyRes?.candidate?.id || verifyRes?.patient_id || '';
+        const isMatched = verifyRes?.matched !== false && Boolean(pId);
+
+        if (!isMatched) {
+          throw new Error(
+            verifyRes?.message || 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียนเข้าใช้งาน'
+          );
+        }
+
+        hasFinishedRef.current = true;
+        setFlowPhase('done');
+
         const fName = verifyRes.candidate?.first_name || verifyRes.first_name || 'ผู้รับบริการ';
         const avUrl = verifyRes.candidate?.avatar_url || verifyRes.avatar_url || null;
         const sToken = verifyRes.session_token || verifyRes.sessionToken || '';
@@ -195,10 +268,12 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
         setStatusText(msg);
 
         const nextFailedCount = failedCountRef.current + 1;
-        if (nextFailedCount >= 3) {
-          // Automatic staff call on 3 failures (Spec 12 & DoD 3)
-          // Delegate to single coordinator in App.tsx (eliminates duplicate cascade)
-          onCallStaffRef.current();
+        if (nextFailedCount >= 2) {
+          // หยุดวนสแกนอัตโนมัติและแสดงหน้าจอไม่พบบัญชีผู้ใช้ (ไม่ยิงคำเรียกเจ้าหน้าที่อัตโนมัติ)
+          cancelAnimationFrame(animFrameId);
+          camera.stop();
+          setCameraReady(false);
+          setIsAccountNotFoundModal(true);
         } else {
           onFailureRef.current?.(msg);
         }
@@ -212,10 +287,12 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
       cancelAnimationFrame(animFrameId);
       camera.stop();
     };
-  }, [kioskId, injectedServices]);
+  }, [kioskId, injectedServices, retrySeq, isAccountNotFoundModal]);
+
+  const nf = NOT_FOUND_TEXT[lang] || NOT_FOUND_TEXT.th;
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950">
+    <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950 relative">
       {/* Hidden camera stream source */}
       <video
         ref={videoRef}
@@ -247,17 +324,15 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
           <LivenessTelemetryBadge state={livenessState} />
         </div>
 
-        {failedCount > 0 && (
+        {failedCount > 0 && !isAccountNotFoundModal && (
           <div className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold">
             <AlertCircle className="w-4 h-4 text-amber-400" />
-            <span>
-              สแกนไม่สำเร็จครั้งที่ {failedCount} / 3 (หากไม่ผ่าน 3 ครั้งระบบจะเรียกเจ้าหน้าที่อัตโนมัติ)
-            </span>
+            <span>กรุณามองตรงและอยู่นิ่งๆ เพื่อตรวจสอบอีกครั้ง</span>
           </div>
         )}
 
-        {(errorMessage || challengeError) && (
-          <div className="mt-2 text-rose-400 text-xs font-medium">
+        {(errorMessage || challengeError) && !isAccountNotFoundModal && (
+          <div className="mt-2 text-amber-300 text-xs font-medium">
             {challengeError || errorMessage}
           </div>
         )}
@@ -266,7 +341,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
       {/* Mirrored Camera View with Real-time Pose & Quality Overlay */}
       <div className="my-auto w-full max-w-xl h-96 relative flex items-center justify-center">
         <div className="w-full h-full rounded-3xl overflow-hidden border border-slate-700/60 bg-slate-900/90 shadow-2xl relative flex items-center justify-center">
-          {/* Live Preview Canvas (Mirror preview rendered via CameraManager) */}
+          {/* Live Preview Canvas */}
           <canvas
             ref={previewCanvasRef}
             className={`w-full h-full object-cover transition-opacity duration-300 ${
@@ -274,7 +349,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
             }`}
           />
 
-          {!cameraReady && (
+          {!cameraReady && !isAccountNotFoundModal && (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-950">
               <RefreshCw className="w-10 h-10 text-blue-400 animate-spin mb-4" />
               <p className="text-base font-medium text-slate-300">กำลังเชื่อมต่อกล้องหน้าตู้...</p>
@@ -283,7 +358,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
           )}
 
           {/* Scanner Reticle and Dynamic Pose Direction Indicator */}
-          {cameraReady && (
+          {cameraReady && !isAccountNotFoundModal && (
             <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
               <div
                 className={`relative w-64 h-80 sm:w-80 sm:h-88 rounded-full border-2 border-dashed transition-all duration-300 flex items-center justify-center ${
@@ -294,7 +369,6 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
                     : 'border-blue-400/60 shadow-[0_0_50px_rgba(59,130,246,0.15)]'
                 }`}
               >
-                {/* Status Icon in Reticle */}
                 {flowPhase === 'done' ? (
                   <CheckCircle2 className="w-16 h-16 text-emerald-400 animate-bounce" />
                 ) : (
@@ -314,7 +388,7 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
                 )}
               </div>
 
-              {/* Real-Time Thai Guidance Prompt */}
+              {/* Real-Time Guidance Prompt */}
               <div className="mt-4 px-6 py-2.5 rounded-full bg-slate-950/85 backdrop-blur-md border border-slate-700/80 text-blue-200 text-sm font-semibold shadow-xl flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />
                 <span>{statusText}</span>
@@ -323,6 +397,43 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Modal แจ้งเตือนเมื่อไม่พบบัญชีผู้ใช้ (หยุดวนสแกนอัตโนมัติ) */}
+      {isAccountNotFoundModal && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-6"
+        >
+          <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-teal-500/30 p-6 text-center shadow-2xl">
+            <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-teal-500/15 border border-teal-500/30 flex items-center justify-center">
+              <UserCheck className="w-8 h-8 text-teal-400" />
+            </div>
+            <h3 className="text-2xl font-extrabold text-white">{nf.title}</h3>
+            <p className="text-sm text-slate-300 mt-2">{nf.desc}</p>
+
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={handleExplicitCallStaff}
+                disabled={staffCallCooldown}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 disabled:opacity-50 text-white font-bold text-base shadow-lg cursor-pointer"
+              >
+                {staffCallCooldown ? nf.staffNotifiedBtn : nf.callStaffBtn}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleManualRetry}
+                className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>{nf.retryBtn}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bottom SOS & PDPA Status */}
       <div className="w-full max-w-xl flex flex-col items-center gap-3">
@@ -333,11 +444,12 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
           </div>
           <button
             type="button"
-            onClick={onCallStaff}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:text-rose-300 font-medium transition"
+            onClick={handleExplicitCallStaff}
+            disabled={staffCallCooldown}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:text-rose-300 disabled:opacity-50 font-medium transition cursor-pointer"
           >
             <Bell className="w-4 h-4 text-rose-400" />
-            <span>สแกนไม่ได้? กดเรียกเจ้าหน้าที่</span>
+            <span>{staffCallCooldown ? nf.staffNotifiedBtn : 'สแกนไม่ได้? กดเรียกเจ้าหน้าที่'}</span>
           </button>
         </div>
       </div>

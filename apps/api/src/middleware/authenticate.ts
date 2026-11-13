@@ -4,7 +4,7 @@ import { logger } from './logger';
 import { getAdminClient } from '../lib/supabase/adminClient';
 import { getAuthClient } from '../lib/supabase/authClient';
 import { getEnv } from '../config/env';
-import { verifyStatelessToken } from '../lib/auth/token';
+import { verifyStatelessToken, nextAuthSeq } from '../lib/auth/token';
 
 export interface UserSession {
   id: string;
@@ -36,12 +36,24 @@ interface CachedProfile {
 }
 
 const profileCache = new Map<string, CachedProfile>();
-const forceLoggedOutUsers = new Set<string>();
+const forceLoggedOutUsers = new Map<string, { timestampMs: number; seq: number }>();
 const CACHE_TTL_MS = 15 * 1000; // 15 seconds
 
 export function markUserForceLoggedOut(userId: string): void {
-  forceLoggedOutUsers.add(userId);
+  forceLoggedOutUsers.set(userId, { timestampMs: Date.now(), seq: nextAuthSeq() });
   profileCache.delete(userId);
+}
+
+function isForceLoggedOut(userId: string, tokenIatMs?: number, tokenSeq?: number): boolean {
+  const entry = forceLoggedOutUsers.get(userId);
+  if (!entry) return false;
+  if (typeof tokenSeq === 'number') {
+    return tokenSeq <= entry.seq;
+  }
+  if (typeof tokenIatMs === 'number') {
+    return tokenIatMs <= entry.timestampMs;
+  }
+  return true;
 }
 
 export function clearProfileCache(): void {
@@ -144,7 +156,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       if (statelessUser.status !== 'active') {
         throw new AppError('User account is inactive or suspended', 403, 'ACCOUNT_INACTIVE');
       }
-      if (forceLoggedOutUsers.has(statelessUser.id)) {
+      if (isForceLoggedOut(statelessUser.id, statelessUser.iat_ms, statelessUser.seq)) {
         throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
       }
       req.user = {
@@ -163,7 +175,10 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     if (rawJwtPayload && (rawJwtPayload as any).role && ((rawJwtPayload as any).id || (rawJwtPayload as any).sub)) {
       const payloadUser = rawJwtPayload as any;
       const uid = payloadUser.id || payloadUser.sub;
-      if (forceLoggedOutUsers.has(uid)) {
+      const payloadIatMs = typeof payloadUser.iat_ms === 'number'
+        ? payloadUser.iat_ms
+        : (typeof payloadUser.iat === 'number' ? payloadUser.iat * 1000 : undefined);
+      if (isForceLoggedOut(uid, payloadIatMs, payloadUser.seq)) {
         throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
       }
       req.user = {
@@ -253,7 +268,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       if (cached.profile.status !== 'active') {
         throw new AppError('User account is inactive or suspended', 403, 'ACCOUNT_INACTIVE');
       }
-      if (forceLoggedOutUsers.has(userId) || (cached.forceLogoutAtMs && cached.forceLogoutAtMs > tokenIatMs)) {
+      if (isForceLoggedOut(userId, tokenIatMs) || (cached.forceLogoutAtMs && cached.forceLogoutAtMs > tokenIatMs)) {
         throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
       }
       req.user = cached.profile;
@@ -309,7 +324,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       ? new Date(profile.force_logout_at).getTime()
       : null;
 
-    if (forceLoggedOutUsers.has(userId) || (forceLogoutAtMs && forceLogoutAtMs > tokenIatMs)) {
+    if (isForceLoggedOut(userId, tokenIatMs) || (forceLogoutAtMs && forceLogoutAtMs > tokenIatMs)) {
       throw new AppError('Session has been revoked by administrator', 401, 'SESSION_TERMINATED');
     }
 

@@ -18,6 +18,14 @@
 import { PoseEngineLandmark } from '../types/exerciseConfig';
 import { distance3D } from './geometry3d';
 
+export interface PoseLandmarkPoint {
+  x: number;
+  y: number;
+  z?: number;
+  visibility?: number;
+  presence?: number;
+}
+
 /**
  * คอนฟิกรวมศูนย์สำหรับการคงตัวตนแขนซ้าย/ขวาและการตรวจจับความกำกวม (Arm Identity & Ambiguity Config)
  */
@@ -30,7 +38,7 @@ export const ARM_STABILIZER_CONFIG = {
   BONE_LENGTH_TOLERANCE: 0.35,
   /** ระดับความเชื่อมั่นการมองเห็นขั้นต่ำของข้อต่อที่จะนำมาประมวลผลหรือวาด */
   MIN_LANDMARK_VISIBILITY: 0.50,
-};
+} as const;
 
 export interface ArmStabilizerConfig {
   /** ระยะห่างขั้นต่ำระหว่างข้อมือซ้าย-ขวาที่ถือว่ากำกวม */
@@ -43,8 +51,9 @@ export interface ArmStabilizerConfig {
   minLandmarkVisibility?: number;
 }
 
-export interface ArmStabilizerResult {
-  /** โครงร่างที่ผ่านการล็อกและสลับตัวตนซ้าย-ขวากลับให้ถูกต้องแล้ว */
+export interface ArmStabilizationResult {
+  /** โครงร่างที่ผ่านการล็อกและสลับตัวตนซ้าย-ขวากลับให้ถูกต้องแล้ว (Alias for landmarks) */
+  landmarks: PoseEngineLandmark[];
   stabilizedLandmarks: PoseEngineLandmark[];
   /** สถานะความกำกวม (true เมื่อข้อมือ/ศอกชิดกันหรือไขว้กัน) */
   isArmAmbiguous: boolean;
@@ -58,9 +67,11 @@ export interface ArmStabilizerResult {
   coachingCueCn?: string;
 }
 
+export type ArmStabilizerResult = ArmStabilizationResult;
+
 // MediaPipe Arm and Hand Landmark Indices
-export const LEFT_ARM_JOINTS = [13, 15, 17, 19, 21]; // Elbow, Wrist, Pinky, Index, Thumb
-export const RIGHT_ARM_JOINTS = [14, 16, 18, 20, 22];
+export const LEFT_ARM_JOINTS = [13, 15, 17, 19, 21] as const; // Elbow, Wrist, Pinky, Index, Thumb
+export const RIGHT_ARM_JOINTS = [14, 16, 18, 20, 22] as const;
 
 export class ArmIdentityStabilizer {
   private ambiguityDistance: number;
@@ -94,10 +105,12 @@ export class ArmIdentityStabilizer {
   public stabilize(
     rawLandmarks: PoseEngineLandmark[],
     timestampMs: number = Date.now()
-  ): ArmStabilizerResult {
+  ): ArmStabilizationResult {
     if (!rawLandmarks || rawLandmarks.length < 23) {
+      const emptyList = rawLandmarks || [];
       return {
-        stabilizedLandmarks: rawLandmarks || [],
+        landmarks: emptyList,
+        stabilizedLandmarks: emptyList,
         isArmAmbiguous: false,
         ambiguousJoints: new Set(),
         swappedJoints: [],
@@ -127,13 +140,11 @@ export class ArmIdentityStabilizer {
 
     // 2. Anatomical Cross-Check: In raw camera space, patient's left shoulder (11) is on camera right (higher X),
     // and patient's right shoulder (12) is on camera left (lower X).
-    // If left shoulder X > right shoulder X, normal uncrossed arms have left wrist X > right wrist X.
     let isCrossed = false;
     if (hasShoulders && lw && rw) {
       const shouldersReversed = ls.x < rs.x; // Facing away or extreme tilt
       if (!shouldersReversed) {
         // Patient facing camera: Left shoulder is on camera right (ls.x > rs.x)
-        // If lw.x < rw.x, wrists have laterally crossed each other!
         if (lw.x < rw.x - 0.02) {
           isCrossed = true;
         }
@@ -251,7 +262,6 @@ export class ArmIdentityStabilizer {
         if (currPt && prevPt) {
           const jumpDist = distance3D(currPt, prevPt);
           if (jumpDist > this.maxJumpPerFrame) {
-            // Unnatural lateral jump: hold previous position and flag joint as degraded
             landmarks[idx] = {
               ...prevPt,
               visibility: Math.min(currPt.visibility ?? 0.5, 0.40),
@@ -264,7 +274,6 @@ export class ArmIdentityStabilizer {
 
     // 7. Populate Ambiguous Joints Set
     if (isArmAmbiguous) {
-      // Mark all wrist and hand keypoints as ambiguous
       [15, 16, 17, 18, 19, 20, 21, 22].forEach((j) => ambiguousJoints.add(j));
       if (elbowDist < this.ambiguityDistance * 1.2) {
         ambiguousJoints.add(13);
@@ -319,6 +328,7 @@ export class ArmIdentityStabilizer {
     }
 
     return {
+      landmarks,
       stabilizedLandmarks: landmarks,
       isArmAmbiguous,
       ambiguousJoints,
@@ -338,4 +348,3 @@ export class ArmIdentityStabilizer {
     this.calibratedRightForearm = null;
   }
 }
-

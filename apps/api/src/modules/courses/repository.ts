@@ -131,20 +131,7 @@ export class CourseRepository implements ICourseRepository {
       }
 
       // 3. Resolve kiosk_id (must be UUID or null)
-      let validKioskId = input.kiosk_id || null;
-      if (validKioskId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validKioskId)) {
-        try {
-          const { data: kRow } = await adminClient
-            .from('kiosk_devices')
-            .select('id')
-            .or(`device_code.eq.${validKioskId},name.eq.${validKioskId}`)
-            .limit(1)
-            .maybeSingle();
-          validKioskId = kRow?.id || null;
-        } catch {
-          validKioskId = null;
-        }
-      }
+      const validKioskId = await this.resolveKioskUuid(adminClient, input.kiosk_id);
 
       // 4. Resolve next course version to satisfy uq_courses_patient_version
       let nextVersion = 1;
@@ -162,13 +149,7 @@ export class CourseRepository implements ICourseRepository {
       } catch {}
 
       // 5. Clean start_time to valid Postgres TIME (e.g. "09:00 - 10:00" -> "09:00:00")
-      let cleanStartTime = '09:00:00';
-      if (input.start_time) {
-        const timeMatch = input.start_time.match(/(\d{1,2}):(\d{2})/);
-        if (timeMatch) {
-          cleanStartTime = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:00`;
-        }
-      }
+      const cleanStartTime = this.normalizeCourseStartTime(input.start_time) || '09:00:00';
 
       const { data, error } = await adminClient
         .from('courses')
@@ -319,6 +300,40 @@ export class CourseRepository implements ICourseRepository {
     }
   }
 
+  private normalizeCourseStartTime(rawTime?: string | null): string | null {
+    if (!rawTime) return null;
+    const timeMatch = rawTime.match(/(\d{1,2}):(\d{2})/);
+    if (timeMatch) {
+      return `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:00`;
+    }
+    return rawTime;
+  }
+
+  private async resolveKioskUuid(
+    adminClient: ReturnType<typeof getAdminClient>,
+    rawKioskId?: string | null
+  ): Promise<string | null> {
+    if (!rawKioskId) return null;
+    const trimmed = rawKioskId.trim();
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+      return trimmed;
+    }
+    if (trimmed === 'kiosk-01') {
+      return 'cc000000-0000-0000-0000-000000000001';
+    }
+    try {
+      const { data: kRow } = await adminClient
+        .from('kiosk_devices')
+        .select('id')
+        .eq('name', trimmed)
+        .limit(1)
+        .maybeSingle();
+      return (kRow?.id as string) || null;
+    } catch {
+      return null;
+    }
+  }
+
   async updateCourse(
     id: string,
     input: UpdateCourseInput,
@@ -347,8 +362,12 @@ export class CourseRepository implements ICourseRepository {
       if (input.start_date !== undefined) updateData.start_date = input.start_date;
       if (input.end_date !== undefined) updateData.end_date = input.end_date;
       if (input.weekdays !== undefined) updateData.weekdays = input.weekdays;
-      if (input.start_time !== undefined) updateData.start_time = input.start_time;
-      if (input.kiosk_id !== undefined) updateData.kiosk_id = input.kiosk_id;
+      if (input.start_time !== undefined) {
+        updateData.start_time = this.normalizeCourseStartTime(input.start_time);
+      }
+      if (input.kiosk_id !== undefined) {
+        updateData.kiosk_id = await this.resolveKioskUuid(adminClient, input.kiosk_id);
+      }
       if (input.include_minigame !== undefined) updateData.include_minigame = input.include_minigame;
       if (input.modpack_id !== undefined) updateData.modpack_id = input.modpack_id;
       if (input.status !== undefined) updateData.status = input.status;
@@ -442,7 +461,12 @@ export class CourseRepository implements ICourseRepository {
         query = query.eq('status', filter.status);
       }
       if (filter.kiosk_id) {
-        query = query.eq('kiosk_id', filter.kiosk_id);
+        const resolvedKioskId = await this.resolveKioskUuid(adminClient, filter.kiosk_id);
+        if (resolvedKioskId) {
+          query = query.eq('kiosk_id', resolvedKioskId);
+        } else {
+          return { courses: [], total: 0, page, limit };
+        }
       }
 
       query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
@@ -502,7 +526,10 @@ export class CourseRepository implements ICourseRepository {
         .gte('end_date', todayDateStr);
 
       if (kioskId) {
-        query = query.or(`kiosk_id.is.null,kiosk_id.eq.${kioskId}`);
+        const resolvedKioskId = await this.resolveKioskUuid(adminClient, kioskId);
+        query = resolvedKioskId
+          ? query.or(`kiosk_id.is.null,kiosk_id.eq.${resolvedKioskId}`)
+          : query.is('kiosk_id', null);
       }
 
       const { data, error } = await query;
@@ -558,7 +585,10 @@ export class CourseRepository implements ICourseRepository {
         .gte('end_date', dateStr);
 
       if (kioskId !== undefined && kioskId !== null) {
-        query = query.or(`kiosk_id.is.null,kiosk_id.eq.${kioskId}`);
+        const resolvedKioskId = await this.resolveKioskUuid(adminClient, kioskId);
+        query = resolvedKioskId
+          ? query.or(`kiosk_id.is.null,kiosk_id.eq.${resolvedKioskId}`)
+          : query.is('kiosk_id', null);
       }
 
       if (ptId && accessiblePatientIds && accessiblePatientIds.length > 0) {

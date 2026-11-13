@@ -69,6 +69,9 @@ export function createKioskRouter(
     deviceController.createPairCode
   );
 
+  // GET /api/kiosk/stations (Admin + PT: list kiosk terminals for scheduling/reception)
+  router.get('/stations', authenticate, requireRole('admin', 'pt'), deviceController.listDevices);
+
   // GET /api/kiosk/devices (Admin-only: list all kiosk devices)
   router.get('/devices', authenticate, requireRole('admin'), deviceController.listDevices);
 

@@ -326,6 +326,19 @@ export class StaffService {
 
     await this.repo.resetAuthPassword(id, newPassword);
 
+    // Sync local persistence password when active
+    try {
+      const { registerLocalUserPassword, isLocalPersistenceActive, saveLocalDatabase } = await import(
+        '../../lib/localStorage/localPersistenceEngine'
+      );
+      if (isLocalPersistenceActive()) {
+        registerLocalUserPassword(existing.username, newPassword);
+        await saveLocalDatabase();
+      }
+    } catch {
+      // Non-blocking
+    }
+
     // Immediately revoke existing sessions for security
     await this.authService.forceLogout(id, adminUser, clientIp, clientDeviceId, 'Password reset by administrator');
 

@@ -95,7 +95,7 @@ export const PtScheduleView: React.FC<PtScheduleViewProps> = ({
         defaultApiClient.patients.list({ limit: 100 }).catch(() => []),
         defaultApiClient.modpacks.list().catch(() => []),
         defaultApiClient.exercises.list().catch(() => []),
-        defaultApiClient.kiosk.listDevices().catch(() => []),
+        defaultApiClient.kiosk.listStations().catch(() => []),
       ]);
       const safeToday = Array.isArray(today) && today.length > 0 ? today : DEMO_TODAY_COURSES;
       const rawPatients = Array.isArray(pts) ? pts : ((pts as any)?.patients || []);

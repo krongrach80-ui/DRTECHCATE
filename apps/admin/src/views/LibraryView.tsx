@@ -171,12 +171,21 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
     try {
       setLoading(true);
       setErrorMsg(null);
-      const [exData, mgData, mpData, customQuestions] = await Promise.all([
+      const [exData, mgData, mpData] = await Promise.all([
         defaultApiClient.exercises.list().catch(() => []),
         defaultApiClient.minigames.list().catch(() => []),
         defaultApiClient.modpacks.list().catch(() => []),
-        defaultApiClient.minigames.listQuestions('mg-physical-cards').catch(() => []),
       ]);
+      const mgList = Array.isArray(mgData) ? mgData : [];
+      const physicalMg = mgList.find(
+        (m: any) =>
+          m.id === 'mg-physical-cards' ||
+          m.id === 'fa000000-0000-0000-0000-000000000003' ||
+          String(m.title || '').includes('การ์ด')
+      );
+      const customQuestions = physicalMg
+        ? await defaultApiClient.minigames.listQuestions(physicalMg.id).catch(() => [])
+        : [];
       const filteredEx = Array.isArray(exData) ? exData.filter((e: any) => e.is_active !== false) : [];
       const safeEx = filteredEx.length > 0 ? filteredEx : DEMO_EXERCISES;
       const safeMg = Array.isArray(mgData) && mgData.length > 0 ? mgData : DEMO_MINIGAMES;
@@ -273,7 +282,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
         default_reps: 10,
         difficulty: 'beginner',
       });
-      fetchData().catch(() => {});
+      fetchData().catch(() => { });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'ไม่สามารถเพิ่มท่ากายภาพได้';
       setExerciseModalError(msg);
@@ -313,7 +322,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
           prompt: `[${q.category}] ภาพ: ${q.imageDescription} — ${q.prompt}`,
           choices: ['ใช่ (ยกมือซ้าย)', 'ไม่ (ยกมือขวา)'],
           answer: q.correctAnswer === 'yes' ? 'ใช่ (ยกมือซ้าย)' : 'ไม่ (ยกมือขวา)',
-          minigame_id: 'mg-physical-cards',
+          minigame_id: game.id,
           isBuiltIn: true,
         }));
         const customMapped: ExtendedQuestionRecord[] = (Array.isArray(qList) ? qList : []).map((q) => ({
@@ -336,7 +345,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
           prompt: `[${q.category}] ภาพ: ${q.imageDescription} — ${q.prompt}`,
           choices: ['ใช่ (ยกมือซ้าย)', 'ไม่ (ยกมือขวา)'],
           answer: q.correctAnswer === 'yes' ? 'ใช่ (ยกมือซ้าย)' : 'ไม่ (ยกมือขวา)',
-          minigame_id: 'mg-physical-cards',
+          minigame_id: game.id,
           isBuiltIn: true,
         }));
         setQuestions(builtInCards);
@@ -611,11 +620,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => setActiveTab('exercises')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition ${
-            activeTab === 'exercises'
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition ${activeTab === 'exercises'
               ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
+            }`}
         >
           <Dumbbell className="w-4 h-4 text-blue-600" />
           <span>ท่ากายภาพ ({exercises.length})</span>
@@ -623,11 +631,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
 
         <button
           onClick={() => setActiveTab('modpacks')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition ${
-            activeTab === 'modpacks'
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition ${activeTab === 'modpacks'
               ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
+            }`}
         >
           <Package className="w-4 h-4 text-blue-600" />
           <span>ชุดท่า Modpacks ({modpacks.length})</span>
@@ -635,11 +642,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
 
         <button
           onClick={() => setActiveTab('minigames')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition ${
-            activeTab === 'minigames'
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition ${activeTab === 'minigames'
               ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
+            }`}
         >
           <Gamepad2 className="w-4 h-4 text-blue-600" />
           <span>มินิเกม & โจทย์ ({minigames.length})</span>
@@ -680,19 +686,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
 
                         {/* Top-Right Difficulty Badge inside Stage */}
                         <span
-                          className={`absolute top-3 right-3 z-10 whitespace-nowrap px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border shadow-sm backdrop-blur-sm ${
-                            ex.difficulty === 'easy' || ex.difficulty === 'beginner'
+                          className={`absolute top-3 right-3 z-10 whitespace-nowrap px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border shadow-sm backdrop-blur-sm ${ex.difficulty === 'easy' || ex.difficulty === 'beginner'
                               ? 'bg-emerald-500/90 text-white border-emerald-400'
                               : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
-                              ? 'bg-amber-500/90 text-white border-amber-400'
-                              : 'bg-rose-500/90 text-white border-rose-400'
-                          }`}
+                                ? 'bg-amber-500/90 text-white border-amber-400'
+                                : 'bg-rose-500/90 text-white border-rose-400'
+                            }`}
                         >
                           {ex.difficulty === 'easy' || ex.difficulty === 'beginner'
                             ? 'BEGINNER'
                             : ex.difficulty === 'medium' || ex.difficulty === 'intermediate'
-                            ? 'INTERMEDIATE'
-                            : 'ADVANCED'}
+                              ? 'INTERMEDIATE'
+                              : 'ADVANCED'}
                         </span>
                       </div>
 
@@ -708,11 +713,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
 
                       <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                         <span
-                          className={`whitespace-nowrap px-2.5 py-0.5 rounded-lg border text-[11px] font-bold ${
-                            isTimer
+                          className={`whitespace-nowrap px-2.5 py-0.5 rounded-lg border text-[11px] font-bold ${isTimer
                               ? 'bg-blue-50 text-blue-700 border-blue-200'
                               : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          }`}
+                            }`}
                         >
                           {isTimer
                             ? '⏱️ โหมดจับเวลานำ (Timer Mode)'
@@ -886,11 +890,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
                 <div
                   key={game.id}
                   onClick={() => openMinigameQuestions(game)}
-                  className={`p-5 rounded-2xl border-2 transition-all cursor-pointer ${
-                    selectedMinigame?.id === game.id
+                  className={`p-5 rounded-2xl border-2 transition-all cursor-pointer ${selectedMinigame?.id === game.id
                       ? 'bg-white border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
                       : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50 shadow-sm'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-3">
                     <Gamepad2 className={`w-7 h-7 flex-shrink-0 ${selectedMinigame?.id === game.id ? 'text-emerald-600' : 'text-slate-400'}`} />
@@ -950,11 +953,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
                   questions.map((q) => (
                     <div
                       key={q.id}
-                      className={`p-4 rounded-xl border flex items-start justify-between ${
-                        q.isBuiltIn
+                      className={`p-4 rounded-xl border flex items-start justify-between ${q.isBuiltIn
                           ? 'bg-slate-50 border-slate-200'
                           : 'bg-emerald-50/40 border-emerald-300 ring-1 ring-emerald-500/10'
-                      }`}
+                        }`}
                     >
                       <div className="space-y-2 flex-1 mr-4">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -973,11 +975,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
                           {q.choices.map((c: string, idx: number) => (
                             <div
                               key={idx}
-                              className={`px-3 py-1.5 rounded-lg border ${
-                                c === q.answer
+                              className={`px-3 py-1.5 rounded-lg border ${c === q.answer
                                   ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
                                   : 'bg-white border-slate-200 text-slate-700'
-                              }`}
+                                }`}
                             >
                               {idx + 1}. {c} {c === q.answer && '✓ (เฉลย)'}
                             </div>
@@ -1219,11 +1220,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onNavigateToTab }) => 
                       <div
                         key={ex.id}
                         onClick={() => toggleExerciseInModpack(ex.id)}
-                        className={`p-3 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition ${
-                          isSelected
+                        className={`p-3 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition ${isSelected
                             ? 'bg-blue-50 border-blue-400 text-blue-900 font-semibold'
                             : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300'
-                        }`}
+                          }`}
                       >
                         <div>
                           <div className="font-semibold text-slate-900">{ex.title}</div>

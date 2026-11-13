@@ -163,4 +163,86 @@ describe('Production E2E Flow: Stateless Authentication, Staff Creation, and Pat
     expect(verified?.role).toBe('admin');
     expect(verified?.full_name).toBe('Cold Start Admin');
   });
+
+  it('8. Rejects arbitrary invalid Bearer tokens with 401 (no director privilege escalation)', async () => {
+    const res = await request(app)
+      .get('/api/staff')
+      .set('Authorization', 'Bearer arbitrary-untrusted-token-xyz');
+
+    expect(res.status).toBe(401);
+    expect(res.body.error?.code).toBe('UNAUTHORIZED');
+  });
+
+  it('9. Rejects cross-account hardcoded passwords on localSignIn with 401', async () => {
+    const wrongAdminPwRes = await request(app)
+      .post('/api/auth/login')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({
+        username: dynamicPtUsername,
+        password: 'Admin12345678!',
+      });
+
+    expect(wrongAdminPwRes.status).toBe(401);
+
+    const wrongPtPwRes = await request(app)
+      .post('/api/auth/login')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({
+        username: 'director',
+        password: 'CorrectPassword123!',
+      });
+
+    expect(wrongPtPwRes.status).toBe(401);
+  });
+
+  it('10. Password reset revokes stale PT token (401 SESSION_TERMINATED) while allowing fresh re-login (200)', async () => {
+    const listRes = await request(app)
+      .get(`/api/staff?search=${dynamicPtUsername}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(listRes.status).toBe(200);
+    const createdPt = listRes.body.data.find((s: any) => s.username === dynamicPtUsername);
+    expect(createdPt).toBeDefined();
+
+    const resetRes = await request(app)
+      .post(`/api/staff/${createdPt.id}/reset-password`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({ password: 'PtResetPassword999!' });
+    expect(resetRes.status).toBe(200);
+
+    // Prior token issued before reset must be rejected immediately
+    const staleMeRes = await request(app)
+      .get('/api/me')
+      .set('Authorization', `Bearer ${createdPtToken}`);
+    expect(staleMeRes.status).toBe(401);
+    expect(staleMeRes.body.error?.code).toBe('SESSION_TERMINATED');
+
+    // Old password must be rejected
+    const oldPwLogin = await request(app)
+      .post('/api/auth/login')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({
+        username: dynamicPtUsername,
+        password: 'PtStrongPassword123!',
+      });
+    expect(oldPwLogin.status).toBe(401);
+
+    // Fresh login with new password succeeds and new token works cleanly
+    const newPwLogin = await request(app)
+      .post('/api/auth/login')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({
+        username: dynamicPtUsername,
+        password: 'PtResetPassword999!',
+      });
+    expect(newPwLogin.status).toBe(200);
+    const freshPtToken = newPwLogin.body.token || newPwLogin.body.accessToken || newPwLogin.body.access_token;
+    expect(freshPtToken).toBeDefined();
+
+    const freshMeRes = await request(app)
+      .get('/api/me')
+      .set('Authorization', `Bearer ${freshPtToken}`);
+    expect(freshMeRes.status).toBe(200);
+    expect(freshMeRes.body.data?.role).toBe('pt');
+  });
 });

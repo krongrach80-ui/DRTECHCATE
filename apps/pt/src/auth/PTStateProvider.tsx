@@ -83,6 +83,11 @@ export const PTStateProvider: React.FC<PTStateProviderProps> = ({
     }
   }, [currentUser, inactivityTimeoutMs]);
 
+  const resetInactivityTimerRef = useRef(resetInactivityTimer);
+  useEffect(() => {
+    resetInactivityTimerRef.current = resetInactivityTimer;
+  }, [resetInactivityTimer]);
+
   // Session verification on mount
   const checkSession = useCallback(async () => {
     try {
@@ -95,32 +100,15 @@ export const PTStateProvider: React.FC<PTStateProviderProps> = ({
       if (user && (role === 'pt' || uname.startsWith('pt'))) {
         setCurrentUser(user);
       } else {
-        // Fallback default PT for clinical offline recovery
-        const defaultPt: UserProfile = {
-          id: 'b1000000-0000-0000-0000-000000000003',
-          username: 'pt_somchai',
-          full_name: 'กภ. วิภาวี สุขใจ',
-          role: 'pt',
-          status: 'active',
-        };
-        defaultApiClient.setUserProfile(defaultPt);
-        setCurrentUser(defaultPt);
+        setCurrentUser(null);
       }
     } catch {
-      const defaultPt: UserProfile = {
-        id: 'b1000000-0000-0000-0000-000000000003',
-        username: 'pt_somchai',
-        full_name: 'กภ. วิภาวี สุขใจ',
-        role: 'pt',
-        status: 'active',
-      };
-      defaultApiClient.setUserProfile(defaultPt);
-      setCurrentUser(defaultPt);
+      setCurrentUser(null);
     } finally {
       setIsLoading(false);
-      resetInactivityTimer();
+      resetInactivityTimerRef.current();
     }
-  }, [resetInactivityTimer]);
+  }, []);
 
   useEffect(() => {
     checkSession();
@@ -146,46 +134,21 @@ export const PTStateProvider: React.FC<PTStateProviderProps> = ({
   }, [isLockedDueToInactivity, resetInactivityTimer]);
 
   const login = async (credentials: { username: string; password: string }) => {
-    try {
-      const res = await defaultApiClient.auth.login(credentials);
-      const role = (res.user?.role || res.role || '').toLowerCase();
-      const uname = (res.user?.username || credentials.username || '').toLowerCase();
-      if (role !== 'pt' && !uname.startsWith('pt')) {
-        throw new Error('บัญชีนี้ไม่มีสิทธิ์เข้าถึงส่วนงานนักกายภาพบำบัด (PT Only)');
-      }
-      const userToSet = {
-        ...(res.user || {}),
-        username: res.user?.username || credentials.username,
-        full_name: res.user?.full_name || 'กภ.สมชาย กายภาพดี',
-        role: 'pt',
-      };
-      setCurrentUser(userToSet as UserProfile);
-      setIsLockedDueToInactivity(false);
-      resetInactivityTimer();
-    } catch (err: any) {
-      const uname = credentials.username.toLowerCase();
-      if (
-        uname.startsWith('pt') ||
-        uname === 'director' ||
-        uname === 'admin' ||
-        err?.message?.includes('404') ||
-        err?.message?.includes('ไม่พบปลายทาง API')
-      ) {
-        const defaultPt: UserProfile = {
-          id: 'b1000000-0000-0000-0000-000000000003',
-          username: credentials.username || 'pt_somchai',
-          full_name: 'กภ. วิภาวี สุขใจ',
-          role: 'pt',
-          status: 'active',
-        };
-        defaultApiClient.setUserProfile(defaultPt);
-        setCurrentUser(defaultPt);
-        setIsLockedDueToInactivity(false);
-        resetInactivityTimer();
-        return;
-      }
-      throw err;
+    const res = await defaultApiClient.auth.login(credentials);
+    const role = (res.user?.role || res.role || '').toLowerCase();
+    const uname = (res.user?.username || credentials.username || '').toLowerCase();
+    if (role !== 'pt' && !uname.startsWith('pt')) {
+      throw new Error('บัญชีนี้ไม่มีสิทธิ์เข้าถึงส่วนงานนักกายภาพบำบัด (PT Only)');
     }
+    const userToSet = {
+      ...(res.user || {}),
+      username: res.user?.username || credentials.username,
+      full_name: res.user?.full_name || 'กภ.สมชาย กายภาพดี',
+      role: 'pt',
+    };
+    setCurrentUser(userToSet as UserProfile);
+    setIsLockedDueToInactivity(false);
+    resetInactivityTimer();
   };
 
   const logout = async () => {

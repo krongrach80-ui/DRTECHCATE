@@ -8,6 +8,14 @@ export interface StatelessTokenPayload {
   status: string;
   iat: number;
   exp: number;
+  iat_ms?: number;
+  seq?: number;
+}
+
+let authSeqCounter = 0;
+
+export function nextAuthSeq(): number {
+  return ++authSeqCounter;
 }
 
 export const DEFAULT_AUTH_SECRET = 'drtechcare-enterprise-production-hmac-secret-2026';
@@ -31,7 +39,8 @@ export function createStatelessToken(user: {
   full_name: string;
   status?: string;
 }): string {
-  const now = Math.floor(Date.now() / 1000);
+  const nowMs = Date.now();
+  const now = Math.floor(nowMs / 1000);
   const payload: StatelessTokenPayload = {
     id: user.id,
     username: user.username,
@@ -40,6 +49,8 @@ export function createStatelessToken(user: {
     status: user.status || 'active',
     iat: now,
     exp: now + 7 * 24 * 60 * 60, // 7 days
+    iat_ms: nowMs,
+    seq: nextAuthSeq(),
   };
 
   const header = { alg: 'HS256', typ: 'JWT' };

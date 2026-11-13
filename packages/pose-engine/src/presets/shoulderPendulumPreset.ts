@@ -16,7 +16,7 @@ export const SHOULDER_PENDULUM_PRESET: ExerciseDetectionConfig = {
   nameTh: 'Shoulder Pendulum (แกว่งแขนวงกลมผ่อนคลายหัวไหล่)',
   nameEn: 'Codman Shoulder Pendulum',
   description: 'โน้มลำตัวไปข้างหน้า ปล่อยแขนห้อยลงตามแรงโน้มถ่วง และแกว่งเป็นวงกลมเบาๆ เพื่อผ่อนคลายข้อต่อและเพิ่มการไหลเวียนเลือด',
-  mediaUrl: '/assets/exercises/shoulder_pendulum.mp4',
+  mediaUrl: '/assets/exercises/shoulder-pendulum.svg',
   evaluationMode: 'pendulum_circular',
   side: 'right',
   targetJoint: 'shoulder',

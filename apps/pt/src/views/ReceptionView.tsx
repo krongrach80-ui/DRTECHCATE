@@ -105,7 +105,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
       const [pts, today, kList, transfers] = await Promise.all([
         defaultApiClient.patients.list({ q: search.trim() || undefined, limit: 50 }).catch(() => []),
         defaultApiClient.courses.getToday().catch(() => []),
-        defaultApiClient.kiosk.listDevices().catch(() => []),
+        defaultApiClient.kiosk.listStations().catch(() => []),
         defaultApiClient.caseTransfers.list().catch(() => []),
       ]);
       const rawPts: PatientRecord[] = Array.isArray(pts) ? pts : [];

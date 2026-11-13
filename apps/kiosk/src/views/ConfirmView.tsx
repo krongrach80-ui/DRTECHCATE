@@ -30,16 +30,26 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const isMountedRef = useRef<boolean>(true);
   const hasConfirmedRef = useRef<boolean>(false);
+  const isDetectingRef = useRef<boolean>(false);
+  const nodTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleConfirm = useCallback(() => {
     if (hasConfirmedRef.current) return;
     hasConfirmedRef.current = true;
+    if (nodTimeoutRef.current) {
+      clearTimeout(nodTimeoutRef.current);
+      nodTimeoutRef.current = null;
+    }
     onConfirm();
   }, [onConfirm]);
 
   const handleDeny = useCallback(() => {
     if (hasConfirmedRef.current) return;
     hasConfirmedRef.current = true;
+    if (nodTimeoutRef.current) {
+      clearTimeout(nodTimeoutRef.current);
+      nodTimeoutRef.current = null;
+    }
     onDeny();
   }, [onDeny]);
 
@@ -53,14 +63,17 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
       if (hasConfirmedRef.current || !isMountedRef.current) return;
       if (event.type === 'HEAD_NOD_CONFIRMED') {
         setNodConfirmed(true);
-        setTimeout(() => {
-          handleConfirm();
+        if (nodTimeoutRef.current) clearTimeout(nodTimeoutRef.current);
+        nodTimeoutRef.current = setTimeout(() => {
+          if (isMountedRef.current) {
+            handleConfirm();
+          }
         }, 350);
       }
     });
 
     let loopActive = true;
-    let nodInterval: NodeJS.Timeout | null = null;
+    let nodInterval: ReturnType<typeof setInterval> | null = null;
 
     async function initHeadNodTracker() {
       try {
@@ -69,11 +82,21 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
         }
 
         const checkNod = async () => {
-          if (!loopActive || !isMountedRef.current || hasConfirmedRef.current || (typeof document !== 'undefined' && document.hidden)) return;
+          if (
+            !loopActive ||
+            !isMountedRef.current ||
+            hasConfirmedRef.current ||
+            isDetectingRef.current ||
+            (typeof document !== 'undefined' && document.hidden)
+          ) {
+            return;
+          }
           const video = videoRef.current;
           if (video && video.readyState >= 2) {
+            isDetectingRef.current = true;
             try {
               const res = await detector.detect(video);
+              if (!isMountedRef.current || hasConfirmedRef.current) return;
               if (res.hasFace && res.landmarks?.noseTip) {
                 const vw = video.videoWidth || 640;
                 const vh = video.videoHeight || 480;
@@ -89,6 +112,8 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
               }
             } catch {
               // Frame evaluation pass
+            } finally {
+              isDetectingRef.current = false;
             }
           }
         };
@@ -106,6 +131,10 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
       isMountedRef.current = false;
       loopActive = false;
       if (nodInterval) clearInterval(nodInterval);
+      if (nodTimeoutRef.current) {
+        clearTimeout(nodTimeoutRef.current);
+        nodTimeoutRef.current = null;
+      }
       unsubscribe();
       camera.stop();
       if (videoElement && videoElement.srcObject) {
@@ -196,8 +225,9 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
       <div className="w-full max-w-xl grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4">
         {/* Deny Button */}
         <button
+          type="button"
           onClick={handleDeny}
-          className="touch-btn py-5 rounded-3xl bg-slate-900 hover:bg-slate-800 text-rose-300 font-bold text-xl border-2 border-rose-500/40 shadow-xl flex items-center justify-center gap-3 order-2 sm:order-1"
+          className="touch-btn py-5 rounded-3xl bg-slate-900 hover:bg-slate-800 text-rose-300 font-bold text-xl border-2 border-rose-500/40 shadow-xl flex items-center justify-center gap-3 order-2 sm:order-1 cursor-pointer"
         >
           <X className="w-6 h-6 text-rose-400" />
           <span>ไม่ใช่ฉัน (ยกเลิก)</span>
@@ -205,8 +235,9 @@ export const ConfirmView: React.FC<ConfirmViewProps> = ({
 
         {/* Confirm Button */}
         <button
+          type="button"
           onClick={handleConfirm}
-          className="touch-btn py-5 rounded-3xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xl shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-3 order-1 sm:order-2"
+          className="touch-btn py-5 rounded-3xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xl shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-3 order-1 sm:order-2 cursor-pointer"
         >
           <Check className="w-7 h-7 text-white" />
           <span>ใช่ ข้อมูลถูกต้อง</span>

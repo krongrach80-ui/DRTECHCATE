@@ -301,6 +301,7 @@ export class AuthService {
       user: {
         id: profile.id,
         role: profile.role,
+        ...(profile.username ? { username: profile.username } : {}),
         full_name: profile.full_name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || profile.username || 'ผู้ใช้งาน',
       },
       deviceId,

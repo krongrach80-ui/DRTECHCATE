@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import { Award, CheckCircle, HeartPulse, LogOut } from 'lucide-react';
 
 interface CompleteViewProps {
@@ -12,6 +12,14 @@ export const CompleteView: React.FC<CompleteViewProps> = ({
   patientFirstName,
   onFinish,
 }) => {
+  const isFinishingRef = useRef<boolean>(false);
+
+  const handleFinish = useCallback(() => {
+    if (isFinishingRef.current) return;
+    isFinishingRef.current = true;
+    onFinish();
+  }, [onFinish]);
+
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950 overflow-y-auto">
       {/* Celebration Header */}
@@ -47,7 +55,7 @@ export const CompleteView: React.FC<CompleteViewProps> = ({
       {/* Finish Action */}
       <div className="w-full max-w-xl pb-2">
         <button
-          onClick={onFinish}
+          onClick={handleFinish}
           className="touch-btn w-full py-5 rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xl shadow-2xl shadow-blue-600/30 flex items-center justify-center gap-3"
         >
           <CheckCircle className="w-7 h-7" />

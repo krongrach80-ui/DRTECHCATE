@@ -3,14 +3,12 @@
  *
  * REAL-TIME DYNAMIC AI EXERCISE EVALUATION SESSION
  * Features:
- * - Decoupled single-mount camera & MediaPipe lifecycle (No re-mounts on state changes)
+ * - Decoupled single-mount camera & MediaPipe lifecycle (Zero-freeze transitions)
  * - Multi-CDN WASM and Model fallback with GPU -> CPU graceful degradation
  * - Strict monotonic timestamp guarding for detectForVideo
  * - Exact 1:1 canvas-to-video coordinate mapping with mirror support
  * - Live Diagnostic Telemetry Debug HUD (Camera, Model, FPS, Landmarks, Angle, Accuracy, State)
- * - Color-coded skeleton overlay (Green = target/good, Yellow = warning/adjust, Red = error/safety cap)
- * - Synthesized harmonic chime on repetition completion
- * - Web Speech Thai TTS audio coaching with cooldown guards
+ * - Color-coded skeleton overlay with 200ms Grace Period Decay & Arm Identity Stabilizer
  * - PainStopEmergencyBar with high-priority clinical alert
  * - Rest between sets & Exercise completion summaries
  */
@@ -59,7 +57,6 @@ import {
 import { useClinicalI18n, LANGUAGE_OPTIONS } from '../../../../packages/clinical-i18n/src/index';
 
 export interface DynamicExerciseSessionViewProps {
-  // Shape A (SmartDailyPlanView)
   patient?: {
     patient_id?: string;
     hn?: string;
@@ -77,44 +74,40 @@ export interface DynamicExerciseSessionViewProps {
   };
   config?: ExerciseDetectionConfig;
   onSessionCompleted?: (telemetry: ExerciseSessionTelemetry) => void;
-
-  // Shape B (Alternative direct usage)
   exerciseConfig?: ExerciseDetectionConfig;
   exerciseTitle?: string;
   onComplete?: (summary: any) => void;
   onPainStop?: (telemetry: any) => void;
-
-  // Shared
   onExit: () => void;
 }
 
 export const POSE_CONNECTIONS: [number, number][] = [
-  [11, 12], // Shoulders
-  [11, 13], [13, 15], // Left arm
-  [15, 17], [15, 19], [15, 21], [17, 19], // Left hand (wrist-pinky, wrist-index, wrist-thumb, palm)
-  [12, 14], [14, 16], // Right arm
-  [16, 18], [16, 20], [16, 22], [18, 20], // Right hand (wrist-pinky, wrist-index, wrist-thumb, palm)
-  [11, 23], [12, 24], // Torso
-  [23, 24], // Hips
-  [23, 25], [25, 27], // Left leg
-  [24, 26], [26, 28], // Right leg
-  [27, 29], [27, 31], [29, 31], // Left foot
-  [28, 30], [28, 32], [30, 32], // Right foot
+  [11, 12],
+  [11, 13], [13, 15],
+  [15, 17], [15, 19], [15, 21], [17, 19],
+  [12, 14], [14, 16],
+  [16, 18], [16, 20], [16, 22], [18, 20],
+  [11, 23], [12, 24],
+  [23, 24],
+  [23, 25], [25, 27],
+  [24, 26], [26, 28],
+  [27, 29], [27, 31], [29, 31],
+  [28, 30], [28, 32], [30, 32],
 ];
 
 export const HEAD_POSE_CONNECTIONS: [number, number][] = [
-  [7, 0], // Left ear to nose/face center
-  [8, 0], // Right ear to nose/face center
-  [7, 8], // Ear to ear horizontal head bridge
-  [0, 11], // Nose to left shoulder (neck line)
-  [0, 12], // Nose to right shoulder (neck line)
+  [7, 0],
+  [8, 0],
+  [7, 8],
+  [0, 11],
+  [0, 12],
 ];
 
 export const HEAD_JOINT_INDICES = [0, 7, 8];
 
 export const BODY_JOINT_INDICES = [
   11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-  23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+  23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
 ];
 export const ANATOMICAL_BODY_JOINTS = BODY_JOINT_INDICES;
 
@@ -133,7 +126,6 @@ export function getRequiredKeypointsForExercise(config?: ExerciseDetectionConfig
   if (framing === 'full' || framing === 'full_body' || framing === 'lower_body') {
     return [11, 12, 23, 24, 25, 26, 27, 28];
   }
-  // Upper-body mode (shoulder pendulum, arm raises, etc.)
   return [11, 12, 13, 14, 15, 16, 23, 24];
 }
 
@@ -161,31 +153,6 @@ export const KEYPOINT_NAME_MAP: Record<number, { th: string; en: string; cn: str
   28: { th: 'ข้อเท้าขวา', en: 'R Ankle', cn: '右踝' },
 };
 
-const _LANDMARK_NAMES: Record<number, string> = {
-  0: 'Nose',
-  11: 'L.Shoulder',
-  12: 'R.Shoulder',
-  13: 'L.Elbow',
-  14: 'R.Elbow',
-  15: 'L.Wrist',
-  16: 'R.Wrist',
-  23: 'L.Hip',
-  24: 'R.Hip',
-  25: 'L.Knee',
-  26: 'R.Knee',
-  27: 'L.Ankle',
-  28: 'R.Ankle',
-  29: 'L.Heel',
-  30: 'R.Heel',
-  31: 'L.FootIndex',
-  32: 'R.FootIndex',
-};
-
-/**
- * Computes smooth target progress ratio (0.0 to 1.0) for the circular rep progress ring.
- * Eliminates phase jumps (such as RETURNING_TO_START jumping to 0.4) by continuously
- * scaling with actual joint angle back towards the starting baseline.
- */
 export const computeTargetRingProgress = (
   evalRes: RepEvaluationResult | null,
   config: ExerciseDetectionConfig,
@@ -219,7 +186,6 @@ export const computeTargetRingProgress = (
     return 1.0;
   }
 
-  // Smooth continuous angle tracking during both MOVING_TO_TARGET and RETURNING_TO_START
   if (phase === 'MOVING_TO_TARGET' || phase === 'RETURNING_TO_START') {
     const rawProgress = (curAngle - startAngle) / angleSpan;
     return Math.max(0, Math.min(0.95, rawProgress));
@@ -259,7 +225,6 @@ const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
     descriptionCn,
     lang = 'th-TH',
   }) => {
-    // Media stage: 0 = primary video/image, 1 = webp/gif, 2 = fallback SVG, 3 = placeholder
     const [mediaStage, setMediaStage] = useState<number>(0);
     const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -268,7 +233,6 @@ const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
       setIsLoading(true);
     }, [exerciseId, mediaUrl]);
 
-    // Trilingual labels
     const cardTitle =
       lang === 'zh-CN'
         ? '动作示范'
@@ -311,29 +275,19 @@ const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
 
     const primaryImageUrl = mediaUrl || `/exercises/${exerciseId}.webp`;
     const svgFallbackUrl = fallbackMediaUrl || `/assets/exercises/${exerciseId}.svg`;
-    const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
     return (
-      <div className="bg-white rounded-3xl border-2 border-blue-100 p-4 sm:p-6 shadow-sm flex-1 flex flex-col justify-between gap-3">
+      <div className="bg-white rounded-3xl border border-blue-100 p-4 sm:p-5 shadow-sm flex-1 flex flex-col justify-between gap-3">
         <div>
-          <div className="text-sm sm:text-base font-black text-blue-800 uppercase tracking-wider mb-2 flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <span className="text-lg">📐</span>
-              <span>{cardTitle}</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsExpanded((prev) => !prev)}
-              className="text-xs sm:text-sm font-bold text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 transition cursor-pointer"
-            >
-              {isExpanded ? (lang === 'zh-CN' ? '收起' : lang === 'en-US' ? 'Less' : 'ย่อคำแนะนำ ▴') : (lang === 'zh-CN' ? '展开' : lang === 'en-US' ? 'More' : 'ดูเพิ่ม ▾')}
-            </button>
+          <div className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <span>📐</span>
+            <span>{cardTitle}</span>
           </div>
 
-          <div className="w-full aspect-[16/9] max-h-44 sm:max-h-52 bg-slate-50 border border-slate-200 rounded-2xl p-2 flex items-center justify-center overflow-hidden relative">
+          <div className="w-full aspect-[16/10] bg-slate-50 border border-slate-100 rounded-2xl p-2 flex items-center justify-center overflow-hidden relative">
             {isLoading && mediaStage < 3 && (
               <div className="absolute inset-0 bg-slate-100 animate-pulse flex items-center justify-center">
-                <span className="text-slate-400 text-sm font-semibold">กำลังโหลดตัวอย่าง...</span>
+                <span className="text-slate-400 text-xs">กำลังโหลดตัวอย่าง...</span>
               </div>
             )}
 
@@ -379,22 +333,22 @@ const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
             )}
 
             {mediaStage >= 3 && (
-              <div className="text-center text-slate-400 text-sm py-4">
+              <div className="text-center text-slate-400 text-xs py-4">
                 <span>📐 {titleString}</span>
               </div>
             )}
           </div>
         </div>
 
-        <div className="space-y-2 pt-3 border-t border-slate-100">
-          <div className="font-extrabold text-slate-900 text-sm sm:text-base flex items-center gap-1.5">
-            <span className="text-base sm:text-lg">💡</span>
+        <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+          <div className="font-bold text-slate-800 flex items-center gap-1">
+            <span>💡</span>
             <span>{cueHeader}</span>
           </div>
-          <ul className="list-disc list-inside text-slate-800 text-sm sm:text-base space-y-1.5 leading-relaxed font-medium">
+          <ul className="list-disc list-inside text-slate-600 space-y-1 leading-relaxed">
             <li>{bullet1}</li>
             <li>{bullet2}</li>
-            {isExpanded && <li className="text-rose-700 font-bold">{bullet3}</li>}
+            <li>{bullet3}</li>
           </ul>
         </div>
       </div>
@@ -409,7 +363,6 @@ let cachedFilesetResolver: any = null;
 let cachedPoseLandmarker: any = null;
 let cachedDelegate: 'GPU' | 'CPU' = 'GPU';
 
-// Helper to apply dynamic alpha decay to hex, rgb, or rgba color strings
 function applyAlphaToColor(color: string, alpha: number): string {
   if (alpha >= 1) return color;
   if (alpha <= 0) return 'transparent';
@@ -448,11 +401,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const resolvedConfig = (config || exerciseConfig)!;
   const { lang, t, setLanguage } = useClinicalI18n();
 
-  // DOM Refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Core Service Instances in Refs to survive re-renders
   const streamRef = useRef<MediaStream | null>(null);
   const landmarkerRef = useRef<any>(null);
   const stateMachineRef = useRef<RepStateMachine>(new RepStateMachine(resolvedConfig));
@@ -480,7 +431,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const isArmAmbiguousRef = useRef<boolean>(false);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Loop & Timing Control Refs (Decoupled Dual-Loop Architecture)
   const rafIdRef = useRef<number | null>(null);
   const rvfcIdRef = useRef<number | null>(null);
   const renderRafIdRef = useRef<number | null>(null);
@@ -492,14 +442,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const lastUiUpdateMsRef = useRef<number>(0);
   const smoothedFpsRef = useRef<number>(30);
   const lastCompletedRepsRef = useRef<number>(0);
-  // Cumulative verified-rep count at the start of the current set.
   const setBaseRepsRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sessionStartTimeRef = useRef<number>(0);
   const isFinalizingRef = useRef<boolean>(false);
   const isReportingPainRef = useRef<boolean>(false);
 
-  // Decoupled Pose Frame State for 60-120 FPS Interpolation & Prediction in Render Loop
   const currentPoseStateRef = useRef<{
     landmarks: PoseEngineLandmark[] | null;
     timestampMs: number;
@@ -511,7 +459,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     inFrame: boolean;
   } | null>(null);
 
-  // Dynamic States
   const [cameraStatus, setCameraStatus] = useState<'initializing' | 'ready' | 'error'>('initializing');
   const [modelStatus, setModelStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [, setCameraDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
@@ -540,46 +487,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [lowPowerMode, setLowPowerMode] = useState<boolean>(false);
   const [showDebugHud, setShowDebugHud] = useState<boolean>(false);
-
-  // Kiosk UI Scaling (100%, 115%, 130%) for Elderly and 1.5-2.0m viewing distance
-  const [uiScale, setUiScale] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('kiosk_exercise_ui_scale');
-      if (saved) {
-        const parsed = parseFloat(saved);
-        if (!isNaN(parsed) && parsed >= 1.0 && parsed <= 1.5) {
-          return parsed;
-        }
-      }
-    }
-    return 1.0;
-  });
-
-  const handleUpdateUiScale = useCallback((scale: number) => {
-    setUiScale(scale);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('kiosk_exercise_ui_scale', scale.toString());
-    }
-  }, []);
-
-  // Responsive orientation detection for Full HD Portrait (1080x1920) vs Landscape
-  const [isPortrait, setIsPortrait] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerHeight >= window.innerWidth;
-    }
-    return false;
-  });
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const checkOrientation = () => {
-      setIsPortrait(window.innerHeight >= window.innerWidth);
-    };
-    checkOrientation();
-    window.addEventListener('resize', checkOrientation);
-    return () => window.removeEventListener('resize', checkOrientation);
-  }, []);
-
   const [isStaffUnlocked, setIsStaffUnlocked] = useState<boolean>(() => {
     return typeof window !== 'undefined' && (Boolean((import.meta as any).env?.DEV) || (window as any).__DRTECH_DEBUG__ === true);
   });
@@ -618,7 +525,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
   const [painReportedState, setPainReportedState] = useState<boolean>(false);
 
-  // Staff Accuracy Test Mode State & Telemetry Refs
   const [isAccuracyTestMode, setIsAccuracyTestMode] = useState<boolean>(false);
   const isAccuracyTestModeRef = useRef<boolean>(false);
   useEffect(() => {
@@ -653,7 +559,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     totalFrames: number;
   } | null>(null);
 
-  // Camera FOV, Aspect Ratio & Zoom States
   const [zoomInfo, setZoomInfo] = useState<{
     supported: boolean;
     min: number;
@@ -666,12 +571,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const [showGuideSilhouette, setShowGuideSilhouette] = useState<boolean>(true);
   const [replayVideoSrc, setReplayVideoSrc] = useState<string | null>(() => {
     if (typeof window !== 'undefined' && window.location.search.includes('replay=1')) {
-      return resolvedConfig.mediaUrl || '/assets/exercises/shoulder_pendulum.mp4';
+      return resolvedConfig.mediaUrl || '/assets/exercises/shoulder-pendulum.svg';
     }
     return null;
   });
 
-  // Diagnostic HUD live state
   const [hudState, setHudState] = useState({
     fps: 0,
     renderFps: 60,
@@ -679,6 +583,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     avgVisibility: 0,
     currentAngle: 0,
     accuracyPct: 0,
+    accuracyTotalFrames: 0,
+    accuracyCompleteJointFrames: 0,
     repPhase: 'IDLE',
     completedReps: 0,
     currentSet: 1,
@@ -697,7 +603,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     targetThreshold: 80,
   });
 
-  // 60 FPS Visual Ring Animation & Direct DOM Ref
   const progressCircleRef = useRef<SVGCircleElement | null>(null);
   const targetProgressRef = useRef<number>(0);
   const currentAnimatedProgressRef = useRef<number>(0);
@@ -705,12 +610,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const lastRenderTimeRef = useRef<number>(initialRenderTime);
   const smoothedRenderFpsRef = useRef<number>(60);
 
-  // Accuracy Percentage EMA Smoothing & Deadband
   const smoothedAccuracyRef = useRef<number>(0);
   const lastAccuracyEmitTimeRef = useRef<number>(0);
   const lastEmittedAccuracyRef = useRef<number>(0);
 
-  // Latest evaluation result ref for non-reactive reads
   const latestEvalResultRef = useRef<RepEvaluationResult | null>(null);
   const lastRenderedUiValuesRef = useRef({
     completedReps: 0,
@@ -723,7 +626,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     readinessStatus: '',
   });
 
-  // State mirror refs for loop access without re-binding
   const fitModeRef = useRef<'contain' | 'cover'>('contain');
   useEffect(() => {
     fitModeRef.current = fitMode;
@@ -734,7 +636,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     boostLightingRef.current = boostLighting;
   }, [boostLighting]);
 
-  // Target lock & landmark smoothing refs
   const lockedSubjectCoMRef = useRef<{ x: number; y: number } | null>(null);
   const smoothedLandmarksRef = useRef<PoseEngineLandmark[] | null>(null);
 
@@ -759,8 +660,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     isPausedRef.current = isPaused;
   }, [isPaused]);
 
-  // Session Workout State Machine: 'EXERCISING' | 'RESTING' | 'COMPLETED'
-  // Synchronous Single Source of Truth to eliminate phase delays with 60 FPS loops.
   const sessionWorkoutStateRef = useRef<'EXERCISING' | 'RESTING' | 'COMPLETED'>('EXERCISING');
   const isRestingRef = useRef<boolean>(false);
 
@@ -779,7 +678,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     showDebugRef.current = showDebugHud;
   }, [showDebugHud]);
 
-  // Staff Shortcut: Shift+D toggles Staff Diagnostic Debug HUD
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'D' && e.shiftKey) {
@@ -796,7 +694,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     stateMachineRef.current.setSide(activeSide);
   }, [activeSide]);
 
-  // Sync config updates without restarting loop
   const resolvedConfigRef = useRef(resolvedConfig);
   useEffect(() => {
     resolvedConfigRef.current = resolvedConfig;
@@ -877,9 +774,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     accuracyCompleteJointFramesRef.current = 0;
     accuracyFpsSamplesRef.current = [];
     setAccuracyVerificationReport(null);
+    setHudState((prev) => ({
+      ...prev,
+      accuracyTotalFrames: 0,
+      accuracyCompleteJointFrames: 0,
+    }));
   }, []);
 
-  // 1. ตัดเสียงพูดทั้งหมดในหน้าสแกนท่าฝึก และล้างคิวเสียงค้างทันทีที่เข้าหน้า/เปลี่ยนท่า/ออกจากหน้า
   useEffect(() => {
     const feedbackController = voiceFeedbackRef.current;
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -894,14 +795,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     };
   }, [exerciseConfig, resolvedConfig]);
 
-  // 2. State สำหรับปุ่ม "แสดงเส้นลำตัว" (ค่าเริ่มต้น = true คือเปิดแสดงเส้นโครงร่างทันทีเมื่อเข้าหน้าฝึก)
   const [showSkeletonOverlay, setShowSkeletonOverlay] = useState<boolean>(true);
   const showSkeletonRef = useRef<boolean>(true);
   useEffect(() => {
     showSkeletonRef.current = showSkeletonOverlay;
   }, [showSkeletonOverlay]);
 
-  // Sub-pixel EMA lerp smoothing buffer strictly for canvas rendering with 200ms Grace Period Decay
   const canvasSmoothedPointsRef = useRef<{
     [idx: number]: {
       x: number;
@@ -912,7 +811,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     };
   }>({});
 
-  // --- Continuous Identity Verification State & Refs ---
   const patientId = patient?.patient_id || patient?.hn || '';
   const [initialSessionId] = useState<string>(
     () => `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
@@ -924,7 +822,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     exercise?.id?.includes('pendulum') ||
     exercise?.name?.includes('แกว่ง')
   );
-  // Grace Period: 15s for pendulum (as approved in Step 0), 6s for standard exercises
   const gracePeriodMs = isPendulumExercise ? 15000 : 6000;
 
   const [verificationStatus, setVerificationStatus] = useState<
@@ -935,7 +832,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     verificationStatusRef.current = verificationStatus;
   }, [verificationStatus]);
 
-  const isIdentityVerifiedRef = useRef<boolean>(true); // starts true for initial grace
+  const isIdentityVerifiedRef = useRef<boolean>(true);
   const [initialVerifiedTime] = useState<number>(() => Date.now());
   const lastVerifiedTimeRef = useRef<number>(initialVerifiedTime);
   const verifiedFaceBoxRef = useRef<NormalizedBox | null>(null);
@@ -945,12 +842,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const rejectedRepsCountRef = useRef<number>(0);
   const validCompletedRepsRef = useRef<number>(0);
 
-  // Auto-pause modal when verification fails > 20s
   const [, setShowIdentityFailureModal] = useState<boolean>(false);
-  // Blocking modal when patient has no enrolled face template in system (Choice A)
-  const [, setShowNoTemplateModal] = useState<boolean>(false);
 
-  // Pre-session check: Ensure patient has face template enrolled (Choice A)
   useEffect(() => {
     let isCancelled = false;
     async function verifyPatientEnrollment() {
@@ -977,7 +870,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     };
   }, [patientId, resolvedConfig.id]);
 
-  // Periodic 1:1 Face Verification Callback
   const triggerFaceVerification = useCallback(
     async (videoEl: HTMLVideoElement) => {
       if (!patientId || isFaceCheckInProgressRef.current || isPausedRef.current) return;
@@ -1049,7 +941,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           setVerificationStatus('verified');
           identityFailureStartTimeRef.current = null;
 
-          // Normalized coordinates [0, 1] relative to video frame
           const normBox: NormalizedBox = {
             x: Math.max(0, Math.min(1, detection.box.x / vw)),
             y: Math.max(0, Math.min(1, detection.box.y / vh)),
@@ -1085,7 +976,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     [patientId, gracePeriodMs, resolvedConfig.id]
   );
 
-  // Audio Mute State with localStorage persistence (100% silent view)
   const [isAudioMuted, _setIsAudioMuted] = useState<boolean>(() => {
     try {
       return localStorage.getItem('drtech_voice_muted') === 'true';
@@ -1098,9 +988,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     isAudioMutedRef.current = isAudioMuted;
     try {
       localStorage.setItem('drtech_voice_muted', String(isAudioMuted));
-    } catch {
-      // safe fallback
-    }
+    } catch {}
     if (isAudioMuted) {
       voiceFeedbackRef.current.cancel();
       if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
@@ -1109,14 +997,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
   }, [isAudioMuted]);
 
-  // Sound & Speech Helpers (100% Permanently Silent in Exercise Scan View)
-  const playRepChime = useCallback(() => {
-    // Web Audio API chimes and beeps are permanently disabled in Exercise Scan View
-  }, []);
+  const playRepChime = useCallback(() => {}, []);
 
   const speakThai = useCallback(
     (_text: string, _category?: string, _overrideCooldownMs?: number) => {
-      // ตัดเสียงพูดทั้งหมดในหน้าสแกนท่าฝึก 100%
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
@@ -1143,7 +1027,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     [speakThai]
   );
 
-  // Resource Cleanup on Unmount
+  // Resource Cleanup on Unmount (Preserves cachedPoseLandmarker for 0ms exercise transitions)
   const cleanupResources = useCallback(() => {
     isMountedRef.current = false;
     sessionWorkoutStateRef.current = 'COMPLETED';
@@ -1161,15 +1045,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = null;
     }
-    if (landmarkerRef.current) {
-      try {
-        landmarkerRef.current.close();
-      } catch {
-        // ignore
-      }
-      landmarkerRef.current = null;
-      cachedPoseLandmarker = null;
-    }
+    // ถอดอ้างอิง landmarkerRef โดยไม่ทำลาย cachedPoseLandmarker เพื่อให้สลับท่าถัดไปได้ใน 0 วินาที
+    landmarkerRef.current = null;
+
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -1178,7 +1056,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       videoRef.current.srcObject = null;
     }
     if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => { });
+      audioCtxRef.current.close().catch(() => {});
       audioCtxRef.current = null;
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
@@ -1186,16 +1064,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
     voiceFeedbackRef.current.cancel();
     watchdogRef.current.reset();
+    armStabilizerRef.current.reset();
   }, []);
 
-  // Single-Mount Lifecycle: Boot Camera, Pose Detector, and Detection Loop
   useEffect(() => {
     isMountedRef.current = true;
     if (sessionStartTimeRef.current === 0) {
       sessionStartTimeRef.current = Date.now();
     }
 
-    // Flush any pending or lingering speech from previous views immediately
     if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
@@ -1211,14 +1088,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         if (!videoEl) return;
 
         if (replayVideoSrc) {
-          // Replay Mode: Play synthetic or uploaded test video file
           videoEl.srcObject = null;
           videoEl.src = replayVideoSrc;
           videoEl.loop = true;
           videoEl.muted = true;
           videoEl.playsInline = true;
         } else {
-          // 1. Initialize Webcam Stream (1280x720, 16:9 widescreen, 60fps ideal with track reuse)
           let stream: MediaStream;
           if (streamRef.current && streamRef.current.getVideoTracks().some((t) => t.readyState === 'live')) {
             stream = streamRef.current;
@@ -1263,7 +1138,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             videoEl.muted = true;
             videoEl.playsInline = true;
 
-            // Immediately enforce minimum hardware zoom (widest FOV without crop) to clear any residual zoom
             const initialVideoTrack = stream.getVideoTracks()[0];
             if (initialVideoTrack && typeof initialVideoTrack.getCapabilities === 'function') {
               try {
@@ -1277,12 +1151,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               } catch {}
             }
 
-            // Attempt hardware exposure compensation for backlight
             backlightCompensatorRef.current.applyHardwareExposure(stream);
           }
         }
 
-        // Explicitly wait until video metadata is loaded and videoWidth is valid (> 0)
         await new Promise<void>((resolve) => {
           if (videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
             resolve();
@@ -1307,7 +1179,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           height: videoEl.videoHeight || 720,
         });
 
-        // Query & apply lowest hardware zoom for widest FOV without cropping
         const videoTrack = streamRef.current?.getVideoTracks()[0];
         let supportedZoom = { supported: false, min: 1, max: 1, step: 0.1, current: 1 };
         if (videoTrack && typeof videoTrack.getCapabilities === 'function') {
@@ -1335,7 +1206,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         setZoomInfo(supportedZoom);
         setCameraStatus('ready');
 
-        // 2. Load MediaPipe Tasks-Vision with Module-Level Caching (Zero-Freeze Transition)
         if (!cachedPoseLandmarker) {
           if (!cachedVisionModule) {
             cachedVisionModule = await import('@mediapipe/tasks-vision');
@@ -1364,7 +1234,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             throw new Error('ไม่สามารถโหลดไฟล์ WebAssembly ของระบบตรวจจับได้ (กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ CSP)');
           }
 
-          // Model Sources: Local Lite (fastest, zero network delay) -> Full CDN -> Local Full -> Lite CDN
           const modelSources = [
             '/models/pose_landmarker.task',
             '/models/pose_landmarker_lite.task',
@@ -1376,7 +1245,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           let landmarker: any = null;
           let selectedDelegate: 'GPU' | 'CPU' = 'GPU';
 
-          // Try GPU delegate first across sources (numPoses: 2 for active subject locking, outputSegmentationMasks: false)
           for (const modelPath of modelSources) {
             try {
               landmarker = await vision.PoseLandmarker.createFromOptions(cachedFilesetResolver, {
@@ -1400,7 +1268,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }
           }
 
-          // If GPU fails, fallback immediately to CPU delegate
           if (!landmarker) {
             for (const modelPath of modelSources) {
               try {
@@ -1440,11 +1307,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         setModelDelegate(cachedDelegate);
         setModelStatus('ready');
 
-        // 3. Start Decoupled Dual-Loop Architecture:
-        // - Loop A: AI Inference Loop (requestVideoFrameCallback, 0% duplicate frames)
-        // - Loop B: High-Refresh Overlay Render Loop (requestAnimationFrame, 60-165Hz)
-
-        // Loop A Scheduler
         const scheduleInference = () => {
           if (!isMountedRef.current || !videoRef.current) return;
           const v = videoRef.current;
@@ -1469,7 +1331,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             return;
           }
 
-          // Fallback guard for non-rVFC browsers: check if video frame actually advanced
+          // หยุดการประมวลผลและการนับครั้งทันทีเมื่อผู้ใช้กดปุ่มพัก (isPaused)
+          if (isPausedRef.current) {
+            scheduleInference();
+            return;
+          }
+
           const hasRvfc = typeof (vEl as any).requestVideoFrameCallback === 'function';
           if (!hasRvfc) {
             if (vEl.currentTime === lastVideoTimeRef.current) {
@@ -1487,7 +1354,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           const nowMs = performance.now();
 
-          // AI Inference Interval Throttle only in low-power mode
           if (lowPowerRef.current && nowMs - lastInferenceTimeRef.current < 66) {
             isInferenceBusyRef.current = false;
             scheduleInference();
@@ -1498,7 +1364,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           lastInferenceTimeRef.current = nowMs;
           smoothedFpsRef.current = 0.85 * smoothedFpsRef.current + 0.15 * (1000 / dtMs);
 
-          // Strictly increasing integer timestamp for MediaPipe stream calculator
           const rawNowMs = Math.round(nowMs);
           const safeTimestampMs =
             rawNowMs > lastTimestampMsRef.current
@@ -1506,7 +1371,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               : lastTimestampMsRef.current + 1;
           lastTimestampMsRef.current = safeTimestampMs;
 
-          // Continuous Face Verification Trigger (Every ~2.5s)
           if (
             nowMs - lastFaceCheckTimeRef.current >= 2500 &&
             !isFaceCheckInProgressRef.current &&
@@ -1518,7 +1382,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             triggerFaceVerification(vEl);
           }
 
-          // Continuous Identity Failure Auto-Pause (>= 20s)
           if (
             identityFailureStartTimeRef.current &&
             nowMs - identityFailureStartTimeRef.current >= 20000 &&
@@ -1530,7 +1393,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             speakThai('หยุดการฝึกชั่วคราวเนื่องจากไม่สามารถยืนยันตัวตนได้', 'identity_timeout', 0);
           }
 
-          // Non-blocking detection with backlight compensation
           const backlightRes = backlightCompensatorRef.current.analyzeLuminance(vEl);
           let inputSource: CanvasImageSource = vEl;
           if (backlightRes.needsPreprocessing) {
@@ -1567,7 +1429,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             Boolean((resolvedConfigRef.current as any).isPendulum);
 
           if (!hasPose) {
-            // Update pose state to indicate missing pose without wiping smoothed canvas buffer
             previousPoseStateRef.current = currentPoseStateRef.current;
             currentPoseStateRef.current = {
               landmarks: null,
@@ -1586,7 +1447,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 validCompletedRepsRef.current
               );
 
-              // Rep counting is strictly gated to EXERCISING state
               if (sessionWorkoutStateRef.current === 'EXERCISING' && evalRes.completedReps > lastCompletedRepsRef.current) {
                 lastCompletedRepsRef.current = evalRes.completedReps;
                 if (isIdentityVerifiedRef.current) {
@@ -1602,7 +1462,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   speakThai(`ครั้งที่ ${validCompletedRepsRef.current}`, 'rep_count', 1200);
                 } else {
                   rejectedRepsCountRef.current += 1;
-                  console.warn('[IdentityGate] Timer rep rejected: unverified patient identity');
                 }
               }
 
@@ -1636,7 +1495,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   currentAngle: 0,
                   completedReps: validCompletedRepsRef.current,
                   repPhase: evalRes.phase,
-                  accuracyScore: Math.round(evalRes.accuracyPercent ?? 100),
+                  accuracyPct: Math.round(evalRes.accuracyPercent ?? 100),
                   coachingMessage: evalRes.coachingMessageTh || 'กำลังจับเวลาตามจังหวะกายภาพ...',
                   statusColor: '#10b981',
                 }));
@@ -1668,14 +1527,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             return;
           }
 
-          // 1. Multi-Pose Subject Locking
           const allPoses = result.landmarks;
           const detectedPeopleCount = allPoses.length;
           const { selectedPose: chosenPose, selectedIndex: bestIdx, newLockedCoM } =
             selectSubjectPoseWithIdentity(allPoses, verifiedFaceBoxRef.current, lockedSubjectCoMRef.current);
           lockedSubjectCoMRef.current = newLockedCoM;
 
-          // 1.5. Clinical Arm Identity Stabilization & Ambiguity Gate
           const stabilizerRes = armStabilizerRef.current.stabilize(chosenPose, safeTimestampMs);
           const stabilizedPose = stabilizerRes.stabilizedLandmarks;
           const isArmAmbiguous = stabilizerRes.isArmAmbiguous;
@@ -1684,22 +1541,20 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           isArmAmbiguousRef.current = isArmAmbiguous;
           latestAmbiguousJointsRef.current = ambiguousJoints;
 
-          // Prevent Midpoint Floating Drift:
-          // If joints were swapped back or are ambiguous, reset their individual 1€ filter memory
-          // and wipe their 200ms grace period hold immediately to prevent dragging lines across chest
+          // ล้างความจำตัวกรอง, พิกัดค้าง และ previousPoseStateRef ทันทีเมื่อเกิดการสลับข้างหรือมือซ้อนกัน
+          // เพื่อป้องกัน Velocity Spike กระชากเส้นโครงร่างข้ามหน้าอกในเฟรมถัดไป
           if (swappedJoints.length > 0 || isArmAmbiguous) {
             const jointsToReset = [...swappedJoints, ...Array.from(ambiguousJoints)];
             oneEuroFilterRef.current.resetLandmarks(jointsToReset);
             for (const jIdx of jointsToReset) {
               delete canvasSmoothedPointsRef.current[jIdx];
             }
+            previousPoseStateRef.current = null;
           }
 
-          // 2. Clinical One Euro Filter (1€ Filter - low tremor at rest, low latency in motion)
           const smoothedPose = oneEuroFilterRef.current.filter(stabilizedPose, safeTimestampMs);
           smoothedLandmarksRef.current = smoothedPose;
 
-          // 3. Clinical State Machine Evaluation (GROUND TRUTH: strictly using filtered real landmarks + 3D World Landmarks)
           const wdStatus = watchdogRef.current.update(smoothedPose, safeTimestampMs);
           const chosenWorldPose = (result.worldLandmarks && result.worldLandmarks[bestIdx]) || undefined;
           const isArmClipping = Boolean(
@@ -1725,7 +1580,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             validCompletedRepsRef.current
           );
 
-          // Update Decoupled Pose State for Loop B (Render Loop)
           previousPoseStateRef.current = currentPoseStateRef.current;
           currentPoseStateRef.current = {
             landmarks: smoothedPose,
@@ -1733,7 +1587,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             inFrame: true,
           };
 
-          // Telemetry tracking for Staff Accuracy Test Mode
           if (isAccuracyTestModeRef.current && smoothedPose) {
             accuracyTotalFramesRef.current += 1;
             const hasSh = (smoothedPose[11]?.visibility ?? 0) > 0.4 || (smoothedPose[12]?.visibility ?? 0) > 0.4;
@@ -1759,8 +1612,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }
           }
 
-          // Rep completion audio chime, TTS & senior celebration pulse
-          // (strictly gated to EXERCISING state)
           if (sessionWorkoutStateRef.current === 'EXERCISING' && evalRes.completedReps > lastCompletedRepsRef.current) {
             lastCompletedRepsRef.current = evalRes.completedReps;
             if (isIdentityVerifiedRef.current) {
@@ -1776,18 +1627,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               speakThai(`ครั้งที่ ${validCompletedRepsRef.current}`, 'rep_count', 1200);
             } else {
               rejectedRepsCountRef.current += 1;
-              console.warn('[IdentityGate] Rep rejected: unverified patient identity');
             }
           }
 
-          // Guidance speech announcements with cooldown guards
           if (evalRes.isOccluded && evalRes.occlusionReasonTh) {
             speakThai(evalRes.occlusionReasonTh, 'occlusion_warning', 3500);
           } else if (evalRes.coachingMessageTh && evalRes.formRating !== 'good') {
             speakThai(evalRes.coachingMessageTh, 'coaching_warning', 4000);
           }
 
-          // Set & Exercise Completion Transitions (Gated by valid verified reps and EXERCISING state)
           const targetReps = resolvedConfigRef.current.defaultPrescription?.repsPerSet || 10;
           const totalSets = resolvedConfigRef.current.defaultPrescription?.totalSets || 3;
           const isSetDone = validCompletedRepsRef.current - setBaseRepsRef.current >= targetReps;
@@ -1814,7 +1662,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }
           }
 
-          // Accuracy Percentage EMA Smoothing (0.80 previous + 0.20 raw)
           const isAtPreExerciseRest =
             validCompletedRepsRef.current === 0 &&
             (evalRes.phase === 'IDLE' ||
@@ -1831,7 +1678,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             lastEmittedAccuracyRef.current = 0;
           } else if (smoothedAccuracyRef.current === 0) {
             smoothedAccuracyRef.current = rawAcc;
-          } else if (rawAcc > 0) {
+          } else if (rawAcc >= 0) {
             smoothedAccuracyRef.current = 0.80 * smoothedAccuracyRef.current + 0.20 * rawAcc;
           }
           const smoothedAcc = Math.round(smoothedAccuracyRef.current);
@@ -1845,7 +1692,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             lastAccuracyEmitTimeRef.current = nowMs;
           }
 
-          // UI update guard (throttled to avoid redundant state updates)
           const prevUi = lastRenderedUiValuesRef.current;
           const isRepsChanged = validCompletedRepsRef.current !== prevUi.completedReps;
           const isSetChanged = evalRes.currentSet !== prevUi.currentSet;
@@ -1923,6 +1769,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               avgVisibility: Number(avgVis.toFixed(2)),
               currentAngle: Math.round(evalRes.currentAngleDeg || 0),
               accuracyPct: lastEmittedAccuracyRef.current,
+              accuracyTotalFrames: accuracyTotalFramesRef.current,
+              accuracyCompleteJointFrames: accuracyCompleteJointFramesRef.current,
               repPhase: evalRes.phase,
               completedReps: validCompletedRepsRef.current,
               currentSet: evalRes.currentSet,
@@ -1951,7 +1799,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           scheduleInference();
         };
 
-        // Loop B: High-Refresh Overlay Render Loop (runs at 60-165 Hz display refresh rate)
         const renderOverlayLoop = () => {
           if (!isMountedRef.current) return;
           renderRafIdRef.current = requestAnimationFrame(renderOverlayLoop);
@@ -1962,13 +1809,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           const nowMs = performance.now();
 
-          // 1. Measure 60-165 FPS Display Render Frame Time
           const renderDtMs = Math.max(nowMs - lastRenderTimeRef.current, 1);
           lastRenderTimeRef.current = nowMs;
           smoothedRenderFpsRef.current =
             0.9 * smoothedRenderFpsRef.current + 0.1 * (1000 / renderDtMs);
 
-          // 2. High-Refresh Ring Lerp Interpolation & Direct DOM Update
           const targetProgress = targetProgressRef.current;
           const currentProgress = currentAnimatedProgressRef.current;
           const dtSec = Math.min(renderDtMs / 1000, 0.05);
@@ -1988,7 +1833,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           const ctx = cEl.getContext('2d');
           if (!ctx) return;
 
-          // HiDPI DevicePixelRatio Scaling & Canvas Resolution
           const displayW = cEl.clientWidth || vEl.clientWidth || 1280;
           const displayH = cEl.clientHeight || vEl.clientHeight || 720;
           const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -2001,7 +1845,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-          // If user toggled "Hide Skeleton", clear canvas and skip heavy drawing
           if (!showSkeletonRef.current) {
             ctx.clearRect(0, 0, displayW, displayH);
             return;
@@ -2009,7 +1852,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           ctx.clearRect(0, 0, displayW, displayH);
 
-          // Interpolate and extrapolate landmarks for silky-smooth 60-120 FPS overlay
           const currState = currentPoseStateRef.current;
           const prevState = previousPoseStateRef.current;
           const currentFitMode = fitModeRef.current;
@@ -2030,7 +1872,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             const tPrev = prevState?.timestampMs ?? tCurr - 33;
             const dtInference = Math.max(tCurr - tPrev, 10);
             const elapsedSinceInference = Math.max(0, nowMs - tCurr);
-            // Short predictive extrapolation horizon: clamp to max 35ms
             const predictDt = Math.min(elapsedSinceInference, 35);
 
             currLms.forEach((lm: any, idx: number) => {
@@ -2038,7 +1879,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               let normY = lm.y;
               const vis = lm.visibility ?? 1.0;
 
-              if (prevLms && prevLms[idx] && predictDt > 0) {
+              if (prevLms && prevLms[idx] && predictDt > 0 && !latestAmbiguousJointsRef.current.has(idx)) {
                 const vx = (lm.x - prevLms[idx].x) / dtInference;
                 const vy = (lm.y - prevLms[idx].y) / dtInference;
                 normX = Math.max(-0.05, Math.min(1.05, lm.x + vx * predictDt));
@@ -2075,8 +1916,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             });
           }
 
-          // Grace Period Decay (200 ms Hold & Fade) for momentarily lost landmarks
-          // IMPORTANT: Ambiguous or swapped joints MUST NOT linger with ghost decay
           const LOST_GRACE_MS = 200;
           for (let idx = 0; idx < 33; idx++) {
             if (latestAmbiguousJointsRef.current.has(idx)) {
@@ -2103,7 +1942,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }
           }
 
-          // Active dynamic colors and styles
           const currentEval = latestEvalResultRef.current;
           const strokeColor =
             currentEval?.formRating === 'error'
@@ -2177,7 +2015,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             return true;
           };
 
-          // 1. Draw Skeleton Lines (Torso, Arms, Hands, Legs, + Head when neck)
           const activeConnections = isNeckExercise
             ? [...HEAD_POSE_CONNECTIONS, ...POSE_CONNECTIONS]
             : POSE_CONNECTIONS;
@@ -2207,7 +2044,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }
           }
 
-          // 2. Draw Joint Circular Dots
           const activeJointIndices = isNeckExercise
             ? [...HEAD_JOINT_INDICES, ...BODY_JOINT_INDICES]
             : BODY_JOINT_INDICES;
@@ -2233,7 +2069,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             ctx.strokeStyle = applyAlphaToColor('#ffffff', jointAlpha);
             ctx.stroke();
 
-            // Draw debug label if staff debug is enabled
             if (showDebugRef.current && (idx >= 11 || isNeckExercise)) {
               ctx.font = 'bold 11px sans-serif';
               ctx.fillStyle = applyAlphaToColor('#38bdf8', jointAlpha);
@@ -2242,7 +2077,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
         };
 
-        // Start both decoupled loops simultaneously
         scheduleInference();
         renderRafIdRef.current = requestAnimationFrame(renderOverlayLoop);
       } catch (err: any) {
@@ -2267,7 +2101,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   }, [cleanupResources, playRepChime, speakThai]);
 
   const handleNextSet = useCallback(() => {
-    // Atomic Idempotent Guard: only transition from RESTING to EXERCISING
     if (sessionWorkoutStateRef.current !== 'RESTING') return;
     sessionWorkoutStateRef.current = 'EXERCISING';
     isRestingRef.current = false;
@@ -2283,9 +2116,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     setRestCountdown(resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30);
   }, [resolvedConfig.defaultPrescription?.restBetweenSetsSec]);
 
-  // Rest Countdown Timer & Auto-advance unified into a single atomic controller.
-  // Remaining time is derived from a wall-clock deadline so throttled/backgrounded tabs cannot drift.
-  // Automatically triggers handleNextSet once deadline expires without duplicate invocation.
   useEffect(() => {
     if (!isResting) return;
     const restSec = resolvedConfigRef.current.defaultPrescription?.restBetweenSetsSec || 30;
@@ -2310,7 +2140,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     };
   }, [isResting, handleNextSet]);
 
-  // Final Session Telemetry Submission with Idempotency Guard
   const handleFinalizeSession = (mode: 'ai_verified' | 'stopped_pain' | 'skipped_unverified') => {
     if (isFinalizingRef.current) return;
     isFinalizingRef.current = true;
@@ -2325,23 +2154,26 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         ? crypto.randomUUID()
         : `kiosk-sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
+    const finalCompletedReps =
+      validCompletedRepsRef.current || evalResult?.completedReps || hudState.completedReps || 0;
+
     const telemetry: ExerciseSessionTelemetry = {
       exerciseId: exercise.id || exercise.exercise_id || resolvedConfig.id || 'ex',
       exerciseName: resolvedConfig.nameTh,
       patientId: patient.patient_id || patient.hn || 'unknown',
       totalRepsTarget: resolvedConfig.defaultPrescription?.repsPerSet || 10,
-      completedReps: evalResult?.completedReps || hudState.completedReps || 0,
+      completedReps: finalCompletedReps,
       incorrectReps: evalResult?.incorrectReps || 0,
       totalSetsCompleted: evalResult?.currentSet || hudState.currentSet || 1,
       maxAngleAchievedDeg: evalResult?.currentAngleDeg || hudState.currentAngle || 0,
       averageAngleDeg: evalResult?.currentAngleDeg || hudState.currentAngle || 0,
       averageHoldDurationSec: resolvedConfig.angleMechanics?.holdDurationSec || 2.0,
-      consistencyScorePercent: evalResult?.completedReps
+      consistencyScorePercent: finalCompletedReps
         ? Math.min(
           100,
           Math.round(
-            (evalResult.completedReps /
-              (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
+            (finalCompletedReps /
+              (finalCompletedReps + (evalResult?.incorrectReps || 0))) *
             100
           )
         )
@@ -2359,7 +2191,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
     cleanupResources();
 
-    // Log telemetry to Supabase / API asynchronously (strictly numeric telemetry - never upload video)
     if (defaultApiClient?.courses?.submitSessionLog) {
       defaultApiClient.courses.submitSessionLog({
         patient_id: patient.patient_id || patient.hn || 'unknown',
@@ -2392,7 +2223,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
   };
 
-  // Emergency Pain Stop Handler
   const handleReportPainStop = async () => {
     if (isReportingPainRef.current) return;
     isReportingPainRef.current = true;
@@ -2403,10 +2233,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
     voiceFeedbackRef.current.cancel();
     if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => { });
+      audioCtxRef.current.close().catch(() => {});
       audioCtxRef.current = null;
     }
     speakThai('หยุดการฝึกแล้วค่ะ ระบบกำลังแจ้งนักกายภาพบำบัด', 'emergency_pain_stop', 0);
+
+    const finalCompletedReps =
+      validCompletedRepsRef.current || evalResult?.completedReps || hudState.completedReps || 0;
 
     try {
       const totalDurationSec = sessionStartTimeRef.current
@@ -2418,7 +2251,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         exercise_id: exercise.id || exercise.exercise_id || resolvedConfig.id || null,
         kiosk_id: 'kiosk-01',
         completion_mode: 'stopped_pain',
-        correct_reps: evalResult?.completedReps || hudState.completedReps || 0,
+        correct_reps: finalCompletedReps,
         incorrect_reps: evalResult?.incorrectReps || 0,
         target_reps: resolvedConfig.defaultPrescription?.repsPerSet || 10,
         current_set: evalResult?.currentSet || hudState.currentSet || 1,
@@ -2450,15 +2283,13 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         reason: `🚨 ผู้ป่วยแจ้งว่ามีอาการเจ็บขณะฝึกท่า: "${resolvedConfig.nameTh}" (HN: ${patient.hn || patient.patient_id})`,
         idempotency_key: idempotencyKey,
       });
-    } catch {
-      // safe fallback
-    }
+    } catch {}
 
     if (onPainStop) {
       onPainStop({
         exerciseId: resolvedConfig.id,
         side: activeSide,
-        reps: hudState.completedReps,
+        reps: finalCompletedReps,
       });
     }
   };
@@ -2476,11 +2307,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
       ? 'inherently_bilateral'
       : 'unilateral_or_bilateral');
   const isInherentlyBilateral = lateralityMode === 'inherently_bilateral';
-  const _isBilateral =
-    activeSide === 'bilateral' ||
-    (activeSide !== 'left' &&
-      activeSide !== 'right' &&
-      (isInherentlyBilateral || resolvedConfig.side === 'bilateral'));
 
   const titleString =
     explicitTitle ||
@@ -2490,7 +2316,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         ? resolvedConfig.nameEn || resolvedConfig.nameTh
         : resolvedConfig.nameTh);
 
-  // SVG Progress Ring is updated directly via progressCircleRef at 60 FPS (zero React re-renders)
   const isWaitingPose = !isTimerMode && Boolean(
     evalResult?.readinessStatus &&
     evalResult.readinessStatus !== 'ready' &&
@@ -2499,29 +2324,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     hudState.completedReps === 0
   );
 
-  // Internal coaching hold ref for 2000ms minimum display window (Senior-friendly anti-flicker)
-  const coachingHoldRef = useRef<{
-    message: string;
-    icon: string;
-    tone: 'emerald' | 'amber' | 'rose' | 'teal';
-    priority: number;
-    timestamp: number;
-  }>({
-    message: '',
-    icon: '✨',
-    tone: 'emerald',
-    priority: -1,
-    timestamp: 0,
-  });
-
-  // Single-Line Status Candidate Resolution based on Strict Clinical Priority
-  const getSingleLineStatusCandidate = useCallback((): {
+  const getSingleLineStatus = (): {
     icon: string;
     message: string;
     tone: 'emerald' | 'amber' | 'rose' | 'teal';
-    priority: number;
   } => {
-    // 0. Celebrating Rep
     if (celebratingRep !== null) {
       return {
         icon: '🎉',
@@ -2532,11 +2339,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? `Great job! Rep #${celebratingRep} completed`
               : `ยอดเยี่ยมมาก! ครั้งที่ ${celebratingRep} สำเร็จ`,
         tone: 'emerald',
-        priority: 4,
       };
     }
 
-    // 0.1 Paused
     if (isPaused) {
       return {
         icon: '⏸️',
@@ -2547,14 +2352,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? 'Session paused. Tap Resume below to continue'
               : 'พักชั่วคราว — กดปุ่มฝึกต่อเพื่อทำต่อ',
         tone: 'amber',
-        priority: 4,
       };
     }
 
-    // Resolve per-exercise side-aware coaching cues
     const cues = getExerciseCoachingCues(resolvedConfig.id, activeSide);
 
-    // Priority (ก): Person detection, framing, distance
     if (hudState.detectedPeople === 0 || hudState.landmarkCount === 0) {
       return {
         icon: '📷',
@@ -2565,7 +2367,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? 'Please stand in front of camera (1.5–2 m)'
               : 'กรุณายืนหน้ากล้องในระยะ 1.5–2 เมตร ให้กล้องเห็นตัว',
         tone: 'amber',
-        priority: 3,
       };
     }
 
@@ -2585,7 +2386,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         icon: '⚠️',
         message: framingMsg,
         tone: 'amber',
-        priority: 3,
       };
     }
 
@@ -2599,7 +2399,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? 'Step slightly closer to screen'
               : 'ขยับเข้าใกล้กล้องอีกเล็กน้อย',
         tone: 'amber',
-        priority: 3,
       };
     }
 
@@ -2616,7 +2415,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                     ? 'นั่งตัวตรงมองมาที่กล้อง เพื่อเริ่มท่า'
                     : 'กรุณายืนตรงให้เห็นช่วงบนชัดเจนเพื่อเริ่มท่า')),
         tone: 'amber',
-        priority: 3,
       };
     }
 
@@ -2630,11 +2428,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? 'Dim lighting. Turn on front lights'
               : 'เปิดไฟด้านหน้าให้สว่างขึ้น หลีกเลี่ยงแสงย้อน',
         tone: 'amber',
-        priority: 3,
       };
     }
 
-    // Priority (ข): Form & Posture Coaching Warnings
     if (evalResult?.formRating === 'error') {
       return {
         icon: '⚠️',
@@ -2646,7 +2442,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? 'Move slowly and protect your joints'
               : 'ระวังอย่าฝืนข้อต่อ ขยับช้าๆ อย่างนุ่มนวล'),
         tone: 'amber',
-        priority: 2,
       };
     }
 
@@ -2661,22 +2456,26 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? 'Keep your back upright'
               : 'รักษาลำตัวให้ตรง ยืนหลังตรง'),
         tone: 'amber',
-        priority: 2,
       };
     }
 
     if (isPendulum) {
+      if (evalResult?.coachingMessageTh) {
+        return {
+          icon: cues.movingIcon || '🌀',
+          message: evalResult.coachingMessageTh,
+          tone: 'teal',
+        };
+      }
       return {
         icon: cues.movingIcon || '🌀',
         message:
-          evalResult?.coachingMessageTh ||
-          (lang === 'zh-CN'
+          lang === 'zh-CN'
             ? (cues.movingMessageCn || '身体向前微倾，顺畅做圆周摆动')
             : lang === 'en-US'
               ? (cues.movingMessageEn || 'Lean forward slightly, relax arm and swing in circles')
-              : (cues.movingMessageTh || 'แกว่งแขนช้า ๆ เป็นวงกลม ปล่อยแขนตามสบาย')),
+              : (cues.movingMessageTh || 'แกว่งแขนช้า ๆ เป็นวงกลม ปล่อยแขนตามสบาย'),
         tone: 'teal',
-        priority: 1,
       };
     }
 
@@ -2690,7 +2489,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? (cues.holdingMessageEn || 'Great! Hold steady at target...')
               : (cues.holdingMessageTh || 'ค้างไว้นิ่งๆ อีกนิด ดีมากครับ'),
         tone: 'emerald',
-        priority: 1,
       };
     }
 
@@ -2704,7 +2502,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? (cues.movingMessageEn || (isLowerBody ? 'Lift leg up smoothly...' : 'Move smoothly to target...'))
               : (cues.movingMessageTh || (isLowerBody ? 'ค่อยๆ ยกขาขึ้นช้าๆ...' : 'ทำท่าช้าๆ ตามภาพตัวอย่าง...')),
         tone: 'teal',
-        priority: 1,
       };
     }
 
@@ -2718,11 +2515,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               ? (cues.returningMessageEn || (isLowerBody ? 'Lower leg down smoothly...' : 'Return smoothly to starting position...'))
               : (cues.returningMessageTh || (isLowerBody ? 'ค่อยๆ ผ่อนขาลงช้าๆ...' : 'ค่อยๆ ผ่อนกลับสู่ตำแหน่งเริ่มต้นช้าๆ')),
         tone: 'teal',
-        priority: 1,
       };
     }
 
-    // Priority (ค): Normal Training / Encouraging
     return {
       icon: cues.idleIcon || '✨',
       message:
@@ -2733,103 +2528,43 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             ? (cues.idleMessageEn || 'Good form, keep going smoothly')
             : (cues.idleMessageTh || 'ดีมาก ทำต่อเนื่องอย่างผ่อนคลายเลยครับ')),
       tone: 'emerald',
-      priority: 0,
     };
-  }, [
-    celebratingRep,
-    isPaused,
-    resolvedConfig.id,
-    resolvedConfig.targetJoint,
-    activeSide,
-    hudState.detectedPeople,
-    hudState.landmarkCount,
-    hudState.shoulderWidthPct,
-    hudState.hasLightingWarning,
-    evalResult,
-    isWaitingPose,
-    isLowerBody,
-    isPendulum,
-    lang,
-  ]);
+  };
 
-  const [statusInfo, setStatusInfo] = useState<{
-    icon: string;
-    message: string;
-    tone: 'emerald' | 'amber' | 'rose' | 'teal';
-  }>(() => getSingleLineStatusCandidate());
-
-  useEffect(() => {
-    const raw = getSingleLineStatusCandidate();
-    const now = Date.now();
-    const held = coachingHoldRef.current;
-
-    // Higher priority overrides immediately
-    if (raw.priority > held.priority) {
-      coachingHoldRef.current = { ...raw, timestamp: now };
-      setStatusInfo(raw);
-      return;
-    }
-
-    // Same message keeps state
-    if (raw.message === held.message) {
-      return;
-    }
-
-    // Check hold duration
-    const elapsed = now - held.timestamp;
-    if (elapsed >= 2000) {
-      coachingHoldRef.current = { ...raw, timestamp: now };
-      setStatusInfo(raw);
-    } else {
-      const timer = setTimeout(() => {
-        const latest = getSingleLineStatusCandidate();
-        coachingHoldRef.current = { ...latest, timestamp: Date.now() };
-        setStatusInfo(latest);
-      }, 2000 - elapsed);
-      return () => clearTimeout(timer);
-    }
-  }, [getSingleLineStatusCandidate]);
+  const statusInfo = getSingleLineStatus();
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-[#F0F7FB] text-slate-900 flex flex-col justify-between overflow-hidden select-none font-sans"
-      style={{
-        '--kiosk-ex-scale': uiScale,
-      } as React.CSSProperties}
-    >
+    <div className="fixed inset-0 z-50 bg-[#F0F7FB] text-slate-900 flex flex-col justify-between overflow-hidden select-none font-sans">
       {/* 1. Top Workout Header Bar */}
-      <header className="w-full bg-white border-b-2 border-slate-200 px-5 sm:px-8 py-3.5 shadow-sm flex flex-wrap items-center justify-between z-20 gap-3 shrink-0 select-none">
-        {/* Left: Exit Button */}
+      <header className="w-full bg-white border-b border-blue-100 px-5 sm:px-8 py-3 shadow-xs flex flex-wrap items-center justify-between z-20 gap-3 shrink-0 select-none">
         <button
           type="button"
           id="kiosk-header-exit-btn"
           data-testid="kiosk-header-exit-btn"
           onClick={onExit}
-          className="min-h-[52px] sm:min-h-[58px] px-5 sm:px-6 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-900 text-base sm:text-lg font-black flex items-center gap-2.5 transition active:scale-95 cursor-pointer border-2 border-slate-300 shadow-xs shrink-0"
+          className="min-h-[46px] px-4 sm:px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm sm:text-base font-bold flex items-center gap-2 transition active:scale-95 cursor-pointer border border-slate-200 shadow-xs shrink-0"
           title={t('exit_exercise', 'ออกจากการฝึก')}
         >
-          <ArrowLeft className="w-6 h-6 shrink-0 text-slate-700" />
+          <ArrowLeft className="w-5 h-5 shrink-0 text-slate-600" />
           <span>{t('exit_exercise', '← ออกจากท่าฝึก')}</span>
         </button>
 
-        {/* Center: Full Exercise Name + Patient Badge & Laterality Selector */}
         <div
           onClick={handleTitleTap}
           className="flex-1 min-w-0 text-center px-2 cursor-pointer select-none"
           title="แตะ 5 ครั้งเพื่อปลดล็อกโหมดเจ้าหน้าที่"
         >
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 truncate leading-tight tracking-tight">
+          <h1 className="text-lg sm:text-xl md:text-2xl font-black text-slate-900 truncate leading-tight tracking-tight">
             {titleString}
           </h1>
-          <div className="flex items-center justify-center gap-2.5 mt-1.5 flex-wrap">
-            <span className="px-4 py-1.5 rounded-full bg-blue-50 text-blue-900 border-2 border-blue-200 font-black text-sm sm:text-base truncate">
+          <div className="flex items-center justify-center gap-2 mt-1 flex-wrap">
+            <span className="px-3 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold text-xs truncate">
               คุณ {patient.first_name || 'ผู้ฝึก'}
             </span>
 
-            {/* Laterality Mode Pills */}
             {lateralityMode === 'unilateral_or_bilateral' ? (
               <div
-                className="inline-flex items-center p-1 rounded-2xl bg-slate-100 border-2 border-slate-300 gap-1.5 shadow-xs"
+                className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 border border-slate-200 gap-1 shadow-xs"
                 onClick={(e) => e.stopPropagation()}
                 role="group"
                 aria-label="เลือกข้างฝึก"
@@ -2839,75 +2574,69 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   id="kiosk-side-left-btn"
                   data-testid="kiosk-side-left-btn"
                   onClick={() => handleToggleSide('left')}
-                  className={`min-h-[48px] px-4 sm:px-5 py-2 rounded-xl text-sm sm:text-base font-black transition cursor-pointer ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                     activeSide === 'left'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                   }`}
-                  title="ฝึกข้างซ้าย (Left)"
                 >
-                  {lang === 'zh-CN' ? '左侧 (L)' : lang === 'en-US' ? 'Left (L)' : 'ซ้าย (L)'}
+                  {lang === 'zh-CN' ? '左侧' : lang === 'en-US' ? 'Left' : 'ซ้าย (L)'}
                 </button>
                 <button
                   type="button"
                   id="kiosk-side-right-btn"
                   data-testid="kiosk-side-right-btn"
                   onClick={() => handleToggleSide('right')}
-                  className={`min-h-[48px] px-4 sm:px-5 py-2 rounded-xl text-sm sm:text-base font-black transition cursor-pointer ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                     activeSide === 'right'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                   }`}
-                  title="ฝึกข้างขวา (Right)"
                 >
-                  {lang === 'zh-CN' ? '右侧 (R)' : lang === 'en-US' ? 'Right (R)' : 'ขวา (R)'}
+                  {lang === 'zh-CN' ? '右侧' : lang === 'en-US' ? 'Right' : 'ขวา (R)'}
                 </button>
                 <button
                   type="button"
                   id="kiosk-side-bilateral-btn"
                   data-testid="kiosk-side-bilateral-btn"
                   onClick={() => handleToggleSide('bilateral')}
-                  className={`min-h-[48px] px-4 sm:px-5 py-2 rounded-xl text-sm sm:text-base font-black transition cursor-pointer ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                     activeSide === 'bilateral'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                   }`}
-                  title="ฝึกทั้งสองข้างพร้อมกัน (Both)"
                 >
-                  {lang === 'zh-CN' ? '双侧 (Both)' : lang === 'en-US' ? 'Both sides' : 'ทั้งสองข้าง (Both)'}
+                  {lang === 'zh-CN' ? '双侧' : lang === 'en-US' ? 'Both' : 'ทั้งสองข้าง (Both)'}
                 </button>
               </div>
             ) : lateralityMode === 'inherently_bilateral' ? (
-              <span className="min-h-[48px] px-4 sm:px-5 py-2 rounded-2xl bg-emerald-50 text-emerald-900 border-2 border-emerald-300 font-black text-sm sm:text-base flex items-center gap-2 shadow-xs">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="px-3 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs flex items-center gap-1.5 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 {lang === 'zh-CN' ? '双侧同步 (Bilateral)' : lang === 'en-US' ? 'Bilateral (Both)' : 'ตรวจจับทั้งสองข้าง (Bilateral)'}
               </span>
             ) : (
-              <span className="min-h-[48px] px-4 sm:px-5 py-2 rounded-2xl bg-indigo-50 text-indigo-900 border-2 border-indigo-300 font-black text-sm sm:text-base flex items-center gap-2 shadow-xs">
-                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+              <span className="px-3 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-indigo-500" />
                 {lang === 'zh-CN' ? '双向交替' : lang === 'en-US' ? 'Alternating' : 'สลับข้างตามธรรมชาติ (Alternating)'}
               </span>
             )}
           </div>
         </div>
 
-        {/* Right Section: Language Pill + Staff Settings Gear Icon */}
-        <div className="flex items-center gap-3 shrink-0">
-          {/* Subtle Language Selector Menu */}
+        <div className="flex items-center gap-2.5 shrink-0">
           <div className="relative">
             <button
               type="button"
               id="kiosk-language-menu-btn"
               onClick={() => setShowLangMenu((prev) => !prev)}
-              className="min-h-[48px] sm:min-h-[52px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border-2 border-slate-300 text-sm sm:text-base font-black flex items-center gap-2 transition active:scale-95 cursor-pointer shadow-xs"
-              title="สลับภาษา (Switch Language)"
+              className="min-h-[44px] px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-xs"
             >
-              <Globe className="w-5 h-5 text-blue-600" />
+              <Globe className="w-4 h-4 text-blue-600" />
               <span>{lang === 'zh-CN' ? '中文' : lang === 'en-US' ? 'EN' : 'TH'}</span>
             </button>
 
             {showLangMenu && (
-              <div className="absolute right-0 mt-2 w-40 rounded-2xl bg-white border border-blue-100 shadow-xl p-1.5 z-50 flex flex-col gap-1 backdrop-blur-md">
+              <div className="absolute right-0 mt-2 w-36 rounded-2xl bg-white border border-blue-100 shadow-xl p-1.5 z-50 flex flex-col gap-1 backdrop-blur-md">
                 {LANGUAGE_OPTIONS.map((opt) => (
                   <button
                     key={opt.code}
@@ -2916,20 +2645,20 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                       setLanguage(opt.code);
                       setShowLangMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-between cursor-pointer ${lang === opt.code
-                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                      : 'text-slate-700 hover:bg-slate-50'
-                      }`}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                      lang === opt.code
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'text-slate-700 hover:bg-slate-50'
+                    }`}
                   >
                     <span>{opt.flag} {opt.label}</span>
-                    {lang === opt.code && <Check className="w-4 h-4 text-blue-600" />}
+                    {lang === opt.code && <Check className="w-3.5 h-3.5 text-blue-600" />}
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Staff Settings Gear Icon Button */}
           <button
             type="button"
             id="kiosk-staff-settings-btn"
@@ -2941,57 +2670,41 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 setShowStaffPinModal(true);
               }
             }}
-            className="w-12 h-12 sm:w-13 sm:h-13 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 flex items-center justify-center border-2 border-slate-300 transition active:scale-95 cursor-pointer shadow-xs"
-            title="ตั้งค่าสำหรับเจ้าหน้าที่ (Staff Settings)"
+            className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center border border-slate-200 transition active:scale-95 cursor-pointer shadow-xs"
           >
-            <Settings className="w-5 h-5" />
+            <Settings className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* 2. Main Workout Bento Stage (Orientation-aware Full HD Portrait 1080x1920 vs Landscape) */}
-      <div
-        className={
-          isPortrait
-            ? 'flex flex-col gap-4 p-4 flex-1 items-stretch overflow-hidden min-h-0'
-            : 'grid grid-cols-12 gap-4 p-4 flex-1 items-stretch overflow-hidden min-h-0'
-        }
-      >
-        {/* Main Camera Stage (Full width in Portrait, 8/9 cols in Landscape) */}
-        <div
-          className={
-            isPortrait
-              ? 'w-full bg-slate-950 rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col justify-between h-[45vh] sm:h-[48vh] shrink-0'
-              : 'col-span-8 xl:col-span-9 bg-slate-950 rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[480px]'
-          }
-        >
-          {/* Webcam Video with horizontal selfie mirror */}
+      {/* 2. Main Workout Bento Stage */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 flex-1 items-stretch overflow-hidden min-h-0">
+        <div className="lg:col-span-8 xl:col-span-9 bg-slate-950 rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[480px]">
           <video
             ref={videoRef}
             playsInline
             muted
-            className={`w-full h-full ${fitMode === 'contain' ? 'object-contain' : 'object-cover'
-              } -scale-x-100 z-0 transition-all duration-200 ${boostLighting || hudState.hasLightingWarning ? 'brightness-110 contrast-125' : ''
-              }`}
+            className={`w-full h-full ${
+              fitMode === 'contain' ? 'object-contain' : 'object-cover'
+            } -scale-x-100 z-0 transition-all duration-200 ${
+              boostLighting || hudState.hasLightingWarning ? 'brightness-110 contrast-125' : ''
+            }`}
           />
 
-          {/* 1:1 Canvas overlay directly on top of video */}
           <canvas
             ref={canvasRef}
             className="absolute inset-0 w-full h-full pointer-events-none z-10"
           />
 
-          {/* Patient-accessible Quick Skeleton Toggle Button */}
           <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
             {isAccuracyTestMode && (
               <button
                 type="button"
                 onClick={() => setShowAccuracyVerifyModal(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-mono font-bold bg-emerald-500/90 hover:bg-emerald-400 text-slate-950 border border-emerald-300 shadow-lg cursor-pointer active:scale-95 animate-pulse"
-                title="คลิกเพื่อดูและส่งออกรายงานการทดสอบความแม่นยำ"
               >
                 <span>🧪 TEST</span>
-                <span className="opacity-80">({accuracyTotalFramesRef.current}f)</span>
+                <span className="opacity-80">({hudState.accuracyTotalFrames}f)</span>
               </button>
             )}
             <button
@@ -2999,14 +2712,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               id="kiosk-quick-toggle-skeleton-btn"
               data-testid="kiosk-quick-toggle-skeleton-btn"
               onClick={() => setShowSkeletonOverlay((prev) => !prev)}
-              className={`min-h-[48px] flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm sm:text-base font-black backdrop-blur-md border-2 transition-all duration-200 cursor-pointer shadow-lg active:scale-95 ${showSkeletonOverlay
-                  ? 'bg-teal-500/95 text-slate-950 border-teal-300 shadow-teal-500/30'
-                  : 'bg-slate-900/90 text-slate-200 border-slate-700 hover:bg-slate-800 hover:text-white'
-                }`}
-              title="เปิด/ปิดเส้นโครงร่างร่างกาย"
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold backdrop-blur-md border transition-all duration-200 cursor-pointer shadow-lg active:scale-95 ${
+                showSkeletonOverlay
+                  ? 'bg-teal-500/90 text-slate-950 border-teal-300 shadow-teal-500/20'
+                  : 'bg-slate-900/80 text-slate-300 border-slate-700/80 hover:bg-slate-800/90 hover:text-white'
+              }`}
             >
-              <span className="text-xl leading-none">🦴</span>
-              <span>
+              <span className="text-base leading-none">🦴</span>
+              <span className="font-semibold">
                 {lang === 'zh-CN'
                   ? (showSkeletonOverlay ? '隐藏骨骼线' : '显示骨骼线')
                   : lang === 'en-US'
@@ -3016,15 +2729,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </button>
           </div>
 
-          {/* Half-body Silhouette Guide Overlay */}
           {(showGuideSilhouette || hudState.repPhase === 'WAITING_FOR_FRAMING') && (
             <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center opacity-30">
               <svg
                 viewBox="0 0 400 400"
-                className={`w-80 h-80 sm:w-96 sm:h-96 transition-colors duration-300 ${hudState.repPhase === 'WAITING_FOR_FRAMING' || hudState.shoulderWidthPct > 52
-                  ? 'text-amber-400 stroke-amber-400 animate-pulse'
-                  : 'text-teal-400 stroke-teal-400'
-                  }`}
+                className={`w-80 h-80 sm:w-96 sm:h-96 transition-colors duration-300 ${
+                  hudState.repPhase === 'WAITING_FOR_FRAMING' || hudState.shoulderWidthPct > 52
+                    ? 'text-amber-400 stroke-amber-400 animate-pulse'
+                    : 'text-teal-400 stroke-teal-400'
+                }`}
                 fill="none"
                 strokeWidth="2.5"
                 strokeDasharray="6 4"
@@ -3039,11 +2752,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           )}
 
-          {/* Real-time Framing Alert Banner (Arm clipping boundary) - High-contrast WCAG AAA */}
           {hudState.isArmClipping && hudState.repPhase !== 'WAITING_FOR_FRAMING' && (
             <div className="absolute top-4 inset-x-4 z-25 flex justify-center pointer-events-none animate-bounce-subtle">
-              <div className="bg-slate-900/95 backdrop-blur-md text-amber-300 border-2 border-amber-400 px-7 py-3 rounded-2xl shadow-2xl font-black text-base sm:text-xl flex items-center gap-3">
-                <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0 animate-pulse" />
+              <div className="bg-amber-500/95 backdrop-blur-md text-white border-2 border-amber-300 px-6 py-2.5 rounded-2xl shadow-xl font-bold text-xs sm:text-sm flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-white shrink-0 animate-pulse" />
                 <span>
                   {hudState.shoulderWidthPct > 50
                     ? (lang === 'zh-CN'
@@ -3061,11 +2773,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           )}
 
-          {/* Body Alignment Warning Guide Card if waiting for framing */}
           {hudState.repPhase === 'WAITING_FOR_FRAMING' && (
             <div className="absolute top-4 inset-x-4 z-20 flex justify-center pointer-events-none">
-              <div className="bg-white/95 backdrop-blur-md text-slate-900 border-2 border-amber-500 px-6 sm:px-8 py-3 rounded-2xl shadow-xl font-black text-base sm:text-xl flex items-center gap-3">
-                <AlertTriangle className="w-6 h-6 text-amber-500 shrink-0" />
+              <div className="bg-white/95 backdrop-blur-md text-slate-900 border-2 border-amber-400 px-5 py-2.5 rounded-2xl shadow-lg font-bold text-xs sm:text-sm flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
                 <span>
                   {hudState.distanceWarning || (lang === 'zh-CN'
                     ? '请调整位置，确保上身与训练手臂在画面中'
@@ -3077,21 +2788,19 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           )}
 
-          {/* Floating Clinical Blue-Emerald Instruction Pill at bottom of camera stage */}
           <div
             id="kiosk-single-line-status"
             data-testid="kiosk-single-line-status"
             className="absolute bottom-5 inset-x-4 z-20 flex justify-center pointer-events-none select-none"
           >
-            <div className="bg-white/95 backdrop-blur-md text-slate-900 border-2 border-emerald-500 px-7 sm:px-9 py-3.5 sm:py-4 rounded-3xl shadow-2xl font-black text-lg sm:text-2xl flex items-center gap-3.5 max-w-2xl">
-              <span className="text-2xl sm:text-3xl shrink-0">{statusInfo.icon}</span>
-              <span className="leading-normal line-clamp-2">
+            <div className="bg-white/95 backdrop-blur-md text-slate-900 border-2 border-emerald-400 px-6 py-3.5 rounded-2xl shadow-xl font-extrabold text-sm sm:text-base md:text-lg flex items-center gap-3 max-w-xl truncate">
+              <span className="text-xl sm:text-2xl shrink-0">{statusInfo.icon}</span>
+              <span className="truncate leading-relaxed">
                 {statusInfo.message}
               </span>
             </div>
           </div>
 
-          {/* Real-time Diagnostic Debug HUD (When unlocked by staff) */}
           {showDebugHud && (
             <div
               id="pose-engine-debug-hud"
@@ -3122,46 +2831,44 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
           )}
 
-          {/* Loading Overlay */}
           {(cameraStatus === 'initializing' || modelStatus === 'loading') && !errorMessage && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4">
               <div className="bg-white border-2 border-emerald-400 rounded-3xl p-6 max-w-md text-center text-slate-900 shadow-2xl">
                 <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto mb-3 text-emerald-600">
                   <Activity className="w-7 h-7 animate-spin" />
                 </div>
-                <div className="text-xl font-black mb-2 text-slate-900">
+                <div className="text-lg font-black mb-2 text-slate-900">
                   ⏳ กำลังโหลดระบบตรวจจับท่าทาง AI...
                 </div>
-                <div className="text-sm text-slate-600 leading-relaxed mb-3">
+                <div className="text-xs text-slate-600 leading-relaxed mb-3">
                   ระบบกำลังเชื่อมต่อกล้องและโมเดลชีวกลศาสตร์
                 </div>
               </div>
             </div>
           )}
 
-          {/* Error Banner with Reload & Exit */}
           {errorMessage && (
             <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
               <div className="bg-white border-2 border-rose-400 rounded-3xl p-6 max-w-md text-center text-slate-900 shadow-2xl">
                 <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto mb-3 text-rose-600">
                   <AlertTriangle className="w-7 h-7" />
                 </div>
-                <div className="text-xl font-black text-rose-700 mb-2">
+                <div className="text-lg font-black text-rose-700 mb-2">
                   ⚠️ ระบบตรวจจับไม่สามารถทำงานได้
                 </div>
-                <p className="text-sm text-slate-600 mb-4 leading-relaxed">{errorMessage}</p>
+                <p className="text-xs text-slate-600 mb-4 leading-relaxed">{errorMessage}</p>
                 <div className="flex items-center justify-center gap-3">
                   <button
                     type="button"
                     onClick={() => window.location.reload()}
-                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold transition cursor-pointer shadow-sm"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
                   >
                     ลองใหม่อีกครั้ง
                   </button>
                   <button
                     type="button"
                     onClick={onExit}
-                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition cursor-pointer border border-slate-200"
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer border border-slate-200"
                   >
                     ออกจากการฝึก
                   </button>
@@ -3171,106 +2878,100 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           )}
         </div>
 
-        {/* Coaching & Rep Counter Cards (Side-by-side bento in Portrait, Sidebar in Landscape) */}
-        <div
-          className={
-            isPortrait
-              ? 'grid grid-cols-1 md:grid-cols-12 gap-4 flex-1 min-h-0 overflow-y-auto'
-              : 'col-span-4 xl:col-span-3 flex flex-col gap-4 overflow-y-auto'
-          }
-        >
-          {/* Card 1: Giant Rep & Set Counter Card */}
-          <div className={isPortrait ? 'md:col-span-5 flex flex-col' : 'flex flex-col'}>
-            <div
-              id="kiosk-giant-rep-counter"
-              data-testid="kiosk-giant-rep-counter"
-              className={`bg-white rounded-3xl border-2 p-5 sm:p-6 shadow-sm text-center flex-1 flex flex-col items-center justify-center transition-all duration-300 ${celebratingRep !== null
+        {/* Right Coaching & Rep Counter Sidebar */}
+        <div className="lg:col-span-4 xl:col-span-3 flex flex-col gap-4 overflow-y-auto">
+          <div
+            id="kiosk-giant-rep-counter"
+            data-testid="kiosk-giant-rep-counter"
+            className={`bg-white rounded-3xl border p-5 shadow-sm text-center flex flex-col items-center justify-center transition-all duration-300 ${
+              celebratingRep !== null
                 ? 'border-emerald-400 ring-4 ring-emerald-400/30 scale-102 bg-emerald-50/20'
                 : 'border-blue-100'
-                }`}
-            >
-              {/* Circular Progress Ring */}
-              <div className="relative w-40 h-40 sm:w-48 sm:h-48 md:w-52 md:h-52 flex items-center justify-center">
-                <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="42"
-                    fill="none"
-                    stroke="#E2E8F0"
-                    strokeWidth="8"
-                  />
-                  <circle
-                    ref={progressCircleRef}
-                    cx="50"
-                    cy="50"
-                    r="42"
-                    fill="none"
-                    stroke={celebratingRep !== null ? '#10B981' : '#0284C7'}
-                    strokeWidth="8"
-                    strokeLinecap="round"
-                    strokeDasharray={2 * Math.PI * 42}
-                    strokeDashoffset={2 * Math.PI * 42}
-                    style={{ willChange: 'stroke-dashoffset' }}
-                  />
-                </svg>
+            }`}
+          >
+            <div className="relative w-36 h-36 sm:w-40 sm:h-40 flex items-center justify-center">
+              <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="42"
+                  fill="none"
+                  stroke="#E2E8F0"
+                  strokeWidth="8"
+                />
+                <circle
+                  ref={progressCircleRef}
+                  cx="50"
+                  cy="50"
+                  r="42"
+                  fill="none"
+                  stroke={celebratingRep !== null ? '#10B981' : '#0284C7'}
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                  strokeDasharray={2 * Math.PI * 42}
+                  strokeDashoffset={2 * Math.PI * 42}
+                  style={{ willChange: 'stroke-dashoffset' }}
+                />
+              </svg>
 
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                  {celebratingRep !== null ? (
-                    <div className="flex flex-col items-center animate-bounce">
-                      <span className="text-4xl sm:text-5xl">✅</span>
-                      <span className="text-lg font-black text-emerald-600 mt-1">
-                        +1 ครั้ง!
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                {celebratingRep !== null ? (
+                  <div className="flex flex-col items-center animate-bounce">
+                    <span className="text-3xl sm:text-4xl">✅</span>
+                    <span className="text-sm font-black text-emerald-600 mt-0.5">
+                      +1 ครั้ง!
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                      {lang === 'zh-CN' ? '次数' : lang === 'en-US' ? 'Reps' : 'ครั้งที่'}
+                    </div>
+                    <div className="text-3xl sm:text-4xl font-black text-slate-900 font-mono leading-none my-1">
+                      {hudState.completedReps}
+                      <span className="text-lg text-slate-400 font-bold">
+                        {' '}/ {resolvedConfig.defaultPrescription?.repsPerSet || 10}
                       </span>
                     </div>
-                  ) : (
-                    <>
-                      <div className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500">
-                        {lang === 'zh-CN' ? '次数' : lang === 'en-US' ? 'Reps' : 'ครั้งที่'}
-                      </div>
-                      <div className="text-5xl sm:text-6xl md:text-7xl font-black text-slate-900 font-mono leading-none my-1">
-                        {hudState.completedReps}
-                        <span className="text-xl sm:text-2xl text-slate-400 font-bold">
-                          {' '}/ {resolvedConfig.defaultPrescription?.repsPerSet || 10}
-                        </span>
-                      </div>
-                      <div className="text-sm sm:text-base md:text-lg font-black text-blue-700 mt-0.5">
-                        เซ็ตที่ {hudState.currentSet} จาก {resolvedConfig.defaultPrescription?.totalSets || 3}
-                      </div>
-                    </>
-                  )}
-                </div>
+                    <div className="text-xs font-bold text-blue-600">
+                      เซ็ตที่ {hudState.currentSet} จาก {resolvedConfig.defaultPrescription?.totalSets || 3}
+                    </div>
+                  </>
+                )}
               </div>
+            </div>
 
-              {/* Clear label under ring */}
-              <div className="mt-3 text-sm sm:text-base font-bold text-slate-800">
-                <span>ความแม่นยำท่าทาง: </span>
-                <span className={hudState.completedReps > 0 || hudState.accuracyPct > 0 || hudState.repPhase !== 'IDLE' ? 'text-emerald-700 font-black text-base sm:text-lg' : 'text-slate-500 font-semibold'}>
-                  {hudState.completedReps > 0 || hudState.accuracyPct > 0 || hudState.repPhase !== 'IDLE'
-                    ? `${hudState.accuracyPct || 100}%`
-                    : 'รอเริ่มฝึก'}
-                </span>
-              </div>
+            {/* แก้บั๊ก 0 || 100 เพื่อให้แสดงค่า 0% ตามจริงเมื่อผู้ป่วยทำผิดท่า */}
+            <div className="mt-3 text-xs sm:text-sm font-bold text-slate-700">
+              <span>ความแม่นยำท่าทาง: </span>
+              <span
+                className={
+                  hudState.completedReps > 0 || hudState.accuracyPct > 0 || hudState.repPhase !== 'IDLE'
+                    ? 'text-emerald-600 font-extrabold'
+                    : 'text-slate-500 font-semibold'
+                }
+              >
+                {hudState.completedReps > 0 || hudState.accuracyPct > 0 || hudState.repPhase !== 'IDLE'
+                  ? `${hudState.accuracyPct}%`
+                  : 'รอเริ่มฝึก'}
+              </span>
             </div>
           </div>
 
-          {/* Card 2: Exercise Vector Demonstration & Posture Guide (Memoized) */}
-          <div className={isPortrait ? 'md:col-span-7 flex flex-col' : 'flex flex-col'}>
-            <ExercisePostureGuideCard
-              exerciseId={resolvedConfig.id || (exercise as any).id || (exercise as any).exercise_id || 'shoulder-abduction'}
-              titleString={titleString}
-              mediaUrl={resolvedConfig.mediaUrl}
-              mediaType={resolvedConfig.mediaType}
-              fallbackMediaUrl={resolvedConfig.fallbackMediaUrl}
-              instructionTextTh={resolvedConfig.cameraGuide?.instructionTextTh}
-              instructionTextEn={resolvedConfig.cameraGuide?.instructionTextEn}
-              instructionTextCn={resolvedConfig.cameraGuide?.instructionTextCn}
-              descriptionTh={resolvedConfig.descriptionTh}
-              descriptionEn={resolvedConfig.descriptionEn}
-              descriptionCn={resolvedConfig.descriptionCn}
-              lang={lang}
-            />
-          </div>
+          <ExercisePostureGuideCard
+            exerciseId={resolvedConfig.id || (exercise as any).id || (exercise as any).exercise_id || 'shoulder-abduction'}
+            titleString={titleString}
+            mediaUrl={resolvedConfig.mediaUrl}
+            mediaType={resolvedConfig.mediaType}
+            fallbackMediaUrl={resolvedConfig.fallbackMediaUrl}
+            instructionTextTh={resolvedConfig.cameraGuide?.instructionTextTh}
+            instructionTextEn={resolvedConfig.cameraGuide?.instructionTextEn}
+            instructionTextCn={resolvedConfig.cameraGuide?.instructionTextCn}
+            descriptionTh={resolvedConfig.descriptionTh}
+            descriptionEn={resolvedConfig.descriptionEn}
+            descriptionCn={resolvedConfig.descriptionCn}
+            lang={lang}
+          />
         </div>
       </div>
 
@@ -3372,7 +3073,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   {lang === 'zh-CN' ? '完成次数 (正确 / 代偿)' : lang === 'en-US' ? 'Reps (Correct / Rejected)' : 'จำนวนครั้ง (ทำถูก / ผิด)'}
                 </div>
                 <div className="text-2xl sm:text-3xl font-black text-emerald-600 mt-1 font-mono">
-                  ✅ {evalResult?.completedReps || hudState.completedReps || 0} / ❌ {evalResult?.incorrectReps || 0}
+                  ✅ {hudState.completedReps || evalResult?.completedReps || 0} / ❌ {evalResult?.incorrectReps || 0}
                 </div>
                 <div className="text-xs text-slate-500 mt-1 font-semibold">
                   {lang === 'zh-CN' ? '目标' : lang === 'en-US' ? 'Target' : 'เป้าหมาย'}: {resolvedConfig.defaultPrescription?.repsPerSet || 10} × {resolvedConfig.defaultPrescription?.totalSets || 3}
@@ -3408,12 +3109,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   {lang === 'zh-CN' ? '动作稳定性 (Consistency)' : lang === 'en-US' ? 'Consistency Score' : 'ความสม่ำเสมอ'}
                 </div>
                 <div className="text-2xl sm:text-3xl font-black text-blue-600 mt-1 font-mono">
-                  {evalResult?.completedReps
+                  {hudState.completedReps
                     ? Math.min(
                       100,
                       Math.round(
-                        (evalResult.completedReps /
-                          (evalResult.completedReps + (evalResult.incorrectReps || 0))) *
+                        (hudState.completedReps /
+                          (hudState.completedReps + (evalResult?.incorrectReps || 0))) *
                         100
                       )
                     )
@@ -3452,7 +3153,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
         </div>
       )}
 
-      {/* Staff PIN Modal to Unlock Developer & Clinical Controls */}
+      {/* Staff PIN Modal */}
       {showStaffPinModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-sm rounded-3xl bg-slate-900 border-2 border-teal-500/60 shadow-2xl p-6 text-center animate-scale-up">
@@ -3536,7 +3237,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             </div>
 
             <div className="space-y-2.5 text-sm max-h-[60vh] overflow-y-auto pr-1">
-              {/* 1. Skeleton Wireframe Toggle */}
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
                 <div>
                   <div className="font-bold text-white text-base">🦴 เส้นโครงร่างลำตัว (Skeleton)</div>
@@ -3547,16 +3247,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   id="kiosk-toggle-skeleton-btn"
                   data-testid="kiosk-toggle-skeleton-btn"
                   onClick={() => setShowSkeletonOverlay((prev) => !prev)}
-                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${showSkeletonOverlay
-                    ? 'bg-teal-500 text-slate-950 shadow-md'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${
+                    showSkeletonOverlay
+                      ? 'bg-teal-500 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
                 >
                   {showSkeletonOverlay ? 'เปิด (ON)' : 'ปิด (OFF)'}
                 </button>
               </div>
 
-              {/* 2. Fit Mode Toggle */}
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
                 <div>
                   <div className="font-bold text-white text-base">🖼️ โหมดภาพกล้อง (Fit Mode)</div>
@@ -3571,7 +3271,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 </button>
               </div>
 
-              {/* 3. Boost Lighting Toggle */}
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
                 <div>
                   <div className="font-bold text-white text-base">💡 ชดเชยแสงสว่าง (Boost Lighting)</div>
@@ -3580,16 +3279,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 <button
                   type="button"
                   onClick={() => setBoostLighting((prev) => !prev)}
-                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${boostLighting
-                    ? 'bg-amber-500 text-slate-950 shadow-md'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${
+                    boostLighting
+                      ? 'bg-amber-500 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
                 >
                   {boostLighting ? 'เปิด (ON)' : 'อัตโนมัติ'}
                 </button>
               </div>
 
-              {/* 4. Guide Silhouette Toggle */}
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
                 <div>
                   <div className="font-bold text-white text-base">👤 ไกด์จัดท่า (Silhouette Guide)</div>
@@ -3598,16 +3297,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 <button
                   type="button"
                   onClick={() => setShowGuideSilhouette((prev) => !prev)}
-                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${showGuideSilhouette
-                    ? 'bg-cyan-500 text-slate-950 shadow-md'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${
+                    showGuideSilhouette
+                      ? 'bg-cyan-500 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
                 >
                   {showGuideSilhouette ? 'เปิด (ON)' : 'ปิด (OFF)'}
                 </button>
               </div>
 
-              {/* 5. Diagnostic Debug HUD Toggle */}
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
                 <div>
                   <div className="font-bold text-white text-base">🔍 แผงดีบักชีวกลศาสตร์ (Debug HUD)</div>
@@ -3618,16 +3317,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   id="kiosk-toggle-debug-btn"
                   data-testid="kiosk-toggle-debug-btn"
                   onClick={() => setShowDebugHud((prev) => !prev)}
-                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${showDebugHud
-                    ? 'bg-emerald-500 text-slate-950 shadow-md'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                  className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition ${
+                    showDebugHud
+                      ? 'bg-emerald-500 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
                 >
                   {showDebugHud ? 'เปิด (ON)' : 'ปิด (OFF)'}
                 </button>
               </div>
 
-              {/* 6. Manual Side Toggle (Staff Override) */}
               {!isInherentlyBilateral && (
                 <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
                   <div>
@@ -3638,30 +3337,33 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                     <button
                       type="button"
                       onClick={() => handleToggleSide('right')}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'right'
-                        ? 'bg-teal-500 text-slate-950 shadow-sm'
-                        : 'bg-slate-800 text-slate-400 hover:text-white'
-                        }`}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${
+                        activeSide === 'right'
+                          ? 'bg-teal-500 text-slate-950 shadow-sm'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
                     >
                       ขวา (R)
                     </button>
                     <button
                       type="button"
                       onClick={() => handleToggleSide('left')}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'left'
-                        ? 'bg-teal-500 text-slate-950 shadow-sm'
-                        : 'bg-slate-800 text-slate-400 hover:text-white'
-                        }`}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${
+                        activeSide === 'left'
+                          ? 'bg-teal-500 text-slate-950 shadow-sm'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
                     >
                       ซ้าย (L)
                     </button>
                     <button
                       type="button"
                       onClick={() => handleToggleSide('bilateral')}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${activeSide === 'bilateral'
-                        ? 'bg-teal-500 text-slate-950 shadow-sm'
-                        : 'bg-slate-800 text-slate-400 hover:text-white'
-                        }`}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${
+                        activeSide === 'bilateral'
+                          ? 'bg-teal-500 text-slate-950 shadow-sm'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
                     >
                       สองข้าง (Auto)
                     </button>
@@ -3669,7 +3371,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 </div>
               )}
 
-              {/* 7. Hardware Zoom Slider (If supported) */}
               {zoomInfo.supported && (
                 <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
                   <div className="flex items-center justify-between mb-2">
@@ -3688,7 +3389,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 </div>
               )}
 
-              {/* 8. Staff Video Replay Harness Mode */}
               <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -3726,7 +3426,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 )}
               </div>
 
-              {/* 9. Staff Accuracy Test Mode */}
               <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -3750,19 +3449,19 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                     <div className="grid grid-cols-3 gap-2 text-center">
                       <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
                         <div className="text-slate-400 text-[10px]">เฟรมทั้งหมด</div>
-                        <div className="font-mono font-bold text-teal-400 text-sm">{accuracyTotalFramesRef.current}</div>
+                        <div className="font-mono font-bold text-teal-400 text-sm">{hudState.accuracyTotalFrames}</div>
                       </div>
                       <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
                         <div className="text-slate-400 text-[10px]">ข้อต่อครบ</div>
                         <div className="font-mono font-bold text-emerald-400 text-sm">
-                          {accuracyTotalFramesRef.current > 0
-                            ? Math.round((accuracyCompleteJointFramesRef.current / accuracyTotalFramesRef.current) * 100)
+                          {hudState.accuracyTotalFrames > 0
+                            ? Math.round((hudState.accuracyCompleteJointFrames / hudState.accuracyTotalFrames) * 100)
                             : 0}%
                         </div>
                       </div>
                       <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
                         <div className="text-slate-400 text-[10px]">นับได้ขณะนี้</div>
-                        <div className="font-mono font-bold text-amber-400 text-sm">{validCompletedRepsRef.current} ครั้ง</div>
+                        <div className="font-mono font-bold text-amber-400 text-sm">{hudState.completedReps} ครั้ง</div>
                       </div>
                     </div>
                     <div className="flex gap-2 pt-1">
@@ -3786,36 +3485,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                     </div>
                   </div>
                 )}
-              </div>
-
-              {/* 10. Kiosk UI Scale & Senior Typography (100% / 115% / 130%) */}
-              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <div className="font-bold text-white text-base">🔍 ขนาดตัวอักษร Kiosk (UI Scale)</div>
-                    <div className="text-xs text-slate-400">ขยายตัวอักษรสำหรับผู้สูงอายุและจอแนวตั้ง Full HD (ระยะ 1.5–2.0 ม.)</div>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
-                    {[
-                      { label: '100% (ปกติ)', value: 1.0 },
-                      { label: '115% (ใหญ่)', value: 1.15 },
-                      { label: '130% (ใหญ่พิเศษ)', value: 1.30 },
-                    ].map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => handleUpdateUiScale(opt.value)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                          Math.abs(uiScale - opt.value) < 0.01
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
 

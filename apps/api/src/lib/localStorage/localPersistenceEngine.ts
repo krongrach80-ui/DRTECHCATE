@@ -22,7 +22,7 @@ import { setGlobalCustomAuth } from '../../modules/auth/service';
 import { setAuthTokenVerifier } from '../../middleware/authenticate';
 import { syncActiveBans } from '../../middleware/banCheck';
 import { logger } from '../../middleware/logger';
-import { createStatelessToken } from '../auth/token';
+import { createStatelessToken, verifyStatelessToken } from '../auth/token';
 import { StaffProfileRecord } from '../../modules/staff/schema';
 import { ExerciseRecord, ModpackRecord } from '../../modules/directory/schema';
 import { KioskDeviceRecord } from '../../modules/kiosk/repository';
@@ -30,10 +30,16 @@ import { KioskDeviceRecord } from '../../modules/kiosk/repository';
 interface LocalDbData {
   users?: any[];
   patients?: any[];
+  assignments?: Array<{ patient_id: string; pt_id: string }>;
   exercises?: any[];
+  minigames?: any[];
+  questions?: any[];
   modpacks?: any[];
+  transfers?: any[];
   kiosks?: any[];
   pairings?: any[];
+  staffCalls?: any[];
+  bans?: any[];
   aiSettings?: any;
   courses?: any[];
   templates?: any[];
@@ -41,6 +47,7 @@ interface LocalDbData {
   records?: any[];
   notes?: any[];
   sessionLogs?: any[];
+  passwords?: Record<string, string>;
 }
 
 const DB_FILE_PATH = process.env.VERCEL === '1'
@@ -74,6 +81,9 @@ export function getRegisteredPassword(usernameOrEmail: string): string | undefin
 }
 
 export async function saveLocalDatabase(): Promise<void> {
+  if (process.env.VITEST === 'true' && process.env.LOCAL_DB_PERSIST_IN_TEST !== 'true') {
+    return;
+  }
   try {
     const dir = path.dirname(DB_FILE_PATH);
     if (!fs.existsSync(dir)) {
@@ -85,10 +95,16 @@ export async function saveLocalDatabase(): Promise<void> {
     const data: LocalDbData = {
       users: Array.from(currentFakeStaffRepo.inMemoryStaff.values()),
       patients: Array.from(currentFakePatientRepo.inMemoryPatients.values()),
+      assignments: Array.from(currentFakePatientRepo.inMemoryAssignments.values()),
       exercises: Array.from(currentFakeDirectoryRepo.inMemoryExercises.values()),
+      minigames: Array.from(currentFakeDirectoryRepo.inMemoryMinigames.values()),
+      questions: Array.from(currentFakeDirectoryRepo.inMemoryQuestions.values()),
       modpacks: Array.from(currentFakeDirectoryRepo.inMemoryModpacks.values()),
+      transfers: Array.from(currentFakeDirectoryRepo.inMemoryTransfers.values()),
       kiosks: Array.from(currentFakeKioskRepo.inMemoryDevices.values()),
       pairings: Array.from(currentFakeKioskRepo.inMemoryPairings.values()),
+      staffCalls: currentFakeKioskRepo.inMemoryStaffCalls || [],
+      bans: Array.from(currentFakeSecurityRepo.inMemoryBans.values()),
       aiSettings,
       courses: Array.from(currentFakeCourseRepo.inMemoryCourses.values()),
       templates: currentFakeFaceEnrollmentRepo.inMemoryTemplates,
@@ -96,6 +112,7 @@ export async function saveLocalDatabase(): Promise<void> {
       records: Array.from(currentFakeRecordsRepo.inMemoryTreatmentResults.values()),
       notes: Array.from(currentFakeRecordsRepo.inMemoryNotes.values()),
       sessionLogs: currentFakeCourseRepo.inMemorySessionLogs || [],
+      passwords: Object.fromEntries(localPasswords.entries()),
     };
 
     fs.writeFileSync(DB_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
@@ -105,6 +122,9 @@ export async function saveLocalDatabase(): Promise<void> {
 }
 
 export function loadLocalDatabase(): boolean {
+  if (process.env.VITEST === 'true' && process.env.LOCAL_DB_PERSIST_IN_TEST !== 'true') {
+    return false;
+  }
   try {
     if (!fs.existsSync(DB_FILE_PATH)) return false;
     const raw = fs.readFileSync(DB_FILE_PATH, 'utf8');
@@ -120,14 +140,36 @@ export function loadLocalDatabase(): boolean {
         currentFakePatientRepo.inMemoryPatients.set(p.id, p);
       }
     }
+    if (data.assignments && Array.isArray(data.assignments)) {
+      for (const a of data.assignments) {
+        if (a?.patient_id && a?.pt_id) {
+          currentFakePatientRepo.inMemoryAssignments.set(`${a.patient_id}:${a.pt_id}`, a);
+        }
+      }
+    }
     if (data.exercises && Array.isArray(data.exercises)) {
       for (const ex of data.exercises) {
         currentFakeDirectoryRepo.inMemoryExercises.set(ex.id, ex);
       }
     }
+    if (data.minigames && Array.isArray(data.minigames)) {
+      for (const mg of data.minigames) {
+        currentFakeDirectoryRepo.inMemoryMinigames.set(mg.id, mg);
+      }
+    }
+    if (data.questions && Array.isArray(data.questions)) {
+      for (const q of data.questions) {
+        currentFakeDirectoryRepo.inMemoryQuestions.set(q.id, q);
+      }
+    }
     if (data.modpacks && Array.isArray(data.modpacks)) {
       for (const mp of data.modpacks) {
         currentFakeDirectoryRepo.inMemoryModpacks.set(mp.id, mp);
+      }
+    }
+    if (data.transfers && Array.isArray(data.transfers)) {
+      for (const t of data.transfers) {
+        currentFakeDirectoryRepo.inMemoryTransfers.set(t.id, t);
       }
     }
     if (data.kiosks && Array.isArray(data.kiosks)) {
@@ -138,6 +180,14 @@ export function loadLocalDatabase(): boolean {
     if (data.pairings && Array.isArray(data.pairings)) {
       for (const pr of data.pairings) {
         currentFakeKioskRepo.inMemoryPairings.set(pr.id, pr);
+      }
+    }
+    if (data.staffCalls && Array.isArray(data.staffCalls)) {
+      currentFakeKioskRepo.inMemoryStaffCalls = data.staffCalls;
+    }
+    if (data.bans && Array.isArray(data.bans)) {
+      for (const b of data.bans) {
+        currentFakeSecurityRepo.inMemoryBans.set(b.id, b);
       }
     }
     if (data.aiSettings) {
@@ -156,8 +206,25 @@ export function loadLocalDatabase(): boolean {
         currentFakeCourseRepo.inMemoryCourses.set(c.id, c);
       }
     }
+    if (data.records && Array.isArray(data.records)) {
+      for (const r of data.records) {
+        currentFakeRecordsRepo.inMemoryTreatmentResults.set(r.id, r);
+      }
+    }
+    if (data.notes && Array.isArray(data.notes)) {
+      for (const n of data.notes) {
+        currentFakeRecordsRepo.inMemoryNotes.set(n.id, n);
+      }
+    }
     if (data.sessionLogs && Array.isArray(data.sessionLogs)) {
       currentFakeCourseRepo.inMemorySessionLogs = data.sessionLogs;
+    }
+    if (data.passwords && typeof data.passwords === 'object') {
+      for (const [k, v] of Object.entries(data.passwords)) {
+        if (typeof v === 'string' && v.length > 0) {
+          localPasswords.set(k.trim().toLowerCase(), v);
+        }
+      }
     }
     ensurePrimaryStaffAndPatients();
     return true;
@@ -455,13 +522,13 @@ export function activateLocalPersistenceEngine(): void {
       return { data: null, error: new Error('Invalid login credentials') };
     }
 
-    // Verify password
+    // Verify password strictly against registered local credentials
     const expectedPassword =
       localPasswords.get(matchedStaff.username.toLowerCase()) ||
-      localPasswords.get(cleanEmail) ||
-      'Admin12345678!';
+      localPasswords.get(usernamePart) ||
+      localPasswords.get(cleanEmail);
 
-    if (password !== expectedPassword && password !== 'Admin12345678!' && password !== 'CorrectPassword123!') {
+    if (!expectedPassword || password !== expectedPassword) {
       return { data: null, error: new Error('Invalid login credentials') };
     }
 
@@ -515,8 +582,11 @@ export function activateLocalPersistenceEngine(): void {
   // 5. Configure Token Verifier for authenticate middleware
   setAuthTokenVerifier(async (token: string) => {
     const testTokenPrefix = ['mock', 'token'].join('-') + ':';
-    if (token.startsWith(testTokenPrefix)) {
+    if (process.env.NODE_ENV === 'test' && token.startsWith(testTokenPrefix)) {
       const parts = token.split(':');
+      if (parts.length < 3 || !parts[1] || !parts[2]) {
+        return null;
+      }
       const id = parts[1];
       const role = parts[2];
       const status = parts[3] || 'active';
@@ -527,23 +597,34 @@ export function activateLocalPersistenceEngine(): void {
         role: staff?.role || role,
         full_name: staff?.full_name || (role === 'admin' ? 'ผู้อำนวยการโรงพยาบาล' : 'นักกายภาพบำบัด'),
         status: staff?.status || status,
-        force_logout_at: null,
+        force_logout_at: staff?.force_logout_at || null,
       };
     }
 
-    // Direct lookup for default tokens
-    const director = currentFakeStaffRepo.inMemoryStaff.get('director-uuid');
-    if (director) {
+    // Fail-closed verification against signed stateless HMAC-SHA256 tokens
+    const payload = verifyStatelessToken(token);
+    if (!payload) {
+      return null;
+    }
+
+    const staff = currentFakeStaffRepo.inMemoryStaff.get(payload.id);
+    if (staff) {
       return {
-        id: director.id,
-        role: director.role,
-        full_name: director.full_name,
-        status: director.status,
-        force_logout_at: null,
+        id: staff.id,
+        role: staff.role,
+        full_name: staff.full_name,
+        status: staff.status,
+        force_logout_at: staff.force_logout_at || null,
       };
     }
 
-    return null;
+    return {
+      id: payload.id,
+      role: payload.role,
+      full_name: payload.full_name,
+      status: payload.status,
+      force_logout_at: null,
+    };
   });
 
   // Auto-save debounced on exit

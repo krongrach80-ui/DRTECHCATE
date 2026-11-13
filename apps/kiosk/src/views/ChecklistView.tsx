@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TodayCoursePlan } from '../../../../packages/mission-engine/src/index.js';
 import { Play, Gamepad2, HeartPulse, Clock } from 'lucide-react';
 
@@ -9,21 +9,27 @@ interface ChecklistViewProps {
 
 export const ChecklistView: React.FC<ChecklistViewProps> = ({ plan, onStart }) => {
   const [secondsRemaining, setSecondsRemaining] = useState<number>(5);
+  const hasStartedRef = useRef<boolean>(false);
+
+  const triggerStart = useCallback(() => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+    onStart();
+  }, [onStart]);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          onStart();
-          return 0;
-        }
-        return prev - 1;
-      });
+      setSecondsRemaining((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [onStart]);
+  }, []);
+
+  useEffect(() => {
+    if (secondsRemaining === 0) {
+      triggerStart();
+    }
+  }, [secondsRemaining, triggerStart]);
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-between py-8 px-6 select-none bg-slate-950">
@@ -110,8 +116,9 @@ export const ChecklistView: React.FC<ChecklistViewProps> = ({ plan, onStart }) =
       {/* Start Button & Auto-Timer */}
       <div className="w-full max-w-xl flex flex-col items-center gap-2 pb-2">
         <button
-          onClick={onStart}
-          className="touch-btn w-full py-5 rounded-3xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xl shadow-2xl shadow-blue-600/40 flex items-center justify-center gap-3"
+          type="button"
+          onClick={triggerStart}
+          className="touch-btn w-full py-5 rounded-3xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xl shadow-2xl shadow-blue-600/40 flex items-center justify-center gap-3 cursor-pointer"
         >
           <Play className="w-6 h-6 fill-white" />
           <span>เริ่มฝึกกายภาพบำบัดทันที</span>

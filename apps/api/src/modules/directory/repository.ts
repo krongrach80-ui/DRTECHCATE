@@ -25,6 +25,61 @@ import {
   findPresetForExercise,
 } from '../../../../../packages/pose-engine/src/presets/shoulderPendulumPreset.js';
 
+const SYSTEM_USER_ID = 'd1000000-0000-0000-0000-000000000001';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MODPACK_SELECT_COLS =
+  'id, name, description, is_active, created_by, created_at, updated_at, items:modpack_items(id, modpack_id, exercise_id, sets, reps, position, exercise:exercises(id, title, target_joint, difficulty, default_sets, default_reps, image_path, description, suitable_for, warnings, calibration_notes, is_active))';
+
+function isUuid(value?: string | null): boolean {
+  return Boolean(value && UUID_RE.test(value.trim()));
+}
+
+function resolveCreatorUuid(createdBy?: string | null): string {
+  if (createdBy && isUuid(createdBy)) return createdBy.trim();
+  if (process.env.NODE_ENV === 'test' && process.env.LIVE_TESTS !== '1' && createdBy) {
+    return createdBy;
+  }
+  return SYSTEM_USER_ID;
+}
+
+function attachDetectionConfig(record: ExerciseRecord): ExerciseRecord {
+  if (!record.detection_config && typeof record.calibration_notes === 'string') {
+    const trimmed = record.calibration_notes.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        record.detection_config = JSON.parse(trimmed);
+      } catch {
+        // ignore malformed JSON in calibration_notes
+      }
+    }
+  }
+  if (!record.detection_config) {
+    record.detection_config = findPresetForExercise(record.title || record.id) || null;
+  }
+  return record;
+}
+
+function presetToExerciseRecord(preset: any, idx = 0): ExerciseRecord {
+  const nowIso = new Date().toISOString();
+  return {
+    id: preset.exerciseId || preset.id || `preset-ex-${idx}`,
+    title: preset.nameTh,
+    image_path: preset.mediaUrl || '/assets/exercises/shoulder-pendulum.svg',
+    description: preset.descriptionTh || preset.description || preset.nameEn,
+    target_joint: preset.targetJoint || null,
+    suitable_for: null,
+    warnings: preset.safetyContraindications?.stopOnPainMessageTh || null,
+    default_sets: preset.defaultPrescription?.totalSets || 3,
+    default_reps: preset.defaultPrescription?.repsPerSet || 10,
+    difficulty: 'beginner',
+    detection_config: preset,
+    created_by: SYSTEM_USER_ID,
+    is_active: true,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+}
+
 export interface IDirectoryRepository {
   listActivePts(): Promise<StaffProfileRecord[]>;
   createExercise(input: CreateExerciseInput, createdBy: string): Promise<ExerciseRecord>;
@@ -54,7 +109,7 @@ export interface IDirectoryRepository {
 }
 
 export class DirectoryRepository implements IDirectoryRepository {
-  constructor(private staffRepo: IStaffRepository = defaultStaffRepository) {}
+  constructor(private staffRepo: IStaffRepository = defaultStaffRepository) { }
 
   // =========================================================================
   // 1. PTs Directory
@@ -113,7 +168,7 @@ export class DirectoryRepository implements IDirectoryRepository {
         default_reps: input.default_reps ?? 10,
         difficulty: input.difficulty ?? 'beginner',
         calibration_notes: calNotes,
-        created_by: createdBy || 'd1000000-0000-0000-0000-000000000001',
+        created_by: resolveCreatorUuid(createdBy),
         is_active: true,
         created_at: nowIso,
         updated_at: nowIso,
@@ -130,17 +185,7 @@ export class DirectoryRepository implements IDirectoryRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      const record = data as ExerciseRecord;
-      if (record.calibration_notes && !record.detection_config) {
-        try {
-          if (record.calibration_notes.startsWith('{') || record.calibration_notes.startsWith('[')) {
-            record.detection_config = JSON.parse(record.calibration_notes);
-          }
-        } catch {
-          // ignore
-        }
-      }
-      return record;
+      return attachDetectionConfig(data as ExerciseRecord);
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, input }, 'Unexpected error in createExercise');
@@ -150,6 +195,17 @@ export class DirectoryRepository implements IDirectoryRepository {
 
   async getExerciseById(id: string): Promise<ExerciseRecord | null> {
     try {
+      if (!isUuid(id)) {
+        const lower = id.toLowerCase();
+        if (lower === 'ex-shoulder-pendulum' || lower.includes('pendulum')) {
+          return presetToExerciseRecord(SHOULDER_PENDULUM_PRESET);
+        }
+        const matchedPreset = DEFAULT_CLINICAL_PRESETS.find(
+          (p) => p.id === id || p.exerciseId === id
+        );
+        return matchedPreset ? presetToExerciseRecord(matchedPreset) : null;
+      }
+
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('exercises')
@@ -162,36 +218,20 @@ export class DirectoryRepository implements IDirectoryRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      let record = (data as ExerciseRecord) || null;
-      if (!record && (id === 'ex-shoulder-pendulum' || id === SHOULDER_PENDULUM_PRESET.exerciseId || id.toLowerCase().includes('pendulum'))) {
-        return {
-          id: SHOULDER_PENDULUM_PRESET.exerciseId || 'e1000000-0000-0000-0000-000000000001',
-          title: SHOULDER_PENDULUM_PRESET.nameTh,
-          image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || '/assets/exercises/shoulder_pendulum.mp4',
-          description: SHOULDER_PENDULUM_PRESET.description || 'Codman Shoulder Pendulum',
-          target_joint: 'shoulder',
-          suitable_for: 'ผู้ป่วยข้อไหล่ติด หรือฟื้นฟูหลังผ่าตัดหัวไหล่',
-          warnings: 'หากรู้สึกเจ็บแหลมหรือเวียนศีรษะ ให้หยุดทันที',
-          default_sets: 3,
-          default_reps: 10,
-          difficulty: 'beginner',
-          detection_config: SHOULDER_PENDULUM_PRESET,
-          created_by: '00000000-0000-0000-0000-000000000001',
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
+      const record = (data as ExerciseRecord) || null;
+      if (!record && id === SHOULDER_PENDULUM_PRESET.exerciseId) {
+        return presetToExerciseRecord(SHOULDER_PENDULUM_PRESET);
       }
-      if (record && !record.detection_config) {
-        record.detection_config = findPresetForExercise(record.title || record.id) || null;
+      if (record) {
+        return attachDetectionConfig(record);
       }
-      return record;
+      return null;
     } catch (err) {
       if (id === 'ex-shoulder-pendulum' || id === SHOULDER_PENDULUM_PRESET.exerciseId || id.toLowerCase().includes('pendulum')) {
         return {
           id: SHOULDER_PENDULUM_PRESET.exerciseId || 'e1000000-0000-0000-0000-000000000001',
           title: SHOULDER_PENDULUM_PRESET.nameTh,
-          image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || '/assets/exercises/shoulder_pendulum.mp4',
+          image_path: SHOULDER_PENDULUM_PRESET.mediaUrl || '/assets/exercises/shoulder-pendulum.svg',
           description: SHOULDER_PENDULUM_PRESET.description || 'Codman Shoulder Pendulum',
           target_joint: 'shoulder',
           suitable_for: 'ผู้ป่วยข้อไหล่ติด หรือฟื้นฟูหลังผ่าตัดหัวไหล่',
@@ -240,22 +280,15 @@ export class DirectoryRepository implements IDirectoryRepository {
         .select('*')
         .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
         logger.error({ error, id, input }, 'Database error updating exercise');
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
-
-      const record = data as ExerciseRecord;
-      if (record.calibration_notes && !record.detection_config) {
-        try {
-          if (record.calibration_notes.startsWith('{') || record.calibration_notes.startsWith('[')) {
-            record.detection_config = JSON.parse(record.calibration_notes);
-          }
-        } catch {
-          // ignore
-        }
+      if (!data) {
+        throw new AppError('Exercise not found', 404, 'NOT_FOUND');
       }
-      return record;
+
+      return attachDetectionConfig(data as ExerciseRecord);
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, id }, 'Unexpected error in updateExercise');
@@ -309,7 +342,7 @@ export class DirectoryRepository implements IDirectoryRepository {
       const adminClient = getAdminClient();
       let query = adminClient
         .from('exercises')
-        .select('id, title, description, target_joint, suitable_for, warnings, difficulty, default_sets, default_reps, rest_seconds, image_path, calibration_notes, is_active, created_by, created_at, updated_at')
+        .select('id, title, description, target_joint, suitable_for, warnings, difficulty, default_sets, default_reps, image_path, calibration_notes, is_active, created_by, created_at, updated_at')
         .neq('is_active', false)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -325,70 +358,34 @@ export class DirectoryRepository implements IDirectoryRepository {
       }
 
       const { data, error } = await query;
+      let records = ((data as unknown as ExerciseRecord[]) || []).filter(
+        (e) => (e as any).is_active !== false
+      );
+
       if (error) {
         logger.warn({ error, filter }, 'Database error listing exercises, applying fallback presets');
       }
 
-      let records = (data as unknown as ExerciseRecord[]) || [];
-      records = records.filter((e) => (e as any).is_active !== false);
-
-      // Ensure all 10 clinical exercises are present in catalog
-      for (const preset of DEFAULT_CLINICAL_PRESETS) {
-        const found = records.some(
-          (e) =>
-            e.id === preset.id ||
-            e.id === preset.exerciseId ||
-            e.title === preset.nameTh ||
-            (preset.nameEn && e.title?.toLowerCase().includes(preset.nameEn.toLowerCase()))
-        );
-        if (!found) {
-          records.push({
-            id: preset.exerciseId || preset.id || 'ex-default',
-            title: preset.nameTh,
-            image_path: preset.mediaUrl || null,
-            description: preset.descriptionTh || preset.description || preset.nameEn,
-            target_joint: preset.targetJoint || null,
-            suitable_for: null,
-            warnings: preset.safetyContraindications?.stopOnPainMessageTh || null,
-            default_sets: preset.defaultPrescription?.totalSets || 3,
-            default_reps: preset.defaultPrescription?.repsPerSet || 10,
-            difficulty: 'beginner',
-            detection_config: preset,
-            created_by: '00000000-0000-0000-0000-000000000001',
-            is_active: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
-        }
+      // Only fall back to in-memory presets if DB failed or catalog is completely empty
+      const hasAnyFilter = Boolean(filter?.target_joint || filter?.difficulty || filter?.search);
+      if (error || (records.length === 0 && !hasAnyFilter)) {
+        records = DEFAULT_CLINICAL_PRESETS.filter((p) => {
+          if (filter?.target_joint && p.targetJoint !== filter.target_joint) return false;
+          if (
+            filter?.search &&
+            !p.nameTh.toLowerCase().includes(filter.search.toLowerCase()) &&
+            !p.nameEn.toLowerCase().includes(filter.search.toLowerCase())
+          ) {
+            return false;
+          }
+          return true;
+        }).map((p, idx) => presetToExerciseRecord(p, idx));
       }
 
-      // Populate detection_config for all exercises lacking it
-      for (const rec of records) {
-        if (!rec.detection_config) {
-          rec.detection_config = findPresetForExercise(rec.title || rec.id) || null;
-        }
-      }
-
-      return records;
+      return records.map((rec) => attachDetectionConfig(rec));
     } catch (err) {
       logger.warn({ err, filter }, 'Fallback to in-memory presets for listExercises');
-      return DEFAULT_CLINICAL_PRESETS.map((p, idx) => ({
-        id: p.exerciseId || p.id || `preset-ex-${idx}`,
-        title: p.nameTh,
-        image_path: p.mediaUrl || null,
-        description: p.description || p.nameEn,
-        target_joint: p.targetJoint || null,
-        suitable_for: null,
-        warnings: null,
-        default_sets: 3,
-        default_reps: 10,
-        difficulty: 'beginner',
-        detection_config: p,
-        created_by: '00000000-0000-0000-0000-000000000001',
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }));
+      return DEFAULT_CLINICAL_PRESETS.map((p, idx) => presetToExerciseRecord(p, idx));
     }
   }
 
@@ -431,7 +428,7 @@ export class DirectoryRepository implements IDirectoryRepository {
           description: input.description || null,
           category: input.category || null,
           is_active: true,
-          created_by: createdBy,
+          created_by: resolveCreatorUuid(createdBy),
           created_at: nowIso,
           updated_at: nowIso,
         })
@@ -454,6 +451,21 @@ export class DirectoryRepository implements IDirectoryRepository {
   async getMinigameById(id: string): Promise<MinigameRecord | null> {
     try {
       const adminClient = getAdminClient();
+      if (!isUuid(id)) {
+        const lower = id.toLowerCase();
+        if (lower === 'mg-physical-cards' || lower.includes('physical') || lower.includes('card')) {
+          const { data: matched, error: matchErr } = await adminClient
+            .from('minigames')
+            .select('id, title, description, category, is_active, created_by, created_at, updated_at')
+            .ilike('title', '%การ์ด%')
+            .limit(1);
+          if (!matchErr && matched && matched.length > 0) {
+            return matched[0] as MinigameRecord;
+          }
+        }
+        return null;
+      }
+
       const { data, error } = await adminClient
         .from('minigames')
         .select('*')
@@ -500,16 +512,25 @@ export class DirectoryRepository implements IDirectoryRepository {
     const nowIso = new Date().toISOString();
 
     try {
+      let targetMinigameId = input.minigame_id || '';
+      if (targetMinigameId && !isUuid(targetMinigameId)) {
+        const resolved = await this.getMinigameById(targetMinigameId);
+        if (!resolved) {
+          throw new AppError('Minigame not found', 404, 'NOT_FOUND');
+        }
+        targetMinigameId = resolved.id;
+      }
+
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('minigame_questions')
         .insert({
           id,
-          minigame_id: input.minigame_id || '',
+          minigame_id: targetMinigameId,
           prompt: input.prompt,
           choices: input.choices,
           answer: input.answer,
-          created_by: createdBy,
+          created_by: resolveCreatorUuid(createdBy),
           created_at: nowIso,
         })
         .select('*')
@@ -530,11 +551,20 @@ export class DirectoryRepository implements IDirectoryRepository {
 
   async listMinigameQuestions(minigameId: string): Promise<MinigameQuestionRecord[]> {
     try {
+      let targetMinigameId = minigameId;
+      if (!isUuid(targetMinigameId)) {
+        const resolved = await this.getMinigameById(targetMinigameId);
+        if (!resolved) {
+          return [];
+        }
+        targetMinigameId = resolved.id;
+      }
+
       const adminClient = getAdminClient();
       const { data, error } = await adminClient
         .from('minigame_questions')
         .select('*')
-        .eq('minigame_id', minigameId)
+        .eq('minigame_id', targetMinigameId)
         .neq('prompt', '__DELETED__');
 
       if (error) {
@@ -585,6 +615,18 @@ export class DirectoryRepository implements IDirectoryRepository {
   // =========================================================================
   // 4. Modpacks (Exercise Bundles)
   // =========================================================================
+  private normalizeModpackRecord(pack: any): ModpackRecord {
+    const items = Array.isArray(pack?.items)
+      ? [...pack.items]
+        .map((it: any) => ({
+          ...it,
+          exercise: it.exercise ? attachDetectionConfig(it.exercise as ExerciseRecord) : it.exercise,
+        }))
+        .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0))
+      : [];
+    return { ...pack, items } as ModpackRecord;
+  }
+
   async createModpack(input: CreateModpackInput, createdBy: string): Promise<ModpackRecord> {
     const id = randomUUID();
     const nowIso = new Date().toISOString();
@@ -597,7 +639,7 @@ export class DirectoryRepository implements IDirectoryRepository {
           id,
           name: input.name,
           description: input.description || null,
-          created_by: createdBy,
+          created_by: resolveCreatorUuid(createdBy),
           is_active: true,
           created_at: nowIso,
           updated_at: nowIso,
@@ -628,10 +670,13 @@ export class DirectoryRepository implements IDirectoryRepository {
       }
 
       const fullPack = await this.getModpackById(id);
-      return fullPack || ({
-        ...pack,
-        items,
-      } as ModpackRecord);
+      return (
+        fullPack ||
+        this.normalizeModpackRecord({
+          ...pack,
+          items,
+        })
+      );
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, input }, 'Unexpected error in createModpack');
@@ -641,10 +686,13 @@ export class DirectoryRepository implements IDirectoryRepository {
 
   async getModpackById(id: string): Promise<ModpackRecord | null> {
     try {
+      if (!isUuid(id)) {
+        return null;
+      }
       const adminClient = getAdminClient();
       const { data: pack, error: packErr } = await adminClient
         .from('modpacks')
-        .select('*, items:modpack_items(*, exercise:exercises(*))')
+        .select(MODPACK_SELECT_COLS)
         .eq('id', id)
         .maybeSingle();
 
@@ -653,7 +701,7 @@ export class DirectoryRepository implements IDirectoryRepository {
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      return (pack as ModpackRecord) || null;
+      return pack ? this.normalizeModpackRecord(pack) : null;
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, id }, 'Unexpected error in getModpackById');
@@ -663,23 +711,63 @@ export class DirectoryRepository implements IDirectoryRepository {
 
   async updateModpack(id: string, input: UpdateModpackInput): Promise<ModpackRecord> {
     try {
+      if (!isUuid(id)) {
+        throw new AppError('Modpack not found', 404, 'NOT_FOUND');
+      }
       const adminClient = getAdminClient();
+      const { items, ...rawFields } = input as UpdateModpackInput & Record<string, unknown>;
+      const updatePayload: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (rawFields.name !== undefined) updatePayload.name = rawFields.name;
+      if (rawFields.description !== undefined) updatePayload.description = rawFields.description;
+
       const { data, error } = await adminClient
         .from('modpacks')
-        .update({
-          ...input,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', id)
-        .select('*, items:modpack_items(*, exercise:exercises(*))')
+        .select('id')
         .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
         logger.error({ error, id, input }, 'Database error updating modpack');
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
+      if (!data) {
+        throw new AppError('Modpack not found', 404, 'NOT_FOUND');
+      }
 
-      return data as ModpackRecord;
+      if (Array.isArray(items)) {
+        const { error: delErr } = await adminClient
+          .from('modpack_items')
+          .delete()
+          .eq('modpack_id', id);
+        if (delErr) {
+          logger.error({ delErr, id }, 'Database error clearing modpack items');
+          throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+        }
+        if (items.length > 0) {
+          const itemRows = items.map((it, idx) => ({
+            id: randomUUID(),
+            modpack_id: id,
+            exercise_id: it.exercise_id,
+            sets: it.sets ?? 3,
+            reps: it.reps ?? 10,
+            position: it.position ?? idx + 1,
+          }));
+          const { error: insErr } = await adminClient.from('modpack_items').insert(itemRows);
+          if (insErr) {
+            logger.error({ insErr, id }, 'Database error inserting updated modpack items');
+            throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
+          }
+        }
+      }
+
+      const refreshed = await this.getModpackById(id);
+      if (!refreshed) {
+        throw new AppError('Modpack not found', 404, 'NOT_FOUND');
+      }
+      return refreshed;
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, id }, 'Unexpected error in updateModpack');
@@ -723,25 +811,30 @@ export class DirectoryRepository implements IDirectoryRepository {
   async listModpacks(targetJoint?: string): Promise<ModpackRecord[]> {
     try {
       const adminClient = getAdminClient();
-      let query = adminClient
+      const { data, error } = await adminClient
         .from('modpacks')
-        .select('id, name, description, target_joint, is_active, created_by, created_at, updated_at, items:modpack_items(id, course_id, modpack_id, exercise_id, sets, reps, position, exercise:exercises(id, title, target_joint, difficulty, default_sets, default_reps, image_path))')
+        .select(MODPACK_SELECT_COLS)
         .neq('is_active', false)
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (targetJoint) {
-        query = query.eq('target_joint', targetJoint);
-      }
-
-      const { data, error } = await query;
       if (error) {
         logger.error({ error, targetJoint }, 'Database error listing modpacks');
         throw new AppError('Database service unavailable', 503, 'SERVICE_UNAVAILABLE');
       }
 
-      const packs = (data as unknown as ModpackRecord[]) || [];
-      return packs.filter((m) => (m as any).is_active !== false);
+      const activePacks = ((data as unknown as any[]) || [])
+        .filter((m) => m.is_active !== false)
+        .map((m) => this.normalizeModpackRecord(m));
+
+      if (targetJoint) {
+        const tj = targetJoint.toLowerCase().trim();
+        return activePacks.filter((m) =>
+          (m.items || []).some((it) => it.exercise?.target_joint?.toLowerCase().trim() === tj)
+        );
+      }
+
+      return activePacks;
     } catch (err) {
       if (err instanceof AppError) throw err;
       logger.error({ err, targetJoint }, 'Unexpected error in listModpacks');

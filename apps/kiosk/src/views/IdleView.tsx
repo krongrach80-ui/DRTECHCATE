@@ -11,9 +11,9 @@
  * - Always-available Touch fallback.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FloatingLogo } from '../components/FloatingLogo';
-import { UserCheck, Sparkles, Touchpad, AlertTriangle, Bell } from 'lucide-react';
+import { UserCheck, Sparkles, Touchpad, AlertTriangle, Bell, RefreshCw } from 'lucide-react';
 import { getFaceClientServices } from '../services/faceClientService';
 import { FaceDetector } from '../../../../packages/face-client/src/index.js';
 import { KioskInputEvent } from '../../../../packages/kiosk-input/src/index.js';
@@ -34,12 +34,31 @@ export const IdleView: React.FC<IdleViewProps> = ({
   customDetector,
 }) => {
   const [detectorReady, setDetectorReady] = useState<boolean>(initialDetectorReady);
+  const [isInitializing, setIsInitializing] = useState<boolean>(!initialDetectorReady);
   const [initError, setInitError] = useState<string | null>(null);
+  const [staffCalled, setStaffCalled] = useState<boolean>(false);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const isMountedRef = useRef<boolean>(true);
+  const isDetectingRef = useRef<boolean>(false);
+  const hasStartedRef = useRef<boolean>(false);
+  const onStartRef = useRef(onStart);
+
+  useEffect(() => {
+    onStartRef.current = onStart;
+  }, [onStart]);
+
+  const handleSafeStart = useCallback(() => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+    onStartRef.current();
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
+    hasStartedRef.current = false;
+    isDetectingRef.current = false;
+
     const services = getFaceClientServices(customDetector ? { customDetector } : undefined);
     const { camera, detector, inputManager } = services;
 
@@ -49,36 +68,49 @@ export const IdleView: React.FC<IdleViewProps> = ({
     const unsubscribe = inputManager.subscribe((event: KioskInputEvent) => {
       if (!isMountedRef.current) return;
       if (event.type === 'PRESENCE_DETECTED') {
-        onStart();
+        handleSafeStart();
       }
     });
 
     let loopActive = true;
-    let detectionTimer: NodeJS.Timeout | null = null;
+    let detectionTimer: ReturnType<typeof setInterval> | null = null;
+    const videoElement = videoRef.current;
 
     async function initIdleTracker() {
       try {
+        setIsInitializing(true);
+        setInitError(null);
+
         if (videoRef.current) {
           await camera.start(videoRef.current);
         }
 
         if (isMountedRef.current) {
           setDetectorReady(true);
+          setIsInitializing(false);
           onDetectorReadyChange?.(true);
         }
 
-        // Real-time detection loop (evaluates bounding box only, NO image capture)
+        // Real-time detection loop with mutex guard (prevents overlapping async calls)
         const checkFace = async () => {
-          if (!loopActive || !isMountedRef.current || (typeof document !== 'undefined' && document.hidden)) return;
+          if (
+            !loopActive ||
+            !isMountedRef.current ||
+            isDetectingRef.current ||
+            (typeof document !== 'undefined' && document.hidden)
+          ) {
+            return;
+          }
+
           const video = videoRef.current;
           if (video && video.readyState >= 2) {
+            isDetectingRef.current = true;
             try {
               const res = await detector.detect(video);
               const now = performance.now();
               if (res.hasFace && res.box) {
                 const vw = video.videoWidth || 640;
                 const vh = video.videoHeight || 480;
-                // Normalized bounding box [0.0 - 1.0]
                 inputManager.processFaceDetection(
                   {
                     x: res.box.x / vw,
@@ -92,7 +124,9 @@ export const IdleView: React.FC<IdleViewProps> = ({
                 inputManager.processFaceDetection(null, now);
               }
             } catch {
-              // Frame evaluation error
+              // Ignore transient frame evaluation error
+            } finally {
+              isDetectingRef.current = false;
             }
           }
         };
@@ -103,12 +137,12 @@ export const IdleView: React.FC<IdleViewProps> = ({
           const msg = err instanceof Error ? err.message : 'Camera or detector initialization failed';
           setInitError(msg);
           setDetectorReady(false);
+          setIsInitializing(false);
           onDetectorReadyChange?.(false);
         }
       }
     }
 
-    const videoElement = videoRef.current;
     initIdleTracker();
 
     return () => {
@@ -123,11 +157,11 @@ export const IdleView: React.FC<IdleViewProps> = ({
         videoElement.srcObject = null;
       }
     };
-  }, [onStart, onDetectorReadyChange, customDetector]);
+  }, [handleSafeStart, onDetectorReadyChange, customDetector]);
 
   return (
     <div
-      onClick={detectorReady ? onStart : undefined}
+      onClick={detectorReady ? handleSafeStart : undefined}
       className={`w-full h-full flex flex-col items-center justify-between py-16 px-8 select-none bg-radial from-slate-900/60 via-slate-950 to-slate-950 ${
         detectorReady ? 'cursor-pointer' : 'cursor-default'
       }`}
@@ -158,8 +192,13 @@ export const IdleView: React.FC<IdleViewProps> = ({
           ตู้ตรวจประเมินและฝึกกายภาพบำบัดอัจฉริยะ
         </p>
 
-        {/* Fail-closed condition when detector is not available */}
-        {!detectorReady ? (
+        {/* Loading state vs Fail-closed condition vs Ready state */}
+        {isInitializing && !initError ? (
+          <div className="mt-12 flex items-center gap-3 px-8 py-4 rounded-full bg-slate-900/80 border border-slate-700 text-slate-300 font-semibold text-base shadow-xl">
+            <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />
+            <span>กำลังเตรียมระบบกล้องตรวจจับอัตโนมัติ...</span>
+          </div>
+        ) : !detectorReady ? (
           <div className="mt-10 flex flex-col items-center gap-4 max-w-md p-6 rounded-3xl bg-rose-950/40 border border-rose-500/40 shadow-2xl">
             <div className="flex items-center gap-2 text-rose-300 font-bold text-lg">
               <AlertTriangle className="w-6 h-6 text-rose-400" />
@@ -171,14 +210,17 @@ export const IdleView: React.FC<IdleViewProps> = ({
             </p>
             <button
               type="button"
+              disabled={staffCalled}
               onClick={(e) => {
                 e.stopPropagation();
+                if (staffCalled) return;
+                setStaffCalled(true);
                 onCallStaff();
               }}
-              className="mt-2 touch-btn px-6 py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-base shadow-lg shadow-rose-600/40 flex items-center gap-2 transition"
+              className="mt-2 touch-btn px-6 py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-base shadow-lg shadow-rose-600/40 flex items-center gap-2 transition"
             >
               <Bell className="w-5 h-5" />
-              <span>เรียกเจ้าหน้าที่</span>
+              <span>{staffCalled ? 'แจ้งเจ้าหน้าที่แล้ว' : 'เรียกเจ้าหน้าที่'}</span>
             </button>
           </div>
         ) : (
