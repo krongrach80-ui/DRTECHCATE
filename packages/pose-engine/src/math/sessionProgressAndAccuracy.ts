@@ -14,10 +14,15 @@ import type {
   PoseEngineLandmark,
 } from '../types/exerciseConfig';
 import { calculateAngle2D, calculateAngle3D, clamp } from './geometry3d';
+import {
+  ARM_LANDMARK_INDICES,
+  MISSING_ARM_JOINT_MESSAGES_TH,
+  VISIBILITY_THRESHOLD,
+} from './armJointProcessor';
 
 export const DEFAULT_ANGLE_TOLERANCE_DEG = 10;
 export const DEFAULT_ANGLE_FALLOFF_DEG = 30;
-export const MIN_JOINT_VISIBILITY = 0.5;
+export const MIN_JOINT_VISIBILITY = VISIBILITY_THRESHOLD;
 export const ACCURACY_EMA_ALPHA = 0.3;
 export const ACCURACY_UI_UPDATE_INTERVAL_MS = 100;
 export const ACCURACY_LEVEL_HIGH = 90;
@@ -60,6 +65,7 @@ export interface PoseAccuracyResult {
   statusTextTh: string;
   worstJointHintTh: string | null;
   worstJointKey: string | null;
+  missingJointHintTh: string | null;
   jointScores: JointScoreDetail[];
 }
 
@@ -197,10 +203,47 @@ function isLandmarkReliable(
   if (use3D && lm.z !== undefined && !Number.isFinite(lm.z)) return false;
 
   const vis = lm.visibility;
-  if (vis === undefined) {
-    return true;
+  if (vis !== undefined && (!Number.isFinite(vis) || vis < MIN_JOINT_VISIBILITY)) {
+    return false;
   }
-  return Number.isFinite(vis) && vis >= MIN_JOINT_VISIBILITY;
+
+  const presence = lm.presence;
+  if (presence !== undefined && (!Number.isFinite(presence) || presence < MIN_JOINT_VISIBILITY)) {
+    return false;
+  }
+
+  return true;
+}
+
+function findMissingArmJointHintTh(
+  landmarks: PoseEngineLandmark[],
+  config: ExerciseDetectionConfig,
+  sideOverride?: BodySide | string | null
+): string | null {
+  const isArmExercise =
+    config.targetJoint === 'shoulder' ||
+    config.targetJoint === 'elbow' ||
+    config.targetJoint === 'wrist' ||
+    config.framing === 'upper' ||
+    config.framing === 'upper_body';
+
+  if (!isArmExercise) {
+    return null;
+  }
+
+  const sides = resolveSides(sideOverride ?? config.side ?? 'both');
+  const jointOrder: Array<'shoulder' | 'elbow' | 'wrist'> = ['shoulder', 'elbow', 'wrist'];
+
+  for (const side of sides) {
+    const indices = ARM_LANDMARK_INDICES[side];
+    for (const joint of jointOrder) {
+      if (!isLandmarkReliable(landmarks[indices[joint]], false)) {
+        return MISSING_ARM_JOINT_MESSAGES_TH[side][joint];
+      }
+    }
+  }
+
+  return null;
 }
 
 function hasNonZeroVectors(
@@ -400,9 +443,12 @@ export function calcPoseAccuracy(
       statusTextTh: 'ไม่พบท่าทาง ขยับให้เห็นทั้งตัว',
       worstJointHintTh: null,
       worstJointKey: null,
+      missingJointHintTh: null,
       jointScores: [],
     };
   }
+
+  const missingJointHintTh = findMissingArmJointHintTh(landmarks, config, sideOverride);
 
   const specs = buildJointSpecs(config, sideOverride);
   const jointScores: JointScoreDetail[] = [];
@@ -472,6 +518,7 @@ export function calcPoseAccuracy(
       statusTextTh: 'ไม่พบท่าทาง ขยับให้เห็นทั้งตัว',
       worstJointHintTh: null,
       worstJointKey: null,
+      missingJointHintTh,
       jointScores: [],
     };
   }
@@ -512,6 +559,7 @@ export function calcPoseAccuracy(
     statusTextTh: badgeTextTh,
     worstJointHintTh: needsHint && worstJoint ? worstJoint.hintTh : null,
     worstJointKey: needsHint && worstJoint ? worstJoint.key : null,
+    missingJointHintTh,
     jointScores,
   };
 }

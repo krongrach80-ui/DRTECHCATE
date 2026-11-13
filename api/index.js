@@ -3095,15 +3095,26 @@ var init_geometry3d = __esm({
   }
 });
 
+// packages/pose-engine/src/math/armJointProcessor.ts
+var VISIBILITY_THRESHOLD;
+var init_armJointProcessor = __esm({
+  "packages/pose-engine/src/math/armJointProcessor.ts"() {
+    "use strict";
+    init_geometry3d();
+    VISIBILITY_THRESHOLD = 0.5;
+  }
+});
+
 // packages/pose-engine/src/math/sessionProgressAndAccuracy.ts
 var DEFAULT_ANGLE_TOLERANCE_DEG, DEFAULT_ANGLE_FALLOFF_DEG, MIN_JOINT_VISIBILITY;
 var init_sessionProgressAndAccuracy = __esm({
   "packages/pose-engine/src/math/sessionProgressAndAccuracy.ts"() {
     "use strict";
     init_geometry3d();
+    init_armJointProcessor();
     DEFAULT_ANGLE_TOLERANCE_DEG = 10;
     DEFAULT_ANGLE_FALLOFF_DEG = 30;
-    MIN_JOINT_VISIBILITY = 0.5;
+    MIN_JOINT_VISIBILITY = VISIBILITY_THRESHOLD;
   }
 });
 
