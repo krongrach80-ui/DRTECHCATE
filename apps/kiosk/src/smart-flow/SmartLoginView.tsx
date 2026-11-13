@@ -1987,7 +1987,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       // Valid quality frame passed: reset quality failure counter
       consecutiveQualityFailuresRef.current = 0;
 
-      // Outlier-rejected, quality-weighted probe fusion combining clean 6-frame best-shot burst + live samples
+      // Outlier-rejected, quality-weighted probe fusion built strictly from the fresh 6-frame best-shot burst
+      // (only falling back to samplePool if bestShotFrames yielded no valid 512-D descriptors)
       const probeSamples: Array<{ embedding: number[]; qualityScore: number }> = [];
       for (const bf of bestShotFrames) {
         if (bf.vector && bf.vector.length === 512 && bf.qualityScore > 0) {
@@ -1995,12 +1996,14 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         }
       }
       const samplePool = top3Samples.length > 0 ? top3Samples : samples;
-      for (const sm of samplePool) {
-        if (sm.vector && sm.vector.length === 512) {
-          probeSamples.push({
-            embedding: sm.vector,
-            qualityScore: Math.min(0.85, Math.max(0.25, sm.score * 0.75)),
-          });
+      if (probeSamples.length === 0) {
+        for (const sm of samplePool) {
+          if (sm.vector && sm.vector.length === 512) {
+            probeSamples.push({
+              embedding: sm.vector,
+              qualityScore: Math.min(0.85, Math.max(0.25, sm.score * 0.75)),
+            });
+          }
         }
       }
 
@@ -2064,15 +2067,25 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         return;
       }
 
-      const reportedSimilarity = typeof res?.similarity === 'number' ? res.similarity : 0;
-      const reportedRawCosine = typeof (res as any)?.rawCosineSimilarity === 'number' ? (res as any).rawCosineSimilarity : reportedSimilarity;
-      const reportedPercentage = typeof res?.similarityPercentage === 'number' ? res.similarityPercentage : Math.round(reportedRawCosine * 100);
+      const hasRawCosine = typeof (res as any)?.rawCosineSimilarity === 'number';
+      const reportedSimilarity =
+        typeof res?.similarity === 'number'
+          ? res.similarity
+          : typeof (res as any)?.cosineSimilarity === 'number'
+          ? (res as any).cosineSimilarity
+          : 0;
+      const reportedRawCosine = hasRawCosine ? (res as any).rawCosineSimilarity : reportedSimilarity;
+      const reportedPercentage =
+        typeof res?.similarityPercentage === 'number'
+          ? res.similarityPercentage
+          : Math.round(reportedRawCosine * 100);
 
       const isServerMatch = Boolean(
         res &&
         res.matched === true &&
         (res as any).patient &&
-        (reportedPercentage >= 72 || reportedSimilarity >= 0.72 || reportedRawCosine >= 0.72)
+        reportedPercentage >= 85 &&
+        (!hasRawCosine || reportedRawCosine >= 0.85)
       );
 
       // Case A: Confirmed Authoritative Genuine Match

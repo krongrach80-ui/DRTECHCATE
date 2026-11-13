@@ -12,6 +12,7 @@ import {
   RehabScoreEntry,
   computeAverageVector,
   evaluateBiometricMatch,
+  verifyHybridBiometricIdentity,
   calibrateCosineSimilarity,
   BIOMETRIC_CONFIG,
   PrescribedExercise,
@@ -952,7 +953,12 @@ export class SmartOnboardingService {
    */
   private buildLivePatientRecord(p: any): PatientRecordFile {
     const pRecord: PatientRecordFile | undefined = p.history?.patient_record;
-    const pVector = p.history?.face_vector || pRecord?.biometrics?.face_vector;
+    const pVector =
+      p.history?.biometric_10_shot?.frontal_centroid ||
+      p.history?.frontal_centroid ||
+      p.history?.biometric_10_shot?.overall_centroid ||
+      p.history?.face_vector ||
+      pRecord?.biometrics?.face_vector;
     const pId = p.id || p.patient_id;
     const pHn = p.hn || '';
 
@@ -1001,11 +1007,19 @@ export class SmartOnboardingService {
       built.biometrics.face_vector = pVector;
     }
 
-    if (p.history?.frontal_centroid && Array.isArray(p.history.frontal_centroid)) {
-      (built as any).frontal_centroid = p.history.frontal_centroid;
+    const frontalCentroid =
+      p.history?.biometric_10_shot?.frontal_centroid ||
+      p.history?.frontal_centroid ||
+      p.history?.biometrics_summary?.frontal_centroid ||
+      p.history?.overall_centroid;
+    if (frontalCentroid && Array.isArray(frontalCentroid)) {
+      (built as any).frontal_centroid = frontalCentroid;
     }
-    if (p.history?.frames && Array.isArray(p.history.frames)) {
-      (built as any).enrolled_frames = p.history.frames;
+    const rawEnrolledFrames =
+      p.history?.biometric_10_shot?.raw_frames ||
+      p.history?.frames;
+    if (rawEnrolledFrames && Array.isArray(rawEnrolledFrames)) {
+      (built as any).enrolled_frames = rawEnrolledFrames;
     }
     if (p.history?.adaptive_templates && Array.isArray(p.history.adaptive_templates)) {
       (built as any).adaptive_templates = p.history.adaptive_templates;
@@ -1061,44 +1075,94 @@ export class SmartOnboardingService {
             match_limit: 5,
           });
           if (!rpcErr && Array.isArray(rpcMatches) && rpcMatches.length > 0) {
-            const topMatch = rpcMatches[0];
-            const rawSim = typeof topMatch.similarity === 'number' ? topMatch.similarity : 0;
-            const calSim = calibrateCosineSimilarity(rawSim);
-            const calPercent = Math.min(100, Math.round(Math.max(rawSim, calSim) * 100));
-            const topDist = typeof topMatch.distance === 'number' ? topMatch.distance : Math.sqrt(Math.max(0, 2 - 2 * rawSim));
-
-            let runnerUpSim: number | null = null;
-            for (let ri = 1; ri < rpcMatches.length; ri++) {
-              const cand = rpcMatches[ri];
-              if (cand.id !== topMatch.id && cand.hn !== topMatch.hn) {
-                runnerUpSim = typeof cand.similarity === 'number' ? cand.similarity : null;
-                break;
+            const isSingleRpc = rpcMatches.length === 1;
+            const evaluateRpcRow = (row: any) => {
+              const built = this.buildLivePatientRecord(row);
+              const vecs: number[][] = [];
+              if (Array.isArray(built.biometrics?.face_vector) && built.biometrics.face_vector.length === 512) {
+                vecs.push(built.biometrics.face_vector);
               }
-            }
-            const rpcMargin = runnerUpSim !== null ? rawSim - runnerUpSim : 1.0;
+              const fc = (built as any).frontal_centroid;
+              if (Array.isArray(fc) && fc.length === 512) vecs.push(fc);
+              const efList = (built as any).enrolled_frames || row.history?.biometric_10_shot?.raw_frames || row.history?.frames || [];
+              if (Array.isArray(efList)) {
+                for (const ef of efList) {
+                  if (ef && typeof ef === 'object' && ef.pose && ef.pose !== 'front') continue;
+                  const v = ef?.embedding || ef?.vector || (Array.isArray(ef) ? ef : null);
+                  if (Array.isArray(v) && v.length === 512) vecs.push(v);
+                }
+              }
+              if (vecs.length === 0) return null;
+              let best: ReturnType<typeof verifyHybridBiometricIdentity> | null = null;
+              for (const v of vecs) {
+                const res = verifyHybridBiometricIdentity(probeVector, v, { isSingleUserInDb: isSingleRpc });
+                if (!best || (res.passesHybridGate && !best.passesHybridGate) ||
+                    (res.passesHybridGate === best.passesHybridGate && res.effectiveCosine > best.effectiveCosine)) {
+                  best = res;
+                }
+              }
+              return best ? { row, built, best } : null;
+            };
 
-            if (rawSim >= 0.78 && topDist <= 0.68 && rpcMargin >= BIOMETRIC_CONFIG.MARGIN_MIN) {
-              const builtRecord = this.buildLivePatientRecord(topMatch);
+            const evaluatedRpc = rpcMatches
+              .map(evaluateRpcRow)
+              .filter((x): x is NonNullable<ReturnType<typeof evaluateRpcRow>> => x !== null);
+
+            // Only decide at RPC fast-path when returned rows carry stored vectors; otherwise fall through to full patients query
+            if (evaluatedRpc.length > 0) {
+              evaluatedRpc.sort((a, b) => {
+                if (a.best.passesHybridGate !== b.best.passesHybridGate) {
+                  return a.best.passesHybridGate ? -1 : 1;
+                }
+                const sA = a.best.passesHybridGate ? a.best.rawCos : a.best.effectiveCosine;
+                const sB = b.best.passesHybridGate ? b.best.rawCos : b.best.effectiveCosine;
+                return sB - sA;
+              });
+
+              const topEntry = evaluatedRpc[0];
+              const runnerUpEntry = evaluatedRpc.find(
+                (e) => e.row.id !== topEntry.row.id && e.row.hn !== topEntry.row.hn
+              );
+              const rpcMargin = runnerUpEntry ? topEntry.best.rawCos - runnerUpEntry.best.rawCos : 1.0;
+              const whitenedMargin =
+                runnerUpEntry && topEntry.best.isRealHybrid && runnerUpEntry.best.isRealHybrid
+                  ? topEntry.best.whitenedCos - runnerUpEntry.best.whitenedCos
+                  : 1.0;
+
+              const calSim = calibrateCosineSimilarity(
+                topEntry.best.passesHybridGate ? topEntry.best.rawCos : topEntry.best.effectiveCosine
+              );
+              const calPercent = Math.min(100, Math.round(Math.max(topEntry.best.passesHybridGate ? topEntry.best.rawCos : 0, calSim) * 100));
+
+              if (
+                topEntry.best.passesHybridGate &&
+                calPercent >= 85 &&
+                topEntry.best.euclideanDistance <= 0.39 &&
+                rpcMargin >= BIOMETRIC_CONFIG.MARGIN_MIN &&
+                (!topEntry.best.isRealHybrid || whitenedMargin >= 0.15)
+              ) {
+                logger.info(
+                  `[FACE-AUTH-RPC] Server RPC Verified Match: ${topEntry.built.first_name} (${topEntry.built.hn}) | Similarity: ${calPercent}% | whitened=${topEntry.best.whitenedCos.toFixed(4)}`
+                );
+                return {
+                  matched: true,
+                  patient: topEntry.built,
+                  similarity: calSim,
+                  distance: topEntry.best.euclideanDistance,
+                  similarityPercentage: calPercent,
+                  message: 'ยืนยันตัวตนสำเร็จ',
+                };
+              }
+
               logger.info(
-                `[FACE-AUTH-RPC] Server RPC Match: ${builtRecord.first_name} (${builtRecord.hn}) | Similarity: ${calPercent}%`
+                `[FACE-AUTH-RPC] Unmatched or ambiguous RPC scan rejected fail-closed: raw=${topEntry.best.rawCos.toFixed(4)} wc=${topEntry.best.whitenedCos.toFixed(4)} dct=${topEntry.best.cosDct.toFixed(4)} gate=${topEntry.best.passesHybridGate}`
               );
               return {
-                matched: true,
-                patient: builtRecord,
-                similarity: calSim,
-                distance: topDist,
+                matched: false,
                 similarityPercentage: calPercent,
-                message: 'ยืนยันตัวตนสำเร็จ',
+                message: 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน',
               };
             }
-
-            logger.info(
-              `[FACE-AUTH-RPC] Unmatched or ambiguous RPC scan rejected fail-closed: sim=${rawSim.toFixed(4)} dist=${topDist.toFixed(4)} margin=${rpcMargin.toFixed(4)}`
-            );
-            return {
-              matched: false,
-              message: 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน',
-            };
           }
         } catch {
           // Non-blocking fallback to live patients query
@@ -1200,12 +1264,16 @@ export class SmartOnboardingService {
       similarity: number;
       distance: number;
       percent: number;
+      whitenedCos: number;
+      isRealHybrid: boolean;
     } | null = null;
     let top2Match: {
       record: PatientRecordFile;
       similarity: number;
       distance: number;
       percent: number;
+      whitenedCos: number;
+      isRealHybrid: boolean;
     } | null = null;
     let nearestCandidate: { name: string; hn: string; sim: number; dist: number; percent?: number } | null = null;
 
@@ -1223,8 +1291,12 @@ export class SmartOnboardingService {
       const extraFrames = (record as any).enrolled_frames || (record as any).history?.frames;
       if (extraFrames && Array.isArray(extraFrames)) {
         for (const ef of extraFrames) {
-          if (ef.embedding && Array.isArray(ef.embedding) && ef.embedding.length === 512) {
-            candidateVectors.push(ef.embedding);
+          if (ef && typeof ef === 'object' && ef.pose && ef.pose !== 'front') {
+            continue;
+          }
+          const efVec = ef?.embedding || ef?.vector || (Array.isArray(ef) ? ef : null);
+          if (efVec && Array.isArray(efVec) && efVec.length === 512) {
+            candidateVectors.push(efVec);
           }
         }
       }
@@ -1237,17 +1309,25 @@ export class SmartOnboardingService {
         }
       }
 
-      let patientBestSim = -1;
-      let patientBestDist = 2.0;
+      let bestEval: ReturnType<typeof evaluateBiometricMatch> | null = null;
+      let bestHybrid: ReturnType<typeof verifyHybridBiometricIdentity> | null = null;
 
       for (const vec of candidateVectors) {
         const result = evaluateBiometricMatch(probeVector, vec, {
           isSingleUserInDb,
         });
+        const hybrid = verifyHybridBiometricIdentity(probeVector, vec, {
+          isSingleUserInDb,
+        });
 
-        if (result.cosineSimilarity > patientBestSim) {
-          patientBestSim = result.cosineSimilarity;
-          patientBestDist = result.euclideanDistance;
+        if (
+          !bestHybrid ||
+          (hybrid.passesHybridGate && !bestHybrid.passesHybridGate) ||
+          (hybrid.passesHybridGate === bestHybrid.passesHybridGate &&
+            hybrid.effectiveCosine > bestHybrid.effectiveCosine)
+        ) {
+          bestHybrid = hybrid;
+          bestEval = result;
         }
 
         if (!nearestCandidate || result.cosineSimilarity > nearestCandidate.sim) {
@@ -1261,43 +1341,19 @@ export class SmartOnboardingService {
         }
       }
 
-      // Fallback check: if match score is between 0.68 and 0.74, check top 2 enrollment frames from history.frames
-      if (patientBestSim >= 0.68 && patientBestSim < 0.74) {
-        const histFrames = (record as any).history?.frames || (record as any).enrolled_frames || [];
-        if (Array.isArray(histFrames) && histFrames.length > 0) {
-          const top2Frames = histFrames.slice(0, 2);
-          for (const hf of top2Frames) {
-            const hVec = hf?.embedding || hf?.vector || (Array.isArray(hf) ? hf : null);
-            if (Array.isArray(hVec) && hVec.length === probeVector.length) {
-              const resH = evaluateBiometricMatch(probeVector, hVec, { isSingleUserInDb });
-              if (resH.cosineSimilarity > patientBestSim) {
-                patientBestSim = resH.cosineSimilarity;
-                patientBestDist = resH.euclideanDistance;
-              }
-            }
-          }
-        }
-      }
-
-      // Check if patient meets strict match threshold (consistent with unit vector geometry: cos >= 0.78 => dist <= 0.68)
-      const maxAllowedDist = process.env.NODE_ENV === 'test'
-        ? (isSingleUserInDb ? BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE : BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE)
-        : 0.68;
-      const minAllowedCos = process.env.NODE_ENV === 'test'
-        ? BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY
-        : 0.78;
-
-      if (patientBestSim >= minAllowedCos && patientBestDist <= maxAllowedDist) {
+      if (bestEval && bestHybrid && bestEval.isMatch && bestHybrid.passesHybridGate) {
         const matchItem = {
           record,
-          similarity: patientBestSim,
-          distance: patientBestDist,
-          percent: Math.min(100, Math.max(0, Math.round(patientBestSim * 100))),
+          similarity: bestHybrid.isRealHybrid ? bestHybrid.rawCos : bestEval.cosineSimilarity,
+          distance: bestEval.euclideanDistance,
+          percent: Math.min(100, Math.max(0, Math.round((bestHybrid.isRealHybrid ? bestHybrid.rawCos : bestEval.cosineSimilarity) * 100))),
+          whitenedCos: bestHybrid.whitenedCos,
+          isRealHybrid: bestHybrid.isRealHybrid,
         };
-        if (!top1Match || patientBestSim > top1Match.similarity) {
+        if (!top1Match || matchItem.similarity > top1Match.similarity) {
           top2Match = top1Match;
           top1Match = matchItem;
-        } else if (!top2Match || patientBestSim > top2Match.similarity) {
+        } else if (!top2Match || matchItem.similarity > top2Match.similarity) {
           top2Match = matchItem;
         }
       }
@@ -1314,7 +1370,11 @@ export class SmartOnboardingService {
       // If multiple candidates exist, verify distinct margin (fail closed instead of prompting PIN)
       if (top2Match) {
         const margin = top1Match.similarity - top2Match.similarity;
-        if (margin < BIOMETRIC_CONFIG.MARGIN_MIN) {
+        const whitenedMargin =
+          top1Match.isRealHybrid && top2Match.isRealHybrid
+            ? top1Match.whitenedCos - top2Match.whitenedCos
+            : 1.0;
+        if (margin < BIOMETRIC_CONFIG.MARGIN_MIN || (top1Match.isRealHybrid && whitenedMargin < 0.15)) {
           logger.warn(
             `[FACE-AUTH] Margin ambiguous (${margin.toFixed(4)} < ${BIOMETRIC_CONFIG.MARGIN_MIN}) between ${top1Match.record.hn} and ${top2Match.record.hn}. Rejecting fail-closed.`
           );
