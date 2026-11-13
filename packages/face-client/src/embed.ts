@@ -8,11 +8,13 @@
  * - Memory Wipe: Flushes Float32Array buffer with .fill(0) immediately after inference.
  */
 
+import type { FaceLandmarks, Point3D } from './detect';
+
 export interface EmbeddingModel {
   name: string;
   version: string;
   dim: number;
-  embed(alignedFace: HTMLCanvasElement | ImageData): Promise<number[]>;
+  embed(alignedFace: HTMLCanvasElement | ImageData, landmarks?: FaceLandmarks): Promise<number[]>;
   close?(): Promise<void>;
 }
 
@@ -109,12 +111,213 @@ export function canvasToNchwTensor(
  * 3. Radial geometric contour profiles & facial landmark proportions (128 components)
  * Total: 512 dimensions, L2-normalized to unit sphere.
  */
+function extract3DAnatomicalDescriptor(landmarks?: FaceLandmarks): number[] | null {
+  const pts = landmarks?.rawLandmarks3D;
+  if (!pts || !Array.isArray(pts) || pts.length < 468) {
+    return null;
+  }
+
+  const p33 = pts[33];
+  const p263 = pts[263];
+  const p1 = pts[1];
+  const p234 = pts[234];
+  const p454 = pts[454];
+  if (!p33 || !p263 || !p1 || !p234 || !p454) return null;
+
+  const outerEyeSpanXY = Math.hypot(p263.x - p33.x, p263.y - p33.y);
+  if (!Number.isFinite(outerEyeSpanXY) || outerEyeSpanXY < 1) return null;
+
+  const rawDz = Math.abs((p234.z + p454.z) * 0.5 - p1.z);
+  const zScale = outerEyeSpanXY > 12 && rawDz < outerEyeSpanXY * 0.04 ? outerEyeSpanXY / 0.22 : 1.0;
+
+  const P = (idx: number): Point3D => {
+    const pt = pts[idx] || p1;
+    return { x: pt.x, y: pt.y, z: (pt.z ?? 0) * zScale };
+  };
+
+  const mid = (a: Point3D, b: Point3D): Point3D => ({
+    x: (a.x + b.x) * 0.5,
+    y: (a.y + b.y) * 0.5,
+    z: (a.z + b.z) * 0.5,
+  });
+  const sub = (a: Point3D, b: Point3D): Point3D => ({
+    x: a.x - b.x,
+    y: a.y - b.y,
+    z: a.z - b.z,
+  });
+  const dot = (a: Point3D, b: Point3D): number => a.x * b.x + a.y * b.y + a.z * b.z;
+  const cross = (a: Point3D, b: Point3D): Point3D => ({
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  });
+  const norm = (a: Point3D): number => Math.sqrt(dot(a, a));
+
+  const leftOrbit = mid(P(33), P(133));
+  const rightOrbit = mid(P(263), P(362));
+  const exRaw = sub(rightOrbit, leftOrbit);
+  const scale = norm(exRaw);
+  if (!Number.isFinite(scale) || scale < 1e-3) return null;
+
+  const ex: Point3D = { x: exRaw.x / scale, y: exRaw.y / scale, z: exRaw.z / scale };
+  const innerL = P(133);
+  const innerR = P(362);
+  const nasion = P(168);
+  const origin: Point3D = {
+    x: (innerL.x + innerR.x + nasion.x) / 3,
+    y: (innerL.y + innerR.y + nasion.y) / 3,
+    z: (innerL.z + innerR.z + nasion.z) / 3,
+  };
+
+  const subnasale = P(2);
+  const vDown = sub(subnasale, origin);
+  const projEx = dot(vDown, ex);
+  const eyRaw: Point3D = {
+    x: vDown.x - projEx * ex.x,
+    y: vDown.y - projEx * ex.y,
+    z: vDown.z - projEx * ex.z,
+  };
+  const eyLen = norm(eyRaw);
+  if (!Number.isFinite(eyLen) || eyLen < 1e-3) return null;
+
+  const ey: Point3D = { x: eyRaw.x / eyLen, y: eyRaw.y / eyLen, z: eyRaw.z / eyLen };
+  let ez = cross(ey, ex);
+  const ezLen = norm(ez);
+  if (ezLen < 1e-4) return null;
+  ez = { x: ez.x / ezLen, y: ez.y / ezLen, z: ez.z / ezLen };
+  if (dot(sub(P(1), origin), ez) < 0) {
+    ez = { x: -ez.x, y: -ez.y, z: -ez.z };
+  }
+
+  const cache = new Map<number, Point3D>();
+  const Q = (idx: number): Point3D => {
+    const cached = cache.get(idx);
+    if (cached) return cached;
+    const d = sub(P(idx), origin);
+    const q: Point3D = {
+      x: dot(d, ex) / scale,
+      y: dot(d, ey) / scale,
+      z: dot(d, ez) / scale,
+    };
+    cache.set(idx, q);
+    return q;
+  };
+  const d3 = (a: number, b: number): number => norm(sub(Q(a), Q(b)));
+
+  const noseLen = Math.max(0.25, d3(168, 2));
+  const bizygWidth = Math.max(0.5, d3(234, 454));
+  const alarWidth = d3(98, 327);
+  const gonialWidth = d3(172, 397);
+
+  const f: number[] = [
+    (d3(33, 133) - 0.36) * 14,
+    (d3(362, 263) - 0.36) * 14,
+    ((d3(33, 133) + d3(362, 263)) * 0.5 / Math.max(0.2, d3(133, 362)) - 0.65) * 8,
+    (d3(133, 362) - 0.56) * 12,
+    (d3(33, 263) - 1.32) * 8,
+    (Q(133).y - Q(33).y - 0.02) * 18,
+    (Q(362).y - Q(263).y - 0.02) * 18,
+    ((Q(133).z + Q(362).z) * 0.5 - (Q(33).z + Q(263).z) * 0.5 - 0.14) * 16,
+    (((Q(105).y - Q(33).y) + (Q(334).y - Q(263).y)) * 0.5 + 0.18) * 14,
+    (((Q(107).y - Q(133).y) + (Q(336).y - Q(362).y)) * 0.5 + 0.19) * 14,
+    (((Q(70).y - Q(33).y) + (Q(300).y - Q(263).y)) * 0.5 + 0.13) * 14,
+    ((d3(70, 107) + d3(300, 336)) * 0.5 - 0.54) * 12,
+    (((Q(105).z + Q(334).z) * 0.5 - (Q(133).z + Q(362).z) * 0.5) - 0.10) * 16,
+    (Q(70).y - Q(107).y - 0.05) * 14,
+    (Q(300).y - Q(336).y - 0.05) * 14,
+    ((d3(118, 133) + d3(347, 362)) * 0.5 - 0.34) * 14,
+
+    (Q(2).y - Q(168).y - 0.68) * 10,
+    (d3(168, 1) - 0.60) * 10,
+    (d3(2, 1) - 0.30) * 14,
+    (Q(1).z - Q(168).z - 0.36) * 12,
+    (Q(1).z - Q(2).z - 0.24) * 14,
+    (Q(197).z - (Q(168).z + Q(1).z) * 0.5 + 0.02) * 20,
+    (Q(5).z - (Q(168).z + Q(1).z) * 0.5 - 0.03) * 20,
+    (Q(4).z - Q(1).z + 0.01) * 24,
+    (d3(193, 417) - 0.23) * 16,
+    (d3(122, 351) - 0.27) * 14,
+    (d3(48, 278) - 0.44) * 12,
+    (alarWidth - 0.53) * 12,
+    (alarWidth / noseLen - 0.78) * 8,
+    (d3(193, 417) / Math.max(0.2, alarWidth) - 0.43) * 10,
+    (Q(1).y - Q(2).y + 0.13) * 16,
+    (Q(6).z - Q(168).z - 0.03) * 22,
+
+    (bizygWidth - 2.15) * 6,
+    (d3(123, 352) - 1.92) * 7,
+    (d3(50, 280) - 1.32) * 8,
+    ((Q(50).z + Q(280).z) * 0.5 - Q(168).z + 0.14) * 12,
+    ((Q(234).z + Q(454).z) * 0.5 - Q(168).z + 0.78) * 8,
+    (d3(50, 280) / bizygWidth - 0.61) * 12,
+    (Q(168).y - Q(10).y - 0.74) * 8,
+    ((Q(151).y - Q(168).y) / noseLen - 0.50) * 10,
+    (Q(152).y - Q(2).y - 0.90) * 7,
+    ((Q(2).y - Q(168).y) / Math.max(0.35, Q(152).y - Q(2).y) - 0.75) * 9,
+    (d3(10, 152) / bizygWidth - 1.12) * 8,
+    (Q(10).z - Q(168).z + 0.14) * 12,
+    (d3(67, 297) / bizygWidth - 0.60) * 10,
+    (d3(118, 347) - 1.05) * 10,
+    ((Q(118).z + Q(347).z) * 0.5 - (Q(123).z + Q(352).z) * 0.5 - 0.30) * 12,
+    (Math.abs(Q(61).x) + Math.abs(Q(291).x) - 0.68) * 10,
+
+    (gonialWidth - 1.72) * 7,
+    (d3(136, 365) - 1.38) * 8,
+    (d3(150, 379) - 1.04) * 9,
+    (d3(149, 378) - 0.80) * 10,
+    (d3(148, 377) - 0.44) * 12,
+    (gonialWidth / bizygWidth - 0.80) * 10,
+    (d3(148, 377) / Math.max(0.4, gonialWidth) - 0.26) * 14,
+    (d3(2, 0) - 0.21) * 16,
+    (d3(37, 267) - 0.20) * 16,
+    (Q(152).y - Q(17).y - 0.44) * 12,
+    (Q(152).z - Q(17).z + 0.04) * 18,
+    (Q(152).z - Q(2).z + 0.10) * 12,
+    ((Q(172).z + Q(397).z) * 0.5 - Q(152).z + 0.46) * 10,
+    (((Q(172).y - Q(152).y) + (Q(397).y - Q(152).y)) * 0.5 + 0.25) * 12,
+    (d3(33, 133) - d3(362, 263)) * 12 + (d3(168, 172) - d3(168, 397)) * 8,
+    (d3(61, 291) / Math.max(0.2, alarWidth) - 1.38) * 8,
+  ];
+
+  const smoothed = f.map((val) => Math.tanh((Number.isFinite(val) ? val : 0) * 0.65));
+  const out = new Array(256).fill(0);
+
+  for (let i = 0; i < 64; i++) {
+    out[i] = smoothed[i];
+  }
+  for (let i = 0; i < 128; i++) {
+    const a = smoothed[(i * 7 + 3) % 64];
+    const b = smoothed[(i * 13 + 19) % 64];
+    const c = smoothed[(i * 23 + 37) % 64];
+    const d = smoothed[(i * 31 + 53) % 64];
+    const sB = i % 2 === 0 ? 1 : -1;
+    const sC = (i >> 1) % 2 === 0 ? 1 : -1;
+    const sD = (i >> 2) % 2 === 0 ? 1 : -1;
+    out[64 + i] = Math.tanh((a + sB * b + sC * c + sD * d) * 0.5);
+  }
+  for (let i = 0; i < 64; i++) {
+    const idx1 = i % 16;
+    const idx2 = 16 + ((i * 5) % 16);
+    const idx3 = 32 + ((i * 7) % 16);
+    const idx4 = 48 + ((i * 11) % 16);
+    out[192 + i] =
+      i % 2 === 0
+        ? Math.tanh(smoothed[idx1] * smoothed[idx4] * 1.4)
+        : Math.tanh(smoothed[idx2] * smoothed[idx3] * 1.4);
+  }
+
+  return l2Normalize(out);
+}
+
 export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
   public readonly name: string = 'geometric-biometric-512';
-  public readonly version: string = 'v1.0';
+  public readonly version: string = 'v1.2';
   public readonly dim: number = 512;
 
-  public async embed(alignedFace: HTMLCanvasElement | ImageData): Promise<number[]> {
+  public async embed(
+    alignedFace: HTMLCanvasElement | ImageData,
+    landmarks?: FaceLandmarks
+  ): Promise<number[]> {
     let data: Uint8ClampedArray;
     let width = 112;
     let height = 112;
@@ -424,6 +627,66 @@ export class GeometricLandmarkEmbeddingModel implements EmbeddingModel {
       vector[i] *= 2.0;
     }
 
+    const desc3D = extract3DAnatomicalDescriptor(landmarks);
+    if (desc3D && desc3D.length === 256) {
+      // Build lighting-invariant 256-D 2D appearance descriptor (bandpass DCT + 16-patch gradients & CS-LBP)
+      const vec2D = new Array(256).fill(0);
+      let dctOut = 0;
+      for (let u = 0; u < 12 && dctOut < 128; u++) {
+        for (let v = 0; v < 12 && dctOut < 128; v++) {
+          if (u === 0 && v === 0) continue;
+          const freqSum = u + v;
+          const bandpassWeight = freqSum === 1 ? 0.35 : freqSum === 2 ? 0.65 : 1.2;
+          vec2D[dctOut++] = (vector[u * 16 + v] * 0.5) * bandpassWeight;
+        }
+      }
+
+      // 16 spatial facial patches x 8 features (6 normalized gradient/chroma + 2 CS-LBP micro-texture)
+      for (let py = 0; py < 4; py++) {
+        for (let px = 0; px < 4; px++) {
+          const patchIdx = py * 4 + px;
+          const srcBase = 256 + patchIdx * 8;
+          const dstBase = 128 + patchIdx * 8;
+          for (let k = 0; k < 6; k++) {
+            vec2D[dstBase + k] = vector[srcBase + k];
+          }
+
+          let cslbpHoriz = 0;
+          let cslbpVert = 0;
+          let texCount = 0;
+          const y0 = py * pHeight + 2;
+          const y1 = Math.min(height - 2, (py + 1) * pHeight);
+          const x0 = px * pWidth + 2;
+          const x1 = Math.min(width - 2, (px + 1) * pWidth);
+          for (let y = y0; y < y1; y += 2) {
+            const r = y * width;
+            for (let x = x0; x < x1; x += 2) {
+              const idx = r + x;
+              if (facePixelsCount > 100 && isFace[idx] !== 1) continue;
+              const dh = normGray[idx + 2] - normGray[idx - 2];
+              const dv = normGray[idx + width * 2] - normGray[idx - width * 2];
+              cslbpHoriz += dh > 0.08 ? 1 : dh < -0.08 ? -1 : 0;
+              cslbpVert += dv > 0.08 ? 1 : dv < -0.08 ? -1 : 0;
+              texCount++;
+            }
+          }
+          const safeTex = texCount || 1;
+          vec2D[dstBase + 6] = cslbpHoriz / safeTex;
+          vec2D[dstBase + 7] = cslbpVert / safeTex;
+        }
+      }
+
+      const norm2D = l2Normalize(vec2D);
+      const w2D = Math.sqrt(0.42);
+      const w3D = Math.sqrt(0.58);
+      const fused = new Array(512);
+      for (let i = 0; i < 256; i++) {
+        fused[i] = norm2D[i] * w2D;
+        fused[256 + i] = desc3D[i] * w3D;
+      }
+      return l2Normalize(fused);
+    }
+
     return l2Normalize(vector);
   }
 }
@@ -466,15 +729,18 @@ export class OnnxEmbeddingModel implements EmbeddingModel {
     }
   }
 
-  public async embed(alignedFace: HTMLCanvasElement | ImageData): Promise<number[]> {
+  public async embed(
+    alignedFace: HTMLCanvasElement | ImageData,
+    landmarks?: FaceLandmarks
+  ): Promise<number[]> {
     if (this.isFallback) {
-      return this.fallbackModel.embed(alignedFace);
+      return this.fallbackModel.embed(alignedFace, landmarks);
     }
 
     if (!this.session) {
       await this.initialize();
       if (this.isFallback) {
-        return this.fallbackModel.embed(alignedFace);
+        return this.fallbackModel.embed(alignedFace, landmarks);
       }
     }
 
@@ -494,7 +760,7 @@ export class OnnxEmbeddingModel implements EmbeddingModel {
         const results = await this.session.run(feeds);
         const outputTensor = results[outputName];
         if (!outputTensor || !outputTensor.data) {
-          return this.fallbackModel.embed(alignedFace);
+          return this.fallbackModel.embed(alignedFace, landmarks);
         }
 
         const rawVec = Array.from(outputTensor.data as Float32Array).slice(0, 512);
@@ -504,7 +770,7 @@ export class OnnxEmbeddingModel implements EmbeddingModel {
       }
     } catch {
       this.isFallback = true;
-      return this.fallbackModel.embed(alignedFace);
+      return this.fallbackModel.embed(alignedFace, landmarks);
     }
   }
 

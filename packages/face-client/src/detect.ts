@@ -364,6 +364,9 @@ export class MediaPipeFaceDetector implements FaceDetector {
             },
             runningMode: 'IMAGE',
             numFaces: 2,
+            minFaceDetectionConfidence: 0.55,
+            minFacePresenceConfidence: 0.55,
+            minTrackingConfidence: 0.55,
             outputFaceBlendshapes: true,
             outputFacialTransformationMatrixes: true,
           });
@@ -376,6 +379,9 @@ export class MediaPipeFaceDetector implements FaceDetector {
             },
             runningMode: 'IMAGE',
             numFaces: 2,
+            minFaceDetectionConfidence: 0.55,
+            minFacePresenceConfidence: 0.55,
+            minTrackingConfidence: 0.55,
             outputFaceBlendshapes: true,
             outputFacialTransformationMatrixes: true,
           });
@@ -568,10 +574,11 @@ export class MediaPipeFaceDetector implements FaceDetector {
       const mouthLeftRaw = landmarksRaw[61];
       const mouthRightRaw = landmarksRaw[291];
 
+      // Convert normalized MediaPipe coordinates into isotropic 3D pixel space (z shares width scale per MediaPipe spec)
       const rawLandmarks3D: Point3D[] = landmarksRaw.map((pt: any) => ({
         x: pt.x * width,
         y: pt.y * height,
-        z: pt.z ?? 0,
+        z: (pt.z ?? 0) * width,
       }));
 
       const allPoints: Point2D[] = landmarksRaw.map((pt: any) => ({

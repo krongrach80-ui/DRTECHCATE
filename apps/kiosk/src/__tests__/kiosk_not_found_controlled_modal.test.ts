@@ -37,7 +37,7 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
   });
 
   // TEST 01: Account Not Found after 2 confirmed rounds within 10s MAX_CONFIRM_WINDOW_MS
-  it('TEST 01: Confirms Account Not Found on Round 2 within 10s MAX_CONFIRM_WINDOW_MS and renders centered 4-button modal', () => {
+  it('TEST 01: Confirms Account Not Found on Round 2 within 10s MAX_CONFIRM_WINDOW_MS and renders centered controlled modal without PIN', () => {
     expect(KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_CONFIRM_ROUNDS).toBe(2);
     expect(KIOSK_NOT_FOUND_CONFIG.MAX_CONFIRM_WINDOW_MS).toBe(10000);
     expect(KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_IDLE_MS).toBe(30000);
@@ -69,7 +69,6 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
         isRetryCooldownActive: false,
         onStaffRegister: vi.fn(),
         onCallStaff: vi.fn(),
-        onUsePin: vi.fn(),
         onRetryScan: vi.fn(),
       })
     );
@@ -78,7 +77,8 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
     expect(modalHtml).toContain('ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน');
     expect(modalHtml).toContain('เจ้าหน้าที่ลงทะเบียนให้');
     expect(modalHtml).toContain('เรียกเจ้าหน้าที่');
-    expect(modalHtml).toContain('ใช้รหัส PIN');
+    expect(modalHtml).not.toContain('ใช้รหัส PIN');
+    expect(modalHtml).not.toContain('kiosk-not-found-pin-btn');
     expect(modalHtml).toContain('ลองสแกนอีกครั้ง');
     expect(modalHtml).not.toContain('%');
   });
@@ -202,7 +202,6 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
       isRetryCooldownActive: false,
       onStaffRegister: vi.fn(),
       onCallStaff: vi.fn(),
-      onUsePin: vi.fn(),
       onRetryScan,
     });
     expect(element).not.toBeNull();
@@ -212,8 +211,8 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
     expect(onRetryScan).not.toHaveBeenCalled();
   });
 
-  // TEST 04: Modal Open renders 4 required interactive controls & zero match percentages
-  it('TEST 04: Account Not Found Modal contains all 4 controlled action IDs without auto-retry triggers', () => {
+  // TEST 04: Modal Open renders controlled interactive controls without PIN & zero match percentages
+  it('TEST 04: Account Not Found Modal contains controlled action IDs without PIN or auto-retry triggers', () => {
     const html = renderToStaticMarkup(
       React.createElement(KioskAccountNotFoundModal, {
         isOpen: true,
@@ -225,7 +224,6 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
         isRetryCooldownActive: false,
         onStaffRegister: vi.fn(),
         onCallStaff: vi.fn(),
-        onUsePin: vi.fn(),
         onRetryScan: vi.fn(),
       })
     );
@@ -233,7 +231,7 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
     expect(html).toContain('role="alertdialog"');
     expect(html).toContain('id="kiosk-staff-register-btn"');
     expect(html).toContain('id="kiosk-call-staff-btn"');
-    expect(html).toContain('id="kiosk-not-found-pin-btn"');
+    expect(html).not.toContain('id="kiosk-not-found-pin-btn"');
     expect(html).toContain('id="kiosk-retry-scan-btn"');
   });
 
@@ -250,7 +248,6 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
       isRetryCooldownActive: false,
       onStaffRegister,
       onCallStaff: vi.fn(),
-      onUsePin: vi.fn(),
       onRetryScan: vi.fn(),
     });
 
@@ -298,7 +295,6 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
         isRetryCooldownActive: false,
         onStaffRegister: vi.fn(),
         onCallStaff: vi.fn(),
-        onUsePin: vi.fn(),
         onRetryScan: vi.fn(),
       })
     );
@@ -310,8 +306,18 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
     expect(callSpy).toHaveBeenCalledTimes(1);
   });
 
-  // TEST 07: Button 3 ("ใช้รหัส PIN") & Invalid PIN displays error inline inside KioskPinLoginModal
-  it('TEST 07: Invalid PIN renders inline error inside KioskPinLoginModal without opening Account Not Found Modal', () => {
+  // TEST 07: Face scan flow omits 4-digit PIN UI completely & legacy KioskPinLoginModal stays isolated
+  it('TEST 07: SmartLoginView scan screen omits 4-digit PIN UI and Not Found modal remains closed when isOpen=false', () => {
+    const kioskHtml = renderToStaticMarkup(
+      React.createElement(SmartLoginView, {
+        onLoginSuccess: vi.fn(),
+        onNavigateToEnroll: vi.fn(),
+        onStaffAssistedRegister: vi.fn(),
+      })
+    );
+    expect(kioskHtml).not.toContain('kiosk-pin-login-btn');
+    expect(kioskHtml).not.toContain('ใช้รหัส PIN 4 หลัก');
+
     const pinHtml = renderToStaticMarkup(
       React.createElement(KioskPinLoginModal, {
         isOpen: true,
@@ -342,14 +348,13 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
         isRetryCooldownActive: false,
         onStaffRegister: vi.fn(),
         onCallStaff: vi.fn(),
-        onUsePin: vi.fn(),
         onRetryScan: vi.fn(),
       })
     );
     expect(notFoundClosed).toBe('');
   });
 
-  // TEST 08: Button 4 ("ลองสแกนอีกครั้ง") disables during 1.5s RETRY_COOLDOWN_MS
+  // TEST 08: Button 3 ("ลองสแกนอีกครั้ง") disables during 1.5s RETRY_COOLDOWN_MS
   it('TEST 08: Retry scan button respects active cooldown lock during RETRY_COOLDOWN_MS', () => {
     const retryActiveHtml = renderToStaticMarkup(
       React.createElement(KioskAccountNotFoundModal, {
@@ -362,7 +367,6 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
         isRetryCooldownActive: true,
         onStaffRegister: vi.fn(),
         onCallStaff: vi.fn(),
-        onUsePin: vi.fn(),
         onRetryScan: vi.fn(),
       })
     );
@@ -384,7 +388,6 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
         isRetryCooldownActive: false,
         onStaffRegister: vi.fn(),
         onCallStaff: vi.fn(),
-        onUsePin: vi.fn(),
         onRetryScan: vi.fn(),
       })
     );
@@ -437,15 +440,15 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
     expect(mockCanvas.height).toBe(0);
   });
 
-  // TEST 13: Trilingual TH / EN / CN rendering on Not Found Modal & PIN Modal
-  it('TEST 13: Renders Account Not Found and PIN modals properly in th-TH, en-US, and zh-CN without percentage leakage', () => {
+  // TEST 13: Trilingual TH / EN / CN rendering on Not Found Modal without PIN button or percentage leakage
+  it('TEST 13: Renders Account Not Found modal properly in th-TH, en-US, and zh-CN without PIN button or percentage leakage', () => {
     const cases: Array<{
       lang: ClinicalLanguage;
       expectedTitle: string;
       expectedBtn1: string;
       expectedBtn2: string;
-      expectedBtn3: string;
-      expectedBtn4: string;
+      excludedPinLabel: string;
+      expectedBtnRetry: string;
       expectedCountdown: string;
     }> = [
       {
@@ -453,8 +456,8 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
         expectedTitle: 'ไม่พบบัญชีผู้ใช้',
         expectedBtn1: 'เจ้าหน้าที่ลงทะเบียนให้',
         expectedBtn2: 'เรียกเจ้าหน้าที่',
-        expectedBtn3: 'ใช้รหัส PIN',
-        expectedBtn4: 'ลองสแกนอีกครั้ง',
+        excludedPinLabel: 'ใช้รหัส PIN',
+        expectedBtnRetry: 'ลองสแกนอีกครั้ง',
         expectedCountdown: '15 วินาที',
       },
       {
@@ -462,8 +465,8 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
         expectedTitle: 'Account Not Found',
         expectedBtn1: 'Staff Registration',
         expectedBtn2: 'Call Staff',
-        expectedBtn3: 'Use PIN',
-        expectedBtn4: 'Try Again',
+        excludedPinLabel: 'Use PIN',
+        expectedBtnRetry: 'Try Again',
         expectedCountdown: 'Auto-resets to home in 15s',
       },
       {
@@ -471,8 +474,8 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
         expectedTitle: '未找到用户账户',
         expectedBtn1: '由工作人员注册',
         expectedBtn2: '呼叫工作人员',
-        expectedBtn3: '使用 PIN',
-        expectedBtn4: '重新扫描',
+        excludedPinLabel: '使用 PIN',
+        expectedBtnRetry: '重新扫描',
         expectedCountdown: '15 秒后自动返回初始页面',
       },
     ];
@@ -489,7 +492,6 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
           isRetryCooldownActive: false,
           onStaffRegister: vi.fn(),
           onCallStaff: vi.fn(),
-          onUsePin: vi.fn(),
           onRetryScan: vi.fn(),
         })
       );
@@ -497,8 +499,8 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
       expect(html).toContain(c.expectedTitle);
       expect(html).toContain(c.expectedBtn1);
       expect(html).toContain(c.expectedBtn2);
-      expect(html).toContain(c.expectedBtn3);
-      expect(html).toContain(c.expectedBtn4);
+      expect(html).not.toContain(c.excludedPinLabel);
+      expect(html).toContain(c.expectedBtnRetry);
       expect(html).toContain(c.expectedCountdown);
       expect(html).not.toContain('%');
     }

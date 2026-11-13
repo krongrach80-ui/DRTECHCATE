@@ -124,11 +124,11 @@ describe('Strict Biometric Threshold Guard & Zero-False-Positive Verification', 
     if (res.body.similarityPercentage !== undefined) {
       expect(res.body.similarityPercentage).toBeLessThan(50);
     }
-    expect(res.body.message).toMatch(/ไม่พบบัญชีในระบบ|ไม่พบข้อมูลใบหน้าตรงกับคนไข้ในระบบ/);
+    expect(res.body.message).toMatch(/ไม่พบบัญชีผู้ใช้|ไม่พบบัญชีในระบบ|ไม่พบข้อมูลใบหน้าตรงกับคนไข้ในระบบ/);
   });
 
-  it('2. Flags ambiguous candidate (50% - 79%) and prompts for PIN confirmation without auto-matching', async () => {
-    // Create borderline probe with raw cosine ~0.76 (which maps to 50% - 79% ambiguous zone)
+  it('2. Strictly fails closed for borderline/ambiguous probe (rawCos ~0.76) without PIN prompt or identity leak', async () => {
+    // Create borderline probe with raw cosine ~0.76 (below decisive authentication threshold)
     const registeredVector = createUnitVector(10);
     const ambiguousVector = createVectorWithTargetCosine(registeredVector, 0.76);
 
@@ -148,12 +148,11 @@ describe('Strict Biometric Threshold Guard & Zero-False-Positive Verification', 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.matched).toBe(false);
-    expect(res.body.requirePin).toBe(true);
-    expect(res.body.candidateName).toContain('Lym');
-    expect(res.body.candidateHn).toBe(`HN-${testPatientId}`);
-    expect(res.body.similarityPercentage).toBeGreaterThanOrEqual(50);
-    expect(res.body.similarityPercentage).toBeLessThan(80);
-    expect(res.body.message).toContain('เพื่อความปลอดภัยของผู้ป่วย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก');
+    expect(res.body.requirePin).toBeFalsy();
+    expect(res.body.patient).toBeUndefined();
+    expect(res.body.candidateName).toBeUndefined();
+    expect(res.body.candidateHn).toBeUndefined();
+    expect(res.body.message).toMatch(/ไม่พบบัญชีผู้ใช้|ไม่พบบัญชีในระบบ|ไม่พบข้อมูลใบหน้าตรงกับคนไข้ในระบบ/);
   });
 
   it('3. Successfully matches genuine patient face (>= 80% similarity with rawCos >= 0.85)', async () => {

@@ -1211,7 +1211,7 @@ export const NewPatientRegistrationModal: React.FC<NewPatientRegistrationModalPr
       return { ok: false, reason: 'BLURRY', hint: 'ภาพเบลอเล็กน้อย กรุณาขยับศีรษะช้าลง', brightness, sharpness, roiOk: true };
     }
 
-    const embedding = await embeddingModel.embed(aligned);
+    const embedding = await embeddingModel.embed(aligned, detection.landmarks);
     const sharpScore = Math.min(1, sharpness / 90);
     const centerScore = Math.max(0, 1 - roi.centerDistance / 0.30);
     const lightScore = Math.max(0.2, 1 - Math.abs(brightness - 135) / 135);

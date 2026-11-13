@@ -231,8 +231,8 @@ export class FaceFlowManager {
           // 1. Align face to 112x112 ArcFace coordinates
           const alignedCanvas = config.aligner.align(frame, detection.landmarks);
 
-          // 2. Extract 512-dim embedding from uncompressed aligned face
-          const embedding = await config.embeddingModel.embed(alignedCanvas);
+          // 2. Extract 512-dim embedding from uncompressed aligned face + 3D landmarks
+          const embedding = await config.embeddingModel.embed(alignedCanvas, detection.landmarks);
 
           // 3. Compress full frame to JPEG <= 800x800, quality 0.8
           const jpeg_base64 = compressCanvasToJpeg(frame, 800, 0.8);
@@ -390,7 +390,7 @@ export class FaceFlowManager {
 
       if (quality.passed && detection.landmarks) {
         const aligned = config.aligner.align(frame, detection.landmarks);
-        const vec = await config.embeddingModel.embed(aligned);
+        const vec = await config.embeddingModel.embed(aligned, detection.landmarks);
         frontalEmbeddings.push(vec);
 
         const actx = aligned.getContext?.('2d');

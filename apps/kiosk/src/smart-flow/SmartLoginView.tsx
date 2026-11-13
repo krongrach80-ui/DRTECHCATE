@@ -2,7 +2,7 @@
  * apps/kiosk/src/smart-flow/SmartLoginView.tsx
  * Centered Smart Kiosk Card Design matching 100% reference design
  * 3-Second Countdown & 250ms Median Aggregator Verification
- * Trilingual (TH/EN/CN), Calibration Mode HUD, Touchless Gesture & PIN Backup
+ * Trilingual (TH/EN/CN), Calibration Mode HUD & Touchless Gesture Verification
  */
 
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
@@ -38,7 +38,6 @@ import {
   UserPlus,
   Info,
   X,
-  KeyRound,
   RotateCw,
   FlipHorizontal,
   Camera,
@@ -865,13 +864,12 @@ export interface KioskAccountNotFoundModalProps {
   isRetryCooldownActive: boolean;
   onStaffRegister: () => void;
   onCallStaff: () => void;
-  onUsePin: () => void;
   onRetryScan: () => void;
 }
 
 /**
  * Controlled centered modal shown when Account Not Found is confirmed.
- * Locked against backdrop clicks and Escape key; can only exit via the 4 buttons or 30s idle auto-reset.
+ * Locked against backdrop clicks and Escape key; can only exit via the action buttons or 30s idle auto-reset.
  */
 export const KioskAccountNotFoundModal: React.FC<KioskAccountNotFoundModalProps> = ({
   isOpen,
@@ -883,7 +881,6 @@ export const KioskAccountNotFoundModal: React.FC<KioskAccountNotFoundModalProps>
   isRetryCooldownActive,
   onStaffRegister,
   onCallStaff,
-  onUsePin,
   onRetryScan,
 }) => {
   if (!isOpen) return null;
@@ -947,36 +944,23 @@ export const KioskAccountNotFoundModal: React.FC<KioskAccountNotFoundModalProps>
             </span>
           </button>
 
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            <button
-              type="button"
-              id="kiosk-not-found-pin-btn"
-              data-testid="kiosk-not-found-pin-btn"
-              onClick={onUsePin}
-              className="py-3 px-3 rounded-xl bg-slate-50 border border-slate-300 hover:bg-slate-100 text-slate-800 font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-              <span>{t('kiosk_btn_use_pin')}</span>
-            </button>
-
-            <button
-              type="button"
-              id="kiosk-retry-scan-btn"
-              data-testid="kiosk-retry-scan-btn"
-              disabled={isRetryCooldownActive}
-              onClick={onRetryScan}
-              className={`py-3 px-3 rounded-xl border font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition active:scale-95 ${
-                isRetryCooldownActive
-                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                  : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-800 cursor-pointer'
-              }`}
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${isRetryCooldownActive ? 'animate-spin text-slate-400' : 'text-slate-600'} shrink-0`}
-              />
-              <span>{t('kiosk_btn_try_again')}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            id="kiosk-retry-scan-btn"
+            data-testid="kiosk-retry-scan-btn"
+            disabled={isRetryCooldownActive}
+            onClick={onRetryScan}
+            className={`w-full mt-1 py-3 px-4 rounded-xl border font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition active:scale-95 ${
+              isRetryCooldownActive
+                ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-800 cursor-pointer'
+            }`}
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isRetryCooldownActive ? 'animate-spin text-slate-400' : 'text-slate-600'} shrink-0`}
+            />
+            <span>{t('kiosk_btn_try_again')}</span>
+          </button>
 
           <div className="text-xs text-slate-400 mt-2 flex items-center justify-center gap-1.5 select-none">
             <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -1255,10 +1239,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const isProcessingScanRef = useRef<boolean>(false);
 
   // Modals inside Kiosk Screen
-  const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
-  const [enteredPin, setEnteredPin] = useState<string>('');
-  const [pinError, setPinError] = useState<string | null>(null);
-  const [isSubmittingPin, setIsSubmittingPin] = useState<boolean>(false);
   const [isAboutModalOpen, setIsAboutModalOpen] = useState<boolean>(false);
   const [isCallingStaff, setIsCallingStaff] = useState<boolean>(false);
   const [staffCallCooldownSec, setStaffCallCooldownSec] = useState<number>(0);
@@ -1272,13 +1252,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
   const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pinAutoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startCameraRef = useRef<(deviceIdToUse?: string) => Promise<void>>(async () => {});
   const wasScanningPausedRef = useRef<boolean>(false);
 
   // Effective pause state (paused while modal/alert/popup is active)
   const isScanningPaused = Boolean(
-    isPaused || isAboutModalOpen || isPinModalOpen || userDisabledCamera || isAccountNotFound || unrecognizedAlert
+    isPaused || isAboutModalOpen || userDisabledCamera || isAccountNotFound || unrecognizedAlert
   );
   const isScanningPausedRef = useRef<boolean>(isScanningPaused);
   useLayoutEffect(() => {
@@ -1297,10 +1276,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current);
       toastTimerRef.current = null;
-    }
-    if (pinAutoSubmitTimerRef.current) {
-      clearTimeout(pinAutoSubmitTimerRef.current);
-      pinAutoSubmitTimerRef.current = null;
     }
     if (includeTransition && transitionTimerRef.current) {
       clearTimeout(transitionTimerRef.current);
@@ -1920,28 +1895,30 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
           const det = await detector.detect(tCanvas);
           if (det.hasFace && det.box) {
             const quality = computeFaceImageQuality(tCanvas, det.box);
+            const isCleanBurstFrame =
+              !det.eyes?.isBlinking &&
+              det.liveness?.is3dLive !== false &&
+              (!det.pose || (Math.abs(det.pose.yaw) <= 20 && Math.abs(det.pose.pitch) <= 20));
             let frameVec: number[] | null = null;
-            if (det.landmarks) {
+            if (isCleanBurstFrame && det.landmarks) {
               const aligned = aligner.align(tCanvas, det.landmarks);
-              frameVec = await embeddingModel.embed(aligned);
+              frameVec = await embeddingModel.embed(aligned, det.landmarks);
               const actx = aligned.getContext?.('2d');
               if (actx) actx.clearRect(0, 0, aligned.width, aligned.height);
               aligned.width = 0;
               aligned.height = 0;
-            } else {
+            } else if (isCleanBurstFrame) {
               frameVec = await embeddingModel.embed(tCanvas);
             }
 
-            if (frameVec && frameVec.length === 512) {
-              const sharpNorm = Math.min(1, Math.max(0.15, (quality.sharpness || 25) / 85));
-              bestShotFrames.push({
-                sharpness: quality.sharpness,
-                qualityScore: sharpNorm,
-                detection: det,
-                vector: frameVec,
-                snapshotBase64: i === 0 || quality.sharpness > 25 ? tCanvas.toDataURL('image/jpeg', 0.85) : '',
-              });
-            }
+            const sharpNorm = Math.min(1, Math.max(0.15, (quality.sharpness || 25) / 85));
+            bestShotFrames.push({
+              sharpness: quality.sharpness,
+              qualityScore: frameVec && frameVec.length === 512 ? sharpNorm : 0,
+              detection: det,
+              vector: frameVec && frameVec.length === 512 ? frameVec : [],
+              snapshotBase64: i === 0 || quality.sharpness > 25 ? tCanvas.toDataURL('image/jpeg', 0.85) : '',
+            });
           }
         } catch {
           // non-blocking single frame error
@@ -1974,7 +1951,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       if (bestShotFrames.length > 0) {
         // Sort descending by sharpness (highest Laplacian variance = sharpest frame)
         bestShotFrames.sort((a, b) => b.sharpness - a.sharpness);
-        bestShotVector = bestShotFrames[0].vector.slice();
+        const sharpestEmbedded = bestShotFrames.find((f) => f.vector && f.vector.length === 512);
+        bestShotVector = sharpestEmbedded ? sharpestEmbedded.vector.slice() : null;
         snapshotBase64 = bestShotFrames[0].snapshotBase64 || bestShotFrames.find((f) => f.snapshotBase64)?.snapshotBase64;
       }
 
@@ -2009,10 +1987,12 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
       // Valid quality frame passed: reset quality failure counter
       consecutiveQualityFailuresRef.current = 0;
 
-      // Outlier-rejected, quality-weighted probe fusion combining 6-frame best-shot burst + live samples
+      // Outlier-rejected, quality-weighted probe fusion combining clean 6-frame best-shot burst + live samples
       const probeSamples: Array<{ embedding: number[]; qualityScore: number }> = [];
       for (const bf of bestShotFrames) {
-        probeSamples.push({ embedding: bf.vector, qualityScore: bf.qualityScore });
+        if (bf.vector && bf.vector.length === 512 && bf.qualityScore > 0) {
+          probeSamples.push({ embedding: bf.vector, qualityScore: bf.qualityScore });
+        }
       }
       const samplePool = top3Samples.length > 0 ? top3Samples : samples;
       for (const sm of samplePool) {
@@ -2024,32 +2004,30 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         }
       }
 
+      if (probeSamples.length === 0) {
+        wipeBiometricBuffers({ bestShotFrames, probeVector: bestShotVector });
+        snapshotBase64 = undefined;
+        wipeTemporaryBiometricBuffers(false);
+        consecutiveQualityFailuresRef.current++;
+        triggerRetryCooldown(t('kiosk_msg_quality_insufficient'), { showToast: true });
+        return;
+      }
+
       let finalProbe: number[];
-      if (probeSamples.length > 0) {
-        try {
-          finalProbe = aggregateProbeEmbeddings(probeSamples).centroid;
-        } catch {
-          const fallbackVecs = [
-            ...(bestShotVector ? [bestShotVector] : []),
-            ...samplePool.map((s) => s.vector).filter((v) => v && v.length === 512),
-          ];
-          finalProbe = averageAndNormalize(
-            fallbackVecs.length > 0 ? fallbackVecs : [new Array(512).fill(0)]
-          );
-        }
-      } else {
-        finalProbe = averageAndNormalize([new Array(512).fill(0)]);
+      try {
+        finalProbe = aggregateProbeEmbeddings(probeSamples).centroid;
+      } catch {
+        const fallbackVecs = [
+          ...(bestShotVector ? [bestShotVector] : []),
+          ...samplePool.map((s) => s.vector).filter((v) => v && v.length === 512),
+        ];
+        finalProbe = averageAndNormalize(fallbackVecs);
       }
 
       // Wipe raw burst frames immediately after constructing finalProbe
       wipeBiometricBuffers({ bestShotFrames, probeVector: bestShotVector });
       bestShotVector = null;
-
-      // Keep temporary copy only in case server returns requirePin (auto-heal); wiped immediately otherwise
-      if (Array.isArray(lastProbeVectorRef.current)) {
-        lastProbeVectorRef.current.fill(0);
-      }
-      lastProbeVectorRef.current = finalProbe.slice();
+      wipeTemporaryBiometricBuffers(false);
 
       // Server-Side Verification call
       const res = await defaultApiClient.smartOnboarding
@@ -2084,23 +2062,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         wipeTemporaryBiometricBuffers(false);
         const errorMsg = (res as any).message || (res as any).error?.message || 'เชื่อมต่อระบบไม่ได้ ลองใหม่หรือเรียกเจ้าหน้าที่';
         triggerRetryCooldown(`⚠️ ${errorMsg}`, { showToast: true, toastDurationMs: 2000 });
-        return;
-      }
-
-      // State B: MATCH_UNCERTAIN - Request PIN Verification without leaking near candidates or scores
-      if ((res as any)?.requirePin) {
-        wipeTemporaryBiometricBuffers(true); // retain lastProbeVectorRef only while PIN modal is open
-        consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
-        isProcessingScanRef.current = false;
-        setIsScanning(false);
-        setCountdownValue(null);
-        setRealtimeScore(null);
-        setPinError(null);
-        setEnteredPin('');
-        setIsPinModalOpen(true);
-        const uncertainMsg = t('kiosk_msg_match_uncertain');
-        setStatusText(uncertainMsg);
-        setFloatingToast(uncertainMsg);
         return;
       }
 
@@ -2457,21 +2418,30 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               }
             } catch {}
 
-            // Extract 512-D embedding directly with landmarks alignment to 112x112 ArcFace (zero distortion)
+            // Extract 512-D hybrid (2D texture + 3D craniofacial geometry) embedding
+            const isPoseAcceptable =
+              !detection.pose ||
+              (Math.abs(detection.pose.yaw) <= 18 && Math.abs(detection.pose.pitch) <= 18);
+            const isCleanSampleFrame =
+              !detection.eyes?.isBlinking &&
+              detection.liveness?.is3dLive !== false &&
+              isPoseAcceptable;
+
             let vector: number[] | null = null;
-            if (detection.landmarks) {
+            if (isCleanSampleFrame && detection.landmarks) {
               const aligned = aligner.align(dCanvas, detection.landmarks);
-              vector = await embeddingModel.embed(aligned);
+              vector = await embeddingModel.embed(aligned, detection.landmarks);
               const actx = aligned.getContext?.('2d');
               if (actx) actx.clearRect(0, 0, aligned.width, aligned.height);
               aligned.width = 0;
               aligned.height = 0;
-            } else {
+            } else if (isCleanSampleFrame) {
               vector = await embeddingModel.embed(dCanvas);
             }
 
             if (vector && vector.length === 512) {
-              // Match against cached patients
+              // Match against cached patients for live diagnostic telemetry only;
+              // final authentication always runs multi-frame best-shot burst + server scanLogin RPC.
               let bestCandidate: CachedPatientBiometric | null = null;
               let highestSimilarity = 0;
               let top2Cand: CachedPatientBiometric | null = null;
@@ -2493,60 +2463,13 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
                   top2Sim = highestSimilarity;
                   top2Cand = bestCandidate;
                   highestSimilarity = candBestSim;
-                  if (candBestSim >= 0.72) {
+                  if (candBestSim >= 0.78) {
                     bestCandidate = cand;
                   }
                 } else if (candBestSim > top2Sim) {
                   top2Sim = candBestSim;
                   top2Cand = cand;
                 }
-              }
-
-              // Instant Zero-Touch Fast-Track: If highest similarity >= 72%, log in immediately!
-              if (bestCandidate && highestSimilarity >= 0.72) {
-                clearInterval(interval);
-                countdownIntervalRef.current = null;
-                setCountdownValue(null);
-                isCountingDownRef.current = false;
-                isProcessingScanRef.current = false;
-                setIsScanning(false);
-
-                const nameParts = (bestCandidate.name || '').trim().split(' ');
-                const partialPatient = {
-                  id: bestCandidate.id,
-                  hn: bestCandidate.hn,
-                  first_name: nameParts[0] || bestCandidate.name,
-                  last_name: nameParts.slice(1).join(' ') || '',
-                  name: bestCandidate.name,
-                };
-                let matchedPatientObj: PatientRecordFile | typeof partialPatient = partialPatient;
-                try {
-                  matchedPatientObj = await defaultApiClient.patients.get(bestCandidate.id);
-                } catch (fetchErr) {
-                  console.warn('Full patient record fetch failed, using partial identity fields', fetchErr);
-                }
-                // The `as any` remains only for the partial fallback object.
-                setMatchedPatient(matchedPatientObj as any);
-                const finalPercent = Math.round(highestSimilarity * 100);
-                const welcomeMsg =
-                  langRef.current === 'zh-CN'
-                    ? `欢迎，คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
-                    : langRef.current === 'en-US'
-                    ? `Welcome, คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`
-                    : `ยินดีต้อนรับ คุณ ${matchedPatientObj.first_name} (${finalPercent}%)`;
-                setStatusText(welcomeMsg);
-                setIsTransitioning(true);
-                wipeTemporaryBiometricBuffers(false);
-                if (transitionTimerRef.current) {
-                  clearTimeout(transitionTimerRef.current);
-                }
-                transitionTimerRef.current = setTimeout(() => {
-                  transitionTimerRef.current = null;
-                  if (isMountedRef.current) {
-                    onLoginSuccessRef.current?.(matchedPatientObj as any);
-                  }
-                }, 600);
-                return;
               }
 
               const top1Cand = bestCandidate || null;
@@ -3060,7 +2983,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     setFloatingToast(null);
     setUnrecognizedAlert(null);
     setIsAccountNotFound(false);
-    setPinError(null);
     consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
     setMatchedPatient(null);
     setLivenessResult(null);
@@ -3095,7 +3017,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     wipeTemporaryBiometricBuffers(false);
     setIsAccountNotFound(false);
     setUnrecognizedAlert(null);
-    setPinError(null);
     stopCamera();
     if (onStaffAssistedRegister) {
       onStaffAssistedRegister(null);
@@ -3137,100 +3058,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         : '🔔 เรียกเจ้าหน้าที่เรียบร้อยแล้ว กรุณารอสักครู่...'
     );
   }, [isCallingStaff, lang]);
-
-  // Patient login via manual PIN (keeps error isolated inside PinModal; never triggers Not Found Modal)
-  const handlePinLoginSuccess = async (pinOverride?: string) => {
-    const pin = (pinOverride ?? enteredPin).trim();
-    if (!pin || isSubmittingPin) return;
-
-    setIsSubmittingPin(true);
-    setPinError(null);
-
-    try {
-      const pinRes = await defaultApiClient.smartOnboarding.pinLogin({
-        pin,
-        probe: lastProbeVectorRef.current || undefined,
-      });
-      if (!isMountedRef.current) return;
-
-      if (pinRes?.matched && pinRes.patient) {
-        wipeTemporaryBiometricBuffers(false);
-        consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
-        setIsPinModalOpen(false);
-        setEnteredPin('');
-        setPinError(null);
-        setStatusText(
-          lang === 'zh-CN'
-            ? '登入成功，已同步更新最新面部特征'
-            : lang === 'en-US'
-            ? 'Sign in successful. Biometric features updated.'
-            : 'เข้าสู่ระบบสำเร็จ พร้อมอัปเดตข้อมูลชีวมาตรใบหน้าล่าสุด (Auto-Healed)'
-        );
-        const norm = normalizePatientRecord(pinRes.patient);
-        setIsTransitioning(true);
-        if (transitionTimerRef.current) {
-          clearTimeout(transitionTimerRef.current);
-        }
-        transitionTimerRef.current = setTimeout(() => {
-          transitionTimerRef.current = null;
-          if (isMountedRef.current) {
-            onLoginSuccessRef.current(norm);
-          }
-        }, 300);
-        return;
-      }
-    } catch {
-      // Fall through to inline PIN validation error inside PinModal
-    } finally {
-      if (isMountedRef.current) {
-        setIsSubmittingPin(false);
-      }
-    }
-
-    if (!isMountedRef.current) return;
-    setEnteredPin('');
-    setPinError(
-      lang === 'zh-CN'
-        ? `未找到密码 "${pin}" 对应的有效档案，请核对PIN码后重试或联系医护人员`
-        : lang === 'en-US'
-        ? `Invalid PIN "${pin}". Please try again or contact staff.`
-        : `ไม่พบข้อมูลผู้ป่วยสำหรับรหัส "${pin}" กรุณาลองใหม่อีกครั้งหรือติดต่อเจ้าหน้าที่`
-    );
-  };
-
-  const handlePinClose = useCallback(() => {
-    if (pinAutoSubmitTimerRef.current) {
-      clearTimeout(pinAutoSubmitTimerRef.current);
-      pinAutoSubmitTimerRef.current = null;
-    }
-    wipeTemporaryBiometricBuffers(false);
-    setIsPinModalOpen(false);
-    setEnteredPin('');
-    setPinError(null);
-    consecutiveUnmatchedRoundsRef.current = { count: 0, firstTimestamp: 0 };
-    if (!userDisabledCamera && !isCameraStartedRef.current && !isCameraStartingRef.current) {
-      startCameraRef.current?.();
-    }
-    triggerRetryCooldown(undefined, { isModalRetry: false });
-  }, [wipeTemporaryBiometricBuffers, userDisabledCamera, triggerRetryCooldown]);
-
-  const handlePinKey = (digit: string) => {
-    if (isSubmittingPin) return;
-    if (pinError) setPinError(null);
-    if (enteredPin.length < 4) {
-      const next = enteredPin + digit;
-      setEnteredPin(next);
-      if (next.length === 4) {
-        if (pinAutoSubmitTimerRef.current) {
-          clearTimeout(pinAutoSubmitTimerRef.current);
-        }
-        pinAutoSubmitTimerRef.current = setTimeout(() => {
-          pinAutoSubmitTimerRef.current = null;
-          handlePinLoginSuccess(next);
-        }, 300);
-      }
-    }
-  };
 
   return (
     <div className="w-full h-full min-h-full flex flex-col justify-center items-center p-3 sm:p-4 md:p-6 bg-gradient-to-b from-[#EBF5FA] via-[#F2F9FC] to-[#E6F4F8] text-slate-900 select-none overflow-hidden font-sans relative">
@@ -3567,39 +3394,18 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
 
         {/* 🧭 Action Dock Below Camera */}
         <div className="w-full flex flex-col gap-3 shrink-0">
-          {/* Action Button: Virtual PIN Pad Login (Option 1: Hide self-service enroll to prevent patient dead-ends) */}
-          <div className="w-full">
-            <button
-              type="button"
-              id="kiosk-pin-login-btn"
-              data-testid="kiosk-pin-login-btn"
-              onClick={() => {
-                stopCamera();
-                setEnteredPin('');
-                setPinError(null);
-                setIsPinModalOpen(true);
-              }}
-              className="w-full py-3.5 sm:py-4 px-4 rounded-2xl bg-slate-50 hover:bg-amber-50 border-2 border-slate-200 hover:border-amber-400 text-slate-800 font-bold text-base sm:text-lg flex items-center justify-center gap-2.5 whitespace-nowrap transition cursor-pointer active:scale-95 shadow-xs"
-            >
-              <KeyRound className="w-5 h-5 text-amber-500 shrink-0" />
-              <span className="whitespace-nowrap">
-                {lang === 'zh-CN' ? '使用4位PIN码' : lang === 'en-US' ? 'Enter 4-Digit PIN' : 'ใช้รหัส PIN 4 หลัก'}
-              </span>
-            </button>
-
-            {/* Hidden from patient view per UX Option A (Always routes through staff login gate) */}
-            <button
-              type="button"
-              id="kiosk-enroll-new-btn"
-              data-testid="kiosk-enroll-new-btn"
-              aria-hidden="true"
-              onClick={triggerStaffAssistedRegistration}
-              className="hidden"
-            >
-              <UserPlus className="w-5 h-5 text-blue-600 shrink-0" />
-              <span className="whitespace-nowrap">สมัครคนไข้ใหม่</span>
-            </button>
-          </div>
+          {/* Hidden from patient view per UX Option A (Always routes through staff login gate) */}
+          <button
+            type="button"
+            id="kiosk-enroll-new-btn"
+            data-testid="kiosk-enroll-new-btn"
+            aria-hidden="true"
+            onClick={triggerStaffAssistedRegistration}
+            className="hidden"
+          >
+            <UserPlus className="w-5 h-5 text-blue-600 shrink-0" />
+            <span className="whitespace-nowrap">สมัครคนไข้ใหม่</span>
+          </button>
 
           {/* Security Footer Line */}
           <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs text-slate-500 gap-2 select-none shrink-0">
@@ -3622,33 +3428,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         </div>
 
       </div>
-
-      {/* Modal: Virtual PIN Pad */}
-      <KioskPinLoginModal
-        isOpen={isPinModalOpen}
-        lang={lang}
-        enteredPin={enteredPin}
-        pinError={pinError}
-        isSubmitting={isSubmittingPin}
-        onClose={handlePinClose}
-        onPinKey={handlePinKey}
-        onClearPin={() => {
-          if (pinAutoSubmitTimerRef.current) {
-            clearTimeout(pinAutoSubmitTimerRef.current);
-            pinAutoSubmitTimerRef.current = null;
-          }
-          setPinError(null);
-          setEnteredPin('');
-        }}
-        onBackspacePin={() => {
-          if (pinAutoSubmitTimerRef.current) {
-            clearTimeout(pinAutoSubmitTimerRef.current);
-            pinAutoSubmitTimerRef.current = null;
-          }
-          setPinError(null);
-          setEnteredPin((prev) => prev.slice(0, -1));
-        }}
-      />
 
       {/* Modal: Identity Confirmation when Matched */}
       {matchedPatient && (
@@ -3804,13 +3583,6 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
         isRetryCooldownActive={isRetryCooldownActive}
         onStaffRegister={triggerStaffAssistedRegistration}
         onCallStaff={handleCallStaffFromModal}
-        onUsePin={() => {
-          setIsAccountNotFound(false);
-          setUnrecognizedAlert(null);
-          setPinError(null);
-          setEnteredPin('');
-          setIsPinModalOpen(true);
-        }}
         onRetryScan={handleNotFoundRetryScan}
       />
 
@@ -3836,8 +3608,8 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
                 <span className="text-lg">🟢</span>
                 <div>
-                  <div className="text-xs font-bold text-slate-800">3-Second Countdown & Median Aggregator</div>
-                  <div className="text-[11px] text-slate-500">เก็บตัวอย่างทุก 250ms คำนวณ Median Score ด้วยเกณฑ์ &gt;= 80% และสำรองด้วย PIN 4 หลัก</div>
+                  <div className="text-xs font-bold text-slate-800">3D Hybrid Face Recognition &amp; Multi-Frame Aggregation</div>
+                  <div className="text-[11px] text-slate-500">วิเคราะห์โครงสร้าง 3 มิติ 478 จุดร่วมกับ Burst Frame ที่คมชัดที่สุด</div>
                 </div>
               </div>
 

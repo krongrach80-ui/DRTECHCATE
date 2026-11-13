@@ -145,8 +145,8 @@ describe('Zero-Touch Auto-Scan & Quality Gate Verification', () => {
       expect(html.includes('id="kiosk-scan-face-btn"')).toBe(false);
       expect(html.includes('เริ่มสแกนใบหน้าใหม่อีกครั้ง')).toBe(false);
 
-      // Verify the two alternative buttons exist
-      expect(html.includes('id="kiosk-pin-login-btn"')).toBe(true);
+      // Verify PIN scan button is removed and staff-gated enroll hook stays hidden
+      expect(html.includes('id="kiosk-pin-login-btn"')).toBe(false);
       expect(html.includes('id="kiosk-enroll-new-btn"')).toBe(true);
     });
   });

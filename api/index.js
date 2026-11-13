@@ -13327,15 +13327,25 @@ var init_service10 = __esm({
             try {
               const { data: rpcMatches, error: rpcErr } = await supabase.rpc("match_patient_face", {
                 probe_embedding: probeVector,
-                match_threshold: 0.5,
-                match_limit: 3
+                match_threshold: 0.25,
+                match_limit: 5
               });
               if (!rpcErr && Array.isArray(rpcMatches) && rpcMatches.length > 0) {
                 const topMatch = rpcMatches[0];
                 const rawSim = typeof topMatch.similarity === "number" ? topMatch.similarity : 0;
                 const calSim = calibrateCosineSimilarity(rawSim);
-                const calPercent = Math.min(98, Math.round(Math.max(rawSim, calSim) * 100));
-                if (calPercent >= 74 && rawSim >= 0.5) {
+                const calPercent = Math.min(100, Math.round(Math.max(rawSim, calSim) * 100));
+                const topDist = typeof topMatch.distance === "number" ? topMatch.distance : Math.sqrt(Math.max(0, 2 - 2 * rawSim));
+                let runnerUpSim = null;
+                for (let ri = 1; ri < rpcMatches.length; ri++) {
+                  const cand = rpcMatches[ri];
+                  if (cand.id !== topMatch.id && cand.hn !== topMatch.hn) {
+                    runnerUpSim = typeof cand.similarity === "number" ? cand.similarity : null;
+                    break;
+                  }
+                }
+                const rpcMargin = runnerUpSim !== null ? rawSim - runnerUpSim : 1;
+                if (rawSim >= 0.78 && topDist <= 0.68 && rpcMargin >= 0.06) {
                   const builtRecord = this.buildLivePatientRecord(topMatch);
                   logger.info(
                     `[FACE-AUTH-RPC] Server RPC Match: ${builtRecord.first_name} (${builtRecord.hn}) | Similarity: ${calPercent}%`
@@ -13344,11 +13354,18 @@ var init_service10 = __esm({
                     matched: true,
                     patient: builtRecord,
                     similarity: calSim,
-                    distance: topMatch.distance ?? Math.max(0, 1 - calSim),
+                    distance: topDist,
                     similarityPercentage: calPercent,
                     message: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08"
                   };
                 }
+                logger.info(
+                  `[FACE-AUTH-RPC] Unmatched or ambiguous RPC scan rejected fail-closed: sim=${rawSim.toFixed(4)} dist=${topDist.toFixed(4)} margin=${rpcMargin.toFixed(4)}`
+                );
+                return {
+                  matched: false,
+                  message: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19"
+                };
               }
             } catch {
             }
@@ -13494,8 +13511,8 @@ var init_service10 = __esm({
               }
             }
           }
-          const maxAllowedDist = process.env.NODE_ENV === "test" ? isSingleUserInDb ? BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE : BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE : 0.58;
-          const minAllowedCos = process.env.NODE_ENV === "test" ? BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY : 0.74;
+          const maxAllowedDist = process.env.NODE_ENV === "test" ? isSingleUserInDb ? BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE : BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE : 0.68;
+          const minAllowedCos = process.env.NODE_ENV === "test" ? BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY : 0.78;
           if (patientBestSim >= minAllowedCos && patientBestDist <= maxAllowedDist) {
             const matchItem = {
               record,
@@ -13521,14 +13538,11 @@ var init_service10 = __esm({
             const margin = top1Match.similarity - top2Match.similarity;
             if (margin < BIOMETRIC_CONFIG.MARGIN_MIN) {
               logger.warn(
-                `[FACE-AUTH] Margin ambiguous (${margin.toFixed(4)} < ${BIOMETRIC_CONFIG.MARGIN_MIN}) between ${top1Match.record.hn} and ${top2Match.record.hn}. Requesting PIN.`
+                `[FACE-AUTH] Margin ambiguous (${margin.toFixed(4)} < ${BIOMETRIC_CONFIG.MARGIN_MIN}) between ${top1Match.record.hn} and ${top2Match.record.hn}. Rejecting fail-closed.`
               );
               return {
                 matched: false,
-                requirePin: true,
-                candidateName: `${top1Match.record.first_name} ${top1Match.record.last_name}`,
-                candidateHn: top1Match.record.hn,
-                message: "\u0E43\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E21\u0E35\u0E04\u0E27\u0E32\u0E21\u0E04\u0E25\u0E49\u0E32\u0E22\u0E04\u0E25\u0E36\u0E07\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32 1 \u0E17\u0E48\u0E32\u0E19 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01 PIN 4 \u0E2B\u0E25\u0E31\u0E01"
+                message: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19"
               };
             }
           }
@@ -13553,37 +13567,13 @@ var init_service10 = __esm({
             similarityPercentage: top1Match.percent
           };
         }
-        const minAmbiguousSim = process.env.NODE_ENV === "test" ? 0.7 : 0.65;
-        const maxAmbiguousSim = process.env.NODE_ENV === "test" ? BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY : 0.74;
-        if (nearestCandidate && nearestCandidate.sim >= minAmbiguousSim && nearestCandidate.sim < maxAmbiguousSim) {
-          if (isSingleUserInDb) {
-            logger.info(
-              `[FACE-AUTH] Single-user DB guard: nearest candidate ${nearestCandidate.name} sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} does not meet strict threshold (${maxAmbiguousSim}). Failing closed.`
-            );
-            return {
-              matched: false,
-              similarityPercentage: nearestCandidate.percent,
-              message: "\u26A0\uFE0F \u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A (\u0E04\u0E27\u0E32\u0E21\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33\u0E44\u0E21\u0E48\u0E16\u0E36\u0E07\u0E40\u0E01\u0E13\u0E11\u0E4C 74%) \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E14\u0E49\u0E27\u0E22 PIN"
-            };
-          }
-          logger.info(
-            `[FACE-AUTH] Borderline candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} - Requesting PIN confirmation`
-          );
-          return {
-            matched: false,
-            requirePin: true,
-            candidateName: nearestCandidate.name,
-            candidateHn: nearestCandidate.hn,
-            similarityPercentage: nearestCandidate.percent,
-            message: "\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E15\u0E31\u0E27\u0E15\u0E19\u0E14\u0E49\u0E27\u0E22\u0E23\u0E2B\u0E31\u0E2A PIN 4 \u0E2B\u0E25\u0E31\u0E01"
-          };
-        }
         logger.info(
-          `[FACE-AUTH] Stranger rejected: Nearest sim=${nearestCandidate?.sim?.toFixed(4) ?? "0.0000"} dist=${nearestCandidate?.dist?.toFixed(4) ?? "2.0000"}`
+          `[FACE-AUTH] Account not found / rejected: Nearest sim=${nearestCandidate?.sim?.toFixed(4) ?? "0.0000"} dist=${nearestCandidate?.dist?.toFixed(4) ?? "2.0000"}`
         );
         return {
           matched: false,
-          message: "\u26A0\uFE0F \u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A (\u0E04\u0E27\u0E32\u0E21\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33\u0E44\u0E21\u0E48\u0E16\u0E36\u0E07\u0E40\u0E01\u0E13\u0E11\u0E4C 80%) \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E39\u0E49\u0E1B\u0E48\u0E27\u0E22 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E14\u0E49\u0E27\u0E22 PIN"
+          similarityPercentage: nearestCandidate?.percent,
+          message: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E25\u0E07\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19"
         };
       }
       /**

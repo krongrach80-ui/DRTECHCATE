@@ -189,7 +189,7 @@ describe('Biometric Matching >= 80% & Library Cascade Deletion Integration Tests
 
       expect(loginResStranger.status).toBe(200);
       expect(loginResStranger.body.matched).toBe(false);
-      expect(loginResStranger.body.message).toMatch(/ไม่พบข้อมูลใบหน้าตรงกับคนไข้ในระบบ|ไม่พบบัญชีในระบบ/);
+      expect(loginResStranger.body.message).toMatch(/ไม่พบบัญชีผู้ใช้|ไม่พบข้อมูลใบหน้าตรงกับคนไข้ในระบบ|ไม่พบบัญชีในระบบ/);
     });
   });
 

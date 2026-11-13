@@ -1057,16 +1057,27 @@ export class SmartOnboardingService {
         try {
           const { data: rpcMatches, error: rpcErr } = await supabase.rpc('match_patient_face', {
             probe_embedding: probeVector,
-            match_threshold: 0.50,
-            match_limit: 3,
+            match_threshold: 0.25,
+            match_limit: 5,
           });
           if (!rpcErr && Array.isArray(rpcMatches) && rpcMatches.length > 0) {
             const topMatch = rpcMatches[0];
             const rawSim = typeof topMatch.similarity === 'number' ? topMatch.similarity : 0;
             const calSim = calibrateCosineSimilarity(rawSim);
-            const calPercent = Math.min(98, Math.round(Math.max(rawSim, calSim) * 100));
+            const calPercent = Math.min(100, Math.round(Math.max(rawSim, calSim) * 100));
+            const topDist = typeof topMatch.distance === 'number' ? topMatch.distance : Math.sqrt(Math.max(0, 2 - 2 * rawSim));
 
-            if (calPercent >= 74 && rawSim >= 0.50) {
+            let runnerUpSim: number | null = null;
+            for (let ri = 1; ri < rpcMatches.length; ri++) {
+              const cand = rpcMatches[ri];
+              if (cand.id !== topMatch.id && cand.hn !== topMatch.hn) {
+                runnerUpSim = typeof cand.similarity === 'number' ? cand.similarity : null;
+                break;
+              }
+            }
+            const rpcMargin = runnerUpSim !== null ? rawSim - runnerUpSim : 1.0;
+
+            if (rawSim >= 0.78 && topDist <= 0.68 && rpcMargin >= 0.06) {
               const builtRecord = this.buildLivePatientRecord(topMatch);
               logger.info(
                 `[FACE-AUTH-RPC] Server RPC Match: ${builtRecord.first_name} (${builtRecord.hn}) | Similarity: ${calPercent}%`
@@ -1075,11 +1086,19 @@ export class SmartOnboardingService {
                 matched: true,
                 patient: builtRecord,
                 similarity: calSim,
-                distance: topMatch.distance ?? Math.max(0, 1 - calSim),
+                distance: topDist,
                 similarityPercentage: calPercent,
                 message: 'ยืนยันตัวตนสำเร็จ',
               };
             }
+
+            logger.info(
+              `[FACE-AUTH-RPC] Unmatched or ambiguous RPC scan rejected fail-closed: sim=${rawSim.toFixed(4)} dist=${topDist.toFixed(4)} margin=${rpcMargin.toFixed(4)}`
+            );
+            return {
+              matched: false,
+              message: 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน',
+            };
           }
         } catch {
           // Non-blocking fallback to live patients query
@@ -1256,13 +1275,13 @@ export class SmartOnboardingService {
         }
       }
 
-      // Check if patient meets match threshold (Normalized in production to 0.74 / 0.58)
+      // Check if patient meets strict match threshold (consistent with unit vector geometry: cos >= 0.78 => dist <= 0.68)
       const maxAllowedDist = process.env.NODE_ENV === 'test'
         ? (isSingleUserInDb ? BIOMETRIC_CONFIG.SINGLE_USER_STRICT_DISTANCE : BIOMETRIC_CONFIG.MAX_EUCLIDEAN_DISTANCE)
-        : 0.58;
+        : 0.68;
       const minAllowedCos = process.env.NODE_ENV === 'test'
         ? BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY
-        : 0.74;
+        : 0.78;
 
       if (patientBestSim >= minAllowedCos && patientBestDist <= maxAllowedDist) {
         const matchItem = {
@@ -1288,19 +1307,16 @@ export class SmartOnboardingService {
 
     // 1:N Margin Verification
     if (top1Match) {
-      // If multiple candidates exist, verify distinct margin
+      // If multiple candidates exist, verify distinct margin (fail closed instead of prompting PIN)
       if (top2Match) {
         const margin = top1Match.similarity - top2Match.similarity;
         if (margin < BIOMETRIC_CONFIG.MARGIN_MIN) {
           logger.warn(
-            `[FACE-AUTH] Margin ambiguous (${margin.toFixed(4)} < ${BIOMETRIC_CONFIG.MARGIN_MIN}) between ${top1Match.record.hn} and ${top2Match.record.hn}. Requesting PIN.`
+            `[FACE-AUTH] Margin ambiguous (${margin.toFixed(4)} < ${BIOMETRIC_CONFIG.MARGIN_MIN}) between ${top1Match.record.hn} and ${top2Match.record.hn}. Rejecting fail-closed.`
           );
           return {
             matched: false,
-            requirePin: true,
-            candidateName: `${top1Match.record.first_name} ${top1Match.record.last_name}`,
-            candidateHn: top1Match.record.hn,
-            message: 'ใบหน้ามีความคล้ายคลึงกับผู้ป่วยมากกว่า 1 ท่าน เพื่อความปลอดภัยกรุณากรอก PIN 4 หลัก',
+            message: 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน',
           };
         }
       }
@@ -1332,45 +1348,14 @@ export class SmartOnboardingService {
       };
     }
 
-    // Ambiguous candidate check
-    const minAmbiguousSim = process.env.NODE_ENV === 'test' ? 0.70 : 0.65;
-    const maxAmbiguousSim = process.env.NODE_ENV === 'test' ? BIOMETRIC_CONFIG.MIN_COSINE_SIMILARITY : 0.74;
-    if (
-      nearestCandidate &&
-      nearestCandidate.sim >= minAmbiguousSim &&
-      nearestCandidate.sim < maxAmbiguousSim
-    ) {
-      if (isSingleUserInDb) {
-        logger.info(
-          `[FACE-AUTH] Single-user DB guard: nearest candidate ${nearestCandidate.name} sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} does not meet strict threshold (${maxAmbiguousSim}). Failing closed.`
-        );
-        return {
-          matched: false,
-          similarityPercentage: nearestCandidate.percent,
-          message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 74%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่ หรือเข้าสู่ระบบด้วย PIN',
-        };
-      }
-
-      logger.info(
-        `[FACE-AUTH] Borderline candidate: ${nearestCandidate.name} (${nearestCandidate.hn}) sim=${nearestCandidate.sim.toFixed(4)} dist=${nearestCandidate.dist.toFixed(4)} - Requesting PIN confirmation`
-      );
-      return {
-        matched: false,
-        requirePin: true,
-        candidateName: nearestCandidate.name,
-        candidateHn: nearestCandidate.hn,
-        similarityPercentage: nearestCandidate.percent,
-        message: 'เพื่อความปลอดภัยของผู้ป่วย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก',
-      };
-    }
-
-    // Unregistered Stranger / Impostor (< 0.70 Cosine or > 0.45 Distance) -> FAIL CLOSED
+    // Decisive Fail-Closed Rejection: never leak candidate identity or trigger 4-digit PIN during face scan
     logger.info(
-      `[FACE-AUTH] Stranger rejected: Nearest sim=${nearestCandidate?.sim?.toFixed(4) ?? '0.0000'} dist=${nearestCandidate?.dist?.toFixed(4) ?? '2.0000'}`
+      `[FACE-AUTH] Account not found / rejected: Nearest sim=${nearestCandidate?.sim?.toFixed(4) ?? '0.0000'} dist=${nearestCandidate?.dist?.toFixed(4) ?? '2.0000'}`
     );
     return {
       matched: false,
-      message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 80%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่ หรือเข้าสู่ระบบด้วย PIN',
+      similarityPercentage: nearestCandidate?.percent,
+      message: 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน',
     };
   }
 

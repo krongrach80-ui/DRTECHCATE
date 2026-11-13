@@ -399,6 +399,119 @@ export function resolveCanonicalExerciseUuid(idOrSlug?: string): string {
   return CANONICAL_EXERCISE_UUID_MAP[idOrSlug] || 'e1000000-0000-0000-0000-000000000001';
 }
 
+/**
+ * PostgREST projection for patient directory / clinical endpoints that excludes heavy
+ * 512-dim biometric vector arrays (history->frames / face_vector) to avoid 95%+ egress bloat.
+ */
+const PATIENT_CLINICAL_SELECT = [
+  'id',
+  'hn',
+  'first_name',
+  'last_name',
+  'birth_date',
+  'age',
+  'sex',
+  'gender',
+  'phone',
+  'injury',
+  'target_joint',
+  'contraindications',
+  'underlying_diseases',
+  'allergies',
+  'doctor_notes',
+  'emergency_contact_name',
+  'emergency_contact_relation',
+  'emergency_contact_phone',
+  'pdpa_consent',
+  'responsible_pt_id',
+  'registration_status',
+  'registered_via',
+  'registered_by_staff_id',
+  'registered_by_staff_name',
+  'created_at',
+  'updated_at',
+  'version',
+  'schedule:history->schedule',
+  'activePrescriptionSnapshot:history->activePrescriptionSnapshot',
+  'daily_checklists:history->daily_checklists',
+  'rehab_scores:history->rehab_scores',
+  'clinical:history->clinical',
+  'registered_face_url:history->>registered_face_url',
+  'hist_target_joint:history->>target_joint',
+  'hist_contraindications:history->>contraindications',
+  'hist_chronic_diseases:history->>chronic_diseases',
+  'hist_underlying_diseases:history->>underlying_diseases',
+  'hist_allergies:history->>allergies',
+  'hist_notes:history->>notes',
+  'hist_doctor_notes:history->>doctor_notes',
+  'hist_birth_date:history->>birth_date',
+  'hist_responsible_pt_id:history->>responsible_pt_id',
+  'hist_emergency_contact:history->emergency_contact',
+  'hist_pdpa_consent:history->pdpa_consent',
+  'face_enrollments(id,status)',
+]
+  .map(encodeURIComponent)
+  .join(',');
+
+/**
+ * Persists parent face_enrollments and child face_templates rows via PostgREST,
+ * falling back from status='active' to status='completed' on legacy enum 22P02 errors.
+ */
+async function persistFaceEnrollmentAndTemplates(params: {
+  enrollmentId: string;
+  patientId: string;
+  modelVersion: string;
+  createdAt: string;
+  authHeader: string;
+  templates: Array<{
+    patient_id: string;
+    enrollment_id: string;
+    pose: 'front' | 'left' | 'right' | 'nod';
+    embedding: string;
+    quality: { pose: string; confidence: number };
+    model_version: string;
+  }>;
+}): Promise<void> {
+  if (!params.templates.length) return;
+
+  const postEnrollment = (status: 'active' | 'completed') =>
+    fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_enrollments`, {
+      method: 'POST',
+      headers: {
+        apikey: DEFAULT_SUPABASE_ANON_KEY,
+        Authorization: params.authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: params.enrollmentId,
+        patient_id: params.patientId,
+        status,
+        model_version: params.modelVersion,
+        created_at: params.createdAt,
+      }),
+    }).catch(() => null);
+
+  let enrRes = await postEnrollment('active');
+  if (enrRes && !enrRes.ok && enrRes.status === 400) {
+    const errText = await enrRes.text().catch(() => '');
+    if (errText.includes('face_enrollment_status') || errText.includes('22P02')) {
+      enrRes = await postEnrollment('completed');
+    }
+  }
+
+  if (enrRes && enrRes.ok) {
+    await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_templates`, {
+      method: 'POST',
+      headers: {
+        apikey: DEFAULT_SUPABASE_ANON_KEY,
+        Authorization: params.authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params.templates),
+    }).catch(() => {});
+  }
+}
+
 export function normalizePatientRecord(p: any): any {
   if (!p) p = {};
   const id = p.patient_id || p.id || (p.hn ? `p-${p.hn}` : `p-${Date.now()}`);
@@ -413,22 +526,30 @@ export function normalizePatientRecord(p: any): any {
     hn: hn,
     first_name: firstName,
     last_name: lastName,
-    birth_date: p.birth_date || history.birth_date || null,
+    birth_date: p.birth_date || p.hist_birth_date || history.birth_date || null,
     age: Number(p.age) || 45,
     gender: p.gender || p.sex || 'female',
     sex: p.sex || p.gender || 'female',
     phone: p.phone || undefined,
-    target_joint: p.target_joint || history.target_joint || 'ข้อไหล่',
-    contraindications: p.contraindications || history.contraindications || '-',
-    underlying_diseases: p.underlying_diseases || history.chronic_diseases || history.underlying_diseases || '-',
-    allergies: p.allergies || history.allergies || '-',
-    doctor_notes: p.doctor_notes || history.notes || history.doctor_notes || '-',
-    emergency_contact_name: p.emergency_contact_name || history.emergency_contact?.name || null,
-    emergency_contact_phone: p.emergency_contact_phone || history.emergency_contact?.phone || null,
-    pdpa_consent: p.pdpa_consent ?? history.pdpa_consent ?? true,
+    target_joint: p.target_joint || p.hist_target_joint || history.target_joint || 'ข้อไหล่',
+    contraindications: p.contraindications || p.hist_contraindications || history.contraindications || '-',
+    underlying_diseases:
+      p.underlying_diseases ||
+      p.hist_chronic_diseases ||
+      p.hist_underlying_diseases ||
+      history.chronic_diseases ||
+      history.underlying_diseases ||
+      '-',
+    allergies: p.allergies || p.hist_allergies || history.allergies || '-',
+    doctor_notes: p.doctor_notes || p.hist_notes || p.hist_doctor_notes || history.notes || history.doctor_notes || '-',
+    emergency_contact_name:
+      p.emergency_contact_name || p.hist_emergency_contact?.name || history.emergency_contact?.name || null,
+    emergency_contact_phone:
+      p.emergency_contact_phone || p.hist_emergency_contact?.phone || history.emergency_contact?.phone || null,
+    pdpa_consent: p.pdpa_consent ?? p.hist_pdpa_consent ?? history.pdpa_consent ?? true,
     initial_symptoms: p.initial_symptoms || p.injury || undefined,
     injury: p.injury || p.initial_symptoms || undefined,
-    responsible_pt_id: p.responsible_pt_id || history.responsible_pt_id || null,
+    responsible_pt_id: p.responsible_pt_id || p.hist_responsible_pt_id || history.responsible_pt_id || null,
     registration_status: p.registration_status || 'awaiting_face',
     registered_via: p.registered_via || 'reception',
     created_at: p.created_at || new Date().toISOString(),
@@ -436,7 +557,7 @@ export function normalizePatientRecord(p: any): any {
     version: p.version || 1,
     biometrics: {
       face_vector: p.biometrics?.face_vector || history.face_vector || [],
-      registered_face_url: p.biometrics?.registered_face_url || history.registered_face_url || '',
+      registered_face_url: p.biometrics?.registered_face_url || p.registered_face_url || history.registered_face_url || '',
       confidence_score: p.biometrics?.confidence_score ?? 0.95,
       model_version: p.biometrics?.model_version || 'v2',
       enrolled_at: p.biometrics?.enrolled_at || p.created_at || new Date().toISOString(),
@@ -1418,33 +1539,14 @@ export class ApiClient {
                 }));
 
               if (validTemplates.length > 0) {
-                const enrRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_enrollments`, {
-                  method: 'POST',
-                  headers: {
-                    apikey: DEFAULT_SUPABASE_ANON_KEY,
-                    Authorization: supaAuthHeader,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    id: enrollmentId,
-                    patient_id: persistedId,
-                    status: 'active',
-                    model_version: body.model_version || 'w600k_r50',
-                    created_at: now,
-                  }),
-                }).catch(() => null);
-
-                if (enrRes && enrRes.ok) {
-                  await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_templates`, {
-                    method: 'POST',
-                    headers: {
-                      apikey: DEFAULT_SUPABASE_ANON_KEY,
-                      Authorization: supaAuthHeader,
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(validTemplates),
-                  }).catch(() => {});
-                }
+                await persistFaceEnrollmentAndTemplates({
+                  enrollmentId,
+                  patientId: persistedId,
+                  modelVersion: body.model_version || 'w600k_r50',
+                  createdAt: now,
+                  authHeader: supaAuthHeader,
+                  templates: validTemplates,
+                });
               }
             }
           } else if (!syncedViaAtomicRpc && supaRes && !supaRes.ok) {
@@ -1486,7 +1588,7 @@ export class ApiClient {
 
         try {
           const supaRes = await fetch(
-            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?${queryFilter}&limit=1`,
+            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?${queryFilter}&select=${PATIENT_CLINICAL_SELECT}&limit=1`,
             {
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -2259,8 +2361,19 @@ export class ApiClient {
 
         // 2. Fetch authoritative patients from Supabase Cloud to ensure schedules and dossiers are always current
         try {
+          const dossierSelect = [
+            'id',
+            'hn',
+            'first_name',
+            'last_name',
+            'registration_status',
+            'schedule:history->schedule',
+            'face_enrollments(id,status)',
+          ]
+            .map(encodeURIComponent)
+            .join(',');
           const supaRes = await fetch(
-            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?registration_status=neq.archived&order=created_at.desc&limit=50`,
+            `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=${dossierSelect}&registration_status=neq.archived&order=created_at.desc&limit=50`,
             { headers: { apikey: DEFAULT_SUPABASE_ANON_KEY, Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}` } }
           );
           if (supaRes.ok) {
@@ -2269,14 +2382,20 @@ export class ApiClient {
               supaPatients.forEach((p: any) => {
                 const key = p.id || p.hn;
                 const existing = dossierMap.get(key) || dossierMap.get(p.id) || dossierMap.get(p.hn);
-                const s = p.history?.schedule || existing?.schedule || null;
+                const s = p.schedule || p.history?.schedule || existing?.schedule || null;
                 dossierMap.set(p.id, {
                   patient_id: p.id,
                   hn: p.hn,
                   first_name: p.first_name,
                   last_name: p.last_name,
                   schedule: s,
-                  has_face_enrolled: Boolean(p.history?.frames?.length || existing?.has_face_enrolled),
+                  has_face_enrolled: Boolean(
+                    (Array.isArray(p.face_enrollments) && p.face_enrollments.length > 0) ||
+                      p.registration_status === 'active' ||
+                      p.registration_status === 'face_enrolled' ||
+                      p.history?.frames?.length ||
+                      existing?.has_face_enrolled
+                  ),
                 });
               });
             }
@@ -2447,8 +2566,8 @@ export class ApiClient {
                 },
                 body: JSON.stringify({
                   probe_embedding: probe,
-                  match_threshold: 0.42,
-                  match_limit: 3,
+                  match_threshold: 0.25,
+                  match_limit: 5,
                 }),
               });
               if (rpcRes.ok) {
@@ -2472,7 +2591,8 @@ export class ApiClient {
                   }
                   const rpcMargin = rpcRunnerUp && typeof rpcRunnerUp.similarity === 'number' ? (rawCos - rpcRunnerUp.similarity) : 1.0;
 
-                  const isMatchThreshold = (rawCos >= 0.74 || calSim >= 0.74) && dist <= 0.58;
+                  // Decisive binary outcome (no borderline 4-digit PIN prompt during face scan)
+                  const isMatchThreshold = rawCos >= 0.78 && dist <= 0.68;
                   if (isMatchThreshold && rpcMargin >= 0.06) {
                     return {
                       ok: true,
@@ -2484,21 +2604,22 @@ export class ApiClient {
                       distance: dist,
                       data: { matched: true, patient: patientObj },
                     } as T;
-                  } else if ((rawCos >= 0.65 && rawCos < 0.74) || (isMatchThreshold && rpcMargin < 0.06)) {
-                    return {
-                      ok: true,
-                      matched: false,
-                      requirePin: true,
-                      candidate: patientObj,
-                      candidateName: `${patientObj.first_name} ${patientObj.last_name}`.trim(),
-                      candidateHn: patientObj.hn,
-                      similarityPercentage: pct,
-                      cosineSimilarity: Number(calSim.toFixed(4)),
-                      rawCosineSimilarity: Number(rawCos.toFixed(4)),
-                      distance: dist,
-                      message: `ความแม่นยำ ${pct}% (ก้ำกึ่ง) กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก`,
-                    } as T;
                   }
+
+                  // Authoritative RPC searched active face_templates; reject cleanly without full-table history fallback
+                  return {
+                    ok: true,
+                    matched: false,
+                    patient: null,
+                    candidate: null,
+                    candidateName: undefined,
+                    candidateHn: undefined,
+                    similarityPercentage: pct,
+                    cosineSimilarity: Number(calSim.toFixed(4)),
+                    rawCosineSimilarity: Number(rawCos.toFixed(4)),
+                    distance: dist,
+                    message: 'ไม่พบบัญชีผู้ใช้ กรุณาติดต่อเจ้าหน้าที่เพื่อลงทะเบียน',
+                  } as T;
                 }
               }
             } catch {
@@ -2655,25 +2776,8 @@ export class ApiClient {
 
           const margin = runnerUpCand ? (top1.rawCos - runnerUpCand.rawCos) : 1.0;
 
-          // Case A: High Match (normalized genuine match accepts rawCos >= 0.72, dist <= 0.65, and margin >= 0.05)
-          if (normalizedMatch && (top1.rawCos >= 0.72 || top1.calSim >= 0.72) && top1.dist <= 0.65) {
-            if (margin < 0.06) {
-              return {
-                ok: true,
-                matched: false,
-                requirePin: true,
-                candidate: normalizedMatch,
-                patient: null,
-                candidateName: `${normalizedMatch.first_name} ${normalizedMatch.last_name}`.trim(),
-                candidateHn: normalizedMatch.hn,
-                similarityPercentage: finalPercentage,
-                cosineSimilarity: Number(top1.calSim.toFixed(4)),
-                rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
-                distance: top1.dist,
-                message: `ความคล้ายคลึงระหว่างผู้ป่วยใกล้เคียงกัน (${finalPercentage}%) เพื่อความปลอดภัย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก`,
-              } as T;
-            }
-
+          // Decisive binary outcome (no borderline 4-digit PIN prompt during face scan)
+          if (normalizedMatch && top1.rawCos >= 0.78 && top1.dist <= 0.68 && margin >= 0.06) {
             return {
               ok: true,
               matched: true,
@@ -2688,27 +2792,9 @@ export class ApiClient {
               },
             } as T;
           }
-
-          // Case B: Ambiguous candidate match (0.65 <= rawCos < 0.74) -> Require PIN
-          if (normalizedMatch && top1.rawCos >= 0.65 && top1.rawCos < 0.74) {
-            return {
-              ok: true,
-              matched: false,
-              requirePin: true,
-              candidate: normalizedMatch,
-              patient: null,
-              candidateName: `${normalizedMatch.first_name} ${normalizedMatch.last_name}`.trim(),
-              candidateHn: normalizedMatch.hn,
-              similarityPercentage: finalPercentage,
-              cosineSimilarity: Number(top1.calSim.toFixed(4)),
-              rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
-              distance: top1.dist,
-              message: `ความแม่นยำ ${finalPercentage}% (ก้ำกึ่ง) เพื่อความปลอดภัย กรุณายืนยันตัวตนด้วยรหัส PIN 4 หลัก`,
-            } as T;
-          }
         }
 
-        // Case C: Below threshold / Impostor / Stranger (rawCos < 0.65 or no candidate)
+        // Unmatched / Ambiguous -> Fail closed to Account Not Found without leaking candidate identity
         return {
           ok: true,
           matched: false,
@@ -2860,9 +2946,10 @@ export class ApiClient {
 
         // Query Supabase live dataset directly (registration_status != 'archived')
         try {
+          const pinSelect = `${PATIENT_CLINICAL_SELECT},${encodeURIComponent('pin:history->>pin')}`;
           const queryUrl = hn
-            ? `${DEFAULT_SUPABASE_URL}/rest/v1/patients?registration_status=neq.archived&or=(hn.ilike.*${encodeURIComponent(hn)}*,id.eq.${encodeURIComponent(hn)})&limit=5`
-            : `${DEFAULT_SUPABASE_URL}/rest/v1/patients?registration_status=neq.archived&limit=50`;
+            ? `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=${pinSelect}&registration_status=neq.archived&or=(hn.ilike.*${encodeURIComponent(hn)}*,id.eq.${encodeURIComponent(hn)})&limit=5`
+            : `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=${pinSelect}&registration_status=neq.archived&limit=50`;
           const supaRes = await fetch(queryUrl, {
             headers: {
               apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -2873,7 +2960,7 @@ export class ApiClient {
             const list = await supaRes.json();
             if (Array.isArray(list)) {
               matchedPatient = list.find((p: any) => {
-                const storedPin = String(p.history?.pin || '').trim();
+                const storedPin = String(p.pin ?? p.history?.pin ?? '').trim();
                 return storedPin !== '' && storedPin === pin;
               });
             }
@@ -2886,22 +2973,38 @@ export class ApiClient {
           // Auto-heal template when probe is supplied during PIN verification
           if (probe && probe.length === 512) {
             const targetId = matchedPatient.id || matchedPatient.patient_id;
-            // Update live Supabase Cloud
-            fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${targetId}`, {
-              method: 'PATCH',
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                history: {
-                  ...(matchedPatient.history || {}),
-                  adaptive_templates: [...(matchedPatient.history?.adaptive_templates || []), probe].slice(-5),
-                  last_adaptive_update: new Date().toISOString(),
-                },
-              }),
-            }).catch(() => {});
+            // Fetch full history once for this matched patient before patching adaptive_templates
+            void (async () => {
+              try {
+                const hRes = await fetch(
+                  `${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${encodeURIComponent(targetId)}&select=history&limit=1`,
+                  {
+                    headers: {
+                      apikey: DEFAULT_SUPABASE_ANON_KEY,
+                      Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    },
+                  }
+                );
+                const hRows = hRes.ok ? await hRes.json().catch(() => []) : [];
+                const baseHistory =
+                  (hRows?.[0]?.history && typeof hRows[0].history === 'object' ? hRows[0].history : matchedPatient.history) || {};
+                await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?id=eq.${targetId}`, {
+                  method: 'PATCH',
+                  headers: {
+                    apikey: DEFAULT_SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    history: {
+                      ...baseHistory,
+                      adaptive_templates: [...(baseHistory.adaptive_templates || []), probe].slice(-5),
+                      last_adaptive_update: new Date().toISOString(),
+                    },
+                  }),
+                });
+              } catch {}
+            })();
           }
 
           return {
@@ -3907,7 +4010,7 @@ export class ApiClient {
             const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTarget);
             const queryParam = isUuid ? `id=eq.${encodeURIComponent(cleanTarget)}` : `hn=eq.${encodeURIComponent(cleanTarget)}`;
             const supaRes = await fetch(
-              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?${queryParam}&select=*&limit=1`,
+              `${DEFAULT_SUPABASE_URL}/rest/v1/patients?${queryParam}&select=${PATIENT_CLINICAL_SELECT}&limit=1`,
               {
                 headers: {
                   apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -3926,7 +4029,7 @@ export class ApiClient {
         }
 
         const supaRes = await fetch(
-          `${DEFAULT_SUPABASE_URL}/rest/v1/patients?order=created_at.desc&limit=50`,
+          `${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=${PATIENT_CLINICAL_SELECT}&order=created_at.desc&limit=50`,
           {
             headers: {
               apikey: DEFAULT_SUPABASE_ANON_KEY,
@@ -4020,23 +4123,7 @@ export class ApiClient {
                     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
                   });
 
-            const enrRes = await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_enrollments`, {
-              method: 'POST',
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: authHeader,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                id: enrollmentId,
-                patient_id: patientId,
-                status: 'active',
-                model_version: body.model_version || 'w600k_r50',
-                created_at: new Date().toISOString(),
-              }),
-            }).catch(() => null);
-
-            // 3. Insert denoised prototype templates with required enrollment_id & pose
+            // 2 & 3. Insert denoised prototype templates with required enrollment_id & pose
             const cleanFrames = (Array.isArray(body.frames) ? body.frames : [])
               .filter((f: any) => Array.isArray(f.embedding) && f.embedding.length === 512)
               .map((f: any) => ({
@@ -4044,24 +4131,23 @@ export class ApiClient {
                 embedding: f.embedding as number[],
               }));
 
-            if (cleanFrames.length > 0 && enrRes && enrRes.ok) {
-              const templateRows = cleanFrames.map((f: any) => ({
-                patient_id: patientId,
-                enrollment_id: enrollmentId,
-                pose: f.pose,
-                embedding: JSON.stringify(f.embedding),
-                quality: { pose: f.pose, confidence: 0.96 },
-                model_version: body.model_version || 'w600k_r50',
-              }));
-              await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_templates`, {
-                method: 'POST',
-                headers: {
-                  apikey: DEFAULT_SUPABASE_ANON_KEY,
-                  Authorization: authHeader,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(templateRows),
-              }).catch(() => {});
+            if (cleanFrames.length > 0) {
+              const modelVersion = body.model_version || 'w600k_r50';
+              await persistFaceEnrollmentAndTemplates({
+                enrollmentId,
+                patientId,
+                modelVersion,
+                createdAt: new Date().toISOString(),
+                authHeader,
+                templates: cleanFrames.map((f: any) => ({
+                  patient_id: patientId,
+                  enrollment_id: enrollmentId,
+                  pose: f.pose,
+                  embedding: JSON.stringify(f.embedding),
+                  quality: { pose: f.pose, confidence: 0.96 },
+                  model_version: modelVersion,
+                })),
+              });
             }
 
             // 4. Sync updated biometric vectors + registration_status = 'active' into patients.history
@@ -4137,21 +4223,10 @@ export class ApiClient {
         return { ok: true, success: true, message: 'ลงทะเบียนใบหน้าใหม่สำเร็จ', registration_status: 'active' } as T;
       }
 
-      // 6.2 Fallback for /face_scan_logs
+      // 6.2 Fallback for /face_scan_logs (no-op: face_scan_logs table is absent on Supabase Cloud)
       if (endpointPath.includes('face_scan_logs') || endpointPath.includes('face-scan-logs')) {
         if (options.method === 'POST') {
-          try {
-            await fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/face_scan_logs`, {
-              method: 'POST',
-              headers: {
-                apikey: DEFAULT_SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: options.body,
-            });
-          } catch {}
-          return { ok: true, recorded: true } as T;
+          return { ok: true, recorded: false, skipped: true } as T;
         }
         return { ok: true, data: [] } as T;
       }
@@ -5043,7 +5118,7 @@ export class ApiClient {
                 Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
               },
             }),
-            fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=id,hn,first_name,last_name,age,sex,phone,registration_status,history,injury`, {
+            fetch(`${DEFAULT_SUPABASE_URL}/rest/v1/patients?select=${PATIENT_CLINICAL_SELECT}`, {
               headers: {
                 apikey: DEFAULT_SUPABASE_ANON_KEY,
                 Authorization: `Bearer ${DEFAULT_SUPABASE_ANON_KEY}`,
@@ -5067,7 +5142,7 @@ export class ApiClient {
           const queueMap = new Map<string, any>();
 
           patientMap.forEach((p) => {
-            const sched = p.history?.schedule;
+            const sched = p.schedule || p.history?.schedule;
             let hasPlanToday = false;
             let timeSlot = '09:00:00';
             let kioskId: string | null = null;
@@ -5112,7 +5187,7 @@ export class ApiClient {
                 const isSingleDay = cStart === todayBkkStr && cEnd === todayBkkStr;
                 const inRange = cStart <= todayBkkStr && cEnd >= todayBkkStr;
                 const isDOW = Array.isArray(c.weekdays) && c.weekdays.includes(dayOfWeek);
-                const excluded = Array.isArray(p.history?.schedule?.cancelled_dates) ? p.history.schedule.cancelled_dates : [];
+                const excluded = Array.isArray(sched?.cancelled_dates) ? sched.cancelled_dates : [];
                 return (isSingleDay || (inRange && isDOW)) && !excluded.includes(todayBkkStr);
               });
               if (courseForToday) {
