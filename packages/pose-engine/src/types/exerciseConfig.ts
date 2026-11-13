@@ -14,7 +14,7 @@ export type EvaluationMode =
   | 'hold_balance'
   | 'timer';
 
-export type BodySide = 'left' | 'right' | 'bilateral';
+export type BodySide = 'left' | 'right' | 'both' | 'bilateral';
 
 export type LateralityMode =
   | 'unilateral_or_bilateral'
@@ -58,6 +58,10 @@ export interface LandmarkTriplet {
   vertex: number;      // Center joint landmark index (e.g. 13 Left Elbow)
   pointB: number;      // Endpoint landmark index (e.g. 15 Left Wrist)
   use3DWorld?: boolean;
+  weight?: number;
+  jointNameTh?: string;
+  lowAngleHintTh?: string;
+  highAngleHintTh?: string;
 }
 
 export interface AngleMechanicsConfig {
@@ -69,8 +73,14 @@ export interface AngleMechanicsConfig {
   targetMinDeg: number;        // e.g. 80° (effective clinical range lower bound)
   targetMaxDeg: number;        // e.g. 100° (effective clinical range upper bound)
   toleranceDeg: number;        // e.g. 10°
+  falloffDeg?: number;         // e.g. 30°
+  weight?: number;             // default 1
+  jointNameTh?: string;
+  lowAngleHintTh?: string;
+  highAngleHintTh?: string;
   holdDurationSec: number;     // e.g. 2.0s
   direction?: AngleDirection;  // 'increase' (default) or 'decrease'
+  use3DWorld?: boolean;        // Prefer 3D worldLandmarks when available (default true unless false)
 }
 
 export interface PendulumMechanicsConfig {
@@ -241,6 +251,9 @@ export interface ExerciseDetectionConfig {
   evaluationMode: EvaluationMode;
   side: BodySide;
   lateralityMode?: LateralityMode;
+  allowDynamicUnilateral?: boolean; // Allow performing unilateral_or_bilateral exercises with one limb when UI has no L/R toggle
+  use3DWorld?: boolean;             // Prefer 3D worldLandmarks for joint angle calculation (set false for planar 2D exercises)
+  preCheckDurationMs?: number;      // Optional continuous visibility pre-check duration (e.g. 1000ms) before starting reps
   targetJoint: TargetJoint;
   cameraGuide: CameraGuideConfig;
   angleMechanics?: AngleMechanicsConfig;
@@ -327,6 +340,30 @@ export interface ActiveCompensationWarning {
   thresholdValue: number;
 }
 
+export interface RepDebugDiagnostics {
+  exerciseId: string;
+  exerciseNameTh: string;
+  configuredSide: BodySide;
+  resolvedSide: 'left' | 'right' | 'bilateral';
+  leftAngleDeg: number | null;
+  rightAngleDeg: number | null;
+  measuredAngleDeg: number;
+  targetMinDeg: number;
+  targetMaxDeg: number;
+  toleranceDeg: number;
+  angleErrorDeg: number;
+  minLandmarkVisibility: number;
+  phase: RepPhase;
+  holdElapsedMs: number;
+  holdRequiredMs: number;
+  graceFramesUsed: number;
+  maxGraceFrames: number;
+  preCheckReady: boolean;
+  preCheckElapsedMs: number;
+  used3DWorld: boolean;
+  failReasonTh: string;
+}
+
 export interface RepEvaluationResult {
   phase: RepPhase;
   currentAngleDeg: number;
@@ -395,6 +432,7 @@ export interface RepEvaluationResult {
   calibratedThreshold?: number;
   activeRequiredLandmarks?: number[];
   missingRequiredLandmarks?: number[];
+  debugInfo?: RepDebugDiagnostics;
   filteredLandmarks: PoseEngineLandmark[];
 }
 

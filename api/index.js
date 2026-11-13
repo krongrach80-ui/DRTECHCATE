@@ -3088,6 +3088,565 @@ var init_repository6 = __esm({
   }
 });
 
+// packages/pose-engine/src/math/geometry3d.ts
+var init_geometry3d = __esm({
+  "packages/pose-engine/src/math/geometry3d.ts"() {
+    "use strict";
+  }
+});
+
+// packages/pose-engine/src/math/sessionProgressAndAccuracy.ts
+var DEFAULT_ANGLE_TOLERANCE_DEG, DEFAULT_ANGLE_FALLOFF_DEG, MIN_JOINT_VISIBILITY;
+var init_sessionProgressAndAccuracy = __esm({
+  "packages/pose-engine/src/math/sessionProgressAndAccuracy.ts"() {
+    "use strict";
+    init_geometry3d();
+    DEFAULT_ANGLE_TOLERANCE_DEG = 10;
+    DEFAULT_ANGLE_FALLOFF_DEG = 30;
+    MIN_JOINT_VISIBILITY = 0.5;
+  }
+});
+
+// packages/pose-engine/src/calibration/poseSchemaAndCalibration.ts
+function toFiniteNumber(val) {
+  if (val === null || val === void 0 || typeof val === "boolean" || val === "") {
+    return null;
+  }
+  const num = Number(val);
+  return Number.isFinite(num) ? num : null;
+}
+function isValidLandmarkIndex(idx) {
+  return typeof idx === "number" && Number.isInteger(idx) && idx >= 0 && idx <= MAX_MEDIAPIPE_LANDMARK_INDEX;
+}
+function resolveDefaultStorage(storage) {
+  if (storage !== void 0) return storage;
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      return window.localStorage;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+function validatePoseDefinition(input, options) {
+  const errors = [];
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return {
+      ok: false,
+      errors: [{ field: "root", message: "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E48\u0E32\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07 (\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19 object)" }]
+    };
+  }
+  const raw = input;
+  const rawId = typeof raw.id === "string" ? raw.id.trim().toLowerCase() : "";
+  if (!rawId) {
+    errors.push({ field: "id", message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E23\u0E2B\u0E31\u0E2A\u0E17\u0E48\u0E32 (id)" });
+  } else if (!/^[a-z0-9-_]+$/.test(rawId)) {
+    errors.push({
+      field: "id",
+      message: "\u0E23\u0E2B\u0E31\u0E2A\u0E17\u0E48\u0E32 (id) \u0E15\u0E49\u0E2D\u0E07\u0E43\u0E0A\u0E49\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23\u0E20\u0E32\u0E29\u0E32\u0E2D\u0E31\u0E07\u0E01\u0E24\u0E29\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E40\u0E25\u0E47\u0E01 \u0E15\u0E31\u0E27\u0E40\u0E25\u0E02 \u0E02\u0E35\u0E14\u0E01\u0E25\u0E32\u0E07 (-) \u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E35\u0E14\u0E25\u0E48\u0E32\u0E07 (_) \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"
+    });
+  } else if (!options?.allowOverwriteId && options?.existingIds) {
+    const existingSet = new Set(Array.from(options.existingIds, (s) => String(s).trim().toLowerCase()));
+    if (existingSet.has(rawId)) {
+      errors.push({
+        field: "id",
+        message: `\u0E23\u0E2B\u0E31\u0E2A\u0E17\u0E48\u0E32 "${rawId}" \u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E43\u0E0A\u0E49\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E37\u0E48\u0E19`
+      });
+    }
+  }
+  const rawName = typeof raw.name === "string" ? raw.name.trim() : "";
+  if (!rawName) {
+    errors.push({ field: "name", message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E0A\u0E37\u0E48\u0E2D\u0E17\u0E48\u0E32 (\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22)" });
+  }
+  let resolvedSide = DEFAULT_POSE_SIDE;
+  if (raw.side !== void 0 && raw.side !== null && raw.side !== "") {
+    if (raw.side === "left" || raw.side === "right" || raw.side === "both") {
+      resolvedSide = raw.side;
+    } else {
+      errors.push({
+        field: "side",
+        message: '\u0E04\u0E48\u0E32\u0E02\u0E49\u0E32\u0E07\u0E17\u0E35\u0E48\u0E1D\u0E36\u0E01 (side) \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19 "left", "right" \u0E2B\u0E23\u0E37\u0E2D "both" \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19'
+      });
+    }
+  }
+  let resolvedFalloff = DEFAULT_FALLOFF_DEG;
+  if (raw.falloff !== void 0 && raw.falloff !== null && raw.falloff !== "") {
+    const parsedFalloff = toFiniteNumber(raw.falloff);
+    if (parsedFalloff === null || parsedFalloff <= 0) {
+      errors.push({
+        field: "falloff",
+        message: "\u0E0A\u0E48\u0E27\u0E07\u0E25\u0E14\u0E04\u0E30\u0E41\u0E19\u0E19 (falloff) \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32 0 \u0E2D\u0E07\u0E28\u0E32"
+      });
+    } else {
+      resolvedFalloff = parsedFalloff;
+    }
+  }
+  let enterRatio = DEFAULT_PHASE_ENTER_RATIO;
+  let exitRatio = DEFAULT_PHASE_EXIT_RATIO;
+  if (raw.phaseThresholds !== void 0 && raw.phaseThresholds !== null) {
+    if (typeof raw.phaseThresholds !== "object" || Array.isArray(raw.phaseThresholds)) {
+      errors.push({
+        field: "phaseThresholds",
+        message: "phaseThresholds \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19 object \u0E17\u0E35\u0E48\u0E21\u0E35\u0E04\u0E48\u0E32 enter \u0E41\u0E25\u0E30 exit"
+      });
+    } else {
+      const pt = raw.phaseThresholds;
+      if (pt.enter !== void 0) {
+        const parsedEnter = toFiniteNumber(pt.enter);
+        if (parsedEnter === null || parsedEnter <= 0 || parsedEnter > 1) {
+          errors.push({
+            field: "phaseThresholds.enter",
+            message: "\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E40\u0E02\u0E49\u0E32\u0E17\u0E48\u0E32 (enter) \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07 0.01 \u0E16\u0E36\u0E07 1.0"
+          });
+        } else {
+          enterRatio = parsedEnter;
+        }
+      }
+      if (pt.exit !== void 0) {
+        const parsedExit = toFiniteNumber(pt.exit);
+        if (parsedExit === null || parsedExit <= 0 || parsedExit > 1) {
+          errors.push({
+            field: "phaseThresholds.exit",
+            message: "\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E2D\u0E2D\u0E01\u0E17\u0E48\u0E32 (exit) \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07 0.01 \u0E16\u0E36\u0E07 1.0"
+          });
+        } else {
+          exitRatio = parsedExit;
+        }
+      }
+      if (exitRatio > enterRatio) {
+        errors.push({
+          field: "phaseThresholds",
+          message: "\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E2D\u0E2D\u0E01\u0E17\u0E48\u0E32 (exit) \u0E15\u0E49\u0E2D\u0E07\u0E19\u0E49\u0E2D\u0E22\u0E01\u0E27\u0E48\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E17\u0E48\u0E32\u0E01\u0E31\u0E1A\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E40\u0E02\u0E49\u0E32\u0E17\u0E48\u0E32 (enter)"
+        });
+      }
+    }
+  }
+  const validatedJoints = [];
+  if (!Array.isArray(raw.joints) || raw.joints.length === 0) {
+    errors.push({
+      field: "joints",
+      message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E19\u0E49\u0E2D\u0E22 1 \u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E43\u0E19\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 joints"
+    });
+  } else {
+    raw.joints.forEach((item, index) => {
+      const prefix = `joints[${index}]`;
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        errors.push({ field: prefix, message: `\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E25\u0E33\u0E14\u0E31\u0E1A\u0E17\u0E35\u0E48 ${index + 1} \u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07` });
+        return;
+      }
+      const j = item;
+      const rawJointType = typeof j.jointType === "string" && j.jointType in POSE_JOINT_PRESETS ? j.jointType : j.jointType === void 0 ? "shoulder" : null;
+      if (rawJointType === null) {
+        errors.push({
+          field: `${prefix}.jointType`,
+          message: `\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E43\u0E19\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E25\u0E33\u0E14\u0E31\u0E1A\u0E17\u0E35\u0E48 ${index + 1} \u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07`
+        });
+      }
+      const preset = POSE_JOINT_PRESETS[rawJointType ?? "shoulder"];
+      const defaultTriplet = resolvedSide === "right" ? preset.right : preset.left;
+      const pointA = j.pointA !== void 0 ? toFiniteNumber(j.pointA) : defaultTriplet.pointA;
+      const vertex = j.vertex !== void 0 ? toFiniteNumber(j.vertex) : defaultTriplet.vertex;
+      const pointB = j.pointB !== void 0 ? toFiniteNumber(j.pointB) : defaultTriplet.pointB;
+      if (!isValidLandmarkIndex(pointA) || !isValidLandmarkIndex(vertex) || !isValidLandmarkIndex(pointB)) {
+        errors.push({
+          field: `${prefix}.landmarks`,
+          message: `\u0E14\u0E31\u0E0A\u0E19\u0E35\u0E08\u0E38\u0E14\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D (Landmark) \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E15\u0E47\u0E21\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07 0 \u0E16\u0E36\u0E07 ${MAX_MEDIAPIPE_LANDMARK_INDEX}`
+        });
+      }
+      const parsedTarget = toFiniteNumber(j.target);
+      if (parsedTarget === null || parsedTarget < MIN_POSE_ANGLE_DEG || parsedTarget > MAX_POSE_ANGLE_DEG) {
+        errors.push({
+          field: `${prefix}.target`,
+          message: `\u0E21\u0E38\u0E21\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22 (target) \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07 ${MIN_POSE_ANGLE_DEG} \u0E16\u0E36\u0E07 ${MAX_POSE_ANGLE_DEG} \u0E2D\u0E07\u0E28\u0E32`
+        });
+      }
+      let resolvedTolerance = DEFAULT_POSE_TOLERANCE_DEG;
+      if (j.tolerance !== void 0 && j.tolerance !== null && j.tolerance !== "") {
+        const parsedTol = toFiniteNumber(j.tolerance);
+        if (parsedTol === null || parsedTol <= 0) {
+          errors.push({
+            field: `${prefix}.tolerance`,
+            message: "\u0E04\u0E48\u0E32\u0E40\u0E1C\u0E37\u0E48\u0E2D\u0E21\u0E38\u0E21 (tolerance) \u0E15\u0E49\u0E2D\u0E07\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32 0 \u0E2D\u0E07\u0E28\u0E32"
+          });
+        } else {
+          resolvedTolerance = parsedTol;
+        }
+      }
+      let resolvedWeight = DEFAULT_JOINT_WEIGHT;
+      if (j.weight !== void 0 && j.weight !== null && j.weight !== "") {
+        const parsedWeight = toFiniteNumber(j.weight);
+        if (parsedWeight === null || parsedWeight <= 0) {
+          errors.push({
+            field: `${prefix}.weight`,
+            message: "\u0E04\u0E48\u0E32\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D (weight) \u0E15\u0E49\u0E2D\u0E07\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32 0"
+          });
+        } else {
+          resolvedWeight = parsedWeight;
+        }
+      }
+      const direction = j.direction === "decrease" || j.direction === "increase" ? j.direction : preset.defaultDirection;
+      let startAngleDeg = preset.defaultStartAngleDeg;
+      if (j.startAngleDeg !== void 0 && j.startAngleDeg !== null && j.startAngleDeg !== "") {
+        const parsedStart = toFiniteNumber(j.startAngleDeg);
+        if (parsedStart === null || parsedStart < MIN_POSE_ANGLE_DEG || parsedStart > MAX_POSE_ANGLE_DEG) {
+          errors.push({
+            field: `${prefix}.startAngleDeg`,
+            message: `\u0E21\u0E38\u0E21\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 (startAngleDeg) \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07 ${MIN_POSE_ANGLE_DEG} \u0E16\u0E36\u0E07 ${MAX_POSE_ANGLE_DEG} \u0E2D\u0E07\u0E28\u0E32`
+          });
+        } else {
+          startAngleDeg = parsedStart;
+        }
+      }
+      let holdDurationSec = DEFAULT_HOLD_DURATION_SEC;
+      if (j.holdDurationSec !== void 0 && j.holdDurationSec !== null && j.holdDurationSec !== "") {
+        const parsedHold = toFiniteNumber(j.holdDurationSec);
+        if (parsedHold === null || parsedHold < 0) {
+          errors.push({
+            field: `${prefix}.holdDurationSec`,
+            message: "\u0E40\u0E27\u0E25\u0E32\u0E04\u0E49\u0E32\u0E07\u0E17\u0E48\u0E32 (holdDurationSec) \u0E15\u0E49\u0E2D\u0E07\u0E44\u0E21\u0E48\u0E15\u0E34\u0E14\u0E25\u0E1A"
+          });
+        } else {
+          holdDurationSec = parsedHold;
+        }
+      }
+      if (rawJointType !== null && parsedTarget !== null && parsedTarget >= MIN_POSE_ANGLE_DEG && parsedTarget <= MAX_POSE_ANGLE_DEG && isValidLandmarkIndex(pointA) && isValidLandmarkIndex(vertex) && isValidLandmarkIndex(pointB)) {
+        validatedJoints.push({
+          id: typeof j.id === "string" && j.id.trim() ? j.id.trim() : `${rawJointType}_${index + 1}`,
+          jointType: rawJointType,
+          pointA,
+          vertex,
+          pointB,
+          target: parsedTarget,
+          tolerance: resolvedTolerance,
+          weight: resolvedWeight,
+          startAngleDeg,
+          direction,
+          holdDurationSec
+        });
+      }
+    });
+  }
+  let resolvedRequiredLandmarks = [];
+  if (raw.requiredLandmarks !== void 0 && raw.requiredLandmarks !== null) {
+    if (!Array.isArray(raw.requiredLandmarks) || raw.requiredLandmarks.length === 0) {
+      errors.push({
+        field: "requiredLandmarks",
+        message: "requiredLandmarks \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E2D\u0E32\u0E23\u0E4C\u0E40\u0E23\u0E22\u0E4C\u0E02\u0E2D\u0E07\u0E14\u0E31\u0E0A\u0E19\u0E35\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E27\u0E48\u0E32\u0E07"
+      });
+    } else {
+      const uniqueIndices = /* @__PURE__ */ new Set();
+      for (const idx of raw.requiredLandmarks) {
+        if (!isValidLandmarkIndex(idx)) {
+          errors.push({
+            field: "requiredLandmarks",
+            message: `\u0E14\u0E31\u0E0A\u0E19\u0E35\u0E43\u0E19 requiredLandmarks \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E15\u0E47\u0E21 0\u2013${MAX_MEDIAPIPE_LANDMARK_INDEX}`
+          });
+          break;
+        }
+        uniqueIndices.add(idx);
+      }
+      resolvedRequiredLandmarks = Array.from(uniqueIndices);
+    }
+  } else if (validatedJoints.length > 0) {
+    const derived = /* @__PURE__ */ new Set();
+    for (const j of validatedJoints) {
+      const preset = POSE_JOINT_PRESETS[j.jointType];
+      if (resolvedSide === "left") {
+        derived.add(preset.left.pointA);
+        derived.add(preset.left.vertex);
+        derived.add(preset.left.pointB);
+      } else if (resolvedSide === "right") {
+        derived.add(preset.right.pointA);
+        derived.add(preset.right.vertex);
+        derived.add(preset.right.pointB);
+      } else {
+        for (const lmIdx of preset.requiredLandmarks) {
+          derived.add(lmIdx);
+        }
+      }
+    }
+    resolvedRequiredLandmarks = Array.from(derived);
+  }
+  let repsPerSet = 10;
+  if (raw.repsPerSet !== void 0 && raw.repsPerSet !== null && raw.repsPerSet !== "") {
+    const parsedReps = toFiniteNumber(raw.repsPerSet);
+    if (parsedReps === null || parsedReps <= 0) {
+      errors.push({ field: "repsPerSet", message: "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E15\u0E48\u0E2D\u0E40\u0E0B\u0E47\u0E15\u0E15\u0E49\u0E2D\u0E07\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32 0" });
+    } else {
+      repsPerSet = Math.round(parsedReps);
+    }
+  }
+  let totalSets = 3;
+  if (raw.totalSets !== void 0 && raw.totalSets !== null && raw.totalSets !== "") {
+    const parsedSets = toFiniteNumber(raw.totalSets);
+    if (parsedSets === null || parsedSets <= 0) {
+      errors.push({ field: "totalSets", message: "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E0B\u0E47\u0E15\u0E15\u0E49\u0E2D\u0E07\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32 0" });
+    } else {
+      totalSets = Math.round(parsedSets);
+    }
+  }
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  const hint = typeof raw.hint === "string" && raw.hint.trim() ? raw.hint.trim() : void 0;
+  const createdAt = typeof raw.createdAt === "string" && raw.createdAt.trim() ? raw.createdAt.trim() : (/* @__PURE__ */ new Date()).toISOString();
+  return {
+    ok: true,
+    value: {
+      id: rawId,
+      name: rawName,
+      side: resolvedSide,
+      joints: validatedJoints,
+      falloff: resolvedFalloff,
+      hint,
+      requiredLandmarks: resolvedRequiredLandmarks,
+      phaseThresholds: {
+        enter: enterRatio,
+        exit: exitRatio
+      },
+      repsPerSet,
+      totalSets,
+      createdAt
+    }
+  };
+}
+function poseDefinitionToExerciseConfig(def) {
+  const primaryJoint = def.joints[0];
+  const preset = POSE_JOINT_PRESETS[primaryJoint.jointType];
+  const isDecreasing = primaryJoint.direction === "decrease";
+  const leftTriplet = primaryJoint.pointA !== preset.right.pointA || primaryJoint.vertex !== preset.right.vertex || primaryJoint.pointB !== preset.right.pointB ? {
+    pointA: preset.left.pointA,
+    vertex: preset.left.vertex,
+    pointB: preset.left.pointB,
+    use3DWorld: preset.left.use3DWorld,
+    weight: primaryJoint.weight,
+    jointNameTh: preset.labelTh,
+    lowAngleHintTh: def.hint
+  } : {
+    ...preset.left,
+    weight: primaryJoint.weight,
+    jointNameTh: preset.labelTh,
+    lowAngleHintTh: def.hint
+  };
+  const rightTriplet = {
+    pointA: def.side === "right" ? primaryJoint.pointA : preset.right.pointA,
+    vertex: def.side === "right" ? primaryJoint.vertex : preset.right.vertex,
+    pointB: def.side === "right" ? primaryJoint.pointB : preset.right.pointB,
+    use3DWorld: preset.right.use3DWorld,
+    weight: primaryJoint.weight,
+    jointNameTh: preset.labelTh,
+    lowAngleHintTh: def.hint
+  };
+  if (def.side === "left") {
+    leftTriplet.pointA = primaryJoint.pointA;
+    leftTriplet.vertex = primaryJoint.vertex;
+    leftTriplet.pointB = primaryJoint.pointB;
+  }
+  const targetMinDeg = isDecreasing ? Math.max(MIN_POSE_ANGLE_DEG, primaryJoint.target - primaryJoint.tolerance) : primaryJoint.target;
+  const targetMaxDeg = isDecreasing ? primaryJoint.target : MAX_POSE_ANGLE_DEG;
+  const sideValue = def.side === "both" ? "bilateral" : def.side;
+  const minVisibilityMap = {};
+  for (const lmIdx of def.requiredLandmarks) {
+    minVisibilityMap[lmIdx] = MIN_CALIBRATION_VISIBILITY;
+  }
+  return {
+    id: def.id,
+    exerciseId: def.id,
+    is_active: true,
+    mode: "camera",
+    nameTh: def.name,
+    nameEn: def.name,
+    descriptionTh: def.hint || `\u0E17\u0E48\u0E32\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E40\u0E2D\u0E07: ${def.name}`,
+    framing: preset.framing,
+    camera_framing: preset.framing === "upper" ? "upper_body" : preset.framing,
+    evaluationMode: preset.targetJoint === "neck" ? "neck_tilt" : "angle_rep_hold",
+    side: sideValue,
+    lateralityMode: "unilateral_or_bilateral",
+    allowDynamicUnilateral: true,
+    use3DWorld: preset.left.use3DWorld ?? true,
+    targetJoint: preset.targetJoint,
+    defaultSets: def.totalSets,
+    defaultReps: def.repsPerSet,
+    defaultHoldSec: primaryJoint.holdDurationSec,
+    cameraGuide: {
+      recommendedView: "front",
+      recommendedDistanceMeters: [1.5, 2.5],
+      instructionTextTh: def.hint || "\u0E08\u0E31\u0E14\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07\u0E23\u0E48\u0E32\u0E07\u0E01\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E01\u0E23\u0E2D\u0E1A\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E41\u0E25\u0E30\u0E40\u0E2B\u0E47\u0E19\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19"
+    },
+    angleMechanics: {
+      landmarks: {
+        left: leftTriplet,
+        right: rightTriplet
+      },
+      direction: primaryJoint.direction,
+      startAngleDeg: primaryJoint.startAngleDeg,
+      targetMinDeg,
+      targetMaxDeg,
+      toleranceDeg: primaryJoint.tolerance,
+      falloffDeg: def.falloff,
+      weight: primaryJoint.weight,
+      jointNameTh: preset.labelTh,
+      lowAngleHintTh: def.hint,
+      holdDurationSec: primaryJoint.holdDurationSec,
+      use3DWorld: preset.left.use3DWorld ?? true
+    },
+    defaultPrescription: {
+      repsPerSet: def.repsPerSet,
+      totalSets: def.totalSets,
+      restBetweenSetsSec: 30,
+      holdDurationSec: primaryJoint.holdDurationSec,
+      targetMinDeg: primaryJoint.target
+    },
+    compensationRules: [],
+    safetyContraindications: {
+      stopOnPainMessageTh: "\u0E2B\u0E32\u0E01\u0E23\u0E39\u0E49\u0E2A\u0E36\u0E01\u0E40\u0E08\u0E47\u0E1A\u0E1C\u0E34\u0E14\u0E1B\u0E01\u0E15\u0E34\u0E43\u0E2B\u0E49\u0E2B\u0E22\u0E38\u0E14\u0E1E\u0E31\u0E01\u0E17\u0E31\u0E19\u0E17\u0E35\u0E41\u0E25\u0E30\u0E41\u0E08\u0E49\u0E07\u0E19\u0E31\u0E01\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E\u0E1A\u0E33\u0E1A\u0E31\u0E14",
+      maxSafeAngleCapDeg: MAX_POSE_ANGLE_DEG
+    },
+    requiredLandmarks: {
+      left: [leftTriplet.pointA, leftTriplet.vertex, leftTriplet.pointB],
+      right: [rightTriplet.pointA, rightTriplet.vertex, rightTriplet.pointB],
+      bilateral: def.requiredLandmarks
+    },
+    minLandmarkVisibility: minVisibilityMap,
+    coachingCues: {
+      idleMessageTh: `\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E17\u0E48\u0E32 ${def.name}`,
+      movingMessageTh: def.hint || `\u0E40\u0E04\u0E25\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E2B\u0E27\u0E44\u0E1B\u0E22\u0E31\u0E07\u0E21\u0E38\u0E21\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22 ${primaryJoint.target}\xB0`,
+      holdingMessageTh: `\u0E40\u0E22\u0E35\u0E48\u0E22\u0E21\u0E21\u0E32\u0E01 \u0E04\u0E49\u0E32\u0E07\u0E17\u0E48\u0E32\u0E44\u0E27\u0E49\u0E17\u0E35\u0E48 ~${primaryJoint.target}\xB0`,
+      returningMessageTh: "\u0E04\u0E48\u0E2D\u0E22\u0E46 \u0E1C\u0E48\u0E2D\u0E19\u0E01\u0E25\u0E31\u0E1A\u0E2A\u0E39\u0E48\u0E17\u0E48\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19",
+      framingMessageTh: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E02\u0E22\u0E31\u0E1A\u0E43\u0E2B\u0E49\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E40\u0E2B\u0E47\u0E19\u0E02\u0E49\u0E2D\u0E15\u0E48\u0E2D\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E1D\u0E36\u0E01\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19",
+      targetKeypoints: def.requiredLandmarks
+    }
+  };
+}
+function safeReadJsonArray(storage, key) {
+  if (!storage) return [];
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+function loadCustomPosesFromStorage(storage) {
+  const store = resolveDefaultStorage(storage);
+  const rawList = safeReadJsonArray(store, DRTECH_CUSTOM_POSES_STORAGE_KEY);
+  const validPoses = [];
+  const seenIds = /* @__PURE__ */ new Set();
+  for (const item of rawList) {
+    const res = validatePoseDefinition(item, { existingIds: seenIds });
+    if (res.ok) {
+      seenIds.add(res.value.id);
+      validPoses.push(res.value);
+    }
+  }
+  return validPoses;
+}
+function getCustomPoseConfigs(storage) {
+  return loadCustomPosesFromStorage(storage).map(poseDefinitionToExerciseConfig);
+}
+var DEFAULT_POSE_SIDE, DEFAULT_POSE_TOLERANCE_DEG, DEFAULT_FALLOFF_DEG, DEFAULT_JOINT_WEIGHT, DEFAULT_HOLD_DURATION_SEC, MIN_POSE_ANGLE_DEG, MAX_POSE_ANGLE_DEG, MAX_MEDIAPIPE_LANDMARK_INDEX, DEFAULT_PHASE_ENTER_RATIO, DEFAULT_PHASE_EXIT_RATIO, MIN_CALIBRATION_VISIBILITY, DRTECH_CUSTOM_POSES_STORAGE_KEY, POSE_JOINT_PRESETS;
+var init_poseSchemaAndCalibration = __esm({
+  "packages/pose-engine/src/calibration/poseSchemaAndCalibration.ts"() {
+    "use strict";
+    init_sessionProgressAndAccuracy();
+    init_geometry3d();
+    DEFAULT_POSE_SIDE = "both";
+    DEFAULT_POSE_TOLERANCE_DEG = DEFAULT_ANGLE_TOLERANCE_DEG;
+    DEFAULT_FALLOFF_DEG = DEFAULT_ANGLE_FALLOFF_DEG;
+    DEFAULT_JOINT_WEIGHT = 1;
+    DEFAULT_HOLD_DURATION_SEC = 1;
+    MIN_POSE_ANGLE_DEG = 0;
+    MAX_POSE_ANGLE_DEG = 180;
+    MAX_MEDIAPIPE_LANDMARK_INDEX = 32;
+    DEFAULT_PHASE_ENTER_RATIO = 0.9;
+    DEFAULT_PHASE_EXIT_RATIO = 0.7;
+    MIN_CALIBRATION_VISIBILITY = MIN_JOINT_VISIBILITY;
+    DRTECH_CUSTOM_POSES_STORAGE_KEY = "drtech_care_custom_poses_v1";
+    POSE_JOINT_PRESETS = {
+      shoulder: {
+        key: "shoulder",
+        labelTh: "\u0E02\u0E49\u0E2D\u0E44\u0E2B\u0E25\u0E48 (\u0E2A\u0E30\u0E42\u0E1E\u0E01-\u0E44\u0E2B\u0E25\u0E48-\u0E28\u0E2D\u0E01)",
+        targetJoint: "shoulder",
+        framing: "upper",
+        defaultDirection: "increase",
+        defaultStartAngleDeg: 20,
+        left: { pointA: 23, vertex: 11, pointB: 13, use3DWorld: true },
+        right: { pointA: 24, vertex: 12, pointB: 14, use3DWorld: true },
+        requiredLandmarks: [11, 12, 13, 14, 23, 24]
+      },
+      elbow: {
+        key: "elbow",
+        labelTh: "\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01 (\u0E44\u0E2B\u0E25\u0E48-\u0E28\u0E2D\u0E01-\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D)",
+        targetJoint: "elbow",
+        framing: "upper",
+        defaultDirection: "decrease",
+        defaultStartAngleDeg: 160,
+        left: { pointA: 11, vertex: 13, pointB: 15, use3DWorld: true },
+        right: { pointA: 12, vertex: 14, pointB: 16, use3DWorld: true },
+        requiredLandmarks: [11, 12, 13, 14, 15, 16]
+      },
+      knee: {
+        key: "knee",
+        labelTh: "\u0E02\u0E49\u0E2D\u0E40\u0E02\u0E48\u0E32 (\u0E2A\u0E30\u0E42\u0E1E\u0E01-\u0E40\u0E02\u0E48\u0E32-\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E49\u0E32)",
+        targetJoint: "knee",
+        framing: "lower_body",
+        defaultDirection: "increase",
+        defaultStartAngleDeg: 90,
+        left: { pointA: 23, vertex: 25, pointB: 27, use3DWorld: true },
+        right: { pointA: 24, vertex: 26, pointB: 28, use3DWorld: true },
+        requiredLandmarks: [23, 24, 25, 26, 27, 28]
+      },
+      hip: {
+        key: "hip",
+        labelTh: "\u0E02\u0E49\u0E2D\u0E2A\u0E30\u0E42\u0E1E\u0E01 (\u0E44\u0E2B\u0E25\u0E48-\u0E2A\u0E30\u0E42\u0E1E\u0E01-\u0E40\u0E02\u0E48\u0E32)",
+        targetJoint: "hip",
+        framing: "full",
+        defaultDirection: "increase",
+        defaultStartAngleDeg: 15,
+        left: { pointA: 11, vertex: 23, pointB: 25, use3DWorld: true },
+        right: { pointA: 12, vertex: 24, pointB: 26, use3DWorld: true },
+        requiredLandmarks: [11, 12, 23, 24, 25, 26]
+      },
+      neck: {
+        key: "neck",
+        labelTh: "\u0E04\u0E2D/\u0E28\u0E35\u0E23\u0E29\u0E30 (\u0E2B\u0E39-\u0E44\u0E2B\u0E25\u0E48-\u0E2A\u0E30\u0E42\u0E1E\u0E01)",
+        targetJoint: "neck",
+        framing: "head_shoulders",
+        defaultDirection: "decrease",
+        defaultStartAngleDeg: 90,
+        left: { pointA: 7, vertex: 11, pointB: 23, use3DWorld: false },
+        right: { pointA: 8, vertex: 12, pointB: 24, use3DWorld: false },
+        requiredLandmarks: [0, 7, 8, 11, 12]
+      },
+      ankle: {
+        key: "ankle",
+        labelTh: "\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E49\u0E32 (\u0E40\u0E02\u0E48\u0E32-\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E49\u0E32-\u0E1B\u0E25\u0E32\u0E22\u0E40\u0E17\u0E49\u0E32)",
+        targetJoint: "ankle",
+        framing: "lower_body",
+        defaultDirection: "increase",
+        defaultStartAngleDeg: 90,
+        left: { pointA: 25, vertex: 27, pointB: 31, use3DWorld: false },
+        right: { pointA: 26, vertex: 28, pointB: 32, use3DWorld: false },
+        requiredLandmarks: [25, 26, 27, 28, 31, 32]
+      },
+      wrist: {
+        key: "wrist",
+        labelTh: "\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D (\u0E28\u0E2D\u0E01-\u0E02\u0E49\u0E2D\u0E21\u0E37\u0E2D-\u0E19\u0E34\u0E49\u0E27\u0E0A\u0E35\u0E49)",
+        targetJoint: "wrist",
+        framing: "upper",
+        defaultDirection: "decrease",
+        defaultStartAngleDeg: 170,
+        left: { pointA: 13, vertex: 15, pointB: 19, use3DWorld: false },
+        right: { pointA: 14, vertex: 16, pointB: 20, use3DWorld: false },
+        requiredLandmarks: [13, 14, 15, 16, 19, 20]
+      }
+    };
+  }
+});
+
 // packages/pose-engine/src/presets/exercises.config.ts
 function getClinicalExerciseConfig(idOrName) {
   if (!idOrName) return null;
@@ -3108,6 +3667,12 @@ function getClinicalExerciseConfig(idOrName) {
     if (ex.nameTh.toLowerCase().includes(q) || q.includes(ex.nameTh.toLowerCase())) return ex;
     if (ex.nameEn.toLowerCase().includes(q) || q.includes(ex.nameEn.toLowerCase())) return ex;
     if (ex.nameCn && (ex.nameCn.includes(q) || q.includes(ex.nameCn))) return ex;
+  }
+  for (const customEx of getCustomPoseConfigs()) {
+    if (customEx.id?.toLowerCase() === q || customEx.exerciseId?.toLowerCase() === q) return customEx;
+    if (customEx.nameTh && (customEx.nameTh.toLowerCase().includes(q) || q.includes(customEx.nameTh.toLowerCase()))) {
+      return customEx;
+    }
   }
   if (q.includes("cervical-rotation") || q.includes("\u0E2B\u0E31\u0E19\u0E28\u0E35\u0E23\u0E29\u0E30") || q.includes("\u0E2B\u0E21\u0E38\u0E19\u0E04\u0E2D") || q.includes("\u9888\u90E8\u65CB\u8F6C")) return CLINICAL_EXERCISES_CONFIG["seated-cervical-rotation"];
   if (q.includes("cervical-side") || q.includes("\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E28\u0E35\u0E23\u0E29\u0E30") || q.includes("\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E04\u0E2D") || q.includes("\u9888\u90E8\u4FA7\u5C48")) return CLINICAL_EXERCISES_CONFIG["cervical-side-bend"];
@@ -3141,6 +3706,7 @@ var CLINICAL_EXERCISES_CONFIG, ALL_CLINICAL_EXERCISES;
 var init_exercises_config = __esm({
   "packages/pose-engine/src/presets/exercises.config.ts"() {
     "use strict";
+    init_poseSchemaAndCalibration();
     CLINICAL_EXERCISES_CONFIG = {
       // 1. Active Shoulder Flexion
       "active-shoulder-flexion": {
@@ -3159,6 +3725,8 @@ var init_exercises_config = __esm({
         evaluationMode: "angle_rep_hold",
         side: "bilateral",
         lateralityMode: "unilateral_or_bilateral",
+        allowDynamicUnilateral: true,
+        use3DWorld: true,
         targetJoint: "shoulder",
         mediaUrl: "/assets/exercises/active-shoulder-flexion.svg",
         clinicalSource: "AAOS Clinical Standards / JOSPT Shoulder Impingement CPG",
@@ -3181,9 +3749,9 @@ var init_exercises_config = __esm({
           },
           direction: "increase",
           startAngleDeg: 20,
-          targetMinDeg: 140,
+          targetMinDeg: 120,
           targetMaxDeg: 180,
-          toleranceDeg: 12,
+          toleranceDeg: 15,
           holdDurationSec: 1
         },
         defaultPrescription: {
@@ -3280,6 +3848,8 @@ var init_exercises_config = __esm({
         evaluationMode: "angle_rep_hold",
         side: "bilateral",
         lateralityMode: "unilateral_or_bilateral",
+        allowDynamicUnilateral: true,
+        use3DWorld: true,
         targetJoint: "shoulder",
         mediaUrl: "/exercises/shoulder-abduction.mp4",
         mediaType: "video",
@@ -3384,6 +3954,8 @@ var init_exercises_config = __esm({
         evaluationMode: "angle_rep_hold",
         side: "bilateral",
         lateralityMode: "unilateral_or_bilateral",
+        allowDynamicUnilateral: true,
+        use3DWorld: true,
         targetJoint: "shoulder",
         mediaUrl: "/assets/exercises/shoulder-er-band.svg",
         clinicalSource: "JOSPT Rotator Cuff CPG / Brotzman Clinical Orthopaedic Rehab",
@@ -3405,8 +3977,8 @@ var init_exercises_config = __esm({
           },
           direction: "increase",
           startAngleDeg: 15,
-          targetMinDeg: 40,
-          targetMaxDeg: 75,
+          targetMinDeg: 35,
+          targetMaxDeg: 80,
           toleranceDeg: 10,
           holdDurationSec: 2
         },
@@ -3540,6 +4112,8 @@ var init_exercises_config = __esm({
         evaluationMode: "angle_rep_hold",
         side: "bilateral",
         lateralityMode: "unilateral_or_bilateral",
+        allowDynamicUnilateral: true,
+        use3DWorld: true,
         targetJoint: "elbow",
         mediaUrl: "/assets/exercises/elbow-flexion-extension.svg",
         clinicalSource: "AAOS Clinical Measurement / Kapandji Biomechanics",
@@ -3561,9 +4135,9 @@ var init_exercises_config = __esm({
           },
           direction: "decrease",
           startAngleDeg: 160,
-          targetMinDeg: 35,
-          targetMaxDeg: 50,
-          toleranceDeg: 8,
+          targetMinDeg: 25,
+          targetMaxDeg: 60,
+          toleranceDeg: 10,
           holdDurationSec: 1
         },
         defaultPrescription: {
@@ -3571,10 +4145,10 @@ var init_exercises_config = __esm({
           totalSets: 3,
           restBetweenSetsSec: 30
         },
-        /* [ต้องให้นักกายภาพตรวจสอบ]: startAngleDeg: 160°, target: 35°-50°, tolerance: 8°, elbowDriftTolerance: 0.14 */
+        /* [ต้องให้นักกายภาพตรวจสอบ]: startAngleDeg: 160°, target: 25°-60°, tolerance: 10°, elbowDriftTolerance: 0.18 */
         formGate: {
           minLandmarkVisibility: 0.5,
-          elbowDriftTolerance: 0.14,
+          elbowDriftTolerance: 0.16,
           disallowOutOfFrame: true,
           missingArmCueTh: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E16\u0E2D\u0E22\u0E2B\u0E25\u0E31\u0E07\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E41\u0E02\u0E19\u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E28\u0E2D\u0E01\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19",
           missingArmCueEn: "Please step back so your arm and elbow are clearly visible",
@@ -3636,6 +4210,8 @@ var init_exercises_config = __esm({
         evaluationMode: "angle_rep_hold",
         side: "bilateral",
         lateralityMode: "unilateral_or_bilateral",
+        allowDynamicUnilateral: true,
+        use3DWorld: true,
         targetJoint: "knee",
         mediaUrl: "/assets/exercises/seated-knee-extension.svg",
         clinicalSource: "AAOS Knee Osteoarthritis CPG / ACSM Exercise Guidelines",
@@ -3871,6 +4447,8 @@ var init_exercises_config = __esm({
         evaluationMode: "angle_rep_hold",
         side: "bilateral",
         lateralityMode: "unilateral_or_bilateral",
+        allowDynamicUnilateral: true,
+        use3DWorld: true,
         targetJoint: "hip",
         mediaUrl: "/assets/exercises/straight-leg-raise.svg",
         clinicalSource: "JOSPT Low Back Pain & Knee Rehab CPG / Brotzman",
@@ -3950,6 +4528,8 @@ var init_exercises_config = __esm({
         evaluationMode: "angle_rep_hold",
         side: "bilateral",
         lateralityMode: "unilateral_or_bilateral",
+        allowDynamicUnilateral: true,
+        use3DWorld: true,
         targetJoint: "hip",
         mediaUrl: "/assets/exercises/standing-hip-abduction.svg",
         clinicalSource: "JOSPT Hip Osteoarthritis CPG / Kendall Muscle Testing",
@@ -4027,6 +4607,8 @@ var init_exercises_config = __esm({
         evaluationMode: "heel_raise",
         side: "bilateral",
         lateralityMode: "unilateral_or_bilateral",
+        allowDynamicUnilateral: true,
+        use3DWorld: false,
         targetJoint: "ankle",
         mediaUrl: "/assets/exercises/calf-raise.svg",
         clinicalSource: "AAOS Achilles Tendinopathy Guidelines / ACSM",
@@ -4990,6 +5572,8 @@ var init_exercises_config = __esm({
         evaluationMode: "angle_rep_hold",
         side: "bilateral",
         lateralityMode: "unilateral_or_bilateral",
+        allowDynamicUnilateral: true,
+        use3DWorld: true,
         targetJoint: "shoulder",
         mediaUrl: "/assets/exercises/seated-horizontal-abduction.svg",
         clinicalSource: "AAOS / ACSM Shoulder Conditioning Protocol",

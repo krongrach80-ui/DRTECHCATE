@@ -1123,6 +1123,708 @@ export const PHYSICAL_CARD_LOCALIZED_DESCRIPTIONS: Record<string, { en: string; 
 };
 
 /**
+ * Localized EN / ZH translations for all 99 card prompts and explanations
+ */
+export const PHYSICAL_CARD_LOCALIZED_QUESTIONS: Record<
+  string,
+  { prompt: { en: string; zh: string }; explanation: { en: string; zh: string } }
+> = {
+  'pcg-01': {
+    prompt: { en: 'Is a banana a fruit?', zh: '香蕉是水果吗？' },
+    explanation: {
+      en: 'Yes, bananas are a fruit rich in energy and potassium.',
+      zh: '是的，香蕉是富含能量和钾元素的水果。',
+    },
+  },
+  'pcg-02': {
+    prompt: { en: 'Is that a banana in the picture?', zh: '图里是香蕉吗？' },
+    explanation: {
+      en: 'No, the picture shows an orange, not a banana.',
+      zh: '不是，图里是橙子，不是香蕉。',
+    },
+  },
+  'pcg-03': {
+    prompt: { en: 'Is rice food?', zh: '米饭是食物吗？' },
+    explanation: {
+      en: 'Yes, rice is a staple food that provides carbohydrates.',
+      zh: '是的，米饭是提供碳水化合物的主食。',
+    },
+  },
+  'pcg-04': {
+    prompt: { en: 'Is a spoon used to scoop food?', zh: '勺子是用来舀食物的吗？' },
+    explanation: {
+      en: 'Yes, a spoon is used for scooping food and liquids.',
+      zh: '是的，勺子用来舀取食物和汤水。',
+    },
+  },
+  'pcg-05': {
+    prompt: { en: 'Is that a spoon in the picture?', zh: '图里是勺子吗？' },
+    explanation: {
+      en: 'No, the picture shows a fork for picking up food.',
+      zh: '不是，图里是用来叉食物的叉子。',
+    },
+  },
+  'pcg-06': {
+    prompt: { en: 'Is a glass used to hold water?', zh: '水杯是用来装水的吗？' },
+    explanation: {
+      en: 'Yes, a water glass is a container for drinks.',
+      zh: '是的，水杯是用来盛装饮品的容器。',
+    },
+  },
+  'pcg-07': {
+    prompt: { en: 'Is there water in the glass?', zh: '杯子里有水吗？' },
+    explanation: {
+      en: 'No, this glass is completely empty with no water.',
+      zh: '没有，这个杯子是空的，里面没有水。',
+    },
+  },
+  'pcg-08': {
+    prompt: { en: 'Is a pillow used to rest your head?', zh: '枕头是用来垫头的吗？' },
+    explanation: {
+      en: 'Yes, a pillow supports your head and neck while sleeping.',
+      zh: '是的，枕头在睡觉时用来支撑头部和颈部。',
+    },
+  },
+  'pcg-09': {
+    prompt: { en: 'Do you wear shoes on your feet?', zh: '鞋子是穿在脚上的吗？' },
+    explanation: {
+      en: 'Yes, shoes are worn on the feet to protect against injury.',
+      zh: '是的，鞋子穿在脚上可以保护双脚免受伤害。',
+    },
+  },
+  'pcg-10': {
+    prompt: { en: 'Do you wear a hat on your head?', zh: '帽子是戴在头上的吗？' },
+    explanation: {
+      en: 'Yes, a hat is worn on the head for sun protection or warmth.',
+      zh: '是的，帽子戴在头上可以遮阳或保暖。',
+    },
+  },
+  'pcg-11': {
+    prompt: { en: 'Do you use a toothbrush to brush teeth?', zh: '用牙刷来刷牙吗？' },
+    explanation: {
+      en: 'Yes, a toothbrush cleans your teeth and mouth.',
+      zh: '是的，牙刷用来清洁牙齿和口腔。',
+    },
+  },
+  'pcg-12': {
+    prompt: { en: 'Is that a toothbrush in the picture?', zh: '图里是牙刷吗？' },
+    explanation: {
+      en: 'No, the picture shows a comb for styling hair.',
+      zh: '不是，图里是用来梳头的梳子。',
+    },
+  },
+  'pcg-13': {
+    prompt: { en: 'Is a clock used to tell time?', zh: '时钟是用来看时间的吗？' },
+    explanation: {
+      en: 'Yes, a clock tells the hours and minutes.',
+      zh: '是的，时钟用来显示小时和分钟。',
+    },
+  },
+  'pcg-14': {
+    prompt: { en: 'Is a key used to open a door?', zh: '钥匙是用来开门的吗？' },
+    explanation: {
+      en: 'Yes, a key locks and unlocks doors.',
+      zh: '是的，钥匙用来锁门和开锁。',
+    },
+  },
+  'pcg-15': {
+    prompt: { en: 'Does an umbrella keep off rain?', zh: '雨伞能挡雨吗？' },
+    explanation: {
+      en: 'Yes, an umbrella protects you from rain and sunlight.',
+      zh: '是的，雨伞可以遮挡雨水和阳光。',
+    },
+  },
+  'pcg-16': {
+    prompt: { en: 'Does a fan make a breeze?', zh: '风扇能吹出风吗？' },
+    explanation: {
+      en: 'Yes, spinning fan blades create airflow to cool you down.',
+      zh: '是的，风扇叶片转动可以产生风来散热。',
+    },
+  },
+  'pcg-17': {
+    prompt: { en: 'Is soap used to wash hands?', zh: '肥皂是用来洗手的吗？' },
+    explanation: {
+      en: 'Yes, soap washes dirt and germs off your hands.',
+      zh: '是的，肥皂可以洗去手上的污垢和细菌。',
+    },
+  },
+  'pcg-18': {
+    prompt: { en: 'Can you dry off with this towel?', zh: '可以用这条毛巾擦身体吗？' },
+    explanation: {
+      en: 'Yes, a towel absorbs water to dry your skin.',
+      zh: '是的，毛巾能吸水，可以把身体擦干。',
+    },
+  },
+  'pcg-19': {
+    prompt: { en: 'Is a broom used to sweep the floor?', zh: '扫帚是用来扫地的吗？' },
+    explanation: {
+      en: 'Yes, a broom sweeps dust and debris off the floor.',
+      zh: '是的，扫帚用来清扫地面上的灰尘和杂物。',
+    },
+  },
+  'pcg-20': {
+    prompt: { en: 'Does a mirror let you see your face?', zh: '镜子能照见自己的脸吗？' },
+    explanation: {
+      en: 'Yes, the reflective surface of a mirror shows your face.',
+      zh: '是的，镜子的反射面可以让你看到自己的脸。',
+    },
+  },
+  'pcg-21': {
+    prompt: { en: 'Can you drink milk?', zh: '牛奶可以喝吗？' },
+    explanation: {
+      en: 'Yes, milk is a nutritious drink rich in calcium and protein.',
+      zh: '是的，牛奶是富含钙和蛋白质的饮品。',
+    },
+  },
+  'pcg-22': {
+    prompt: { en: 'Does the fish in the picture have wings?', zh: '图里的鱼有翅膀吗？' },
+    explanation: {
+      en: 'No, ordinary fish have fins and a tail for swimming, not wings.',
+      zh: '没有，普通的鱼有鳍和尾巴用来游泳，没有翅膀。',
+    },
+  },
+  'pcg-23': {
+    prompt: { en: 'Does a cat have four legs?', zh: '猫有四条腿吗？' },
+    explanation: {
+      en: 'Yes, a cat is a four-legged animal (2 front, 2 back legs).',
+      zh: '是的，猫是四足动物（前腿2条，后腿2条）。',
+    },
+  },
+  'pcg-24': {
+    prompt: { en: 'Is that a cat in the picture?', zh: '图里是猫吗？' },
+    explanation: {
+      en: 'No, the animal in the picture is a dog, not a cat.',
+      zh: '不是，图里的动物是狗，不是猫。',
+    },
+  },
+  'pcg-25': {
+    prompt: { en: 'Does an elephant have a trunk?', zh: '大象有长鼻子吗？' },
+    explanation: {
+      en: 'Yes, elephants have a long trunk for smelling, grasping, and spraying water.',
+      zh: '是的，大象有长鼻子，用来闻气味、抓取东西和喷水。',
+    },
+  },
+  'pcg-26': {
+    prompt: { en: 'Is there 1 apple?', zh: '有1个苹果吗？' },
+    explanation: {
+      en: 'Yes, there is 1 red apple in the picture.',
+      zh: '是的，图里有1个红苹果。',
+    },
+  },
+  'pcg-27': {
+    prompt: { en: 'Are there 3 apples?', zh: '有3个苹果吗？' },
+    explanation: {
+      en: 'No, there are only 2 apples in the picture, not 3.',
+      zh: '不是，图里只有2个苹果，不是3个。',
+    },
+  },
+  'pcg-28': {
+    prompt: { en: 'Are there 3 bananas?', zh: '有3根香蕉吗？' },
+    explanation: {
+      en: 'Yes, counting carefully shows all 3 bananas.',
+      zh: '是的，数一数一共有3根香蕉。',
+    },
+  },
+  'pcg-29': {
+    prompt: { en: 'Are there 3 bananas?', zh: '有3根香蕉吗？' },
+    explanation: {
+      en: 'No, there are only 2 bananas in the picture.',
+      zh: '不是，图里只有2根香蕉。',
+    },
+  },
+  'pcg-30': {
+    prompt: { en: 'Are there 2 glasses?', zh: '有2个杯子吗？' },
+    explanation: {
+      en: 'Yes, there are exactly 2 glasses.',
+      zh: '是的，正好放着2个水杯。',
+    },
+  },
+  'pcg-31': {
+    prompt: { en: 'Are there 2 glasses?', zh: '有2个杯子吗？' },
+    explanation: {
+      en: 'No, there is only 1 glass in the picture.',
+      zh: '不是，图里只有1个水杯。',
+    },
+  },
+  'pcg-32': {
+    prompt: { en: 'Are there 2 flowers?', zh: '有2朵花吗？' },
+    explanation: {
+      en: 'Yes, there are 2 blooming flowers.',
+      zh: '是的，有2朵盛开的花朵。',
+    },
+  },
+  'pcg-33': {
+    prompt: { en: 'Are there 2 flowers?', zh: '有2朵花吗？' },
+    explanation: {
+      en: 'No, there are 3 flowers in the picture, not 2.',
+      zh: '不是，图里有3朵花，不是2朵。',
+    },
+  },
+  'pcg-34': {
+    prompt: { en: 'Is this a complete pair of socks?', zh: '这是一双完整的袜子吗？' },
+    explanation: {
+      en: 'Yes, 2 socks together make 1 complete pair.',
+      zh: '是的，2只袜子合起来正好是一双。',
+    },
+  },
+  'pcg-35': {
+    prompt: { en: 'Is this a complete pair of socks?', zh: '这是一双完整的袜子吗？' },
+    explanation: {
+      en: 'No, there is only 1 sock; one is missing to make a pair.',
+      zh: '不是，这里只有1只袜子，缺了一只不成双。',
+    },
+  },
+  'pcg-36': {
+    prompt: { en: 'Are there 3 eggs?', zh: '有3个鸡蛋吗？' },
+    explanation: {
+      en: 'Yes, there are 3 eggs in the picture.',
+      zh: '是的，图里有3个鸡蛋。',
+    },
+  },
+  'pcg-37': {
+    prompt: { en: 'Are there 3 eggs?', zh: '有3个鸡蛋吗？' },
+    explanation: {
+      en: 'No, there are only 2 eggs in the picture.',
+      zh: '不是，图里只有2个鸡蛋。',
+    },
+  },
+  'pcg-38': {
+    prompt: { en: 'Are there 2 chairs?', zh: '有2把椅子吗？' },
+    explanation: {
+      en: 'Yes, there are 2 chairs.',
+      zh: '是的，画面里有2把椅子。',
+    },
+  },
+  'pcg-39': {
+    prompt: { en: 'Are there 2 chairs?', zh: '有2把椅子吗？' },
+    explanation: {
+      en: 'No, there is only 1 chair in the picture.',
+      zh: '不是，图里只有1把椅子。',
+    },
+  },
+  'pcg-40': {
+    prompt: { en: 'Are there 3 spoons?', zh: '有3把勺子吗？' },
+    explanation: {
+      en: 'Yes, there are 3 spoons lined up in the picture.',
+      zh: '是的，图里排着3把勺子。',
+    },
+  },
+  'pcg-41': {
+    prompt: { en: 'Are there 3 spoons?', zh: '有3把勺子吗？' },
+    explanation: {
+      en: 'No, there are only 2 spoons in the picture.',
+      zh: '不是，图里只有2把勺子。',
+    },
+  },
+  'pcg-42': {
+    prompt: { en: 'Are there 2 oranges?', zh: '有2个橙子吗？' },
+    explanation: {
+      en: 'Yes, there are 2 oranges.',
+      zh: '是的，图里有2个橙子。',
+    },
+  },
+  'pcg-43': {
+    prompt: { en: 'Are there 2 oranges?', zh: '有2个橙子吗？' },
+    explanation: {
+      en: 'No, there are 4 oranges in the picture, not 2.',
+      zh: '不是，图里有4个橙子，不是2个。',
+    },
+  },
+  'pcg-44': {
+    prompt: { en: 'Is there 1 ball?', zh: '有1个球吗？' },
+    explanation: {
+      en: 'Yes, there is 1 round ball.',
+      zh: '是的，图里有1个圆球。',
+    },
+  },
+  'pcg-45': {
+    prompt: { en: 'Are there 2 balls?', zh: '有2个球吗？' },
+    explanation: {
+      en: 'No, there are 3 balls in the picture, not 2.',
+      zh: '不是，图里有3个球，不是2个。',
+    },
+  },
+  'pcg-46': {
+    prompt: { en: 'Are there 2 candles?', zh: '有2根蜡烛吗？' },
+    explanation: {
+      en: 'Yes, there are 2 candles on top of the cake.',
+      zh: '是的，蛋糕上插着2根蜡烛。',
+    },
+  },
+  'pcg-47': {
+    prompt: { en: 'Are there 2 candles?', zh: '有2根蜡烛吗？' },
+    explanation: {
+      en: 'No, there is only 1 candle on the cake.',
+      zh: '不是，蛋糕上只有1根蜡烛。',
+    },
+  },
+  'pcg-48': {
+    prompt: { en: 'Are there 3 plates?', zh: '有3个盘子吗？' },
+    explanation: {
+      en: 'Yes, there are 3 plates.',
+      zh: '是的，一共有3个盘子。',
+    },
+  },
+  'pcg-49': {
+    prompt: { en: 'Are there 3 plates?', zh: '有3个盘子吗？' },
+    explanation: {
+      en: 'No, there are only 2 plates in the picture.',
+      zh: '不是，图里只有2个盘子。',
+    },
+  },
+  'pcg-50': {
+    prompt: { en: 'Is there a complete pair of shoes?', zh: '鞋子是完整的一双吗？' },
+    explanation: {
+      en: 'Yes, the left and right shoes make 1 complete pair.',
+      zh: '是的，左脚和右脚鞋子正好组成一双。',
+    },
+  },
+  'pcg-51': {
+    prompt: { en: 'Should you wash hands before eating?', zh: '吃饭前应该洗手吗？' },
+    explanation: {
+      en: 'Yes, washing hands removes germs before touching food.',
+      zh: '是的，洗手可以在接触食物前清除细菌。',
+    },
+  },
+  'pcg-52': {
+    prompt: { en: 'Should you eat snacks right away?', zh: '应该马上吃零食吗？' },
+    explanation: {
+      en: 'No, wash your hands clean before eating snacks to prevent germs.',
+      zh: '不应该，吃零食前必须先把手洗干净以防病菌。',
+    },
+  },
+  'pcg-53': {
+    prompt: { en: 'Should you wait for hot soup to cool before eating?', zh: '热汤应该晾凉一点再喝吗？' },
+    explanation: {
+      en: 'Yes, let hot food cool slightly before eating to avoid burning your mouth.',
+      zh: '是的，应该等食物稍微放凉再吃以免烫伤口腔。',
+    },
+  },
+  'pcg-54': {
+    prompt: { en: 'Should you eat this food?', zh: '这个食物可以吃吗？' },
+    explanation: {
+      en: 'No, moldy food contains harmful toxins and mold.',
+      zh: '不能吃，发霉的食物含有对健康有害的毒素和霉菌。',
+    },
+  },
+  'pcg-55': {
+    prompt: { en: 'Is this safe to eat?', zh: '这个能吃吗？' },
+    explanation: {
+      en: 'Yes, cleanly washed fruit is safe and ready to eat.',
+      zh: '是的，洗干净的水果可以安全食用。',
+    },
+  },
+  'pcg-56': {
+    prompt: { en: 'Does a closed umbrella block the rain?', zh: '合着的雨伞能挡雨吗？' },
+    explanation: {
+      en: 'No, a closed umbrella cannot block raindrops; you must open it.',
+      zh: '不能，合着的雨伞挡不住雨水，需要打开使用。',
+    },
+  },
+  'pcg-57': {
+    prompt: { en: 'Does a hat help shade the sun?', zh: '帽子能帮忙遮阳吗？' },
+    explanation: {
+      en: 'Yes, a hat brim shades sunlight away from your face and eyes.',
+      zh: '是的，帽檐可以遮挡阳光，保护面部和眼睛。',
+    },
+  },
+  'pcg-58': {
+    prompt: { en: 'Does the handrail help support you?', zh: '楼梯扶手能帮忙支撑身体吗？' },
+    explanation: {
+      en: 'Yes, holding the handrail improves balance and prevents falls.',
+      zh: '是的，扶着楼梯扶手有助于保持平衡，防止跌倒。',
+    },
+  },
+  'pcg-59': {
+    prompt: { en: 'Should you sit on this chair?', zh: '应该坐这把椅子吗？' },
+    explanation: {
+      en: 'No, a chair with a broken leg may collapse and cause injury.',
+      zh: '不应该坐，椅子腿损坏可能会塌陷导致受伤。',
+    },
+  },
+  'pcg-60': {
+    prompt: { en: 'Does sitting down help you rest?', zh: '坐下来休息能缓解疲劳吗？' },
+    explanation: {
+      en: 'Yes, sitting to rest restores energy and lowers your heart rate.',
+      zh: '是的，坐下休息可以恢复体力并让心率平稳下来。',
+    },
+  },
+  'pcg-61': {
+    prompt: { en: 'Should you leave the stove on?', zh: '可以开着炉灶离开吗？' },
+    explanation: {
+      en: 'No! Always turn off the gas stove completely before leaving home to prevent fire.',
+      zh: '绝对不行！出门前必须彻底关掉燃气灶以防火灾。',
+    },
+  },
+  'pcg-62': {
+    prompt: { en: 'Does turning on a light brighten the room?', zh: '开灯后房间会变亮吗？' },
+    explanation: {
+      en: 'Yes, turning on lights illuminates the room so you can see clearly.',
+      zh: '是的，开灯能照亮房间，让你看得更清楚。',
+    },
+  },
+  'pcg-63': {
+    prompt: { en: 'Should you rush through this walkway?', zh: '应该快速冲过这条过道吗？' },
+    explanation: {
+      en: 'No, clear obstacles away or walk carefully around them.',
+      zh: '不应该，应先把障碍物移开或小心绕行。',
+    },
+  },
+  'pcg-64': {
+    prompt: { en: 'Can you cross the road right now?', zh: '现在可以过马路吗？' },
+    explanation: {
+      en: 'No, a red light means stop. Wait for the green pedestrian crossing signal.',
+      zh: '不行，红灯表示停下，必须等待绿色的行人通行信号。',
+    },
+  },
+  'pcg-65': {
+    prompt: { en: 'Should you look for cars before crossing?', zh: '过马路前应该左右看车吗？' },
+    explanation: {
+      en: 'Yes, even on a green light, look both ways to ensure cars have stopped.',
+      zh: '是的，即使是绿灯，也要左右观察确认车辆停稳后再过马路。',
+    },
+  },
+  'pcg-66': {
+    prompt: { en: 'Will the laundry dry in the rain?', zh: '在雨里晾衣服会干吗？' },
+    explanation: {
+      en: 'No, rain makes clothes wetter; bring them indoors under cover.',
+      zh: '不会干，下雨会把衣服淋得更湿，应该收到室内。',
+    },
+  },
+  'pcg-67': {
+    prompt: { en: 'Will wet laundry dry in the sun?', zh: '湿衣服晒在太阳下会干吗？' },
+    explanation: {
+      en: 'Yes, heat and sunlight evaporate water so clothes dry thoroughly.',
+      zh: '是的，热量和阳光会蒸发水分让衣服干透。',
+    },
+  },
+  'pcg-68': {
+    prompt: { en: 'Is this a safe place to shelter from rain?', zh: '在雷雨天躲在大树下安全吗？' },
+    explanation: {
+      en: 'No, standing under a tall tree during lightning risks being struck.',
+      zh: '不安全，打雷闪电时站在大树下有被雷击的危险。',
+    },
+  },
+  'pcg-69': {
+    prompt: { en: 'Do plants need water?', zh: '植物需要浇水吗？' },
+    explanation: {
+      en: 'Yes, living plants need water and sunlight to grow.',
+      zh: '是的，植物需要水和阳光才能生长。',
+    },
+  },
+  'pcg-70': {
+    prompt: { en: 'Does this plant need watering?', zh: '这盆植物需要浇水吗？' },
+    explanation: {
+      en: 'No, a plastic plant is decorative and not a living plant.',
+      zh: '不需要，塑料植物只是装饰品，不是真植物。',
+    },
+  },
+  'pcg-71': {
+    prompt: { en: 'Can an umbrella shade you from the sun?', zh: '伞能帮你遮太阳吗？' },
+    explanation: {
+      en: 'Yes, umbrella fabric reflects heat and blocks strong sunlight.',
+      zh: '是的，伞面可以反射热量并遮挡强烈阳光。',
+    },
+  },
+  'pcg-72': {
+    prompt: { en: 'Should you share your bank PIN?', zh: '应该告诉陌生人银行密码吗？' },
+    explanation: {
+      en: 'Never! Keep passwords and bank PINs secret and never share with strangers.',
+      zh: '绝对不要！密码和银行卡PIN码是机密，切勿透露给陌生人。',
+    },
+  },
+  'pcg-73': {
+    prompt: { en: 'Should you check who is at the door first?', zh: '开门前应该先确认是谁来了吗？' },
+    explanation: {
+      en: 'Yes, make sure the visitor is known and safe before opening the door.',
+      zh: '是的，开门前应先确认是认识且安全的人。',
+    },
+  },
+  'pcg-74': {
+    prompt: { en: 'Do you pay before taking your items?', zh: '拿走商品前需要先付款吗？' },
+    explanation: {
+      en: 'Yes, purchases must be paid for according to store rules.',
+      zh: '是的，购买商品需要按商店规定先付款。',
+    },
+  },
+  'pcg-75': {
+    prompt: { en: 'Does the hand point to number 7?', zh: '指针指着数字7吗？' },
+    explanation: {
+      en: 'Yes, the hour hand points directly at 7.',
+      zh: '是的，时针正好指着数字7。',
+    },
+  },
+  'pcg-76': {
+    prompt: { en: 'Does the hand point to number 7?', zh: '指针指着数字7吗？' },
+    explanation: {
+      en: 'No, the hand is pointing to 3, not 7.',
+      zh: '不是，指针指着数字3，不是7。',
+    },
+  },
+  'pcg-77': {
+    prompt: { en: 'Is today the 1st of the month?', zh: '今天是1号吗？' },
+    explanation: {
+      en: 'Yes, the calendar clearly shows day 1.',
+      zh: '是的，日历上显示的是1号。',
+    },
+  },
+  'pcg-78': {
+    prompt: { en: 'Is today the 1st of the month?', zh: '今天是1号吗？' },
+    explanation: {
+      en: 'No, the calendar page shows day 2.',
+      zh: '不是，日历上显示的是2号。',
+    },
+  },
+  'pcg-79': {
+    prompt: { en: 'Is the apple in the picture red?', zh: '图里的苹果是红色的吗？' },
+    explanation: {
+      en: 'Yes, the apple has bright red skin.',
+      zh: '是的，这个苹果有鲜红的外皮。',
+    },
+  },
+  'pcg-80': {
+    prompt: { en: 'Is the apple in the picture red?', zh: '图里的苹果是红色的吗？' },
+    explanation: {
+      en: 'No, this apple is green, not red.',
+      zh: '不是，这个苹果是青绿色的，不是红色。',
+    },
+  },
+  'pcg-81': {
+    prompt: { en: 'Is the banana in the picture yellow?', zh: '图里的香蕉是黄色的吗？' },
+    explanation: {
+      en: 'Yes, the ripe banana has a golden yellow peel.',
+      zh: '是的，成熟的香蕉有着金黄色的外皮。',
+    },
+  },
+  'pcg-82': {
+    prompt: { en: 'Is the ball in the picture red?', zh: '图里的球是红色的吗？' },
+    explanation: {
+      en: 'No, the ball in the picture is blue, not red.',
+      zh: '不是，图里的球是蓝色的，不是红色。',
+    },
+  },
+  'pcg-83': {
+    prompt: { en: 'Is the cup in the picture blue?', zh: '图里的杯子是蓝色的吗？' },
+    explanation: {
+      en: 'Yes, this cup is clearly blue.',
+      zh: '是的，这个水杯明显是蓝色的。',
+    },
+  },
+  'pcg-84': {
+    prompt: { en: 'Is the cup in the picture blue?', zh: '图里的杯子是蓝色的吗？' },
+    explanation: {
+      en: 'No, this cup is red, not blue.',
+      zh: '不是，这个杯子是红色的，不是蓝色。',
+    },
+  },
+  'pcg-85': {
+    prompt: { en: 'Is the ball round in shape?', zh: '球是圆形的吗？' },
+    explanation: {
+      en: 'Yes, a ball is symmetrical and round on all sides.',
+      zh: '是的，球体各个方向都是对称圆形的。',
+    },
+  },
+  'pcg-86': {
+    prompt: { en: 'Is the box in the picture a circle?', zh: '图里的盒子是圆形吗？' },
+    explanation: {
+      en: 'No, a box is a square cube with corners and edges.',
+      zh: '不是，盒子是带棱角的方形立方体。',
+    },
+  },
+  'pcg-87': {
+    prompt: { en: 'Is the fish in the water?', zh: '鱼在水里吗？' },
+    explanation: {
+      en: 'Yes, the fish is swimming inside the water.',
+      zh: '是的，鱼正在水里游动。',
+    },
+  },
+  'pcg-88': {
+    prompt: { en: 'Is a fish inside the cage?', zh: '笼子里是鱼吗？' },
+    explanation: {
+      en: 'No, it is a bird inside the cage, not a fish.',
+      zh: '不是，笼子里是一只鸟，不是鱼。',
+    },
+  },
+  'pcg-89': {
+    prompt: { en: 'Is the spoon on the table?', zh: '勺子在桌子上吗？' },
+    explanation: {
+      en: 'Yes, the spoon is resting on top of the table.',
+      zh: '是的，勺子放在桌面上。',
+    },
+  },
+  'pcg-90': {
+    prompt: { en: 'Is the spoon on the table?', zh: '勺子在桌子上吗？' },
+    explanation: {
+      en: 'No, the spoon is kept inside the drawer.',
+      zh: '不是，勺子收在抽屉里面。',
+    },
+  },
+  'pcg-91': {
+    prompt: { en: 'Are the shoes near the feet?', zh: '鞋子在脚旁边吗？' },
+    explanation: {
+      en: 'Yes, the shoes are placed right next to the feet.',
+      zh: '是的，鞋子就放在脚边很近的位置。',
+    },
+  },
+  'pcg-92': {
+    prompt: { en: 'Is there only one shoe?', zh: '只有一只鞋吗？' },
+    explanation: {
+      en: 'No, there is a complete pair of 2 shoes.',
+      zh: '不是，有一整双共2只鞋。',
+    },
+  },
+  'pcg-93': {
+    prompt: { en: 'Is there a spoon beside the bowl?', zh: '碗旁边有勺子吗？' },
+    explanation: {
+      en: 'Yes, the spoon is placed next to the bowl.',
+      zh: '是的，勺子就放在碗的旁边。',
+    },
+  },
+  'pcg-94': {
+    prompt: { en: 'Is there rice in the bowl?', zh: '碗里有米饭吗？' },
+    explanation: {
+      en: 'No, this bowl is empty with no rice inside.',
+      zh: '没有，这个碗是空的，里面没有米饭。',
+    },
+  },
+  'pcg-95': {
+    prompt: { en: 'Is there bread on the plate?', zh: '盘子上有面包吗？' },
+    explanation: {
+      en: 'Yes, bread is placed in the center of the plate.',
+      zh: '是的，面包放在盘子中间。',
+    },
+  },
+  'pcg-96': {
+    prompt: { en: 'Is there bread on the plate?', zh: '盘子上有面包吗？' },
+    explanation: {
+      en: 'No, this plate is empty with no food on it.',
+      zh: '没有，这个盘子是空的，上面没有食物。',
+    },
+  },
+  'pcg-97': {
+    prompt: { en: 'Is there water in the glass?', zh: '杯子里有水吗？' },
+    explanation: {
+      en: 'Yes, the glass is filled with clear water.',
+      zh: '是的，杯子里装满了清水。',
+    },
+  },
+  'pcg-98': {
+    prompt: { en: 'Is there water in the glass?', zh: '杯子里有水吗？' },
+    explanation: {
+      en: 'No, this glass is dry and completely empty.',
+      zh: '没有，这个杯子里面是干的，没有水。',
+    },
+  },
+  'pcg-99': {
+    prompt: { en: 'Should you turn off the lights when leaving an empty room?', zh: '房间里没人时应该关灯吗？' },
+    explanation: {
+      en: 'Yes, always switch off lights when leaving an empty room for safety and energy saving.',
+      zh: '是的，没人时应随手关灯，既安全又节能。',
+    },
+  },
+};
+
+/**
  * Helper to get localized illustration caption based on active language
  */
 export function getLocalizedImageDescription(
@@ -1137,4 +1839,38 @@ export function getLocalizedImageDescription(
     return PHYSICAL_CARD_LOCALIZED_DESCRIPTIONS[question.visualKey]?.en || question.imageDescription;
   }
   return question.imageDescription;
+}
+
+/**
+ * Helper to get localized question prompt based on active language (TH / EN / ZH)
+ */
+export function getLocalizedPrompt(
+  question: PhysicalCardQuestion | null | undefined,
+  lang: string = 'th-TH'
+): string {
+  if (!question) return '';
+  if (lang === 'zh-CN') {
+    return PHYSICAL_CARD_LOCALIZED_QUESTIONS[question.id]?.prompt.zh || question.prompt;
+  }
+  if (lang === 'en-US') {
+    return PHYSICAL_CARD_LOCALIZED_QUESTIONS[question.id]?.prompt.en || question.prompt;
+  }
+  return question.prompt;
+}
+
+/**
+ * Helper to get localized explanation text based on active language (TH / EN / ZH)
+ */
+export function getLocalizedExplanation(
+  question: PhysicalCardQuestion | null | undefined,
+  lang: string = 'th-TH'
+): string {
+  if (!question) return '';
+  if (lang === 'zh-CN') {
+    return PHYSICAL_CARD_LOCALIZED_QUESTIONS[question.id]?.explanation.zh || question.explanation;
+  }
+  if (lang === 'en-US') {
+    return PHYSICAL_CARD_LOCALIZED_QUESTIONS[question.id]?.explanation.en || question.explanation;
+  }
+  return question.explanation;
 }

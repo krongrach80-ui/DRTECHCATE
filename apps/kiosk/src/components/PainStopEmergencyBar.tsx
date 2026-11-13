@@ -48,41 +48,41 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
   }, [onReportPainStop, isSubmittingPain]);
 
   return (
-    <div className="w-full bg-white border-t-2 border-slate-200 px-6 sm:px-8 py-3.5 sm:py-4 flex items-center justify-between gap-4 z-20 shrink-0 select-none shadow-md">
-      {/* 1. Left Large Button: Pause / Resume (WCAG AAA touch target: min-h >= 58px) */}
+    <div className="w-full bg-white border-t-2 border-slate-200 px-[clamp(0.75rem,2vw,2rem)] py-[clamp(0.5rem,1.2dvh,1rem)] flex flex-wrap items-center justify-between gap-[clamp(0.5rem,1.2vw,1rem)] z-20 shrink-0 select-none shadow-md">
+      {/* 1. Left Large Button: Pause / Resume (WCAG AAA touch target >= 44px) */}
       <button
         type="button"
         id="kiosk-pause-btn"
         data-testid="kiosk-header-pause-btn"
         onClick={onTogglePause}
-        className="min-h-[58px] sm:min-h-[64px] bg-slate-100 hover:bg-slate-200 text-slate-900 border-2 border-slate-300 hover:border-slate-400 font-black px-6 sm:px-8 py-3.5 rounded-2xl transition cursor-pointer text-base sm:text-xl flex items-center gap-2.5 active:scale-95 shadow-xs"
+        className="exercise-touch-btn min-h-[2.75rem] sm:min-h-[3.5rem] bg-slate-100 hover:bg-slate-200 text-slate-900 border-2 border-slate-300 hover:border-slate-400 font-black px-[clamp(0.75rem,2vw,1.75rem)] py-[clamp(0.5rem,1dvh,0.875rem)] rounded-2xl cursor-pointer text-[clamp(0.875rem,1.6vw,1.25rem)] flex items-center gap-2 shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
         title={isPaused ? t('resume_session', 'ฝึกต่อ') : t('pause_session', 'พักการฝึก')}
       >
         {isPaused ? (
           <>
-            <Play className="w-6 h-6 fill-current text-blue-700" />
-            <span className="text-blue-900">{t('resume_session', '▶️ ฝึกต่อ')}</span>
+            <Play className="w-[1.25rem] h-[1.25rem] sm:w-[1.5rem] sm:h-[1.5rem] shrink-0 fill-current text-blue-700" />
+            <span className="text-blue-900 truncate">{t('resume_session', '▶️ ฝึกต่อ')}</span>
           </>
         ) : (
           <>
-            <Pause className="w-6 h-6 text-slate-700" />
-            <span>{t('pause_session', '⏸️ พักชั่วคราว')}</span>
+            <Pause className="w-[1.25rem] h-[1.25rem] sm:w-[1.5rem] sm:h-[1.5rem] shrink-0 text-slate-700" />
+            <span className="truncate">{t('pause_session', '⏸️ พักชั่วคราว')}</span>
           </>
         )}
       </button>
 
       {/* 2. Center/Right: Skip / Record + Emergency Pain Stop */}
-      <div className="flex items-center gap-3 sm:gap-4">
+      <div className="flex flex-wrap items-center justify-end gap-[clamp(0.5rem,1vw,1rem)] flex-1 min-w-0">
         {onSkipOrFinish && (
           <button
             type="button"
             id="kiosk-skip-btn"
             data-testid="kiosk-skip-btn"
             onClick={onSkipOrFinish}
-            className="min-h-[58px] sm:min-h-[64px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-2 border-emerald-300 font-extrabold px-5 sm:px-7 py-3.5 rounded-2xl transition cursor-pointer text-base sm:text-xl flex items-center gap-2 active:scale-95 shadow-xs"
+            className="exercise-touch-btn min-h-[2.75rem] sm:min-h-[3.5rem] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-2 border-emerald-300 hover:border-emerald-400 font-extrabold px-[clamp(0.75rem,1.8vw,1.5rem)] py-[clamp(0.5rem,1dvh,0.875rem)] rounded-2xl cursor-pointer text-[clamp(0.875rem,1.6vw,1.25rem)] flex items-center gap-2 shadow-xs max-w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
             title="ข้ามท่านี้ หรือบันทึกผลการฝึก"
           >
-            <span>⏭️ ข้ามท่านี้ / บันทึกผล</span>
+            <span className="truncate">⏭️ ข้ามท่านี้ / บันทึกผล</span>
           </button>
         )}
 
@@ -92,7 +92,7 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
           data-testid="pain-stop-emergency-btn"
           disabled={isSubmittingPain}
           onClick={handlePainClick}
-          className={`min-h-[58px] sm:min-h-[64px] px-7 sm:px-9 py-3.5 rounded-2xl font-black text-base sm:text-xl shadow-lg flex items-center gap-3 transition active:scale-95 cursor-pointer border-2 ${
+          className={`exercise-touch-btn min-h-[2.75rem] sm:min-h-[3.5rem] px-[clamp(0.875rem,2.2vw,2rem)] py-[clamp(0.5rem,1dvh,0.875rem)] rounded-2xl font-black text-[clamp(0.875rem,1.6vw,1.25rem)] shadow-lg flex items-center gap-2.5 cursor-pointer border-2 max-w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700 ${
             isSubmittingPain
               ? 'bg-rose-100 border-rose-300 text-rose-600 cursor-not-allowed opacity-80'
               : 'bg-rose-600 hover:bg-rose-500 text-white border-rose-700 shadow-rose-950/30'
@@ -101,8 +101,8 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
         >
           {isSubmittingPain ? (
             <>
-              <Loader2 className="w-6 h-6 shrink-0 animate-spin text-rose-600" />
-              <span>
+              <Loader2 className="w-[1.25rem] h-[1.25rem] sm:w-[1.5rem] sm:h-[1.5rem] shrink-0 animate-spin text-rose-600" />
+              <span className="truncate">
                 {lang === 'zh-CN'
                   ? '正在呼叫治疗师...'
                   : lang === 'en-US'
@@ -112,8 +112,8 @@ export const PainStopEmergencyBar: React.FC<PainStopEmergencyBarProps> = ({
             </>
           ) : (
             <>
-              <AlertOctagon className="w-6 h-6 shrink-0 text-white" />
-              <span>
+              <AlertOctagon className="w-[1.25rem] h-[1.25rem] sm:w-[1.5rem] sm:h-[1.5rem] shrink-0 text-white" />
+              <span className="truncate">
                 {lang === 'zh-CN'
                   ? '🚨 感到疼痛 (停止并呼叫治疗师)'
                   : lang === 'en-US'

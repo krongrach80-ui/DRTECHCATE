@@ -25,6 +25,8 @@ import {
   PhysicalCardQuestion,
   ALL_99_PHYSICAL_CARD_QUESTIONS,
   getLocalizedImageDescription,
+  getLocalizedPrompt,
+  getLocalizedExplanation,
 } from './PhysicalCardGameData.js';
 import { PhysicalCardVisual } from './PhysicalCardVisuals.js';
 import {
@@ -55,6 +57,37 @@ let cachedHandLandmarker: any = null;
 let landmarkerInitPromise: Promise<any> | null = null;
 
 export const QUESTIONS_PER_ROUND = 10;
+
+/**
+ * จอแนวตั้ง (Kiosk): ครอปด้านซ้าย-ขวาของภาพกล้อง (รวมสองข้าง) ได้ไม่เกินสัดส่วนนี้ของความกว้างภาพ
+ * ถ้ากรอบกล้องที่ได้ต้องครอปเกินค่านี้ จะจำกัดความสูงกรอบกล้องแทน (กล้องยังเต็มความกว้าง)
+ */
+export const MAX_CROP_RATIO_PORTRAIT = 0.4;
+
+/** ขนาดภาพประกอบโจทย์ในจอแนวตั้ง (กว้าง = สูง) */
+const PORTRAIT_ILLUSTRATION_SIZE = 'clamp(min(180px, 19vh), 22vh, 320px)';
+/** ขนาดตัวอักษรคำบรรยายใต้ภาพประกอบในจอแนวตั้ง */
+const PORTRAIT_CAPTION_FONT_SIZE = 'clamp(min(36px, 6.5vw), 5vw, 56px)';
+/** ขนาดตัวอักษรและไอคอนปุ่มตอบในจอแนวตั้ง */
+const PORTRAIT_ANSWER_FONT_SIZE = 'clamp(min(34px, 5vw), 3.6vw, 40px)';
+const PORTRAIT_ANSWER_ICON_SIZE = 'clamp(min(36px, 5.5vw), 4.2vw, 48px)';
+/** ขนาดตัวอักษรโจทย์เมื่อเกิน 3 บรรทัด (~36px บน Kiosk) */
+const PORTRAIT_PROMPT_OVERFLOW_FONT_SIZE = 'clamp(min(36px, 5vw), 4.5vw, 48px)';
+
+/**
+ * ขนาดตัวอักษรโจทย์ในจอแนวตั้ง: ใหญ่สุด clamp(44px, 7vw, 80px)
+ * โจทย์ยาวจะลดลงอัตโนมัติถึงประมาณ 36px (อักษร CJK กว้างเป็นสองเท่าของไทย/ละติน)
+ */
+const getPortraitPromptFontSize = (prompt: string, isOverThreeLines: boolean = false): string => {
+  if (isOverThreeLines) return PORTRAIT_PROMPT_OVERFLOW_FONT_SIZE;
+  let weight = 0;
+  for (const ch of Array.from(prompt)) {
+    weight += (ch.codePointAt(0) ?? 0) >= 0x2e80 ? 2 : 1;
+  }
+  if (weight > 70) return 'clamp(min(36px, 5vw), 4.7vw, 44px)';
+  if (weight > 40) return 'clamp(min(36px, 5.5vw), 5.5vw, 60px)';
+  return 'clamp(min(44px, 7vw), 7vw, 80px)';
+};
 export const MAX_CROP_RATIO = 0.15; // ขีดจำกัดการครอปภาพสูงสุด 15% เพื่อให้เห็นศีรษะและมือครบถ้วน
 
 export interface PhysicalCardGameProps {
@@ -176,8 +209,89 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   const [modelError, setModelError] = useState<string | null>(null);
   const [isMirrored, setIsMirrored] = useState<boolean>(true);
 
+  // ===== เลย์เอาต์จอแนวตั้ง (ตู้ Kiosk): ใช้เฉพาะเมื่อ (orientation: portrait) =====
+  const [isPortrait, setIsPortrait] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const mqlMatch =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(orientation: portrait)').matches
+        : false;
+    return mqlMatch || (window.innerWidth > 0 && window.innerWidth < window.innerHeight);
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mql =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(orientation: portrait)')
+        : null;
+    const handleChange = () => {
+      const mqlMatch = mql ? mql.matches : false;
+      setIsPortrait(mqlMatch || (window.innerWidth > 0 && window.innerWidth < window.innerHeight));
+    };
+    handleChange();
+    mql?.addEventListener('change', handleChange);
+    window.addEventListener('resize', handleChange);
+    return () => {
+      mql?.removeEventListener('change', handleChange);
+      window.removeEventListener('resize', handleChange);
+    };
+  }, []);
+
+  // กรอบกล้อง (จอแนวตั้ง): จำกัดความสูงไม่ให้ครอปซ้าย-ขวาเกิน MAX_CROP_RATIO_PORTRAIT
+  // และเก็บช่วงแกน X (0-1 ของภาพเต็มเฟรม) ที่มองเห็นจริงหลังครอป ไว้ให้ตรรกะเตือนมือนอกกรอบ
+  const [cameraFrameEl, setCameraFrameEl] = useState<HTMLDivElement | null>(null);
+  const [cameraMaxHeight, setCameraMaxHeight] = useState<number | null>(null);
+  const cameraVisibleRangeRef = useRef<{ min: number; max: number }>({ min: 0, max: 1 });
+  useEffect(() => {
+    if (!isPortrait || !cameraFrameEl) {
+      cameraVisibleRangeRef.current = { min: 0, max: 1 };
+      setCameraMaxHeight(null);
+      return undefined;
+    }
+    const update = () => {
+      const w = cameraFrameEl.clientWidth;
+      const h = cameraFrameEl.clientHeight;
+      if (!w || !h || !cameraAspectRatio) return;
+      const maxH = Math.floor(w / (cameraAspectRatio * (1 - MAX_CROP_RATIO_PORTRAIT)));
+      setCameraMaxHeight((prev) => (prev === maxH ? prev : maxH));
+      const effectiveH = Math.min(h, maxH);
+      const visible = Math.min(1, w / (effectiveH * cameraAspectRatio));
+      const margin = (1 - visible) / 2;
+      cameraVisibleRangeRef.current = { min: margin, max: 1 - margin };
+    };
+    update();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(update);
+    observer.observe(cameraFrameEl);
+    return () => observer.disconnect();
+  }, [isPortrait, cameraFrameEl, cameraAspectRatio]);
+
   const activeQuestion: PhysicalCardQuestion =
     filteredList[currentIndex] || ALL_99_PHYSICAL_CARD_QUESTIONS[0];
+
+  const localizedCaption = getLocalizedImageDescription(activeQuestion, lang);
+  const localizedPrompt = getLocalizedPrompt(activeQuestion, lang);
+  const localizedExplanation = getLocalizedExplanation(activeQuestion, lang);
+
+  // วัดจำนวนบรรทัดจริงของโจทย์ในจอแนวตั้ง: ถ้าเกิน 3 บรรทัดให้ลดขนาดอัตโนมัติ
+  const promptHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const [isPromptOverThreeLines, setIsPromptOverThreeLines] = useState<boolean>(false);
+  useEffect(() => {
+    setIsPromptOverThreeLines(false);
+  }, [isPortrait, activeQuestion?.id, localizedPrompt]);
+  useEffect(() => {
+    if (!isPortrait || !promptHeadingRef.current) return undefined;
+    const checkLines = () => {
+      const el = promptHeadingRef.current;
+      if (!el || typeof window === 'undefined') return;
+      const lineHeightPx = parseFloat(window.getComputedStyle(el).lineHeight);
+      if (lineHeightPx > 0 && el.scrollHeight > lineHeightPx * 3.15) {
+        setIsPromptOverThreeLines(true);
+      }
+    };
+    const rafId = window.requestAnimationFrame(checkLines);
+    return () => window.cancelAnimationFrame(rafId);
+  }, [isPortrait, activeQuestion?.id, localizedPrompt]);
 
   // Reset illustration error when question changes
   useEffect(() => {
@@ -189,8 +303,6 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
     activeQuestion &&
     (activeQuestion.visualKey || activeQuestion.imageDescription || activeQuestion.iconEmoji)
   );
-
-  const localizedCaption = getLocalizedImageDescription(activeQuestion, lang);
 
   // Cached AudioContext singleton to prevent audio hardware stuttering
   const getAudioContext = useCallback(() => {
@@ -734,8 +846,17 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         });
 
         // Edge detection state (Direct DOM)
+        // มือที่อยู่นอกช่วงที่กล้องครอปเห็น (ใช้เฉพาะจอแนวตั้ง ช่วงแนวนอนคือ 0..1 จึงไม่มีผล)
+        const visibleRange = cameraVisibleRangeRef.current;
+        const isOutsideVisible =
+          (visibleRange.min > 0 || visibleRange.max < 1) &&
+          frameResult.raisedHands.some(
+            (h) =>
+              h.palmCenter.mirroredX < visibleRange.min + 0.02 ||
+              h.palmCenter.mirroredX > visibleRange.max - 0.02
+          );
         if (nearEdgeContainerRef.current) {
-          nearEdgeContainerRef.current.style.opacity = frameResult.hasNearEdgeHand ? '1' : '0';
+          nearEdgeContainerRef.current.style.opacity = frameResult.hasNearEdgeHand || isOutsideVisible ? '1' : '0';
         }
 
         // 1. Bilateral Ambiguity Check: Both hands raised simultaneously
@@ -817,7 +938,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                   : detectedSide === 'left';
                 popupContainerRef.current.className = `absolute z-30 pointer-events-none px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-white shadow-xl flex items-center gap-3 border-2 min-h-[48px] sm:min-h-[52px] whitespace-nowrap transition-all duration-150 opacity-100 ${
                   isScreenRight
-                    ? 'top-10 sm:top-12 right-3 sm:right-4'
+                    ? isPortrait
+                      ? 'top-16 right-3 sm:right-4'
+                      : 'top-10 sm:top-12 right-3 sm:right-4'
                     : 'top-3 sm:top-4 left-3 sm:left-4'
                 } ${
                   currentHand.answerSide === 'yes'
@@ -868,7 +991,9 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                       : activeSide === 'left';
                     popupContainerRef.current.className = `absolute z-30 pointer-events-none px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-white shadow-xl flex items-center gap-3 border-2 min-h-[48px] sm:min-h-[52px] whitespace-nowrap transition-all duration-150 opacity-100 ${
                       isScreenRight
-                        ? 'top-10 sm:top-12 right-3 sm:right-4'
+                        ? isPortrait
+                          ? 'top-16 right-3 sm:right-4'
+                          : 'top-10 sm:top-12 right-3 sm:right-4'
                         : 'top-3 sm:top-4 left-3 sm:left-4'
                     } ${
                       currentHand.answerSide === 'yes'
@@ -1082,14 +1207,36 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
   } as React.CSSProperties;
 
   return (
-    <div className="w-full h-full flex flex-col justify-between bg-[#EDF7F1] text-slate-800 select-none overflow-hidden font-sans relative p-3 sm:p-5 md:p-6">
+    <div
+      className={`w-full h-full flex flex-col bg-[#EDF7F1] text-slate-800 select-none overflow-hidden font-sans relative ${
+        isPortrait ? 'p-[2.5vw]' : 'justify-between p-3 sm:p-5 md:p-6'
+      }`}
+      style={isPortrait ? { gap: 'clamp(8px, 1.15vh, 22px)' } : undefined}
+    >
       {/* Top Header Bar */}
-      <div className="w-full max-w-5xl mx-auto flex items-center justify-between gap-3 sm:gap-4 shrink-0">
-        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#134E43] tracking-normal leading-[1.45]">
+      <div className={`w-full ${isPortrait ? '' : 'max-w-5xl '}mx-auto flex items-center justify-between gap-2 sm:gap-4 shrink-0`}>
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+          <h1
+            className="text-2xl sm:text-3xl md:text-4xl font-black text-[#134E43] tracking-normal leading-[1.45]"
+            style={
+              isPortrait
+                ? { fontSize: 'clamp(min(44px, 6vw), 5vw, 56px)', lineHeight: 1.25 }
+                : undefined
+            }
+          >
             {t('card_minigame_title')}
           </h1>
-          <span className="text-base sm:text-lg md:text-xl font-extrabold text-emerald-900 bg-emerald-100 border-2 border-emerald-300 px-4 sm:px-5 py-1.5 rounded-full shadow-xs whitespace-nowrap">
+          <span
+            className="text-base sm:text-lg md:text-xl font-extrabold text-emerald-900 bg-emerald-100 border-2 border-emerald-300 px-3 sm:px-5 py-1.5 rounded-full shadow-xs whitespace-nowrap flex items-center"
+            style={
+              isPortrait
+                ? {
+                    fontSize: 'clamp(14px, 2.8vw, 32px)',
+                    minHeight: 'clamp(32px, 3.6vh, 64px)',
+                  }
+                : undefined
+            }
+          >
             {lang === 'zh-CN'
               ? `题目 ${currentIndex + 1} / ${filteredList.length}`
               : lang === 'en-US'
@@ -1099,22 +1246,69 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         </div>
 
         {/* Right Controls: Sound, Score Pill & Exit Button */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Sound Toggle */}
           <button
             type="button"
             onClick={() => setSoundEnabled((prev) => !prev)}
             className="min-h-[56px] min-w-[56px] w-14 h-14 rounded-full bg-white border-2 border-emerald-200/80 shadow-sm flex items-center justify-center text-emerald-800 hover:bg-emerald-50 transition active:scale-95 cursor-pointer"
+            style={
+              isPortrait
+                ? {
+                    width: 'clamp(44px, 8.5vw, 72px)',
+                    height: 'clamp(44px, 8.5vw, 72px)',
+                    minWidth: 0,
+                    minHeight: 0,
+                  }
+                : undefined
+            }
             title={soundEnabled ? 'ปิดเสียง' : 'เปิดเสียง'}
             aria-label={soundEnabled ? 'ปิดเสียง' : 'เปิดเสียง'}
           >
-            {soundEnabled ? <Volume2 className="w-6 h-6 sm:w-7 sm:h-7" /> : <VolumeX className="w-6 h-6 sm:w-7 sm:h-7 text-slate-400" />}
+            {soundEnabled ? (
+              <Volume2
+                className="w-6 h-6 sm:w-7 sm:h-7"
+                style={
+                  isPortrait
+                    ? { width: 'clamp(22px, 4.2vw, 36px)', height: 'clamp(22px, 4.2vw, 36px)' }
+                    : undefined
+                }
+              />
+            ) : (
+              <VolumeX
+                className="w-6 h-6 sm:w-7 sm:h-7 text-slate-400"
+                style={
+                  isPortrait
+                    ? { width: 'clamp(22px, 4.2vw, 36px)', height: 'clamp(22px, 4.2vw, 36px)' }
+                    : undefined
+                }
+              />
+            )}
           </button>
 
           {/* Score Pill Badge */}
-          <div className="flex items-center gap-3 bg-[#134E43] text-white pl-5 pr-2 py-1.5 rounded-full shadow-md border-2 border-emerald-800">
-            <span className="text-base sm:text-lg font-bold tracking-wide whitespace-nowrap">{t('card_score_label')}</span>
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white text-[#134E43] font-black flex items-center justify-center text-lg sm:text-xl shadow-inner">
+          <div
+            className="flex items-center gap-2 sm:gap-3 bg-[#134E43] text-white pl-3 sm:pl-5 pr-1.5 sm:pr-2 py-1 sm:py-1.5 rounded-full shadow-md border-2 border-emerald-800"
+            style={isPortrait ? { minHeight: 'clamp(44px, 8.5vw, 72px)' } : undefined}
+          >
+            <span
+              className="text-base sm:text-lg font-bold tracking-wide whitespace-nowrap"
+              style={isPortrait ? { fontSize: 'clamp(14px, 2.8vw, 30px)' } : undefined}
+            >
+              {t('card_score_label')}
+            </span>
+            <div
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white text-[#134E43] font-black flex items-center justify-center text-lg sm:text-xl shadow-inner"
+              style={
+                isPortrait
+                  ? {
+                      width: 'clamp(32px, 6vw, 52px)',
+                      height: 'clamp(32px, 6vw, 52px)',
+                      fontSize: 'clamp(16px, 3vw, 28px)',
+                    }
+                  : undefined
+              }
+            >
               {score}
             </div>
           </div>
@@ -1124,10 +1318,27 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               type="button"
               onClick={onExit}
               className="min-h-[56px] min-w-[56px] w-14 h-14 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 border-2 border-rose-200 shadow-sm flex items-center justify-center transition active:scale-95 cursor-pointer"
+              style={
+                isPortrait
+                  ? {
+                      width: 'clamp(44px, 8.5vw, 72px)',
+                      height: 'clamp(44px, 8.5vw, 72px)',
+                      minWidth: 0,
+                      minHeight: 0,
+                    }
+                  : undefined
+              }
               title="ออกจากมินิเกม"
               aria-label="ออกจากมินิเกม"
             >
-              <X className="w-6 h-6 sm:w-7 sm:h-7" />
+              <X
+                className="w-6 h-6 sm:w-7 sm:h-7"
+                style={
+                  isPortrait
+                    ? { width: 'clamp(22px, 4.2vw, 36px)', height: 'clamp(22px, 4.2vw, 36px)' }
+                    : undefined
+                }
+              />
             </button>
           )}
         </div>
@@ -1135,17 +1346,32 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
       {/* Main Game Screen */}
       {!isGameOver ? (
-        <div className="w-full max-w-5xl mx-auto flex-1 flex flex-col items-center justify-between gap-3 sm:gap-4 md:gap-5 my-auto min-h-0 w-full py-1">
+        <div
+          className={
+            isPortrait
+              ? 'w-full mx-auto flex-1 flex flex-col items-center min-h-0'
+              : 'w-full max-w-5xl mx-auto flex-1 flex flex-col items-center justify-between gap-3 sm:gap-4 md:gap-5 my-auto min-h-0 w-full py-1'
+          }
+          style={isPortrait ? { gap: 'clamp(8px, 1.15vh, 22px)' } : undefined}
+        >
           {/* Question Banner */}
-          <div className="w-full max-w-5xl bg-white rounded-3xl p-5 sm:p-7 md:p-8 text-center shadow-md border-2 border-emerald-100/90 transition animate-fade-in relative overflow-hidden min-h-[96px] sm:min-h-[120px] flex items-center justify-center shrink-0">
+          <div className={`w-full ${isPortrait ? '' : 'max-w-5xl '}bg-white rounded-3xl p-5 sm:p-7 md:p-8 text-center shadow-md border-2 border-emerald-100/90 transition animate-fade-in relative overflow-hidden ${isPortrait ? 'min-h-[56px]' : 'min-h-[96px] sm:min-h-[120px]'} flex items-center justify-center shrink-0`}
+            style={
+              isPortrait
+                ? { flexGrow: 1, padding: 'clamp(0.5rem, 1.5vh, 1.75rem) clamp(1rem, 3vw, 2.5rem)' }
+                : undefined
+            }>
             <h2
+              ref={promptHeadingRef}
               className="font-extrabold text-[#0B231C] tracking-normal break-words"
               style={{
-                fontSize: 'clamp(2.25rem, 4.5vw, 3.375rem)',
-                lineHeight: 1.45,
+                fontSize: isPortrait
+                  ? getPortraitPromptFontSize(localizedPrompt, isPromptOverThreeLines)
+                  : 'clamp(2.25rem, 4.5vw, 3.375rem)',
+                lineHeight: 1.38,
               }}
             >
-              {activeQuestion.prompt}
+              {localizedPrompt}
             </h2>
 
             {/* Answer Result Banner Alert */}
@@ -1159,13 +1385,23 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 {answerState === 'correct' ? (
                   <div className="flex items-center justify-center gap-3 py-1">
                     <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10 animate-bounce shrink-0" />
-                    <span className="tracking-wide">ถูกต้อง! ยอดเยี่ยมมาก 🎉</span>
+                    <span className="tracking-wide">
+                      {lang === 'zh-CN'
+                        ? '回答正确！太棒了 🎉'
+                        : lang === 'en-US'
+                        ? 'Correct! Great job 🎉'
+                        : 'ถูกต้อง! ยอดเยี่ยมมาก 🎉'}
+                    </span>
                   </div>
                 ) : (
                   <div className="flex items-center justify-center gap-3 py-1">
                     <XCircle className="w-8 h-8 sm:w-10 sm:h-10 shrink-0" />
                     <span className="tracking-wide">
-                      ยังไม่ถูกต้อง (คำตอบคือ: {activeQuestion.correctAnswer === 'yes' ? 'ใช่' : 'ไม่'})
+                      {lang === 'zh-CN'
+                        ? `回答不正确（正确答案：${activeQuestion.correctAnswer === 'yes' ? '是' : '否'}）`
+                        : lang === 'en-US'
+                        ? `Not quite right (Answer: ${activeQuestion.correctAnswer === 'yes' ? 'Yes' : 'No'})`
+                        : `ยังไม่ถูกต้อง (คำตอบคือ: ${activeQuestion.correctAnswer === 'yes' ? 'ใช่' : 'ไม่'})`}
                     </span>
                   </div>
                 )}
@@ -1180,19 +1416,45 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               style={{ lineHeight: 1.45 }}
             >
               <HelpCircle className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-600 shrink-0" />
-              <span>{activeQuestion.explanation}</span>
+              <span>{localizedExplanation}</span>
             </div>
           )}
 
           {/* Question Illustration Section (Hero Illustration Card - Takes Middle Space) */}
           {hasIllustration && (
             <div
-              className="w-full max-w-5xl flex-1 min-h-[220px] sm:min-h-[260px] max-h-[460px] flex flex-col md:flex-row items-center justify-center gap-6 sm:gap-10 px-6 sm:px-8 py-5 sm:py-6 bg-white border-2 border-emerald-200/90 rounded-3xl shadow-md shrink-0 transition-all duration-300"
+              className={
+                isPortrait
+                  ? 'w-full flex flex-col items-center justify-center bg-white border-2 border-emerald-200/90 rounded-3xl shadow-md shrink-0 transition-all duration-300'
+                  : 'w-full max-w-5xl flex-1 min-h-[220px] sm:min-h-[260px] max-h-[460px] flex flex-col md:flex-row items-center justify-center gap-6 sm:gap-10 px-6 sm:px-8 py-5 sm:py-6 bg-white border-2 border-emerald-200/90 rounded-3xl shadow-md shrink-0 transition-all duration-300'
+              }
+              style={
+                isPortrait
+                  ? {
+                      flexGrow: 2,
+                      gap: 'clamp(6px, 1vh, 18px)',
+                      padding: 'clamp(10px, 1.4vh, 24px) clamp(16px, 3vw, 32px)',
+                    }
+                  : undefined
+              }
               role="region"
               aria-label={t('card_illustration_label')}
             >
               <div
                 className="w-56 h-56 sm:w-64 sm:h-64 md:w-72 md:h-72 min-w-[200px] min-h-[200px] max-w-[300px] max-h-[300px] flex items-center justify-center shrink-0 select-none overflow-hidden"
+                style={
+                  isPortrait
+                    ? {
+                        width: PORTRAIT_ILLUSTRATION_SIZE,
+                        height: PORTRAIT_ILLUSTRATION_SIZE,
+                        minWidth: 0,
+                        minHeight: 0,
+                        maxWidth: 'none',
+                        maxHeight: 'none',
+                        overflow: 'visible',
+                      }
+                    : undefined
+                }
                 role="img"
                 aria-label={`${t('card_illustration_label')}: ${localizedCaption}`}
               >
@@ -1200,17 +1462,26 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                   visualKey={activeQuestion.visualKey}
                   imageDescription={activeQuestion.imageDescription}
                   size="large"
+                  emojiFontSize={isPortrait ? PORTRAIT_ILLUSTRATION_SIZE : undefined}
                 />
               </div>
-              <div className="flex flex-col items-center md:items-start justify-center text-center md:text-left overflow-hidden">
-                <span className="text-xl sm:text-2xl font-black text-emerald-700 uppercase tracking-wider mb-1 sm:mb-2">
+              <div
+                className={
+                  isPortrait
+                    ? 'flex flex-col items-center justify-center text-center w-full'
+                    : 'flex flex-col items-center md:items-start justify-center text-center md:text-left overflow-hidden'
+                }
+              >
+                <span className={`text-xl sm:text-2xl font-black text-emerald-700 uppercase tracking-wider mb-1 sm:mb-2${isPortrait ? ' hidden' : ''}`}>
                   {t('card_illustration_label')}
                 </span>
                 <span
                   className="font-extrabold text-slate-900 tracking-tight break-words"
                   style={{
-                    fontSize: 'clamp(2rem, 4vw, 2.875rem)',
-                    lineHeight: 1.45,
+                    fontSize: isPortrait
+                      ? PORTRAIT_CAPTION_FONT_SIZE
+                      : 'clamp(2rem, 4vw, 2.875rem)',
+                    lineHeight: 1.35,
                   }}
                 >
                   {localizedCaption}
@@ -1220,14 +1491,34 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
           )}
 
           {/* Bottom Interactive Area: Instruction Banner + Camera + Action Buttons */}
-          <div className="w-full max-w-5xl flex flex-col items-center justify-center relative shrink-0 pt-1">
-            {/* Instruction Hint Bar (Above camera, prominent & uncluttered) */}
-            <div className="w-full max-w-4xl text-center px-6 py-2.5 sm:py-3 rounded-full bg-white/95 border-2 border-emerald-300/80 shadow-sm mb-3 sm:mb-4 shrink-0">
+          <div className={
+              isPortrait
+                ? 'contents'
+                : 'w-full max-w-5xl flex flex-col items-center justify-center relative shrink-0 pt-1'
+            }>
+            {/* Instruction Hint Bar (Above camera in landscape, below buttons in portrait) */}
+            <div
+              className={
+                isPortrait
+                  ? 'w-full text-center rounded-3xl bg-white/95 border-2 border-emerald-300/80 shadow-sm shrink-0'
+                  : 'w-full max-w-4xl text-center px-6 py-2.5 sm:py-3 rounded-full bg-white/95 border-2 border-emerald-300/80 shadow-sm mb-3 sm:mb-4 shrink-0'
+              }
+              style={
+                isPortrait
+                  ? {
+                      order: 1,
+                      padding: 'clamp(6px, 0.8vh, 12px) clamp(12px, 2.5vw, 24px)',
+                    }
+                  : undefined
+              }
+            >
               <span
                 className="font-extrabold text-[#134E43] tracking-wide inline-block"
                 style={{
-                  fontSize: 'clamp(1.5rem, 2.5vw, 1.75rem)',
-                  lineHeight: 1.45,
+                  fontSize: isPortrait
+                    ? 'clamp(min(28px, 4.2vw), 3vw, 36px)'
+                    : 'clamp(1.5rem, 2.5vw, 1.75rem)',
+                  lineHeight: 1.35,
                 }}
               >
                 {t('card_bottom_hint')}
@@ -1236,9 +1527,23 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
 
             {/* Center Area: Full Camera Viewport with Top Animated Dynamic Popups */}
             <div
-              className="w-[665px] max-w-full h-[280px] sm:h-[320px] md:h-[350px] max-h-[350px] bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center shrink-0"
+              ref={setCameraFrameEl}
+              className={
+                isPortrait
+                  ? 'w-full min-h-0 bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center'
+                  : 'w-[665px] max-w-full h-[280px] sm:h-[320px] md:h-[350px] max-h-[350px] bg-[#0B231C] rounded-3xl relative overflow-hidden border-2 border-emerald-900/70 shadow-xl flex items-center justify-center shrink-0'
+              }
               style={{
-                aspectRatio: `${cameraAspectRatio}`,
+                ...(isPortrait
+                  ? {
+                      flexGrow: 100,
+                      flexShrink: 1,
+                      flexBasis: 0,
+                      minHeight: 0,
+                      maxHeight: cameraMaxHeight ?? undefined,
+                      containerType: 'inline-size',
+                    }
+                  : { aspectRatio: `${cameraAspectRatio}` }),
                 ...popupCssVars,
               }}
             >
@@ -1260,6 +1565,11 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                 type="button"
                 onClick={() => setIsMirrored((prev) => !prev)}
                 title="สลับมุมมองกล้องกระจก"
+                style={
+                  isPortrait
+                    ? { fontSize: 'clamp(1rem, min(2.8vw, 1.6vh), 1.5rem)', padding: '0.5rem 1rem', minHeight: '3rem' }
+                    : undefined
+                }
                 className="absolute top-3 right-3 z-25 px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/30 text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md transition active:scale-95 cursor-pointer"
               >
                 <span>🪞 {isMirrored ? 'กระจก (เปิด)' : 'กระจก (ปิด)'}</span>
@@ -1344,9 +1654,23 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               <div
                 ref={popupContainerRef}
                 className="absolute z-30 pointer-events-none px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-white shadow-xl flex items-center gap-3 border-2 min-h-[48px] sm:min-h-[52px] whitespace-nowrap transition-all duration-150 opacity-0 pointer-events-none top-3 left-3 bg-emerald-600/95 border-emerald-300"
+                style={
+                  isPortrait
+                    ? {
+                        height: 'clamp(40px, 6.5cqw, 72px)',
+                        minHeight: 'clamp(40px, 6.5cqw, 72px)',
+                        paddingTop: 0,
+                        paddingBottom: 0,
+                      }
+                    : undefined
+                }
               >
                 <Hand className="w-6 h-6 text-white shrink-0 animate-pulse" />
-                <span ref={popupTitleRef} className="text-xl sm:text-2xl font-black tracking-wide leading-none">
+                <span
+                  ref={popupTitleRef}
+                  className={`font-black tracking-wide leading-none ${isPortrait ? '' : 'text-xl sm:text-2xl'}`}
+                  style={isPortrait ? { fontSize: 'clamp(28px, 3cqw, 32px)' } : undefined}
+                >
                   {t('card_right_hand_yes')}
                 </span>
                 <div className="w-16 sm:w-20 bg-black/30 rounded-full h-1.5 overflow-hidden border border-white/40 shrink-0">
@@ -1373,7 +1697,12 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
               {/* Near Edge Warning */}
               <div
                 ref={nearEdgeContainerRef}
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-25 px-5 py-2 rounded-full bg-amber-500/95 text-amber-950 border-2 border-amber-300 text-sm sm:text-base font-black flex items-center gap-2 shadow-lg pointer-events-none transition-opacity duration-150 opacity-0"
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-25 px-5 py-2 rounded-full bg-amber-500/95 text-amber-950 border-2 border-amber-300 text-sm sm:text-base font-black flex items-center gap-2 shadow-lg pointer-events-none transition-opacity duration-150 opacity-0 whitespace-nowrap"
+                style={
+                  isPortrait
+                    ? { fontSize: 'clamp(16px, 2.8cqw, 30px)', padding: '0.5rem 1.25rem' }
+                    : undefined
+                }
               >
                 <AlertTriangle className="w-5 h-5 text-amber-950 shrink-0" />
                 <span>{t('card_move_to_center')}</span>
@@ -1381,11 +1710,17 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
             </div>
 
             {/* Senior-Friendly Extra-Large Touch Answer Buttons under camera */}
-            <div className="flex items-center justify-center gap-5 mt-4 sm:mt-5 shrink-0 w-full max-w-4xl">
+            <div
+              className={
+                isPortrait
+                  ? 'flex items-stretch justify-center gap-[2vw] shrink-0 w-full'
+                  : 'flex items-center justify-center gap-5 mt-4 sm:mt-5 shrink-0 w-full max-w-4xl'
+              }
+            >
               <button
                 type="button"
                 onClick={() => handleAnswer('no')}
-                className={`flex-1 min-h-[80px] sm:min-h-[88px] px-6 sm:px-10 py-4 rounded-3xl border-4 font-extrabold shadow-md hover:shadow-lg transition active:scale-95 flex items-center justify-center gap-3 sm:gap-4 cursor-pointer ${
+                className={`flex-1 min-h-[80px] sm:min-h-[88px] px-4 sm:px-10 py-3 sm:py-4 rounded-3xl border-4 font-extrabold shadow-md hover:shadow-lg transition active:scale-95 flex items-center justify-center gap-2 sm:gap-4 cursor-pointer ${
                   selectedSide === 'no'
                     ? answerState === 'correct'
                       ? 'border-emerald-500 bg-emerald-100 text-emerald-900 shadow-emerald-200'
@@ -1393,18 +1728,22 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                     : 'bg-white hover:bg-orange-50 border-[#EA580C] text-[#EA580C]'
                 }`}
                 style={{
-                  fontSize: 'clamp(1.75rem, 3vw, 2.125rem)',
-                  lineHeight: 1.45,
+                  fontSize: isPortrait ? PORTRAIT_ANSWER_FONT_SIZE : 'clamp(1.75rem, 3vw, 2.125rem)',
+                  minHeight: isPortrait ? 'clamp(min(96px, 9vh), 5.5vh, 116px)' : undefined,
+                  lineHeight: 1.35,
                 }}
               >
-                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#EA580C] shrink-0" />
-                <span>{t('card_btn_tap_no')}</span>
+                <Hand
+                  className="w-8 h-8 sm:w-10 sm:h-10 text-[#EA580C] shrink-0"
+                  style={isPortrait ? { width: PORTRAIT_ANSWER_ICON_SIZE, height: PORTRAIT_ANSWER_ICON_SIZE } : undefined}
+                />
+                <span style={isPortrait ? { fontSize: PORTRAIT_ANSWER_FONT_SIZE } : undefined}>{t('card_btn_tap_no')}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleAnswer('yes')}
-                className={`flex-1 min-h-[80px] sm:min-h-[88px] px-6 sm:px-10 py-4 rounded-3xl border-4 font-extrabold shadow-md hover:shadow-lg transition active:scale-95 flex items-center justify-center gap-3 sm:gap-4 cursor-pointer ${
+                className={`flex-1 min-h-[80px] sm:min-h-[88px] px-4 sm:px-10 py-3 sm:py-4 rounded-3xl border-4 font-extrabold shadow-md hover:shadow-lg transition active:scale-95 flex items-center justify-center gap-2 sm:gap-4 cursor-pointer ${
                   selectedSide === 'yes'
                     ? answerState === 'correct'
                       ? 'border-emerald-500 bg-emerald-100 text-emerald-900 shadow-emerald-200'
@@ -1412,12 +1751,16 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
                     : 'bg-white hover:bg-emerald-50 border-[#16A34A] text-[#16A34A]'
                 }`}
                 style={{
-                  fontSize: 'clamp(1.75rem, 3vw, 2.125rem)',
-                  lineHeight: 1.45,
+                  fontSize: isPortrait ? PORTRAIT_ANSWER_FONT_SIZE : 'clamp(1.75rem, 3vw, 2.125rem)',
+                  minHeight: isPortrait ? 'clamp(min(96px, 9vh), 5.5vh, 116px)' : undefined,
+                  lineHeight: 1.35,
                 }}
               >
-                <Hand className="w-8 h-8 sm:w-10 sm:h-10 text-[#16A34A] shrink-0" />
-                <span>{t('card_btn_tap_yes')}</span>
+                <Hand
+                  className="w-8 h-8 sm:w-10 sm:h-10 text-[#16A34A] shrink-0"
+                  style={isPortrait ? { width: PORTRAIT_ANSWER_ICON_SIZE, height: PORTRAIT_ANSWER_ICON_SIZE } : undefined}
+                />
+                <span style={isPortrait ? { fontSize: PORTRAIT_ANSWER_FONT_SIZE } : undefined}>{t('card_btn_tap_yes')}</span>
               </button>
             </div>
           </div>

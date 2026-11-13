@@ -20,10 +20,17 @@ import {
   PoseEngineLandmark,
   RepEvaluationResult,
   BodySide,
-  LateralityMode,
 } from '../../../../packages/pose-engine/src/types/exerciseConfig';
 import { getExerciseCoachingCues } from '../../../../packages/pose-engine/src/presets/exercises.config';
-import { RepStateMachine } from '../../../../packages/pose-engine/src/engine/repStateMachine';
+import {
+  RepStateMachine,
+  PRE_CHECK_DURATION_MS,
+} from '../../../../packages/pose-engine/src/engine/repStateMachine';
+import {
+  DEFAULT_ONE_EURO_MIN_CUTOFF,
+  DEFAULT_ONE_EURO_BETA,
+  DEFAULT_ONE_EURO_D_CUTOFF,
+} from '../../../../packages/pose-engine/src/math/filters';
 import { CameraStreamWatchdog, WatchdogHealthStatus } from '../../../../packages/pose-engine/src/hardwareWatchdog';
 import { projectLandmarkToCanvas } from '../../../../packages/pose-engine/src/math/projection';
 import { VoiceFeedbackController } from '../../../../packages/hospital-ui-kit/src/VoiceFeedbackController';
@@ -34,11 +41,32 @@ import {
   ARM_STABILIZER_CONFIG,
 } from '../../../../packages/pose-engine/src/math/armIdentityStabilizer';
 import {
+  calcProgressPercent,
+  calcMultiSetProgress,
+  calcJointScore,
+  calcPoseAccuracy,
+  updateSmoothedAccuracyEma,
+  type AccuracyLevel,
+  ACCURACY_EMA_ALPHA,
+  ACCURACY_UI_UPDATE_INTERVAL_MS,
+  ACCURACY_LEVEL_HIGH,
+  ACCURACY_LEVEL_MEDIUM,
+  DEFAULT_ANGLE_TOLERANCE_DEG,
+  DEFAULT_ANGLE_FALLOFF_DEG,
+  MIN_JOINT_VISIBILITY,
+} from '../../../../packages/pose-engine/src/math/sessionProgressAndAccuracy';
+import {
   selectSubjectPoseWithIdentity,
   NormalizedBox,
 } from '../../../../packages/pose-engine/src/subjectLock';
 import { getFaceClientServices } from '../services/faceClientService';
 import { PainStopEmergencyBar } from '../components/PainStopEmergencyBar';
+import { PoseCalibrationAndCustomPosePanel } from '../components/PoseCalibrationAndCustomPosePanel';
+import {
+  PatientPoseCalibrationRecord,
+  applyCalibrationToConfig,
+  getPatientCalibration,
+} from '../../../../packages/pose-engine/src/calibration/poseSchemaAndCalibration';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
   Trophy,
@@ -82,18 +110,44 @@ export interface DynamicExerciseSessionViewProps {
 }
 
 export const POSE_CONNECTIONS: [number, number][] = [
-  [11, 12],
+  // Left Arm & Hand
   [11, 13], [13, 15],
   [15, 17], [15, 19], [15, 21], [17, 19],
+  // Right Arm & Hand
   [12, 14], [14, 16],
   [16, 18], [16, 20], [16, 22], [18, 20],
-  [11, 23], [12, 24],
-  [23, 24],
+  // Left Leg & Foot
   [23, 25], [25, 27],
-  [24, 26], [26, 28],
   [27, 29], [27, 31], [29, 31],
+  // Right Leg & Foot
+  [24, 26], [26, 28],
   [28, 30], [28, 32], [30, 32],
 ];
+
+export const LEFT_ARM_CONNECTIONS: [number, number][] = [
+  [11, 13], [13, 15],
+  [15, 17], [15, 19], [15, 21], [17, 19],
+];
+
+export const RIGHT_ARM_CONNECTIONS: [number, number][] = [
+  [12, 14], [14, 16],
+  [16, 18], [16, 20], [16, 22], [18, 20],
+];
+
+export const LEFT_LEG_CONNECTIONS: [number, number][] = [
+  [23, 25], [25, 27],
+  [27, 29], [27, 31], [29, 31],
+];
+
+export const RIGHT_LEG_CONNECTIONS: [number, number][] = [
+  [24, 26], [26, 28],
+  [28, 30], [28, 32], [30, 32],
+];
+
+export const LEFT_ARM_JOINTS = [11, 13, 15, 17, 19, 21];
+export const RIGHT_ARM_JOINTS = [12, 14, 16, 18, 20, 22];
+export const LEFT_LEG_JOINTS = [23, 25, 27, 29, 31];
+export const RIGHT_LEG_JOINTS = [24, 26, 28, 30, 32];
 
 export const HEAD_POSE_CONNECTIONS: [number, number][] = [
   [7, 0],
@@ -110,6 +164,102 @@ export const BODY_JOINT_INDICES = [
   23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
 ];
 export const ANATOMICAL_BODY_JOINTS = BODY_JOINT_INDICES;
+
+export interface ActiveSkeletonRenderFilter {
+  category: 'arm' | 'leg' | 'neck';
+  effectiveSide: 'left' | 'right' | 'both';
+  connections: [number, number][];
+  jointIndices: number[];
+}
+
+/**
+ * Selects only the limb connections and joint indices relevant to the exercise
+ * (arms vs legs vs head/neck) and prescribed side ('left' | 'right' | 'both'),
+ * never drawing torso lines ([11, 12], [11, 23], [12, 24], [23, 24]).
+ */
+export function getActiveExerciseSkeletonFilter(
+  config: ExerciseDetectionConfig | null | undefined,
+  side?: BodySide | string | null
+): ActiveSkeletonRenderFilter {
+  const rawSide = String(side ?? config?.side ?? 'both').toLowerCase().trim();
+  const effectiveSide: 'left' | 'right' | 'both' =
+    rawSide === 'left' ? 'left' : rawSide === 'right' ? 'right' : 'both';
+
+  const isNeckExercise =
+    config?.targetJoint === 'neck' ||
+    config?.framing === 'head_shoulders' ||
+    config?.evaluationMode === 'neck_tilt';
+
+  if (isNeckExercise) {
+    const connections: [number, number][] =
+      effectiveSide === 'left'
+        ? [[7, 0], [0, 11]]
+        : effectiveSide === 'right'
+          ? [[8, 0], [0, 12]]
+          : [...HEAD_POSE_CONNECTIONS];
+    const jointIndices =
+      effectiveSide === 'left'
+        ? [0, 7, 11]
+        : effectiveSide === 'right'
+          ? [0, 8, 12]
+          : [0, 7, 8, 11, 12];
+    return {
+      category: 'neck',
+      effectiveSide,
+      connections,
+      jointIndices,
+    };
+  }
+
+  const isLegExercise =
+    config?.targetJoint === 'knee' ||
+    config?.targetJoint === 'ankle' ||
+    config?.targetJoint === 'hip' ||
+    config?.targetJoint === 'balance' ||
+    config?.framing === 'lower_body' ||
+    config?.evaluationMode === 'heel_raise';
+
+  if (isLegExercise) {
+    const connections: [number, number][] =
+      effectiveSide === 'left'
+        ? LEFT_LEG_CONNECTIONS
+        : effectiveSide === 'right'
+          ? RIGHT_LEG_CONNECTIONS
+          : [...LEFT_LEG_CONNECTIONS, ...RIGHT_LEG_CONNECTIONS];
+    const jointIndices =
+      effectiveSide === 'left'
+        ? LEFT_LEG_JOINTS
+        : effectiveSide === 'right'
+          ? RIGHT_LEG_JOINTS
+          : [...LEFT_LEG_JOINTS, ...RIGHT_LEG_JOINTS];
+    return {
+      category: 'leg',
+      effectiveSide,
+      connections,
+      jointIndices,
+    };
+  }
+
+  const connections: [number, number][] =
+    effectiveSide === 'left'
+      ? LEFT_ARM_CONNECTIONS
+      : effectiveSide === 'right'
+        ? RIGHT_ARM_CONNECTIONS
+        : [...LEFT_ARM_CONNECTIONS, ...RIGHT_ARM_CONNECTIONS];
+  const jointIndices =
+    effectiveSide === 'left'
+      ? LEFT_ARM_JOINTS
+      : effectiveSide === 'right'
+        ? RIGHT_ARM_JOINTS
+        : [...LEFT_ARM_JOINTS, ...RIGHT_ARM_JOINTS];
+
+  return {
+    category: 'arm',
+    effectiveSide,
+    connections,
+    jointIndices,
+  };
+}
 
 export function getRequiredKeypointsForExercise(config?: ExerciseDetectionConfig): number[] {
   if (config?.requiredLandmarks) {
@@ -195,6 +345,21 @@ export const computeTargetRingProgress = (
   return targetReps > 0 ? (completedReps % targetReps) / targetReps : 0;
 };
 
+export {
+  calcProgressPercent,
+  calcMultiSetProgress,
+  calcJointScore,
+  calcPoseAccuracy,
+  updateSmoothedAccuracyEma,
+  ACCURACY_EMA_ALPHA,
+  ACCURACY_UI_UPDATE_INTERVAL_MS,
+  ACCURACY_LEVEL_HIGH,
+  ACCURACY_LEVEL_MEDIUM,
+  DEFAULT_ANGLE_TOLERANCE_DEG,
+  DEFAULT_ANGLE_FALLOFF_DEG,
+  MIN_JOINT_VISIBILITY,
+};
+
 interface ExercisePostureGuideCardProps {
   exerciseId: string;
   titleString: string;
@@ -277,14 +442,14 @@ const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
     const svgFallbackUrl = fallbackMediaUrl || `/assets/exercises/${exerciseId}.svg`;
 
     return (
-      <div className="bg-white rounded-3xl border border-blue-100 p-4 sm:p-5 shadow-sm flex-1 flex flex-col justify-between gap-3">
-        <div>
-          <div className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <span>📐</span>
-            <span>{cardTitle}</span>
+      <div className="bg-white rounded-3xl border border-blue-100 p-[clamp(0.75rem,1.8vmin,1.25rem)] shadow-sm flex-1 min-h-0 flex flex-col justify-between gap-[clamp(0.5rem,1.2vmin,0.875rem)] overflow-hidden">
+        <div className="min-w-0">
+          <div className="text-[clamp(0.6875rem,1.1vw,0.75rem)] font-bold text-blue-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5 min-w-0">
+            <span className="shrink-0">📐</span>
+            <span className="truncate">{cardTitle}</span>
           </div>
 
-          <div className="w-full aspect-[16/10] bg-slate-50 border border-slate-100 rounded-2xl p-2 flex items-center justify-center overflow-hidden relative">
+          <div className="w-full aspect-[16/9] max-h-[clamp(6rem,22dvh,13rem)] bg-slate-50 border border-slate-100 rounded-2xl p-2 flex items-center justify-center overflow-hidden relative">
             {isLoading && mediaStage < 3 && (
               <div className="absolute inset-0 bg-slate-100 animate-pulse flex items-center justify-center">
                 <span className="text-slate-400 text-xs">กำลังโหลดตัวอย่าง...</span>
@@ -340,15 +505,15 @@ const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
           </div>
         </div>
 
-        <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+        <div className="space-y-1 pt-2 border-t border-slate-100 text-[clamp(0.75rem,1.2vw,0.8125rem)] min-w-0">
           <div className="font-bold text-slate-800 flex items-center gap-1">
-            <span>💡</span>
-            <span>{cueHeader}</span>
+            <span className="shrink-0">💡</span>
+            <span className="truncate">{cueHeader}</span>
           </div>
           <ul className="list-disc list-inside text-slate-600 space-y-1 leading-relaxed">
-            <li>{bullet1}</li>
-            <li>{bullet2}</li>
-            <li>{bullet3}</li>
+            <li className="line-clamp-2">{bullet1}</li>
+            <li className="line-clamp-2">{bullet2}</li>
+            <li className="line-clamp-2">{bullet3}</li>
           </ul>
         </div>
       </div>
@@ -356,6 +521,18 @@ const ExercisePostureGuideCard = React.memo<ExercisePostureGuideCardProps>(
   }
 );
 ExercisePostureGuideCard.displayName = 'ExercisePostureGuideCard';
+
+// Named PoseLandmarker Model & Inference Configuration Constants
+export const POSE_MODEL_FULL_URL =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task';
+export const POSE_MODEL_HEAVY_URL =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task';
+export const POSE_NUM_POSES = 1;
+export const MIN_POSE_DETECTION_CONFIDENCE = 0.5;
+export const MIN_POSE_PRESENCE_CONFIDENCE = 0.5;
+export const MIN_TRACKING_CONFIDENCE = 0.5;
+export const TARGET_INFERENCE_FPS = 30;
+export const MIN_INFERENCE_INTERVAL_MS = 33;
 
 // Module-level singleton caches for zero-freeze exercise transitions
 let cachedVisionModule: any = null;
@@ -398,15 +575,45 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     onExit,
   } = props;
 
-  const resolvedConfig = (config || exerciseConfig)!;
+  const propBaseConfig = (config || exerciseConfig)!;
+  const patientId = patient?.patient_id || patient?.hn || '';
+  const [selectedCustomConfig, setSelectedCustomConfig] = useState<ExerciseDetectionConfig | null>(null);
+  const activeBaseConfig = selectedCustomConfig || propBaseConfig;
+  const [activeCalibration, setActiveCalibration] = useState<PatientPoseCalibrationRecord | null>(() =>
+    getPatientCalibration(patientId, activeBaseConfig?.id || '')
+  );
+
+  useEffect(() => {
+    setActiveCalibration(getPatientCalibration(patientId, activeBaseConfig?.id || ''));
+  }, [patientId, activeBaseConfig?.id]);
+
+  const resolvedConfig = React.useMemo(
+    () => (activeBaseConfig ? applyCalibrationToConfig(activeBaseConfig, activeCalibration) : activeBaseConfig),
+    [activeBaseConfig, activeCalibration]
+  );
   const { lang, t, setLanguage } = useClinicalI18n();
 
+  const cameraContainerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasMetricsRef = useRef<{ width: number; height: number; dpr: number }>({
+    width: 0,
+    height: 0,
+    dpr: 1,
+  });
 
   const streamRef = useRef<MediaStream | null>(null);
   const landmarkerRef = useRef<any>(null);
-  const stateMachineRef = useRef<RepStateMachine>(new RepStateMachine(resolvedConfig));
+  const stateMachineRef = useRef<RepStateMachine>(
+    new RepStateMachine({
+      ...resolvedConfig,
+      preCheckDurationMs: resolvedConfig.preCheckDurationMs ?? PRE_CHECK_DURATION_MS,
+      allowDynamicUnilateral:
+        resolvedConfig.allowDynamicUnilateral ??
+        (resolvedConfig.lateralityMode !== 'inherently_bilateral' &&
+          resolvedConfig.lateralityMode !== 'bilateral_alternating'),
+    })
+  );
   const watchdogRef = useRef<CameraStreamWatchdog>(
     new CameraStreamWatchdog({
       maxFrozenFrames: 60,
@@ -424,7 +631,20 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   );
   const backlightCompensatorRef = useRef<BacklightCompensator>(new BacklightCompensator(15));
   const oneEuroFilterRef = useRef<ClinicalOneEuroLandmarkFilter>(
-    new ClinicalOneEuroLandmarkFilter({ minCutoff: 1.0, beta: 30.0 })
+    new ClinicalOneEuroLandmarkFilter({
+      minCutoff: DEFAULT_ONE_EURO_MIN_CUTOFF,
+      beta: DEFAULT_ONE_EURO_BETA,
+      dCutoff: DEFAULT_ONE_EURO_D_CUTOFF,
+      coordinateSpace: 'normalized',
+    })
+  );
+  const worldOneEuroFilterRef = useRef<ClinicalOneEuroLandmarkFilter>(
+    new ClinicalOneEuroLandmarkFilter({
+      minCutoff: DEFAULT_ONE_EURO_MIN_CUTOFF,
+      beta: DEFAULT_ONE_EURO_BETA,
+      dCutoff: DEFAULT_ONE_EURO_D_CUTOFF,
+      coordinateSpace: 'world',
+    })
   );
   const armStabilizerRef = useRef<ArmIdentityStabilizer>(new ArmIdentityStabilizer());
   const latestAmbiguousJointsRef = useRef<Set<number>>(new Set());
@@ -477,16 +697,30 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     resolvedConfig.id === 'shoulder-shrug' ||
     resolvedConfig.id === 'mini-squat';
 
-  const initialSide: BodySide = isInherentlyBilateralExercise
-    ? 'bilateral'
-    : ((props.exercise as any)?.target_side as BodySide) ||
-      ((props.exercise as any)?.side as BodySide) ||
-      resolvedConfig.side ||
-      'right';
-  const [activeSide, setActiveSide] = useState<BodySide>(initialSide);
+  const rawExerciseSide = String(
+    (props.exercise as any)?.target_side ??
+      (props.exercise as any)?.side ??
+      resolvedConfig.side ??
+      'both'
+  )
+    .toLowerCase()
+    .trim();
+  const activeSide: BodySide = isInherentlyBilateralExercise
+    ? 'both'
+    : rawExerciseSide === 'left'
+      ? 'left'
+      : rawExerciseSide === 'right'
+        ? 'right'
+        : 'both';
+  const engineSide: BodySide = activeSide === 'both' ? 'bilateral' : activeSide;
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [lowPowerMode, setLowPowerMode] = useState<boolean>(false);
-  const [showDebugHud, setShowDebugHud] = useState<boolean>(false);
+  const [showDebugHud, setShowDebugHud] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('debug') === '1';
+    }
+    return false;
+  });
   const [isStaffUnlocked, setIsStaffUnlocked] = useState<boolean>(() => {
     return typeof window !== 'undefined' && (Boolean((import.meta as any).env?.DEV) || (window as any).__DRTECH_DEBUG__ === true);
   });
@@ -566,7 +800,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     step: number;
     current: number;
   }>({ supported: false, min: 1, max: 1, step: 0.1, current: 1 });
-  const [fitMode, setFitMode] = useState<'contain' | 'cover'>('contain');
+  const [fitMode, setFitMode] = useState<'contain' | 'cover'>('cover');
   const [boostLighting, setBoostLighting] = useState<boolean>(false);
   const [showGuideSilhouette, setShowGuideSilhouette] = useState<boolean>(true);
   const [replayVideoSrc, setReplayVideoSrc] = useState<string | null>(() => {
@@ -575,6 +809,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     }
     return null;
   });
+
+  const initialRepsPerSet = resolvedConfig.defaultPrescription?.repsPerSet || 10;
+  const initialTotalSets = resolvedConfig.defaultPrescription?.totalSets || 3;
 
   const [hudState, setHudState] = useState({
     fps: 0,
@@ -588,6 +825,18 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     repPhase: 'IDLE',
     completedReps: 0,
     currentSet: 1,
+    progressPercent: 0,
+    doneTotalReps: 0,
+    targetTotalReps: initialRepsPerSet * initialTotalSets,
+    currentSetReps: 0,
+    isProgressCompleted: false,
+    hasValidAccuracyJoints: false,
+    liveAccuracyPct: null as number | null,
+    accuracyLevel: 'none' as AccuracyLevel,
+    accuracyBadgeTh: 'ไม่พบท่าทาง',
+    accuracyHintTh: null as string | null,
+    lastRepAccuracyPct: null as number | null,
+    sessionAvgAccuracyPct: null as number | null,
     coachingMessage: 'กำลังเตรียมกล้องและระบบตรวจจับท่าทาง...',
     statusColor: '#10b981',
     shoulderWidthPct: 0,
@@ -614,6 +863,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const lastAccuracyEmitTimeRef = useRef<number>(0);
   const lastEmittedAccuracyRef = useRef<number>(0);
 
+  const smoothedLiveAccuracyRef = useRef<number | null>(null);
+  const lastAccuracyUiUpdateMsRef = useRef<number>(0);
+  const currentRepAccSumRef = useRef<number>(0);
+  const currentRepAccCountRef = useRef<number>(0);
+  const lastRepAccuracyPctRef = useRef<number | null>(null);
+  const completedRepsAccuracyListRef = useRef<number[]>([]);
+  const prevExerciseIdRef = useRef<string>(resolvedConfig.id);
+
   const latestEvalResultRef = useRef<RepEvaluationResult | null>(null);
   const lastRenderedUiValuesRef = useRef({
     completedReps: 0,
@@ -626,7 +883,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     readinessStatus: '',
   });
 
-  const fitModeRef = useRef<'contain' | 'cover'>('contain');
+  const fitModeRef = useRef<'contain' | 'cover'>('cover');
   useEffect(() => {
     fitModeRef.current = fitMode;
   }, [fitMode]);
@@ -688,22 +945,103 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const activeSideRef = useRef(activeSide);
   useEffect(() => {
-    activeSideRef.current = activeSide;
-    stateMachineRef.current.setSide(activeSide);
-  }, [activeSide]);
+    const container = cameraContainerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const syncCanvasBuffer = () => {
+      const displayW = container.clientWidth || canvas.clientWidth || 0;
+      const displayH = container.clientHeight || canvas.clientHeight || 0;
+      if (displayW <= 0 || displayH <= 0) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const targetW = Math.round(displayW * dpr);
+      const targetH = Math.round(displayH * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+      canvasMetricsRef.current = { width: displayW, height: displayH, dpr };
+    };
+
+    syncCanvasBuffer();
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => {
+        syncCanvasBuffer();
+      });
+      observer.observe(container);
+    }
+    window.addEventListener('resize', syncCanvasBuffer);
+
+    return () => {
+      if (observer) {
+        observer.disconnect();
+      }
+      window.removeEventListener('resize', syncCanvasBuffer);
+    };
+  }, []);
+
+  const activeSideRef = useRef(engineSide);
+  useEffect(() => {
+    activeSideRef.current = engineSide;
+    stateMachineRef.current.setSide(engineSide);
+  }, [engineSide]);
 
   const resolvedConfigRef = useRef(resolvedConfig);
   useEffect(() => {
     resolvedConfigRef.current = resolvedConfig;
     const currentSide = activeSideRef.current || resolvedConfig.side;
+    const allowDynUni =
+      resolvedConfig.allowDynamicUnilateral ??
+      (!isInherentlyBilateralExercise && resolvedConfig.lateralityMode !== 'bilateral_alternating');
     stateMachineRef.current.updateConfig({
       ...resolvedConfig,
       side: currentSide,
+      allowDynamicUnilateral: allowDynUni,
+      preCheckDurationMs: resolvedConfig.preCheckDurationMs ?? PRE_CHECK_DURATION_MS,
     });
     if (currentSide) {
       stateMachineRef.current.setSide(currentSide);
+    }
+
+    if (prevExerciseIdRef.current !== resolvedConfig.id) {
+      prevExerciseIdRef.current = resolvedConfig.id;
+      const repsPerSetReset = resolvedConfig.defaultPrescription?.repsPerSet || 10;
+      const totalSetsReset = resolvedConfig.defaultPrescription?.totalSets || 3;
+      validCompletedRepsRef.current = 0;
+      setBaseRepsRef.current = 0;
+      lastCompletedRepsRef.current = 0;
+      targetProgressRef.current = 0;
+      currentAnimatedProgressRef.current = 0;
+      smoothedAccuracyRef.current = 0;
+      lastEmittedAccuracyRef.current = 0;
+      smoothedLiveAccuracyRef.current = null;
+      lastAccuracyUiUpdateMsRef.current = 0;
+      currentRepAccSumRef.current = 0;
+      currentRepAccCountRef.current = 0;
+      lastRepAccuracyPctRef.current = null;
+      completedRepsAccuracyListRef.current = [];
+      setHudState((prev) => ({
+        ...prev,
+        completedReps: 0,
+        currentSet: 1,
+        repPhase: 'IDLE',
+        progressPercent: 0,
+        doneTotalReps: 0,
+        targetTotalReps: repsPerSetReset * totalSetsReset,
+        currentSetReps: 0,
+        isProgressCompleted: false,
+        hasValidAccuracyJoints: false,
+        liveAccuracyPct: null,
+        accuracyPct: 0,
+        accuracyLevel: 'none',
+        accuracyBadgeTh: 'ไม่พบท่าทาง',
+        accuracyHintTh: null,
+        lastRepAccuracyPct: null,
+        sessionAvgAccuracyPct: null,
+      }));
     }
   }, [resolvedConfig]);
 
@@ -811,7 +1149,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     };
   }>({});
 
-  const patientId = patient?.patient_id || patient?.hn || '';
   const [initialSessionId] = useState<string>(
     () => `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
   );
@@ -1009,24 +1346,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     []
   );
 
-  const handleToggleSide = useCallback(
-    (newSide: BodySide) => {
-      setActiveSide(newSide);
-      activeSideRef.current = newSide;
-      if (stateMachineRef.current) {
-        stateMachineRef.current.setSide(newSide);
-      }
-      smoothedAccuracyRef.current = 0;
-      lastEmittedAccuracyRef.current = 0;
-      speakThai(
-        newSide === 'right' ? 'ตรวจจับข้างขวา' : newSide === 'left' ? 'ตรวจจับข้างซ้าย' : 'ตรวจจับทั้งสองข้าง',
-        'side_toggle',
-        0
-      );
-    },
-    [speakThai]
-  );
-
   // Resource Cleanup on Unmount (Preserves cachedPoseLandmarker for 0ms exercise transitions)
   const cleanupResources = useCallback(() => {
     isMountedRef.current = false;
@@ -1065,6 +1384,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     voiceFeedbackRef.current.cancel();
     watchdogRef.current.reset();
     armStabilizerRef.current.reset();
+    oneEuroFilterRef.current.reset();
+    worldOneEuroFilterRef.current.reset();
   }, []);
 
   useEffect(() => {
@@ -1234,13 +1555,23 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             throw new Error('ไม่สามารถโหลดไฟล์ WebAssembly ของระบบตรวจจับได้ (กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ CSP)');
           }
 
-          const modelSources = [
-            '/models/pose_landmarker.task',
-            '/models/pose_landmarker_lite.task',
-            'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
-            '/models/pose_landmarker_full.task',
-            'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
-          ];
+          const preferHeavyModel =
+            typeof window !== 'undefined' &&
+            new URLSearchParams(window.location.search).get('model') === 'heavy';
+          const modelSources = preferHeavyModel
+            ? [
+                '/models/pose_landmarker_heavy.task',
+                POSE_MODEL_HEAVY_URL,
+                '/models/pose_landmarker_full.task',
+                POSE_MODEL_FULL_URL,
+                '/models/pose_landmarker.task',
+              ]
+            : [
+                '/models/pose_landmarker_full.task',
+                POSE_MODEL_FULL_URL,
+                '/models/pose_landmarker.task',
+                '/models/pose_landmarker_lite.task',
+              ];
 
           let landmarker: any = null;
           let selectedDelegate: 'GPU' | 'CPU' = 'GPU';
@@ -1253,11 +1584,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   delegate: 'GPU',
                 },
                 runningMode: 'VIDEO',
-                numPoses: 2,
+                numPoses: POSE_NUM_POSES,
                 outputSegmentationMasks: false,
-                minPoseDetectionConfidence: 0.5,
-                minPosePresenceConfidence: 0.5,
-                minTrackingConfidence: 0.5,
+                minPoseDetectionConfidence: MIN_POSE_DETECTION_CONFIDENCE,
+                minPosePresenceConfidence: MIN_POSE_PRESENCE_CONFIDENCE,
+                minTrackingConfidence: MIN_TRACKING_CONFIDENCE,
               });
               if (landmarker) {
                 selectedDelegate = 'GPU';
@@ -1277,11 +1608,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                     delegate: 'CPU',
                   },
                   runningMode: 'VIDEO',
-                  numPoses: 2,
+                  numPoses: POSE_NUM_POSES,
                   outputSegmentationMasks: false,
-                  minPoseDetectionConfidence: 0.5,
-                  minPosePresenceConfidence: 0.5,
-                  minTrackingConfidence: 0.5,
+                  minPoseDetectionConfidence: MIN_POSE_DETECTION_CONFIDENCE,
+                  minPosePresenceConfidence: MIN_POSE_PRESENCE_CONFIDENCE,
+                  minTrackingConfidence: MIN_TRACKING_CONFIDENCE,
                 });
                 if (landmarker) {
                   selectedDelegate = 'CPU';
@@ -1337,14 +1668,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             return;
           }
 
-          const hasRvfc = typeof (vEl as any).requestVideoFrameCallback === 'function';
-          if (!hasRvfc) {
-            if (vEl.currentTime === lastVideoTimeRef.current) {
-              scheduleInference();
-              return;
-            }
-            lastVideoTimeRef.current = vEl.currentTime;
+          if (vEl.currentTime === lastVideoTimeRef.current) {
+            scheduleInference();
+            return;
           }
+          lastVideoTimeRef.current = vEl.currentTime;
 
           if (isInferenceBusyRef.current) {
             scheduleInference();
@@ -1354,7 +1682,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           const nowMs = performance.now();
 
-          if (lowPowerRef.current && nowMs - lastInferenceTimeRef.current < 66) {
+          const minIntervalMs = lowPowerRef.current ? MIN_INFERENCE_INTERVAL_MS * 2 : MIN_INFERENCE_INTERVAL_MS;
+          if (nowMs - lastInferenceTimeRef.current < minIntervalMs) {
             isInferenceBusyRef.current = false;
             scheduleInference();
             return;
@@ -1429,6 +1758,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             Boolean((resolvedConfigRef.current as any).isPendulum);
 
           if (!hasPose) {
+            oneEuroFilterRef.current.reset();
+            worldOneEuroFilterRef.current.reset();
             previousPoseStateRef.current = currentPoseStateRef.current;
             currentPoseStateRef.current = {
               landmarks: null,
@@ -1451,11 +1782,12 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 lastCompletedRepsRef.current = evalRes.completedReps;
                 if (isIdentityVerifiedRef.current) {
                   validCompletedRepsRef.current += 1;
-                  targetProgressRef.current = 1.0;
-                  currentAnimatedProgressRef.current = 1.0;
-                  if (progressCircleRef.current) {
-                    progressCircleRef.current.style.strokeDashoffset = '0px';
-                  }
+                  const repScore = Math.max(
+                    0,
+                    Math.min(100, Math.round(smoothedLiveAccuracyRef.current ?? evalRes.accuracyPercent ?? 100))
+                  );
+                  lastRepAccuracyPctRef.current = repScore;
+                  completedRepsAccuracyListRef.current.push(repScore);
                   setCelebratingRep(validCompletedRepsRef.current);
                   setTimeout(() => setCelebratingRep(null), 2000);
                   playRepChime();
@@ -1467,7 +1799,24 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
               const targetReps = resolvedConfigRef.current.defaultPrescription?.repsPerSet || 10;
               const totalSets = resolvedConfigRef.current.defaultPrescription?.totalSets || 3;
-              const isSetDone = validCompletedRepsRef.current - setBaseRepsRef.current >= targetReps;
+              const currentSetRepsDone = Math.max(0, validCompletedRepsRef.current - setBaseRepsRef.current);
+              const timerProgress = calcMultiSetProgress({
+                completedSets: Math.max(0, (evalRes.currentSet || 1) - 1),
+                currentSetReps: currentSetRepsDone,
+                totalSets,
+                repsPerSet: targetReps,
+              });
+              targetProgressRef.current = timerProgress.progressPercent / 100;
+              const timerSessionAvg =
+                completedRepsAccuracyListRef.current.length > 0
+                  ? Math.round(
+                      completedRepsAccuracyListRef.current.reduce((sum, val) => sum + val, 0) /
+                        completedRepsAccuracyListRef.current.length
+                    )
+                  : null;
+              smoothedLiveAccuracyRef.current = null;
+
+              const isSetDone = currentSetRepsDone >= targetReps;
               const isExerciseDone = isSetDone && evalRes.currentSet >= totalSets;
 
               if (isSetDone && !isExerciseDone && sessionWorkoutStateRef.current === 'EXERCISING') {
@@ -1494,6 +1843,19 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   landmarkCount: 0,
                   currentAngle: 0,
                   completedReps: validCompletedRepsRef.current,
+                  currentSet: evalRes.currentSet,
+                  progressPercent: timerProgress.progressPercent,
+                  doneTotalReps: timerProgress.doneReps,
+                  targetTotalReps: timerProgress.totalTargetReps,
+                  currentSetReps: timerProgress.currentSetReps,
+                  isProgressCompleted: timerProgress.isCompleted,
+                  hasValidAccuracyJoints: false,
+                  liveAccuracyPct: null,
+                  accuracyLevel: 'none',
+                  accuracyBadgeTh: 'ไม่พบท่าทาง',
+                  accuracyHintTh: null,
+                  lastRepAccuracyPct: lastRepAccuracyPctRef.current,
+                  sessionAvgAccuracyPct: timerSessionAvg,
                   repPhase: evalRes.phase,
                   accuracyPct: Math.round(evalRes.accuracyPercent ?? 100),
                   coachingMessage: evalRes.coachingMessageTh || 'กำลังจับเวลาตามจังหวะกายภาพ...',
@@ -1506,6 +1868,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               return;
             }
 
+            smoothedLiveAccuracyRef.current = null;
             if (nowMs - lastUiUpdateMsRef.current > 150) {
               lastUiUpdateMsRef.current = nowMs;
               setHudState((prev) => ({
@@ -1515,6 +1878,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 landmarkCount: 0,
                 avgVisibility: 0,
                 shoulderWidthPct: 0,
+                hasValidAccuracyJoints: false,
+                liveAccuracyPct: null,
+                accuracyLevel: 'none',
+                accuracyBadgeTh: 'ไม่พบท่าทาง',
+                accuracyHintTh: null,
                 distanceStatus: 'ไม่พบผู้ใช้ในภาพ',
                 distanceWarning: '📷 ไม่พบร่างกายในภาพ กรุณาขยับให้อยู่กลางหน้าจอและถอยห่าง 1–1.5 เมตร',
                 detectedPeople: 0,
@@ -1556,7 +1924,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           smoothedLandmarksRef.current = smoothedPose;
 
           const wdStatus = watchdogRef.current.update(smoothedPose, safeTimestampMs);
-          const chosenWorldPose = (result.worldLandmarks && result.worldLandmarks[bestIdx]) || undefined;
+          const rawWorldPose = (result.worldLandmarks && result.worldLandmarks[bestIdx]) || undefined;
+          const chosenWorldPose = rawWorldPose
+            ? worldOneEuroFilterRef.current.filter(rawWorldPose, safeTimestampMs)
+            : undefined;
           const isArmClipping = Boolean(
             smoothedPose && (
               (smoothedPose[13] && (smoothedPose[13].x < 0.03 || smoothedPose[13].x > 0.97 || smoothedPose[13].y < 0.03 || smoothedPose[13].y > 0.97)) ||
@@ -1572,13 +1943,26 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             { isArmAmbiguous, ambiguousJoints, isArmClipping }
           );
           latestEvalResultRef.current = evalRes;
-          targetProgressRef.current = computeTargetRingProgress(
-            evalRes,
+
+          const poseAccuracy = calcPoseAccuracy(
+            smoothedPose,
             resolvedConfigRef.current,
-            false,
-            isPendulumExercise,
-            validCompletedRepsRef.current
+            activeSideRef.current
           );
+          smoothedLiveAccuracyRef.current = updateSmoothedAccuracyEma(
+            smoothedLiveAccuracyRef.current,
+            poseAccuracy.score,
+            ACCURACY_EMA_ALPHA
+          );
+
+          const isInActiveRepPhase =
+            evalRes.phase === 'MOVING_TO_TARGET' ||
+            evalRes.phase === 'HOLDING_TARGET' ||
+            evalRes.phase === 'RETURNING_TO_START';
+          if (isInActiveRepPhase && poseAccuracy.score !== null) {
+            currentRepAccSumRef.current += poseAccuracy.score;
+            currentRepAccCountRef.current += 1;
+          }
 
           previousPoseStateRef.current = currentPoseStateRef.current;
           currentPoseStateRef.current = {
@@ -1604,7 +1988,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 phase: evalRes.phase,
                 angle: evalRes.currentAngleDeg,
                 targetAngle: evalRes.targetAngleDeg,
-                accuracyScore: evalRes.accuracyPercent ?? 0,
+                accuracyScore: Math.round(poseAccuracy.score ?? evalRes.accuracyPercent ?? 0),
                 isCompleteJoints: isComplete,
                 fps: Math.round(smoothedFpsRef.current * 10) / 10,
                 detectedReps: validCompletedRepsRef.current,
@@ -1612,15 +1996,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }
           }
 
+          let repCompletedNow = false;
           if (sessionWorkoutStateRef.current === 'EXERCISING' && evalRes.completedReps > lastCompletedRepsRef.current) {
             lastCompletedRepsRef.current = evalRes.completedReps;
             if (isIdentityVerifiedRef.current) {
+              repCompletedNow = true;
               validCompletedRepsRef.current += 1;
-              targetProgressRef.current = 1.0;
-              currentAnimatedProgressRef.current = 1.0;
-              if (progressCircleRef.current) {
-                progressCircleRef.current.style.strokeDashoffset = '0px';
-              }
+              const repAccRaw =
+                currentRepAccCountRef.current > 0
+                  ? currentRepAccSumRef.current / currentRepAccCountRef.current
+                  : smoothedLiveAccuracyRef.current ?? poseAccuracy.score ?? evalRes.accuracyPercent ?? 100;
+              const boundedRepAcc = Math.max(0, Math.min(100, Math.round(repAccRaw)));
+              lastRepAccuracyPctRef.current = boundedRepAcc;
+              completedRepsAccuracyListRef.current.push(boundedRepAcc);
+              currentRepAccSumRef.current = 0;
+              currentRepAccCountRef.current = 0;
               setCelebratingRep(validCompletedRepsRef.current);
               setTimeout(() => setCelebratingRep(null), 2000);
               playRepChime();
@@ -1638,7 +2028,17 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           const targetReps = resolvedConfigRef.current.defaultPrescription?.repsPerSet || 10;
           const totalSets = resolvedConfigRef.current.defaultPrescription?.totalSets || 3;
-          const isSetDone = validCompletedRepsRef.current - setBaseRepsRef.current >= targetReps;
+          const currentSetRepsDone = Math.max(0, validCompletedRepsRef.current - setBaseRepsRef.current);
+          const completedSetsCount = Math.max(0, (evalRes.currentSet || 1) - 1);
+          const progressSummary = calcMultiSetProgress({
+            completedSets: completedSetsCount,
+            currentSetReps: currentSetRepsDone,
+            totalSets,
+            repsPerSet: targetReps,
+          });
+          targetProgressRef.current = progressSummary.progressPercent / 100;
+
+          const isSetDone = currentSetRepsDone >= targetReps;
           const isExerciseDone = isSetDone && evalRes.currentSet >= totalSets;
 
           if (isSetDone && !isExerciseDone && sessionWorkoutStateRef.current === 'EXERCISING') {
@@ -1662,35 +2062,35 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }
           }
 
-          const isAtPreExerciseRest =
-            validCompletedRepsRef.current === 0 &&
-            (evalRes.phase === 'IDLE' ||
-              evalRes.phase === 'WAITING_FOR_FRAMING' ||
-              evalRes.readinessStatus === 'missing_arm_landmarks' ||
-              isArmClipping);
+          const liveAccuracyRounded =
+            poseAccuracy.hasValidJoints && smoothedLiveAccuracyRef.current !== null
+              ? Math.round(smoothedLiveAccuracyRef.current)
+              : null;
 
-          const rawAcc = isAtPreExerciseRest
-            ? 0
-            : Math.round(evalRes.accuracyPercent ?? evalRes.accuracyPct ?? 100);
-
-          if (isAtPreExerciseRest) {
+          if (liveAccuracyRounded === null) {
             smoothedAccuracyRef.current = 0;
             lastEmittedAccuracyRef.current = 0;
-          } else if (smoothedAccuracyRef.current === 0) {
-            smoothedAccuracyRef.current = rawAcc;
-          } else if (rawAcc >= 0) {
-            smoothedAccuracyRef.current = 0.80 * smoothedAccuracyRef.current + 0.20 * rawAcc;
+          } else {
+            smoothedAccuracyRef.current = liveAccuracyRounded;
           }
-          const smoothedAcc = Math.round(smoothedAccuracyRef.current);
 
+          const isAccuracyThrottlePassed =
+            nowMs - lastAccuracyUiUpdateMsRef.current >= ACCURACY_UI_UPDATE_INTERVAL_MS;
           const isAccuracyChanged =
-            Math.abs(smoothedAcc - lastEmittedAccuracyRef.current) >= 1 &&
-            nowMs - lastAccuracyEmitTimeRef.current >= 200;
+            liveAccuracyRounded !== lastEmittedAccuracyRef.current && isAccuracyThrottlePassed;
 
-          if (isAccuracyChanged) {
-            lastEmittedAccuracyRef.current = smoothedAcc;
-            lastAccuracyEmitTimeRef.current = nowMs;
+          if (isAccuracyChanged || repCompletedNow) {
+            lastEmittedAccuracyRef.current = liveAccuracyRounded ?? 0;
+            lastAccuracyUiUpdateMsRef.current = nowMs;
           }
+
+          const sessionAvgAccuracyPct =
+            completedRepsAccuracyListRef.current.length > 0
+              ? Math.round(
+                  completedRepsAccuracyListRef.current.reduce((sum, val) => sum + val, 0) /
+                    completedRepsAccuracyListRef.current.length
+                )
+              : null;
 
           const prevUi = lastRenderedUiValuesRef.current;
           const isRepsChanged = validCompletedRepsRef.current !== prevUi.completedReps;
@@ -1719,6 +2119,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           if (shouldUpdateUi) {
             lastUiUpdateMsRef.current = nowMs;
+            lastAccuracyUiUpdateMsRef.current = nowMs;
             lastRenderedUiValuesRef.current = {
               completedReps: validCompletedRepsRef.current,
               currentSet: evalRes.currentSet,
@@ -1762,6 +2163,22 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             const distanceWarning =
               evalRes.phase === 'WAITING_FOR_FRAMING' ? evalRes.coachingMessageTh : null;
 
+            const smoothedLevel: AccuracyLevel = !poseAccuracy.hasValidJoints || liveAccuracyRounded === null
+              ? 'none'
+              : liveAccuracyRounded >= ACCURACY_LEVEL_HIGH
+                ? 'high'
+                : liveAccuracyRounded >= ACCURACY_LEVEL_MEDIUM
+                  ? 'medium'
+                  : 'low';
+            const smoothedBadgeTh =
+              smoothedLevel === 'none'
+                ? 'ไม่พบท่าทาง'
+                : smoothedLevel === 'high'
+                  ? 'ดีมาก'
+                  : smoothedLevel === 'medium'
+                    ? 'ปานกลาง'
+                    : 'ควรปรับท่า';
+
             setHudState({
               fps: Math.round(smoothedFpsRef.current),
               renderFps: Math.round(smoothedRenderFpsRef.current),
@@ -1774,6 +2191,21 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               repPhase: evalRes.phase,
               completedReps: validCompletedRepsRef.current,
               currentSet: evalRes.currentSet,
+              progressPercent: progressSummary.progressPercent,
+              doneTotalReps: progressSummary.doneReps,
+              targetTotalReps: progressSummary.totalTargetReps,
+              currentSetReps: progressSummary.currentSetReps,
+              isProgressCompleted: progressSummary.isCompleted,
+              hasValidAccuracyJoints: poseAccuracy.hasValidJoints,
+              liveAccuracyPct: liveAccuracyRounded,
+              accuracyLevel: smoothedLevel,
+              accuracyBadgeTh: smoothedBadgeTh,
+              accuracyHintTh:
+                smoothedLevel === 'low' || smoothedLevel === 'medium'
+                  ? poseAccuracy.worstJointHintTh
+                  : null,
+              lastRepAccuracyPct: lastRepAccuracyPctRef.current,
+              sessionAvgAccuracyPct,
               coachingMessage: evalRes.coachingMessageTh,
               statusColor: strokeColor,
               shoulderWidthPct,
@@ -1805,7 +2237,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           const cEl = canvasRef.current;
           const vEl = videoRef.current;
-          if (!cEl || !vEl || vEl.readyState < 2) return;
+          const containerEl = cameraContainerRef.current;
+          if (!cEl || !vEl || vEl.readyState < 2 || vEl.videoWidth === 0 || vEl.videoHeight === 0) return;
 
           const nowMs = performance.now();
 
@@ -1814,27 +2247,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           smoothedRenderFpsRef.current =
             0.9 * smoothedRenderFpsRef.current + 0.1 * (1000 / renderDtMs);
 
-          const targetProgress = targetProgressRef.current;
-          const currentProgress = currentAnimatedProgressRef.current;
-          const dtSec = Math.min(renderDtMs / 1000, 0.05);
-          const lerpFactor = 1 - Math.exp(-16 * dtSec);
-          const nextProgress =
-            Math.abs(targetProgress - currentProgress) < 0.0005
-              ? targetProgress
-              : currentProgress + (targetProgress - currentProgress) * lerpFactor;
-          currentAnimatedProgressRef.current = nextProgress;
-
-          if (progressCircleRef.current) {
-            const circ = 2 * Math.PI * 42;
-            const offset = circ * (1 - Math.max(0, Math.min(1, nextProgress)));
-            progressCircleRef.current.style.strokeDashoffset = `${offset}px`;
-          }
+          currentAnimatedProgressRef.current = targetProgressRef.current;
 
           const ctx = cEl.getContext('2d');
           if (!ctx) return;
 
-          const displayW = cEl.clientWidth || vEl.clientWidth || 1280;
-          const displayH = cEl.clientHeight || vEl.clientHeight || 720;
+          const displayW = containerEl?.clientWidth || cEl.clientWidth || canvasMetricsRef.current.width;
+          const displayH = containerEl?.clientHeight || cEl.clientHeight || canvasMetricsRef.current.height;
+          if (displayW <= 0 || displayH <= 0) return;
+
           const dpr = Math.min(window.devicePixelRatio || 1, 2);
           const targetW = Math.round(displayW * dpr);
           const targetH = Math.round(displayH * dpr);
@@ -1842,6 +2263,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           if (cEl.width !== targetW || cEl.height !== targetH) {
             cEl.width = targetW;
             cEl.height = targetH;
+            canvasMetricsRef.current = { width: displayW, height: displayH, dpr };
           }
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -1855,6 +2277,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           const currState = currentPoseStateRef.current;
           const prevState = previousPoseStateRef.current;
           const currentFitMode = fitModeRef.current;
+          const videoW = vEl.videoWidth;
+          const videoH = vEl.videoHeight;
           const renderPoints: {
             [idx: number]: {
               x: number;
@@ -1888,8 +2312,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
               const proj = projectLandmarkToCanvas(
                 { x: normX, y: normY, visibility: vis },
-                vEl.videoWidth || 1280,
-                vEl.videoHeight || 720,
+                videoW,
+                videoH,
                 displayW,
                 displayH,
                 true,
@@ -1951,75 +2375,16 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 : '#10b981';
 
           const currentActiveSide =
-            activeSideRef.current || resolvedConfigRef.current.side || 'right';
-          const isBilateral =
-            currentActiveSide === 'bilateral' ||
-            (currentActiveSide !== 'left' &&
-              currentActiveSide !== 'right' &&
-              (resolvedConfigRef.current.side === 'bilateral' ||
-                Boolean((resolvedConfigRef.current as any).bilateral)));
-          const isNeckExercise =
-            resolvedConfigRef.current.targetJoint === 'neck' ||
-            resolvedConfigRef.current.framing === 'head_shoulders';
-
+            activeSideRef.current || resolvedConfigRef.current.side || 'both';
+          const skeletonFilter = getActiveExerciseSkeletonFilter(
+            resolvedConfigRef.current,
+            currentActiveSide
+          );
+          const isNeckExercise = skeletonFilter.category === 'neck';
           const activeColor = strokeColor;
-          const inactiveColor = 'rgba(148, 163, 184, 0.65)';
-          const torsoBridgeColor = 'rgba(56, 189, 248, 0.75)';
+          const lineThickness = Math.max(3, Math.round(Math.min(displayW, displayH) * 0.008));
 
-          const getConnectionStyle = (idxA: number, idxB: number) => {
-            const isHeadConn =
-              (idxA === 0 || idxA === 7 || idxA === 8) &&
-              (idxB === 0 || idxB === 7 || idxB === 8 || idxB === 11 || idxB === 12);
-
-            if (isNeckExercise) {
-              if (isHeadConn) {
-                return { lineWidth: 5, strokeStyle: activeColor, isActive: true };
-              }
-              if (idxA === 11 && idxB === 12) {
-                return { lineWidth: 4, strokeStyle: torsoBridgeColor, isActive: false };
-              }
-              return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
-            }
-
-            if (isHeadConn) {
-              return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
-            }
-
-            if (isBilateral) {
-              return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
-            }
-            if ((idxA === 11 && idxB === 12) || (idxA === 23 && idxB === 24)) {
-              return { lineWidth: 4, strokeStyle: torsoBridgeColor, isActive: false };
-            }
-            const isAOdd = idxA % 2 === 1;
-            const isBOdd = idxB % 2 === 1;
-            const isLeftConn = isAOdd && isBOdd;
-            const isRightConn = !isAOdd && !isBOdd;
-
-            if (currentActiveSide === 'left' && isLeftConn) {
-              return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
-            }
-            if (currentActiveSide === 'right' && isRightConn) {
-              return { lineWidth: 6, strokeStyle: activeColor, isActive: true };
-            }
-            return { lineWidth: 3, strokeStyle: inactiveColor, isActive: false };
-          };
-
-          const isJointActive = (idx: number) => {
-            if (isNeckExercise) {
-              return idx === 0 || idx === 7 || idx === 8;
-            }
-            if (isBilateral) return true;
-            if (currentActiveSide === 'left') return idx % 2 === 1;
-            if (currentActiveSide === 'right') return idx % 2 === 0;
-            return true;
-          };
-
-          const activeConnections = isNeckExercise
-            ? [...HEAD_POSE_CONNECTIONS, ...POSE_CONNECTIONS]
-            : POSE_CONNECTIONS;
-
-          for (const [idxA, idxB] of activeConnections) {
+          for (const [idxA, idxB] of skeletonFilter.connections) {
             if (latestAmbiguousJointsRef.current.has(idxA) || latestAmbiguousJointsRef.current.has(idxB)) {
               continue;
             }
@@ -2033,10 +2398,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               (ptA.visibility ?? 0) >= ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY &&
               (ptB.visibility ?? 0) >= ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY
             ) {
-              const style = getConnectionStyle(idxA, idxB);
               const lineAlpha = Math.min(ptA.decayAlpha ?? 1.0, ptB.decayAlpha ?? 1.0);
-              ctx.lineWidth = style.lineWidth;
-              ctx.strokeStyle = applyAlphaToColor(style.strokeStyle, lineAlpha);
+              ctx.lineWidth = lineThickness;
+              ctx.lineCap = 'round';
+              ctx.strokeStyle = applyAlphaToColor(activeColor, lineAlpha);
               ctx.beginPath();
               ctx.moveTo(ptA.x, ptA.y);
               ctx.lineTo(ptB.x, ptB.y);
@@ -2044,28 +2409,23 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             }
           }
 
-          const activeJointIndices = isNeckExercise
-            ? [...HEAD_JOINT_INDICES, ...BODY_JOINT_INDICES]
-            : BODY_JOINT_INDICES;
-
           const fingerJointIndices = [17, 18, 19, 20, 21, 22];
+          const jointBaseRadius = Math.max(4, Math.min(9, Math.min(displayW, displayH) * 0.011));
 
-          for (const idx of activeJointIndices) {
+          for (const idx of skeletonFilter.jointIndices) {
             if (latestAmbiguousJointsRef.current.has(idx)) continue;
             const pt = renderPoints[idx];
             if (!pt || !pt.inFrame || (pt.visibility ?? 0) < ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY) continue;
 
             const jointAlpha = pt.decayAlpha ?? 1.0;
-            const active = isJointActive(idx);
             const isFinger = fingerJointIndices.includes(idx);
-            const radius = isFinger ? (active ? 4 : 2.5) : active ? 7.5 : 4.5;
-            const fillColor = active ? activeColor : '#94a3b8';
+            const radius = isFinger ? Math.max(2.5, jointBaseRadius * 0.55) : jointBaseRadius;
 
             ctx.beginPath();
             ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
-            ctx.fillStyle = applyAlphaToColor(fillColor, jointAlpha);
+            ctx.fillStyle = applyAlphaToColor(activeColor, jointAlpha);
             ctx.fill();
-            ctx.lineWidth = active ? 2 : 1.5;
+            ctx.lineWidth = 2;
             ctx.strokeStyle = applyAlphaToColor('#ffffff', jointAlpha);
             ctx.stroke();
 
@@ -2107,14 +2467,35 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     setIsResting(false);
     setBaseRepsRef.current = validCompletedRepsRef.current;
     lastCompletedRepsRef.current = 0;
+    currentRepAccSumRef.current = 0;
+    currentRepAccCountRef.current = 0;
     stateMachineRef.current.nextSet();
-    targetProgressRef.current = 0;
-    currentAnimatedProgressRef.current = 0;
-    if (progressCircleRef.current) {
-      progressCircleRef.current.style.strokeDashoffset = `${2 * Math.PI * 42}px`;
-    }
+    const repsPerSet = resolvedConfig.defaultPrescription?.repsPerSet || 10;
+    const totalSets = resolvedConfig.defaultPrescription?.totalSets || 3;
+    const nextCompletedSets = Math.min(totalSets, Math.floor(validCompletedRepsRef.current / Math.max(1, repsPerSet)));
+    const nextProgress = calcMultiSetProgress({
+      completedSets: nextCompletedSets,
+      currentSetReps: 0,
+      totalSets,
+      repsPerSet,
+    });
+    targetProgressRef.current = nextProgress.progressPercent / 100;
+    currentAnimatedProgressRef.current = nextProgress.progressPercent / 100;
+    setHudState((prev) => ({
+      ...prev,
+      currentSet: Math.min(totalSets, nextCompletedSets + 1),
+      currentSetReps: 0,
+      progressPercent: nextProgress.progressPercent,
+      doneTotalReps: nextProgress.doneReps,
+      targetTotalReps: nextProgress.totalTargetReps,
+      isProgressCompleted: nextProgress.isCompleted,
+    }));
     setRestCountdown(resolvedConfig.defaultPrescription?.restBetweenSetsSec || 30);
-  }, [resolvedConfig.defaultPrescription?.restBetweenSetsSec]);
+  }, [
+    resolvedConfig.defaultPrescription?.repsPerSet,
+    resolvedConfig.defaultPrescription?.restBetweenSetsSec,
+    resolvedConfig.defaultPrescription?.totalSets,
+  ]);
 
   useEffect(() => {
     if (!isResting) return;
@@ -2301,12 +2682,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     resolvedConfig.targetJoint === 'knee' ||
     resolvedConfig.targetJoint === 'ankle' ||
     resolvedConfig.targetJoint === 'hip';
-  const lateralityMode: LateralityMode =
-    resolvedConfig.lateralityMode ||
-    (isInherentlyBilateralExercise
-      ? 'inherently_bilateral'
-      : 'unilateral_or_bilateral');
-  const isInherentlyBilateral = lateralityMode === 'inherently_bilateral';
 
   const titleString =
     explicitTitle ||
@@ -2534,19 +2909,20 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   const statusInfo = getSingleLineStatus();
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#F0F7FB] text-slate-900 flex flex-col justify-between overflow-hidden select-none font-sans">
+    <div className="exercise-session-root z-50 bg-[#F0F7FB] text-slate-900 select-none font-sans">
       {/* 1. Top Workout Header Bar */}
-      <header className="w-full bg-white border-b border-blue-100 px-5 sm:px-8 py-3 shadow-xs flex flex-wrap items-center justify-between z-20 gap-3 shrink-0 select-none">
+      <header className="exercise-session-header bg-white border-b border-blue-100 shadow-xs z-20 select-none">
         <button
           type="button"
           id="kiosk-header-exit-btn"
           data-testid="kiosk-header-exit-btn"
           onClick={onExit}
-          className="min-h-[46px] px-4 sm:px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm sm:text-base font-bold flex items-center gap-2 transition active:scale-95 cursor-pointer border border-slate-200 shadow-xs shrink-0"
+          className="exercise-touch-btn px-[clamp(0.75rem,1.5vw,1.25rem)] py-[clamp(0.375rem,0.8dvh,0.625rem)] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[clamp(0.8125rem,1.4vw,1rem)] font-bold flex items-center gap-1.5 cursor-pointer border border-slate-200 shadow-xs shrink-0"
           title={t('exit_exercise', 'ออกจากการฝึก')}
         >
-          <ArrowLeft className="w-5 h-5 shrink-0 text-slate-600" />
-          <span>{t('exit_exercise', '← ออกจากท่าฝึก')}</span>
+          <ArrowLeft className="w-[1.125rem] h-[1.125rem] shrink-0 text-slate-600" />
+          <span className="hidden sm:inline truncate">{t('exit_exercise', '← ออกจากท่าฝึก')}</span>
+          <span className="sm:hidden truncate">{lang === 'zh-CN' ? '退出' : lang === 'en-US' ? 'Exit' : 'ออก'}</span>
         </button>
 
         <div
@@ -2554,84 +2930,25 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           className="flex-1 min-w-0 text-center px-2 cursor-pointer select-none"
           title="แตะ 5 ครั้งเพื่อปลดล็อกโหมดเจ้าหน้าที่"
         >
-          <h1 className="text-lg sm:text-xl md:text-2xl font-black text-slate-900 truncate leading-tight tracking-tight">
+          <h1 className="text-[clamp(0.95rem,2vw,1.5rem)] font-black text-slate-900 truncate leading-tight">
             {titleString}
           </h1>
-          <div className="flex items-center justify-center gap-2 mt-1 flex-wrap">
-            <span className="px-3 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold text-xs truncate">
+          <div className="flex items-center justify-center gap-2 mt-0.5 flex-wrap">
+            <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[clamp(0.7rem,1.1vw,0.8125rem)] truncate max-w-full">
               คุณ {patient.first_name || 'ผู้ฝึก'}
             </span>
-
-            {lateralityMode === 'unilateral_or_bilateral' ? (
-              <div
-                className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 border border-slate-200 gap-1 shadow-xs"
-                onClick={(e) => e.stopPropagation()}
-                role="group"
-                aria-label="เลือกข้างฝึก"
-              >
-                <button
-                  type="button"
-                  id="kiosk-side-left-btn"
-                  data-testid="kiosk-side-left-btn"
-                  onClick={() => handleToggleSide('left')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                    activeSide === 'left'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                  }`}
-                >
-                  {lang === 'zh-CN' ? '左侧' : lang === 'en-US' ? 'Left' : 'ซ้าย (L)'}
-                </button>
-                <button
-                  type="button"
-                  id="kiosk-side-right-btn"
-                  data-testid="kiosk-side-right-btn"
-                  onClick={() => handleToggleSide('right')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                    activeSide === 'right'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                  }`}
-                >
-                  {lang === 'zh-CN' ? '右侧' : lang === 'en-US' ? 'Right' : 'ขวา (R)'}
-                </button>
-                <button
-                  type="button"
-                  id="kiosk-side-bilateral-btn"
-                  data-testid="kiosk-side-bilateral-btn"
-                  onClick={() => handleToggleSide('bilateral')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                    activeSide === 'bilateral'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                  }`}
-                >
-                  {lang === 'zh-CN' ? '双侧' : lang === 'en-US' ? 'Both' : 'ทั้งสองข้าง (Both)'}
-                </button>
-              </div>
-            ) : lateralityMode === 'inherently_bilateral' ? (
-              <span className="px-3 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs flex items-center gap-1.5 shadow-xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                {lang === 'zh-CN' ? '双侧同步 (Bilateral)' : lang === 'en-US' ? 'Bilateral (Both)' : 'ตรวจจับทั้งสองข้าง (Bilateral)'}
-              </span>
-            ) : (
-              <span className="px-3 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 shadow-xs">
-                <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                {lang === 'zh-CN' ? '双向交替' : lang === 'en-US' ? 'Alternating' : 'สลับข้างตามธรรมชาติ (Alternating)'}
-              </span>
-            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="relative">
             <button
               type="button"
               id="kiosk-language-menu-btn"
               onClick={() => setShowLangMenu((prev) => !prev)}
-              className="min-h-[44px] px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-xs"
+              className="exercise-touch-btn px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[clamp(0.75rem,1.2vw,0.875rem)] font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
-              <Globe className="w-4 h-4 text-blue-600" />
+              <Globe className="w-4 h-4 text-blue-600 shrink-0" />
               <span>{lang === 'zh-CN' ? '中文' : lang === 'en-US' ? 'EN' : 'TH'}</span>
             </button>
 
@@ -2645,7 +2962,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                       setLanguage(opt.code);
                       setShowLangMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                    className={`exercise-touch-btn w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between cursor-pointer ${
                       lang === opt.code
                         ? 'bg-blue-50 text-blue-700 border border-blue-200'
                         : 'text-slate-700 hover:bg-slate-50'
@@ -2670,21 +2987,25 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 setShowStaffPinModal(true);
               }
             }}
-            className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center border border-slate-200 transition active:scale-95 cursor-pointer shadow-xs"
+            className="exercise-touch-btn w-[2.75rem] h-[2.75rem] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center border border-slate-200 cursor-pointer shadow-xs"
+            aria-label="Staff settings"
           >
             <Settings className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* 2. Main Workout Bento Stage */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 flex-1 items-stretch overflow-hidden min-h-0">
-        <div className="lg:col-span-8 xl:col-span-9 bg-slate-950 rounded-3xl border-4 border-white shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[480px]">
+      {/* 2. Main Responsive Workout Bento Stage */}
+      <main className="exercise-session-main">
+        <div
+          ref={cameraContainerRef}
+          className="exercise-camera-stage border-2 sm:border-4 border-white shadow-xl"
+        >
           <video
             ref={videoRef}
             playsInline
             muted
-            className={`w-full h-full ${
+            className={`exercise-camera-video ${
               fitMode === 'contain' ? 'object-contain' : 'object-cover'
             } -scale-x-100 z-0 transition-all duration-200 ${
               boostLighting || hudState.hasLightingWarning ? 'brightness-110 contrast-125' : ''
@@ -2693,15 +3014,15 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           <canvas
             ref={canvasRef}
-            className="absolute inset-0 w-full h-full pointer-events-none z-10"
+            className="exercise-camera-canvas z-10"
           />
 
-          <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+          <div className="absolute top-[clamp(0.5rem,1.5vmin,1rem)] right-[clamp(0.5rem,1.5vmin,1rem)] z-20 flex items-center gap-2">
             {isAccuracyTestMode && (
               <button
                 type="button"
                 onClick={() => setShowAccuracyVerifyModal(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-mono font-bold bg-emerald-500/90 hover:bg-emerald-400 text-slate-950 border border-emerald-300 shadow-lg cursor-pointer active:scale-95 animate-pulse"
+                className="exercise-touch-btn flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-mono font-bold bg-emerald-500/90 hover:bg-emerald-400 text-slate-950 border border-emerald-300 shadow-lg cursor-pointer animate-pulse"
               >
                 <span>🧪 TEST</span>
                 <span className="opacity-80">({hudState.accuracyTotalFrames}f)</span>
@@ -2712,14 +3033,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               id="kiosk-quick-toggle-skeleton-btn"
               data-testid="kiosk-quick-toggle-skeleton-btn"
               onClick={() => setShowSkeletonOverlay((prev) => !prev)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold backdrop-blur-md border transition-all duration-200 cursor-pointer shadow-lg active:scale-95 ${
+              className={`exercise-touch-btn flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-[clamp(0.75rem,1.2vw,0.875rem)] font-bold backdrop-blur-md border cursor-pointer shadow-lg ${
                 showSkeletonOverlay
-                  ? 'bg-teal-500/90 text-slate-950 border-teal-300 shadow-teal-500/20'
+                  ? 'bg-teal-500/90 hover:bg-teal-400 text-slate-950 border-teal-300 shadow-teal-500/20'
                   : 'bg-slate-900/80 text-slate-300 border-slate-700/80 hover:bg-slate-800/90 hover:text-white'
               }`}
             >
               <span className="text-base leading-none">🦴</span>
-              <span className="font-semibold">
+              <span className="font-semibold hidden sm:inline">
                 {lang === 'zh-CN'
                   ? (showSkeletonOverlay ? '隐藏骨骼线' : '显示骨骼线')
                   : lang === 'en-US'
@@ -2730,10 +3051,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           </div>
 
           {(showGuideSilhouette || hudState.repPhase === 'WAITING_FOR_FRAMING') && (
-            <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center opacity-30">
+            <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center opacity-30 p-4">
               <svg
                 viewBox="0 0 400 400"
-                className={`w-80 h-80 sm:w-96 sm:h-96 transition-colors duration-300 ${
+                className={`w-[clamp(10rem,34vmin,24rem)] h-[clamp(10rem,34vmin,24rem)] transition-colors duration-300 ${
                   hudState.repPhase === 'WAITING_FOR_FRAMING' || hudState.shoulderWidthPct > 52
                     ? 'text-amber-400 stroke-amber-400 animate-pulse'
                     : 'text-teal-400 stroke-teal-400'
@@ -2753,10 +3074,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           )}
 
           {hudState.isArmClipping && hudState.repPhase !== 'WAITING_FOR_FRAMING' && (
-            <div className="absolute top-4 inset-x-4 z-25 flex justify-center pointer-events-none animate-bounce-subtle">
-              <div className="bg-amber-500/95 backdrop-blur-md text-white border-2 border-amber-300 px-6 py-2.5 rounded-2xl shadow-xl font-bold text-xs sm:text-sm flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-white shrink-0 animate-pulse" />
-                <span>
+            <div className="absolute top-[clamp(0.5rem,1.5vmin,1rem)] inset-x-4 z-25 flex justify-center pointer-events-none animate-bounce-subtle">
+              <div className="bg-amber-500/95 backdrop-blur-md text-white border-2 border-amber-300 px-4 py-2 rounded-2xl shadow-xl font-bold text-[clamp(0.75rem,1.3vw,0.875rem)] flex items-center gap-2 max-w-[90%]">
+                <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-white shrink-0 animate-pulse" />
+                <span className="truncate">
                   {hudState.shoulderWidthPct > 50
                     ? (lang === 'zh-CN'
                       ? '🪑 请稍微后退，确保训练手臂完整入镜'
@@ -2774,10 +3095,10 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           )}
 
           {hudState.repPhase === 'WAITING_FOR_FRAMING' && (
-            <div className="absolute top-4 inset-x-4 z-20 flex justify-center pointer-events-none">
-              <div className="bg-white/95 backdrop-blur-md text-slate-900 border-2 border-amber-400 px-5 py-2.5 rounded-2xl shadow-lg font-bold text-xs sm:text-sm flex items-center gap-2">
+            <div className="absolute top-[clamp(0.5rem,1.5vmin,1rem)] inset-x-4 z-20 flex justify-center pointer-events-none">
+              <div className="bg-white/95 backdrop-blur-md text-slate-900 border-2 border-amber-400 px-4 py-2 rounded-2xl shadow-lg font-bold text-[clamp(0.75rem,1.3vw,0.875rem)] flex items-center gap-2 max-w-[90%]">
                 <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                <span>
+                <span className="line-clamp-2">
                   {hudState.distanceWarning || (lang === 'zh-CN'
                     ? '请调整位置，确保上身与训练手臂在画面中'
                     : lang === 'en-US'
@@ -2791,11 +3112,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           <div
             id="kiosk-single-line-status"
             data-testid="kiosk-single-line-status"
-            className="absolute bottom-5 inset-x-4 z-20 flex justify-center pointer-events-none select-none"
+            className="absolute bottom-[clamp(0.5rem,1.5vmin,1.25rem)] inset-x-[clamp(0.5rem,2vw,1rem)] z-20 flex justify-center pointer-events-none select-none"
           >
-            <div className="bg-white/95 backdrop-blur-md text-slate-900 border-2 border-emerald-400 px-6 py-3.5 rounded-2xl shadow-xl font-extrabold text-sm sm:text-base md:text-lg flex items-center gap-3 max-w-xl truncate">
-              <span className="text-xl sm:text-2xl shrink-0">{statusInfo.icon}</span>
-              <span className="truncate leading-relaxed">
+            <div className="bg-white/95 backdrop-blur-md text-slate-900 border-2 border-emerald-400 px-[clamp(0.75rem,2vw,1.5rem)] py-[clamp(0.375rem,1dvh,0.75rem)] rounded-2xl shadow-xl font-extrabold text-[clamp(0.8125rem,1.5vw,1.125rem)] flex items-center gap-2.5 max-w-full sm:max-w-xl">
+              <span className="text-[clamp(1rem,2vw,1.5rem)] shrink-0">{statusInfo.icon}</span>
+              <span className="truncate leading-snug">
                 {statusInfo.message}
               </span>
             </div>
@@ -2805,39 +3126,45 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             <div
               id="pose-engine-debug-hud"
               data-testid="pose-engine-debug-hud"
-              className="absolute top-4 left-4 z-30 bg-slate-900/95 border-2 border-emerald-500/60 rounded-3xl p-4 text-xs font-mono text-emerald-300 shadow-2xl backdrop-blur-md space-y-1.5 max-w-sm pointer-events-auto leading-relaxed"
+              className="absolute top-3 left-3 z-30 bg-slate-900/95 border-2 border-emerald-500/60 rounded-2xl p-3 text-xs font-mono text-emerald-300 shadow-2xl backdrop-blur-md space-y-1 max-w-[min(22rem,85vw)] pointer-events-auto leading-relaxed"
             >
-              <div className="flex items-center justify-between border-b border-emerald-500/30 pb-1.5 text-emerald-400 font-bold">
-                <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span>🔍 Staff Diagnostic HUD</span>
+              <div className="flex items-center justify-between border-b border-emerald-500/30 pb-1 text-emerald-400 font-bold">
+                <span className="flex items-center gap-2 truncate">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                  <span className="truncate">🔍 Staff Diagnostic HUD</span>
                 </span>
                 <button
                   type="button"
                   onClick={() => setLowPowerMode((prev) => !prev)}
-                  className="text-[10px] px-2 py-0.5 rounded-lg bg-slate-800 text-teal-300 hover:bg-slate-700 cursor-pointer font-bold border border-slate-700"
+                  className="text-[0.625rem] px-2 py-0.5 rounded-lg bg-slate-800 text-teal-300 hover:bg-slate-700 cursor-pointer font-bold border border-slate-700 shrink-0"
                 >
                   {lowPowerMode ? '⚡ ประหยัดไฟ' : '⚡ ความเร็วสูง'}
                 </button>
               </div>
               <div>📷 กล้อง/AI: {hudState.fps} FPS | หลอดแสดงผล: {hudState.renderFps ?? 60} FPS</div>
-              <div>🧠 โมเดล: {modelStatus} | พบ: {hudState.detectedPeople} คน</div>
-              <div>🦾 ข้างที่ตรวจจับ: {activeSide === 'left' ? 'ซ้าย (L)' : activeSide === 'right' ? 'ขวา (R)' : 'ทั้งสองข้าง (Bilateral)'}</div>
-              <div>📐 มุมปัจจุบัน (Current Angle): <span className="font-bold text-white">{hudState.currentAngle}°</span></div>
-              <div>🎯 เกณฑ์เป้าหมาย (Target Threshold): <span className="font-bold text-emerald-400">{hudState.targetThreshold}°</span></div>
-              <div>🔄 สถานะเฟส (Active Phase): <span className="font-bold text-amber-300">{hudState.repPhase}</span> | นับ: {hudState.completedReps} ครั้ง</div>
-              <div>🧭 ระนาบยกแขน (Plane Degradation): <span className={hudState.isPlaneDegraded ? 'text-rose-400 font-bold' : 'text-emerald-400'}>{hudState.isPlaneDegraded ? '⚠️ เสื่อมสภาพ (Degraded)' : '✅ ปกติ (Normal)'}</span></div>
-              <div>📏 ขอบภาพ (Arm Boundary): <span className={hudState.isArmClipping ? 'text-amber-400 font-bold' : 'text-emerald-400'}>{hudState.isArmClipping ? '⚠️ หลุดขอบจอ (Clipping)' : '✅ อยู่ในเฟรม (In Frame)'}</span></div>
+              <div>🧠 โมเดล: {modelStatus} | พบ: {hudState.detectedPeople} คน | 3D World: {evalResult?.debugInfo?.used3DWorld ? 'ON' : '2D'}</div>
+              <div>🏋️ ท่าฝึก: <span className="font-bold text-white">{evalResult?.debugInfo?.exerciseNameTh || resolvedConfig.nameTh}</span></div>
+              <div>🦾 ข้าง (cfg/res): {evalResult?.debugInfo?.configuredSide || activeSide} {'->'} <span className="font-bold text-white">{evalResult?.debugInfo?.resolvedSide || activeSide}</span></div>
+              <div>📐 มุมวัด: <span className="font-bold text-white">{evalResult?.debugInfo?.measuredAngleDeg ?? hudState.currentAngle}°</span> (L:{evalResult?.debugInfo?.leftAngleDeg ?? '-'}° / R:{evalResult?.debugInfo?.rightAngleDeg ?? '-'}°)</div>
+              <div>🎯 เป้าหมาย: <span className="font-bold text-emerald-400">{evalResult?.debugInfo?.targetMinDeg ?? hudState.targetThreshold}°–{evalResult?.debugInfo?.targetMaxDeg ?? hudState.targetThreshold}°</span> (±{evalResult?.debugInfo?.toleranceDeg ?? 0}°) | Error: {evalResult?.debugInfo?.angleErrorDeg ?? 0}°</div>
+              <div>👁️ Min Vis: <span className="font-bold text-cyan-300">{evalResult?.debugInfo?.minLandmarkVisibility ?? hudState.avgVisibility}</span> | PreCheck: {evalResult?.debugInfo?.preCheckReady ? 'OK' : `${evalResult?.debugInfo?.preCheckElapsedMs ?? 0}ms`}</div>
+              <div>🔄 เฟส: <span className="font-bold text-amber-300">{evalResult?.debugInfo?.phase ?? hudState.repPhase}</span> | นับ: {hudState.completedReps} ครั้ง | Grace: {evalResult?.debugInfo?.graceFramesUsed ?? 0}/{evalResult?.debugInfo?.maxGraceFrames ?? 5}</div>
+              <div>🧭 ระนาบยกแขน: <span className={hudState.isPlaneDegraded ? 'text-rose-400 font-bold' : 'text-emerald-400'}>{hudState.isPlaneDegraded ? '⚠️ เสื่อมสภาพ' : '✅ ปกติ'}</span> | ขอบภาพ: <span className={hudState.isArmClipping ? 'text-amber-400 font-bold' : 'text-emerald-400'}>{hudState.isArmClipping ? '⚠️ หลุดขอบ' : '✅ ปกติ'}</span></div>
+              {evalResult?.debugInfo?.failReasonTh && (
+                <div className="text-rose-300 font-bold pt-1 border-t border-emerald-500/20">
+                  ⛔ เหตุผลเฟรมนี้: {evalResult.debugInfo.failReasonTh}
+                </div>
+              )}
             </div>
           )}
 
           {(cameraStatus === 'initializing' || modelStatus === 'loading') && !errorMessage && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4">
-              <div className="bg-white border-2 border-emerald-400 rounded-3xl p-6 max-w-md text-center text-slate-900 shadow-2xl">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto mb-3 text-emerald-600">
-                  <Activity className="w-7 h-7 animate-spin" />
+              <div className="bg-white border-2 border-emerald-400 rounded-3xl p-[clamp(1rem,3vw,1.75rem)] max-w-md w-full text-center text-slate-900 shadow-2xl">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto mb-3 text-emerald-600">
+                  <Activity className="w-6 h-6 sm:w-7 sm:h-7 animate-spin" />
                 </div>
-                <div className="text-lg font-black mb-2 text-slate-900">
+                <div className="text-[clamp(1rem,2vw,1.125rem)] font-black mb-2 text-slate-900">
                   ⏳ กำลังโหลดระบบตรวจจับท่าทาง AI...
                 </div>
                 <div className="text-xs text-slate-600 leading-relaxed mb-3">
@@ -2849,11 +3176,11 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
 
           {errorMessage && (
             <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
-              <div className="bg-white border-2 border-rose-400 rounded-3xl p-6 max-w-md text-center text-slate-900 shadow-2xl">
-                <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto mb-3 text-rose-600">
-                  <AlertTriangle className="w-7 h-7" />
+              <div className="bg-white border-2 border-rose-400 rounded-3xl p-[clamp(1rem,3vw,1.75rem)] max-w-md w-full text-center text-slate-900 shadow-2xl">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto mb-3 text-rose-600">
+                  <AlertTriangle className="w-6 h-6 sm:w-7 sm:h-7" />
                 </div>
-                <div className="text-lg font-black text-rose-700 mb-2">
+                <div className="text-[clamp(1rem,2vw,1.125rem)] font-black text-rose-700 mb-2">
                   ⚠️ ระบบตรวจจับไม่สามารถทำงานได้
                 </div>
                 <p className="text-xs text-slate-600 mb-4 leading-relaxed">{errorMessage}</p>
@@ -2861,14 +3188,14 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   <button
                     type="button"
                     onClick={() => window.location.reload()}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+                    className="exercise-touch-btn px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold cursor-pointer shadow-sm"
                   >
                     ลองใหม่อีกครั้ง
                   </button>
                   <button
                     type="button"
                     onClick={onExit}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer border border-slate-200"
+                    className="exercise-touch-btn px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer border border-slate-200"
                   >
                     ออกจากการฝึก
                   </button>
@@ -2878,85 +3205,219 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           )}
         </div>
 
-        {/* Right Coaching & Rep Counter Sidebar */}
-        <div className="lg:col-span-4 xl:col-span-3 flex flex-col gap-4 overflow-y-auto">
-          <div
-            id="kiosk-giant-rep-counter"
-            data-testid="kiosk-giant-rep-counter"
-            className={`bg-white rounded-3xl border p-5 shadow-sm text-center flex flex-col items-center justify-center transition-all duration-300 ${
-              celebratingRep !== null
-                ? 'border-emerald-400 ring-4 ring-emerald-400/30 scale-102 bg-emerald-50/20'
-                : 'border-blue-100'
-            }`}
-          >
-            <div className="relative w-36 h-36 sm:w-40 sm:h-40 flex items-center justify-center">
-              <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="42"
-                  fill="none"
-                  stroke="#E2E8F0"
-                  strokeWidth="8"
-                />
-                <circle
-                  ref={progressCircleRef}
-                  cx="50"
-                  cy="50"
-                  r="42"
-                  fill="none"
-                  stroke={celebratingRep !== null ? '#10B981' : '#0284C7'}
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                  strokeDasharray={2 * Math.PI * 42}
-                  strokeDashoffset={2 * Math.PI * 42}
-                  style={{ willChange: 'stroke-dashoffset' }}
-                />
-              </svg>
+        {/* Right / Bottom Coaching & Rep Counter Panel */}
+        <aside className="exercise-info-panel">
+          {(() => {
+            const repsPerSet = resolvedConfig.defaultPrescription?.repsPerSet || 10;
+            const totalSets = resolvedConfig.defaultPrescription?.totalSets || 3;
+            const progressRatio = Math.max(0, Math.min(1, hudState.progressPercent / 100));
+            const displayProgressPct = Math.round(hudState.progressPercent);
+            const ringCircumference = 2 * Math.PI * 42;
+            const ringOffset = ringCircumference * (1 - progressRatio);
+            const ringStrokeColor = hudState.isProgressCompleted || celebratingRep !== null ? '#10B981' : '#0284C7';
 
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                {celebratingRep !== null ? (
-                  <div className="flex flex-col items-center animate-bounce">
-                    <span className="text-3xl sm:text-4xl">✅</span>
-                    <span className="text-sm font-black text-emerald-600 mt-0.5">
-                      +1 ครั้ง!
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-                      {lang === 'zh-CN' ? '次数' : lang === 'en-US' ? 'Reps' : 'ครั้งที่'}
+            const liveBadgeClasses =
+              hudState.accuracyLevel === 'high'
+                ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                : hudState.accuracyLevel === 'medium'
+                  ? 'text-amber-900 bg-amber-50 border-amber-300'
+                  : hudState.accuracyLevel === 'low'
+                    ? 'text-rose-800 bg-rose-50 border-rose-200'
+                    : 'text-slate-700 bg-slate-100 border-slate-200';
+
+            const liveBarColorClass =
+              hudState.accuracyLevel === 'high'
+                ? 'bg-emerald-600'
+                : hudState.accuracyLevel === 'medium'
+                  ? 'bg-amber-500'
+                  : hudState.accuracyLevel === 'low'
+                    ? 'bg-rose-600'
+                    : 'bg-slate-400';
+
+            const liveIcon =
+              hudState.accuracyLevel === 'high'
+                ? '✓'
+                : hudState.accuracyLevel === 'medium'
+                  ? '▲'
+                  : hudState.accuracyLevel === 'low'
+                    ? '!'
+                    : '—';
+
+            return (
+              <>
+                <div
+                  id="kiosk-giant-rep-counter"
+                  data-testid="kiosk-giant-rep-counter"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={displayProgressPct}
+                  aria-label="ความคืบหน้าการกายภาพ"
+                  className={`bg-white rounded-3xl border p-[clamp(0.75rem,1.8vmin,1.125rem)] shadow-sm text-center flex flex-col items-center justify-center transition-all duration-300 shrink-0 ${
+                    hudState.isProgressCompleted
+                      ? 'border-emerald-400 ring-2 ring-emerald-400/30 bg-emerald-50/30'
+                      : celebratingRep !== null
+                        ? 'border-emerald-400 ring-4 ring-emerald-400/30 bg-emerald-50/20'
+                        : 'border-blue-100'
+                  }`}
+                >
+                  <div className="relative w-[clamp(6rem,16vmin,9rem)] h-[clamp(6rem,16vmin,9rem)] flex items-center justify-center">
+                    <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        fill="none"
+                        stroke="#E2E8F0"
+                        strokeWidth="8"
+                      />
+                      <circle
+                        ref={progressCircleRef}
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        fill="none"
+                        stroke={ringStrokeColor}
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        strokeDasharray={ringCircumference}
+                        strokeDashoffset={ringOffset}
+                        className="exercise-progress-fill"
+                      />
+                    </svg>
+
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-1">
+                      {celebratingRep !== null && !hudState.isProgressCompleted ? (
+                        <div className="flex flex-col items-center animate-bounce">
+                          <span className="text-[clamp(1.125rem,2.5vmin,1.75rem)]">✅</span>
+                          <span className="text-[clamp(0.75rem,1.3vmin,0.875rem)] font-black text-emerald-700 mt-0.5">
+                            +1 ครั้ง!
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-[clamp(0.65rem,1.1vmin,0.75rem)] font-extrabold text-slate-600">
+                            {hudState.isProgressCompleted ? 'ครบแล้ว' : 'ความคืบหน้า'}
+                          </div>
+                          <div
+                            data-testid="kiosk-progress-percent-text"
+                            className={`text-[clamp(1.375rem,3.2vmin,2rem)] font-black font-mono leading-none my-0.5 ${
+                              hudState.isProgressCompleted ? 'text-emerald-700' : 'text-slate-900'
+                            }`}
+                          >
+                            {displayProgressPct}%
+                          </div>
+                          <div className="text-[clamp(0.6875rem,1.15vmin,0.75rem)] font-bold text-slate-700">
+                            ทำแล้ว {hudState.doneTotalReps}/{hudState.targetTotalReps}
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <div className="text-3xl sm:text-4xl font-black text-slate-900 font-mono leading-none my-1">
-                      {hudState.completedReps}
-                      <span className="text-lg text-slate-400 font-bold">
-                        {' '}/ {resolvedConfig.defaultPrescription?.repsPerSet || 10}
+                  </div>
+
+                  {/* หลอดเปอร์เซ็นต์ความคืบหน้าแบบแท่ง + ตัวนับทำแล้ว/เป้าหมาย */}
+                  <div className="w-full mt-2 space-y-1.5">
+                    <div className="w-full h-2.5 sm:h-3 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        data-testid="kiosk-progress-bar-fill"
+                        className={`h-full rounded-full exercise-progress-fill ${
+                          hudState.isProgressCompleted ? 'bg-emerald-600' : 'bg-sky-600'
+                        }`}
+                        style={{ width: `${hudState.progressPercent}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[clamp(0.75rem,1.15vw,0.8125rem)] font-bold text-slate-700 gap-2">
+                      <span>
+                        ทำแล้ว / เป้าหมาย:{' '}
+                        <span className="font-mono text-slate-900 font-black">
+                          {hudState.doneTotalReps} / {hudState.targetTotalReps}
+                        </span>
+                      </span>
+                      <span className={hudState.isProgressCompleted ? 'text-emerald-700 font-black' : 'text-blue-700'}>
+                        {hudState.isProgressCompleted
+                          ? '✓ ครบแล้ว'
+                          : `เซ็ต ${hudState.currentSet}/${totalSets} (${hudState.currentSetReps}/${repsPerSet})`}
                       </span>
                     </div>
-                    <div className="text-xs font-bold text-blue-600">
-                      เซ็ตที่ {hudState.currentSet} จาก {resolvedConfig.defaultPrescription?.totalSets || 3}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+                  </div>
+                </div>
 
-            {/* แก้บั๊ก 0 || 100 เพื่อให้แสดงค่า 0% ตามจริงเมื่อผู้ป่วยทำผิดท่า */}
-            <div className="mt-3 text-xs sm:text-sm font-bold text-slate-700">
-              <span>ความแม่นยำท่าทาง: </span>
-              <span
-                className={
-                  hudState.completedReps > 0 || hudState.accuracyPct > 0 || hudState.repPhase !== 'IDLE'
-                    ? 'text-emerald-600 font-extrabold'
-                    : 'text-slate-500 font-semibold'
-                }
-              >
-                {hudState.completedReps > 0 || hudState.accuracyPct > 0 || hudState.repPhase !== 'IDLE'
-                  ? `${hudState.accuracyPct}%`
-                  : 'รอเริ่มฝึก'}
-              </span>
-            </div>
-          </div>
+                {/* การ์ดแสดงความแม่นยำของท่าทางแบบสด */}
+                <div
+                  id="kiosk-live-accuracy-card"
+                  data-testid="kiosk-live-accuracy-card"
+                  className="bg-white rounded-3xl border border-slate-200 p-[clamp(0.75rem,1.6vmin,1rem)] shadow-sm flex flex-col gap-2 shrink-0"
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[clamp(0.75rem,1.2vw,0.875rem)] font-extrabold text-slate-800">
+                      ความแม่นยำของท่าทาง
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[clamp(0.7rem,1.1vw,0.8125rem)] font-extrabold ${liveBadgeClasses}`}
+                    >
+                      <span aria-hidden="true">{liveIcon}</span>
+                      <span>
+                        {hudState.hasValidAccuracyJoints && hudState.liveAccuracyPct !== null
+                          ? `ความแม่นยำ ${hudState.liveAccuracyPct}% (${hudState.accuracyBadgeTh})`
+                          : '--'}
+                      </span>
+                    </span>
+                  </div>
+
+                  {hudState.hasValidAccuracyJoints && hudState.liveAccuracyPct !== null ? (
+                    <>
+                      <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full exercise-accuracy-fill ${liveBarColorClass}`}
+                          style={{ width: `${hudState.liveAccuracyPct}%` }}
+                        />
+                      </div>
+                      {hudState.accuracyHintTh && (
+                        <div className="text-[clamp(0.75rem,1.15vw,0.8125rem)] font-bold text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5">
+                          💡 {hudState.accuracyHintTh}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div
+                      data-testid="kiosk-accuracy-no-pose"
+                      className="text-[clamp(0.75rem,1.15vw,0.8125rem)] font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1.5 text-center"
+                    >
+                      ไม่พบท่าทาง ขยับให้เห็นทั้งตัว
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 text-[clamp(0.7rem,1.1vw,0.8125rem)]">
+                    <div className="bg-slate-50 rounded-xl px-2.5 py-1.5 border border-slate-200/80 text-center">
+                      <div className="text-slate-600 font-semibold">ครั้งล่าสุด</div>
+                      <div className="font-mono font-black text-slate-900 text-[clamp(0.875rem,1.4vw,1rem)]">
+                        {hudState.lastRepAccuracyPct !== null ? `${hudState.lastRepAccuracyPct}%` : '--'}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl px-2.5 py-1.5 border border-slate-200/80 text-center">
+                      <div className="text-slate-600 font-semibold">เฉลี่ยทั้งเซสชัน</div>
+                      <div className="font-mono font-black text-slate-900 text-[clamp(0.875rem,1.4vw,1rem)]">
+                        {hudState.sessionAvgAccuracyPct !== null ? `${hudState.sessionAvgAccuracyPct}%` : '--'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <PoseCalibrationAndCustomPosePanel
+                  patientId={patientId}
+                  baseConfig={activeBaseConfig}
+                  activeConfig={resolvedConfig}
+                  activeSide={activeSide}
+                  activeCalibration={activeCalibration}
+                  getLatestLandmarks={() => smoothedLandmarksRef.current}
+                  onCalibrationChange={(cal) => setActiveCalibration(cal)}
+                  onSelectPoseConfig={(nextCfg) => {
+                    setSelectedCustomConfig(nextCfg);
+                  }}
+                />
+              </>
+            );
+          })()}
 
           <ExercisePostureGuideCard
             exerciseId={resolvedConfig.id || (exercise as any).id || (exercise as any).exercise_id || 'shoulder-abduction'}
@@ -2972,8 +3433,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             descriptionCn={resolvedConfig.descriptionCn}
             lang={lang}
           />
-        </div>
-      </div>
+        </aside>
+      </main>
 
       {/* 3. Bottom Control Bar */}
       <PainStopEmergencyBar
@@ -3013,7 +3474,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
             <button
               type="button"
               onClick={handleNextSet}
-              className="w-full min-h-[52px] py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-blue-600 hover:brightness-105 text-white font-black text-lg shadow-lg shadow-emerald-900/20 transition active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+              className="exercise-touch-btn w-full min-h-[3.25rem] py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-blue-600 hover:brightness-105 text-white font-black text-[clamp(1rem,2vw,1.125rem)] shadow-lg shadow-emerald-900/20 cursor-pointer flex items-center justify-center gap-2"
             >
               <span>{lang === 'zh-CN' ? '准备就绪，开始下一组 ➔' : lang === 'en-US' ? 'Ready, Start Next Set ➔' : 'พร้อมแล้ว เริ่มเซ็ตถัดไปทันที ➔'}</span>
             </button>
@@ -3043,7 +3504,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               <button
                 type="button"
                 onClick={() => handleFinalizeSession('stopped_pain')}
-                className="w-full min-h-[52px] py-4 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-lg shadow-md cursor-pointer transition active:scale-98"
+                className="exercise-touch-btn w-full min-h-[3.25rem] py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-[clamp(1rem,2vw,1.125rem)] shadow-md cursor-pointer"
               >
                 {lang === 'zh-CN' ? '记录结果并返回主界面' : lang === 'en-US' ? 'Record & Return Home' : 'บันทึกประวัติและกลับสู่หน้าหลัก'}
               </button>
@@ -3144,7 +3605,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
               id="kiosk-finish-exercise-summary-btn"
               data-testid="kiosk-finish-exercise-summary-btn"
               onClick={() => handleFinalizeSession('ai_verified')}
-              className="w-full min-h-[54px] py-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:brightness-105 text-white font-black text-lg shadow-lg shadow-emerald-900/20 transition active:scale-98 cursor-pointer flex items-center justify-center gap-2.5"
+              className="exercise-touch-btn w-full min-h-[3.375rem] py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:brightness-105 text-white font-black text-[clamp(1rem,2vw,1.125rem)] shadow-lg shadow-emerald-900/20 cursor-pointer flex items-center justify-center gap-2.5"
             >
               <span>{lang === 'zh-CN' ? '完成并继续下一个动作' : lang === 'en-US' ? 'Complete & Proceed' : 'เสร็จสิ้นและดำเนินการต่อ'}</span>
               <ArrowRight className="w-6 h-6" />
@@ -3326,50 +3787,6 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                   {showDebugHud ? 'เปิด (ON)' : 'ปิด (OFF)'}
                 </button>
               </div>
-
-              {!isInherentlyBilateral && (
-                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
-                  <div>
-                    <div className="font-bold text-white text-base">🦾 ปรับข้างตรวจจับ (Side Override)</div>
-                    <div className="text-xs text-slate-400">สลับข้างตรวจจับฉุกเฉิน</div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleSide('right')}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${
-                        activeSide === 'right'
-                          ? 'bg-teal-500 text-slate-950 shadow-sm'
-                          : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      ขวา (R)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleSide('left')}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${
-                        activeSide === 'left'
-                          ? 'bg-teal-500 text-slate-950 shadow-sm'
-                          : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      ซ้าย (L)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleSide('bilateral')}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs cursor-pointer ${
-                        activeSide === 'bilateral'
-                          ? 'bg-teal-500 text-slate-950 shadow-sm'
-                          : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      สองข้าง (Auto)
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {zoomInfo.supported && (
                 <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800">

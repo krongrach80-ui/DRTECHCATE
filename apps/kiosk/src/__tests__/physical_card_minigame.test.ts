@@ -8,6 +8,8 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import {
   HAND_ANSWER_MAP,
   evaluateMinigameFrame,
@@ -19,6 +21,8 @@ import { t, CLINICAL_DICTIONARY } from '../../../../packages/clinical-i18n/src/i
 import { MAX_CROP_RATIO } from '../minigame-cards/PhysicalCardGame.js';
 import {
   getLocalizedImageDescription,
+  getLocalizedPrompt,
+  getLocalizedExplanation,
   ALL_99_PHYSICAL_CARD_QUESTIONS,
   PhysicalCardQuestion,
 } from '../minigame-cards/PhysicalCardGameData.js';
@@ -641,6 +645,44 @@ describe('Physical Card Minigame - Two-Hand Detection & Inverted Mapping Suite',
     // Tablet 768p with responsive scaling (where illustration scales to ~100px)
     const tabletBudgetWithScaledIllustration = 768 - (70 + 60 + 105 + 85 + 20); // ~428px
     expect(tabletBudgetWithScaledIllustration).toBeGreaterThanOrEqual(300);
+  });
+
+  it('21. Should provide localized prompt, explanation, and imageDescription across TH, EN, and ZH for all 99 questions', () => {
+    expect(ALL_99_PHYSICAL_CARD_QUESTIONS.length).toBe(99);
+    for (const q of ALL_99_PHYSICAL_CARD_QUESTIONS) {
+      const thPrompt = getLocalizedPrompt(q, 'th-TH');
+      const enPrompt = getLocalizedPrompt(q, 'en-US');
+      const zhPrompt = getLocalizedPrompt(q, 'zh-CN');
+      const thExpl = getLocalizedExplanation(q, 'th-TH');
+      const enExpl = getLocalizedExplanation(q, 'en-US');
+      const zhExpl = getLocalizedExplanation(q, 'zh-CN');
+      const enCap = getLocalizedImageDescription(q, 'en-US');
+      const zhCap = getLocalizedImageDescription(q, 'zh-CN');
+
+      expect(thPrompt.length).toBeGreaterThan(0);
+      expect(enPrompt.length).toBeGreaterThan(0);
+      expect(zhPrompt.length).toBeGreaterThan(0);
+      expect(enPrompt).not.toBe(thPrompt);
+      expect(zhPrompt).not.toBe(thPrompt);
+
+      expect(thExpl.length).toBeGreaterThan(0);
+      expect(enExpl.length).toBeGreaterThan(0);
+      expect(zhExpl.length).toBeGreaterThan(0);
+      expect(enExpl).not.toBe(thExpl);
+      expect(zhExpl).not.toBe(thExpl);
+
+      expect(enCap.length).toBeGreaterThan(0);
+      expect(zhCap.length).toBeGreaterThan(0);
+      expect(enCap).not.toBe(q.imageDescription);
+      expect(zhCap).not.toBe(q.imageDescription);
+    }
+  });
+
+  it('22. Should explicitly map empty-bowl visualKey (pcg-94) in PhysicalCardVisuals.tsx so it never falls back to lightbulb', () => {
+    const visualsPath = path.resolve(__dirname, '../minigame-cards/PhysicalCardVisuals.tsx');
+    const visualsSource = fs.readFileSync(visualsPath, 'utf8');
+    expect(visualsSource).toContain("case 'empty-bowl':");
+    expect(visualsSource).toContain("'empty-bowl': '🥣'");
   });
 });
 

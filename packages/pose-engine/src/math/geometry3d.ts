@@ -28,56 +28,114 @@ export function clamp(val: number, min: number, max: number): number {
 
 /**
  * Calculates 3D joint angle formed by (pointA -> vertex -> pointB) in degrees [0°, 180°].
+ * Safely guards against null/undefined points, NaN coordinates, and zero-length vectors.
  */
 export function calculateAngle3D(
-  pointA: Point3DLike,
-  vertex: Point3DLike,
-  pointB: Point3DLike
+  pointA?: Point3DLike | null,
+  vertex?: Point3DLike | null,
+  pointB?: Point3DLike | null
 ): number {
-  const uX = pointA.x - vertex.x;
-  const uY = pointA.y - vertex.y;
-  const uZ = (pointA.z ?? 0) - (vertex.z ?? 0);
+  if (!pointA || !vertex || !pointB) {
+    return 0.0;
+  }
 
-  const vX = pointB.x - vertex.x;
-  const vY = pointB.y - vertex.y;
-  const vZ = (pointB.z ?? 0) - (vertex.z ?? 0);
+  if (
+    !Number.isFinite(pointA.x) ||
+    !Number.isFinite(pointA.y) ||
+    (pointA.z !== undefined && !Number.isFinite(pointA.z)) ||
+    !Number.isFinite(vertex.x) ||
+    !Number.isFinite(vertex.y) ||
+    (vertex.z !== undefined && !Number.isFinite(vertex.z)) ||
+    !Number.isFinite(pointB.x) ||
+    !Number.isFinite(pointB.y) ||
+    (pointB.z !== undefined && !Number.isFinite(pointB.z))
+  ) {
+    return 0.0;
+  }
+
+  const ax = pointA.x;
+  const ay = pointA.y;
+  const az = pointA.z ?? 0;
+
+  const vx = vertex.x;
+  const vy = vertex.y;
+  const vz = vertex.z ?? 0;
+
+  const bx = pointB.x;
+  const by = pointB.y;
+  const bz = pointB.z ?? 0;
+
+  const uX = ax - vx;
+  const uY = ay - vy;
+  const uZ = az - vz;
+
+  const vX = bx - vx;
+  const vY = by - vy;
+  const vZ = bz - vz;
 
   const dot = uX * vX + uY * vY + uZ * vZ;
   const magU = Math.hypot(uX, uY, uZ);
   const magV = Math.hypot(vX, vY, vZ);
 
-  if (magU < 1e-6 || magV < 1e-6) {
+  if (!Number.isFinite(magU) || !Number.isFinite(magV) || magU < 1e-6 || magV < 1e-6) {
     return 0.0;
   }
 
   const cosTheta = clamp(dot / (magU * magV), -1.0, 1.0);
-  return (Math.acos(cosTheta) * 180.0) / Math.PI;
+  const deg = (Math.acos(cosTheta) * 180.0) / Math.PI;
+  return Number.isFinite(deg) ? deg : 0.0;
 }
 
 /**
  * Calculates 2D planar joint angle formed by (pointA -> vertex -> pointB) in degrees [0°, 180°].
+ * Safely guards against null/undefined points, NaN coordinates, and zero-length vectors.
  */
 export function calculateAngle2D(
-  pointA: Point3DLike,
-  vertex: Point3DLike,
-  pointB: Point3DLike
+  pointA?: Point3DLike | null,
+  vertex?: Point3DLike | null,
+  pointB?: Point3DLike | null
 ): number {
-  const uX = pointA.x - vertex.x;
-  const uY = pointA.y - vertex.y;
+  if (!pointA || !vertex || !pointB) {
+    return 0.0;
+  }
 
-  const vX = pointB.x - vertex.x;
-  const vY = pointB.y - vertex.y;
+  if (
+    !Number.isFinite(pointA.x) ||
+    !Number.isFinite(pointA.y) ||
+    !Number.isFinite(vertex.x) ||
+    !Number.isFinite(vertex.y) ||
+    !Number.isFinite(pointB.x) ||
+    !Number.isFinite(pointB.y)
+  ) {
+    return 0.0;
+  }
+
+  const ax = pointA.x;
+  const ay = pointA.y;
+
+  const vx = vertex.x;
+  const vy = vertex.y;
+
+  const bx = pointB.x;
+  const by = pointB.y;
+
+  const uX = ax - vx;
+  const uY = ay - vy;
+
+  const vX = bx - vx;
+  const vY = by - vy;
 
   const dot = uX * vX + uY * vY;
   const magU = Math.hypot(uX, uY);
   const magV = Math.hypot(vX, vY);
 
-  if (magU < 1e-6 || magV < 1e-6) {
+  if (!Number.isFinite(magU) || !Number.isFinite(magV) || magU < 1e-6 || magV < 1e-6) {
     return 0.0;
   }
 
   const cosTheta = clamp(dot / (magU * magV), -1.0, 1.0);
-  return (Math.acos(cosTheta) * 180.0) / Math.PI;
+  const deg = (Math.acos(cosTheta) * 180.0) / Math.PI;
+  return Number.isFinite(deg) ? deg : 0.0;
 }
 
 /**

@@ -10,6 +10,10 @@
 
 import { PoseEngineLandmark } from '../types/exerciseConfig';
 
+export const DEFAULT_ONE_EURO_MIN_CUTOFF = 1.0;
+export const DEFAULT_ONE_EURO_BETA = 0.04;
+export const DEFAULT_ONE_EURO_D_CUTOFF = 1.0;
+
 export class LowPassFilter {
   private y: number | null = null;
   private s: number | null = null;
@@ -43,7 +47,11 @@ export class OneEuroScalarFilter {
   private dxFilter = new LowPassFilter();
   private lastTime: number | null = null;
 
-  constructor(minCutoff: number = 1.2, beta: number = 0.04, dCutoff: number = 1.0) {
+  constructor(
+    minCutoff: number = DEFAULT_ONE_EURO_MIN_CUTOFF,
+    beta: number = DEFAULT_ONE_EURO_BETA,
+    dCutoff: number = DEFAULT_ONE_EURO_D_CUTOFF
+  ) {
     this.minCutoff = minCutoff;
     this.beta = beta;
     this.dCutoff = dCutoff;
@@ -94,17 +102,24 @@ export class OneEuro3DFilter {
   private fy: OneEuroScalarFilter;
   private fz: OneEuroScalarFilter;
 
-  constructor(minCutoff: number = 1.2, beta: number = 0.04, dCutoff: number = 1.0) {
+  constructor(
+    minCutoff: number = DEFAULT_ONE_EURO_MIN_CUTOFF,
+    beta: number = DEFAULT_ONE_EURO_BETA,
+    dCutoff: number = DEFAULT_ONE_EURO_D_CUTOFF
+  ) {
     this.fx = new OneEuroScalarFilter(minCutoff, beta, dCutoff);
     this.fy = new OneEuroScalarFilter(minCutoff, beta, dCutoff);
     this.fz = new OneEuroScalarFilter(minCutoff, beta, dCutoff);
   }
 
   public filter(point: { x: number; y: number; z?: number }, timestampMs: number) {
+    const safeX = Number.isFinite(point.x) ? point.x : 0;
+    const safeY = Number.isFinite(point.y) ? point.y : 0;
+    const safeZ = point.z !== undefined && Number.isFinite(point.z) ? point.z : 0;
     return {
-      x: this.fx.filter(point.x, timestampMs),
-      y: this.fy.filter(point.y, timestampMs),
-      z: point.z !== undefined ? this.fz.filter(point.z, timestampMs) : 0,
+      x: this.fx.filter(safeX, timestampMs),
+      y: this.fy.filter(safeY, timestampMs),
+      z: point.z !== undefined ? this.fz.filter(safeZ, timestampMs) : 0,
     };
   }
 
@@ -122,17 +137,23 @@ export class PoseSkeletonFilter {
   private landmarkFilters: Map<number, OneEuro3DFilter> = new Map();
   private minCutoff: number;
   private beta: number;
+  private dCutoff: number;
 
-  constructor(minCutoff: number = 1.2, beta: number = 0.04) {
+  constructor(
+    minCutoff: number = DEFAULT_ONE_EURO_MIN_CUTOFF,
+    beta: number = DEFAULT_ONE_EURO_BETA,
+    dCutoff: number = DEFAULT_ONE_EURO_D_CUTOFF
+  ) {
     this.minCutoff = minCutoff;
     this.beta = beta;
+    this.dCutoff = dCutoff;
   }
 
   public filterSkeleton(landmarks: PoseEngineLandmark[], timestampMs: number): PoseEngineLandmark[] {
     return landmarks.map((lm, idx) => {
       let filter = this.landmarkFilters.get(idx);
       if (!filter) {
-        filter = new OneEuro3DFilter(this.minCutoff, this.beta);
+        filter = new OneEuro3DFilter(this.minCutoff, this.beta, this.dCutoff);
         this.landmarkFilters.set(idx, filter);
       }
       const filteredXYZ = filter.filter(lm, timestampMs);

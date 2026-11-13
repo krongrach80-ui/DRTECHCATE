@@ -10,9 +10,16 @@ import {
   POSE_CONNECTIONS,
   BODY_JOINT_INDICES,
   getRequiredKeypointsForExercise,
+  getActiveExerciseSkeletonFilter,
   KEYPOINT_NAME_MAP,
   computeTargetRingProgress,
+  calcProgressPercent,
+  calcJointScore,
+  calcPoseAccuracy,
 } from '../views/DynamicExerciseSessionView';
+import fs from 'fs';
+import path from 'path';
+import { projectLandmarkToCanvas } from '../../../../packages/pose-engine/src/math/projection';
 import { DynamicExerciseSessionView as TrainingExerciseSessionView } from '../views/training/DynamicExerciseSessionView';
 import {
   isPoseHeadInsideFaceBox,
@@ -52,7 +59,7 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
       expect(defaultState).toBe(true);
     });
 
-    it('2.2 body skeleton connections include torso, arms, hands, legs, and feet', () => {
+    it('2.2 body skeleton connections include arms, hands, legs, and feet WITHOUT torso lines', () => {
       expect(POSE_CONNECTIONS.length).toBeGreaterThan(0);
       // Left hand connections
       expect(POSE_CONNECTIONS).toContainEqual([15, 17]);
@@ -64,16 +71,81 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
       expect(POSE_CONNECTIONS).toContainEqual([16, 20]);
       expect(POSE_CONNECTIONS).toContainEqual([16, 22]);
       expect(POSE_CONNECTIONS).toContainEqual([18, 20]);
-      // Torso
-      expect(POSE_CONNECTIONS).toContainEqual([11, 12]);
-      expect(POSE_CONNECTIONS).toContainEqual([11, 23]);
-      expect(POSE_CONNECTIONS).toContainEqual([12, 24]);
-      expect(POSE_CONNECTIONS).toContainEqual([23, 24]);
+      // Torso connections must NOT be drawn
+      expect(POSE_CONNECTIONS).not.toContainEqual([11, 12]);
+      expect(POSE_CONNECTIONS).not.toContainEqual([11, 23]);
+      expect(POSE_CONNECTIONS).not.toContainEqual([12, 24]);
+      expect(POSE_CONNECTIONS).not.toContainEqual([23, 24]);
       // Legs
       expect(POSE_CONNECTIONS).toContainEqual([23, 25]);
       expect(POSE_CONNECTIONS).toContainEqual([25, 27]);
       expect(POSE_CONNECTIONS).toContainEqual([24, 26]);
       expect(POSE_CONNECTIONS).toContainEqual([26, 28]);
+    });
+
+    it('2.2b getActiveExerciseSkeletonFilter draws only active limb (arms vs legs) and prescribed side without torso lines', () => {
+      // Unilateral left arm exercise
+      const leftArm = getActiveExerciseSkeletonFilter(
+        { id: 'shoulder-abduction', targetJoint: 'shoulder', framing: 'upper_body' } as any,
+        'left'
+      );
+      expect(leftArm.category).toBe('arm');
+      expect(leftArm.effectiveSide).toBe('left');
+      expect(leftArm.connections).toContainEqual([11, 13]);
+      expect(leftArm.connections).not.toContainEqual([12, 14]);
+      expect(leftArm.connections).not.toContainEqual([11, 12]);
+      expect(leftArm.connections).not.toContainEqual([23, 24]);
+      expect(leftArm.jointIndices).not.toContain(23);
+      expect(leftArm.jointIndices).not.toContain(24);
+      expect(leftArm.jointIndices).not.toContain(12);
+
+      // Bilateral leg exercise ('both' default)
+      const bothLegs = getActiveExerciseSkeletonFilter(
+        { id: 'seated-knee-extension', targetJoint: 'knee', framing: 'lower_body' } as any,
+        'both'
+      );
+      expect(bothLegs.category).toBe('leg');
+      expect(bothLegs.effectiveSide).toBe('both');
+      expect(bothLegs.connections).toContainEqual([23, 25]);
+      expect(bothLegs.connections).toContainEqual([24, 26]);
+      expect(bothLegs.connections).not.toContainEqual([11, 13]);
+      expect(bothLegs.connections).not.toContainEqual([11, 23]);
+      expect(bothLegs.connections).not.toContainEqual([23, 24]);
+      expect(bothLegs.jointIndices).not.toContain(11);
+      expect(bothLegs.jointIndices).not.toContain(12);
+    });
+
+    it('2.2c object-fit cover landmark projection accounts for crop offset and mirroring', () => {
+      // 16:9 camera (1280x720) inside portrait container (360x480)
+      // scale = max(360/1280, 480/720) = max(0.28125, 0.66667) = 2/3
+      // scaledW = 853.333, offsetX = (360 - 853.333)/2 = -246.667, offsetY = 0
+      const pt = projectLandmarkToCanvas(
+        { x: 0.5, y: 0.25, visibility: 0.99 },
+        1280,
+        720,
+        360,
+        480,
+        true,
+        'cover'
+      );
+      expect(pt.x).toBeCloseTo(180, 2);
+      expect(pt.y).toBeCloseTo(120, 2);
+      expect(pt.scale).toBeCloseTo(480 / 720, 5);
+      expect(pt.offsetX).toBeLessThan(0);
+      expect(pt.offsetY).toBeCloseTo(0, 5);
+
+      // Mirrored x=0.35 -> normX=0.65 -> 0.65 * 853.333 - 246.667 = 308
+      const mirroredPt = projectLandmarkToCanvas(
+        { x: 0.35, y: 0.5, visibility: 0.99 },
+        1280,
+        720,
+        360,
+        480,
+        true,
+        'cover'
+      );
+      expect(mirroredPt.x).toBeCloseTo(308, 1);
+      expect(mirroredPt.y).toBeCloseTo(240, 1);
     });
 
     it('2.3 selective visibility filter hides legs when sitting without extrapolating', () => {
@@ -1037,6 +1109,37 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
 
       // Remaining vertical space for bento cards should be comfortably >= 800px
       expect(remainingHeight).toBeGreaterThanOrEqual(800);
+    });
+  });
+
+  describe('8. Part 2: Session Progress Percentage Bar & Live Pose Accuracy HUD', () => {
+    it('8.1 Re-exports calcProgressPercent, calcJointScore, and calcPoseAccuracy cleanly', () => {
+      expect(calcProgressPercent(5, 10)).toBe(50);
+      expect(calcProgressPercent(15, 10)).toBe(100);
+      expect(calcProgressPercent(5, 0)).toBe(0);
+      expect(calcJointScore(145, 140, 10, 30)).toBe(100);
+      expect(calcJointScore(115, 140, 10, 30)).toBe(50);
+
+      const noPose = calcPoseAccuracy(null, { id: 'shoulder-abduction' } as any);
+      expect(noPose.hasValidJoints).toBe(false);
+      expect(noPose.score).toBeNull();
+      expect(noPose.statusTextTh).toBe('ไม่พบท่าทาง ขยับให้เห็นทั้งตัว');
+    });
+
+    it('8.2 Renders accessible progressbar, completion label, and 3 accuracy metrics in DynamicExerciseSessionView', () => {
+      const viewSource = fs.readFileSync(
+        path.resolve(__dirname, '../views/DynamicExerciseSessionView.tsx'),
+        'utf-8'
+      );
+
+      expect(viewSource).toContain('role="progressbar"');
+      expect(viewSource).toContain('aria-label="ความคืบหน้าการกายภาพ"');
+      expect(viewSource).toContain('ทำแล้ว / เป้าหมาย:');
+      expect(viewSource).toContain('✓ ครบแล้ว');
+      expect(viewSource).toContain('kiosk-live-accuracy-card');
+      expect(viewSource).toContain('ไม่พบท่าทาง ขยับให้เห็นทั้งตัว');
+      expect(viewSource).toContain('ครั้งล่าสุด');
+      expect(viewSource).toContain('เฉลี่ยทั้งเซสชัน');
     });
   });
 });

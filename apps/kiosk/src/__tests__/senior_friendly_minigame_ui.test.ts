@@ -68,4 +68,38 @@ describe('DR.TECH.CARE Minigame Senior-Friendly Large UI & Portrait Layout', () 
     expect(gameSource).toContain('maxQuestions');
     expect(gameSource).toContain('score');
   });
+
+  it('9. Portrait Layout constants: Large prompt typography, illustration size (22vh..320px), caption (36-56px), and 3-line overflow step-down', () => {
+    expect(gameSource).toContain("PORTRAIT_ILLUSTRATION_SIZE = 'clamp(min(180px, 19vh), 22vh, 320px)'");
+    expect(gameSource).toContain("PORTRAIT_CAPTION_FONT_SIZE = 'clamp(min(36px, 6.5vw), 5vw, 56px)'");
+    expect(gameSource).toContain('clamp(min(44px, 7vw), 7vw, 80px)');
+    expect(gameSource).toContain('PORTRAIT_PROMPT_OVERFLOW_FONT_SIZE');
+    expect(gameSource).toContain('promptHeadingRef');
+  });
+
+  it('10. Emoji Illustration scaling: PhysicalCardVisual supports dynamic emojiFontSize in portrait mode', () => {
+    expect(visualsSource).toContain('emojiFontSize?: string');
+    expect(visualsSource).toContain('style={emojiFontSize ? { fontSize: emojiFontSize, lineHeight: 1 } : undefined}');
+    expect(gameSource).toContain('emojiFontSize={isPortrait ? PORTRAIT_ILLUSTRATION_SIZE : undefined}');
+  });
+
+  it('11. Portrait Camera Crop Cap (MAX_CROP_RATIO_PORTRAIT = 0.4) & visible-range warning', () => {
+    expect(gameSource).toContain('export const MAX_CROP_RATIO_PORTRAIT = 0.4');
+    expect(gameSource).toContain('cameraVisibleRangeRef');
+    expect(gameSource).toContain('isOutsideVisible');
+    expect(gameSource).toContain("t('card_move_to_center')");
+  });
+
+  it('12. Portrait Answer Buttons (>= 96px on Kiosk) & Bottom Hint placed below buttons (order: 1)', () => {
+    expect(gameSource).toContain('clamp(min(96px, 9vh), 5.5vh, 116px)');
+    expect(gameSource).toContain('PORTRAIT_ANSWER_FONT_SIZE');
+    expect(gameSource).toContain('PORTRAIT_ANSWER_ICON_SIZE');
+    expect(gameSource).toContain("order: 1");
+    expect(gameSource).toContain("clamp(min(28px, 4.2vw), 3vw, 36px)");
+  });
+
+  it('13. Portrait Right-Hand Popup clearance below Mirror Toggle & Responsive Portrait Detection', () => {
+    expect(gameSource).toContain("isScreenRight\n                    ? isPortrait\n                      ? 'top-16 right-3 sm:right-4'\n                      : 'top-10 sm:top-12 right-3 sm:right-4'");
+    expect(gameSource).toContain("window.addEventListener('resize', handleChange)");
+  });
 });

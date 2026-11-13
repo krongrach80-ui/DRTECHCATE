@@ -10,44 +10,81 @@
  */
 
 import { PoseEngineLandmark } from '../types/exerciseConfig';
-import { OneEuroScalarFilter, OneEuro3DFilter, PoseSkeletonFilter } from './filters';
+import {
+  DEFAULT_ONE_EURO_BETA,
+  DEFAULT_ONE_EURO_D_CUTOFF,
+  DEFAULT_ONE_EURO_MIN_CUTOFF,
+  OneEuroScalarFilter,
+  OneEuro3DFilter,
+  PoseSkeletonFilter,
+} from './filters';
 
-export { OneEuroScalarFilter, OneEuro3DFilter, PoseSkeletonFilter };
+export {
+  DEFAULT_ONE_EURO_BETA,
+  DEFAULT_ONE_EURO_D_CUTOFF,
+  DEFAULT_ONE_EURO_MIN_CUTOFF,
+  OneEuroScalarFilter,
+  OneEuro3DFilter,
+  PoseSkeletonFilter,
+};
+
+export const ONE_EURO_MISSING_RESET_MS = 500;
+export const DEFAULT_LANDMARK_MIN_VISIBILITY = 0.35;
 
 export interface LandmarkFilterOptions {
-  minCutoff?: number; // 1.2 Hz
-  beta?: number;      // 0.04
-  dCutoff?: number;   // 1.0 Hz
+  minCutoff?: number;
+  beta?: number;
+  dCutoff?: number;
   minVisibilityMap?: Record<number, number>;
-  defaultMinVisibility?: number; // 0.35
+  defaultMinVisibility?: number;
+  coordinateSpace?: 'normalized' | 'world';
 }
 
 export class ClinicalOneEuroLandmarkFilter {
   private skeletonFilter: PoseSkeletonFilter;
   private minVisibilityMap: Record<number, number>;
   private defaultMinVisibility: number;
+  private coordinateSpace: 'normalized' | 'world';
+  private lastFilterTimestampMs: number | null = null;
 
   constructor(options: LandmarkFilterOptions = {}) {
-    const minCutoff = options.minCutoff ?? 1.2;
-    const beta = options.beta ?? 0.04;
-    this.skeletonFilter = new PoseSkeletonFilter(minCutoff, beta);
+    const minCutoff = options.minCutoff ?? DEFAULT_ONE_EURO_MIN_CUTOFF;
+    const beta = options.beta ?? DEFAULT_ONE_EURO_BETA;
+    const dCutoff = options.dCutoff ?? DEFAULT_ONE_EURO_D_CUTOFF;
+    this.skeletonFilter = new PoseSkeletonFilter(minCutoff, beta, dCutoff);
     this.minVisibilityMap = options.minVisibilityMap ?? {};
-    this.defaultMinVisibility = options.defaultMinVisibility ?? 0.35;
+    this.defaultMinVisibility = options.defaultMinVisibility ?? DEFAULT_LANDMARK_MIN_VISIBILITY;
+    this.coordinateSpace = options.coordinateSpace ?? 'normalized';
   }
 
-  public setVisibilityPolicy(minVisibilityMap: Record<number, number>, defaultMinVis: number = 0.35) {
+  public setVisibilityPolicy(
+    minVisibilityMap: Record<number, number>,
+    defaultMinVis: number = DEFAULT_LANDMARK_MIN_VISIBILITY
+  ) {
     this.minVisibilityMap = { ...minVisibilityMap };
     this.defaultMinVisibility = defaultMinVis;
   }
 
   /**
    * Filters and sanitizes landmarks:
-   * 1. Filters (x, y, z) through One Euro Filter.
-   * 2. Checks coordinate bounds [0.01, 0.99].
-   * 3. Validates against landmark-specific visibility threshold.
+   * 1. Resets stale filter state if subject disappeared longer than ONE_EURO_MISSING_RESET_MS.
+   * 2. Filters (x, y, z) through One Euro Filter.
+   * 3. For normalized screen coordinates, checks [0.01, 0.99] bounds and per-landmark visibility.
+   *    For world landmarks (meters relative to mid-hip), skips [0.01, 0.99] clipping so negative/large coordinates stay intact.
    */
   public filter(landmarks: PoseEngineLandmark[], timestampMs: number): PoseEngineLandmark[] {
-    if (!landmarks || landmarks.length === 0) return [];
+    if (!landmarks || landmarks.length === 0) {
+      this.reset();
+      return [];
+    }
+
+    if (
+      this.lastFilterTimestampMs !== null &&
+      timestampMs - this.lastFilterTimestampMs > ONE_EURO_MISSING_RESET_MS
+    ) {
+      this.skeletonFilter.reset();
+    }
+    this.lastFilterTimestampMs = timestampMs;
 
     const smoothed = this.skeletonFilter.filterSkeleton(landmarks, timestampMs);
 
@@ -55,9 +92,9 @@ export class ClinicalOneEuroLandmarkFilter {
       const minVis = this.minVisibilityMap[idx] ?? this.defaultMinVisibility;
       const vis = lm.visibility ?? 1.0;
 
-      // Discard or zero-out confidence if outside sensor boundary [0.01, 0.99]
       const isOutOfBounds =
-        lm.x < 0.01 || lm.x > 0.99 || lm.y < 0.01 || lm.y > 0.99;
+        this.coordinateSpace === 'normalized' &&
+        (lm.x < 0.01 || lm.x > 0.99 || lm.y < 0.01 || lm.y > 0.99);
 
       if (isOutOfBounds || vis < minVis) {
         return {
@@ -73,6 +110,7 @@ export class ClinicalOneEuroLandmarkFilter {
 
   public reset(): void {
     this.skeletonFilter.reset();
+    this.lastFilterTimestampMs = null;
   }
 
   public resetLandmarks(indices: number[]): void {

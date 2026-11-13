@@ -12,6 +12,7 @@ interface PhysicalCardVisualProps {
   className?: string;
   compact?: boolean;
   size?: 'large' | 'compact' | 'normal';
+  emojiFontSize?: string;
 }
 
 export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(({
@@ -20,6 +21,7 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
   className = '',
   compact = false,
   size,
+  emojiFontSize,
 }) => {
   // Helper to render distinct vector illustrations
   const renderGraphic = () => {
@@ -233,6 +235,23 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
                 rx="4"
               />
             )}
+          </svg>
+        );
+
+      case 'empty-bowl':
+        return (
+          <svg viewBox="0 0 160 160" className="w-full h-full drop-shadow-md">
+            <ellipse cx="80" cy="134" rx="46" ry="8" fill="#E2E8F0" opacity="0.6" />
+            <ellipse cx="80" cy="124" rx="26" ry="7" fill="#CBD5E1" stroke="#94A3B8" strokeWidth="2.5" />
+            <path
+              d="M28 72 C 28 118, 52 126, 80 126 C 108 126, 132 118, 132 72 Z"
+              fill="#F8FAFC"
+              stroke="#64748B"
+              strokeWidth="4"
+              strokeLinejoin="round"
+            />
+            <ellipse cx="80" cy="72" rx="52" ry="16" fill="#FFFFFF" stroke="#64748B" strokeWidth="4" />
+            <ellipse cx="80" cy="74" rx="40" ry="10" fill="#E2E8F0" opacity="0.55" />
           </svg>
         );
 
@@ -512,7 +531,10 @@ export const PhysicalCardVisual: React.FC<PhysicalCardVisualProps> = React.memo(
         if (size === 'large' || (!compact && size !== 'normal')) {
           return (
             <div className="w-full h-full flex items-center justify-center text-center select-none">
-              <span className="text-[140px] sm:text-[170px] md:text-[200px] leading-none select-none drop-shadow-md">
+              <span
+                className="text-[140px] sm:text-[170px] md:text-[200px] leading-none select-none drop-shadow-md"
+                style={emojiFontSize ? { fontSize: emojiFontSize, lineHeight: 1 } : undefined}
+              >
                 {getIconEmoji(visualKey)}
               </span>
             </div>
@@ -598,6 +620,8 @@ function getIconEmoji(key: string): string {
     'store-pay': '💵',
     'calendar-1': '📅',
     'calendar-2': '📅',
+    'empty-bowl': '🥣',
+    'spoon-beside-bowl': '🥣',
     'switch-off-light': '💡',
   };
   return map[key] || '💡';

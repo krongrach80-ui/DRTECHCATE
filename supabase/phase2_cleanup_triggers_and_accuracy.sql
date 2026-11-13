@@ -262,3 +262,4 @@ SELECT
   (SELECT COUNT(*) FROM public.exercises WHERE is_active = false) AS legacy_inactive_exercises_count,
   (SELECT COUNT(*) FROM public.modpacks) AS modpacks_count,
   (SELECT COUNT(*) FROM public.minigame_questions) AS minigame_questions_count;
+

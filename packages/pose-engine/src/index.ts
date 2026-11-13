@@ -23,3 +23,5 @@ export * from './backlightCompensator';
 export * from './math/oneEuroFilter';
 export * from './math/sideResolution';
 export * from './math/armIdentityStabilizer';
+export * from './math/sessionProgressAndAccuracy';
+export * from './calibration/poseSchemaAndCalibration';

@@ -8,6 +8,7 @@
  */
 
 import { ExerciseDetectionConfig, ExerciseCoachingCues, BodySide } from '../types/exerciseConfig';
+import { getCustomPoseConfigs } from '../calibration/poseSchemaAndCalibration';
 
 export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> = {
   // 1. Active Shoulder Flexion
@@ -27,6 +28,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     evaluationMode: 'angle_rep_hold',
     side: 'bilateral',
     lateralityMode: 'unilateral_or_bilateral',
+    allowDynamicUnilateral: true,
+    use3DWorld: true,
     targetJoint: 'shoulder',
     mediaUrl: '/assets/exercises/active-shoulder-flexion.svg',
     clinicalSource: 'AAOS Clinical Standards / JOSPT Shoulder Impingement CPG',
@@ -48,9 +51,9 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
       },
       direction: 'increase',
       startAngleDeg: 20,
-      targetMinDeg: 140,
+      targetMinDeg: 120,
       targetMaxDeg: 180,
-      toleranceDeg: 12,
+      toleranceDeg: 15,
       holdDurationSec: 1.0,
     },
     defaultPrescription: {
@@ -146,6 +149,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     evaluationMode: 'angle_rep_hold',
     side: 'bilateral',
     lateralityMode: 'unilateral_or_bilateral',
+    allowDynamicUnilateral: true,
+    use3DWorld: true,
     targetJoint: 'shoulder',
     mediaUrl: '/exercises/shoulder-abduction.mp4',
     mediaType: 'video',
@@ -250,6 +255,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     evaluationMode: 'angle_rep_hold',
     side: 'bilateral',
     lateralityMode: 'unilateral_or_bilateral',
+    allowDynamicUnilateral: true,
+    use3DWorld: true,
     targetJoint: 'shoulder',
     mediaUrl: '/assets/exercises/shoulder-er-band.svg',
     clinicalSource: 'JOSPT Rotator Cuff CPG / Brotzman Clinical Orthopaedic Rehab',
@@ -271,8 +278,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
       },
       direction: 'increase',
       startAngleDeg: 15,
-      targetMinDeg: 40,
-      targetMaxDeg: 75,
+      targetMinDeg: 35,
+      targetMaxDeg: 80,
       toleranceDeg: 10,
       holdDurationSec: 2.0,
     },
@@ -408,6 +415,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     evaluationMode: 'angle_rep_hold',
     side: 'bilateral',
     lateralityMode: 'unilateral_or_bilateral',
+    allowDynamicUnilateral: true,
+    use3DWorld: true,
     targetJoint: 'elbow',
     mediaUrl: '/assets/exercises/elbow-flexion-extension.svg',
     clinicalSource: 'AAOS Clinical Measurement / Kapandji Biomechanics',
@@ -429,9 +438,9 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
       },
       direction: 'decrease',
       startAngleDeg: 160,
-      targetMinDeg: 35,
-      targetMaxDeg: 50,
-      toleranceDeg: 8,
+      targetMinDeg: 25,
+      targetMaxDeg: 60,
+      toleranceDeg: 10,
       holdDurationSec: 1.0,
     },
     defaultPrescription: {
@@ -439,10 +448,10 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
       totalSets: 3,
       restBetweenSetsSec: 30,
     },
-    /* [ต้องให้นักกายภาพตรวจสอบ]: startAngleDeg: 160°, target: 35°-50°, tolerance: 8°, elbowDriftTolerance: 0.14 */
+    /* [ต้องให้นักกายภาพตรวจสอบ]: startAngleDeg: 160°, target: 25°-60°, tolerance: 10°, elbowDriftTolerance: 0.18 */
     formGate: {
       minLandmarkVisibility: 0.50,
-      elbowDriftTolerance: 0.14,
+      elbowDriftTolerance: 0.16,
       disallowOutOfFrame: true,
       missingArmCueTh: 'กรุณาถอยหลังให้เห็นแขนและข้อศอกชัดเจน',
       missingArmCueEn: 'Please step back so your arm and elbow are clearly visible',
@@ -505,6 +514,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     evaluationMode: 'angle_rep_hold',
     side: 'bilateral',
     lateralityMode: 'unilateral_or_bilateral',
+    allowDynamicUnilateral: true,
+    use3DWorld: true,
     targetJoint: 'knee',
     mediaUrl: '/assets/exercises/seated-knee-extension.svg',
     clinicalSource: 'AAOS Knee Osteoarthritis CPG / ACSM Exercise Guidelines',
@@ -742,6 +753,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     evaluationMode: 'angle_rep_hold',
     side: 'bilateral',
     lateralityMode: 'unilateral_or_bilateral',
+    allowDynamicUnilateral: true,
+    use3DWorld: true,
     targetJoint: 'hip',
     mediaUrl: '/assets/exercises/straight-leg-raise.svg',
     clinicalSource: 'JOSPT Low Back Pain & Knee Rehab CPG / Brotzman',
@@ -821,6 +834,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     evaluationMode: 'angle_rep_hold',
     side: 'bilateral',
     lateralityMode: 'unilateral_or_bilateral',
+    allowDynamicUnilateral: true,
+    use3DWorld: true,
     targetJoint: 'hip',
     mediaUrl: '/assets/exercises/standing-hip-abduction.svg',
     clinicalSource: 'JOSPT Hip Osteoarthritis CPG / Kendall Muscle Testing',
@@ -898,6 +913,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     evaluationMode: 'heel_raise',
     side: 'bilateral',
     lateralityMode: 'unilateral_or_bilateral',
+    allowDynamicUnilateral: true,
+    use3DWorld: false,
     targetJoint: 'ankle',
     mediaUrl: '/assets/exercises/calf-raise.svg',
     clinicalSource: 'AAOS Achilles Tendinopathy Guidelines / ACSM',
@@ -1874,6 +1891,8 @@ export const CLINICAL_EXERCISES_CONFIG: Record<string, ExerciseDetectionConfig> 
     evaluationMode: 'angle_rep_hold',
     side: 'bilateral',
     lateralityMode: 'unilateral_or_bilateral',
+    allowDynamicUnilateral: true,
+    use3DWorld: true,
     targetJoint: 'shoulder',
     mediaUrl: '/assets/exercises/seated-horizontal-abduction.svg',
     clinicalSource: 'AAOS / ACSM Shoulder Conditioning Protocol',
@@ -2080,6 +2099,14 @@ export function getClinicalExerciseConfig(idOrName?: string | null): ExerciseDet
     if (ex.nameTh.toLowerCase().includes(q) || q.includes(ex.nameTh.toLowerCase())) return ex;
     if (ex.nameEn.toLowerCase().includes(q) || q.includes(ex.nameEn.toLowerCase())) return ex;
     if (ex.nameCn && (ex.nameCn.includes(q) || q.includes(ex.nameCn))) return ex;
+  }
+
+  // Check clinician-created custom poses stored locally
+  for (const customEx of getCustomPoseConfigs()) {
+    if (customEx.id?.toLowerCase() === q || customEx.exerciseId?.toLowerCase() === q) return customEx;
+    if (customEx.nameTh && (customEx.nameTh.toLowerCase().includes(q) || q.includes(customEx.nameTh.toLowerCase()))) {
+      return customEx;
+    }
   }
 
   

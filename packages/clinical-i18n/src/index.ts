@@ -842,7 +842,7 @@ export const CLINICAL_DICTIONARY = {
   },
   card_move_to_center: {
     'zh-CN': '请移入画面中央',
-    'th-TH': 'ขยับเข้ากลางภาพ',
+    'th-TH': 'ขยับมือเข้ามาในกรอบ',
     'en-US': 'Move to center of frame',
   },
   card_btn_tap_yes: {
