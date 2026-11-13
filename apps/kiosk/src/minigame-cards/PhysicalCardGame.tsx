@@ -33,8 +33,6 @@ import {
   MinigameHandEvaluation,
   MinigameFrameResult,
   evaluateMinigameFrame,
-  drawAllMinigameHands,
-  interpolateHands,
 } from './HandGestureVerifier.js';
 import { defaultApiClient } from '../../../../packages/api-client/src/index.js';
 import {
@@ -1103,45 +1101,14 @@ export const PhysicalCardGame: React.FC<PhysicalCardGameProps> = ({
         triggerDetection(timestamp, timestamp);
       }
 
-      // 60 FPS CANVAS OVERLAY RENDER WITH VELOCITY-ADAPTIVE LERP & LATENCY EXTRAPOLATION
+      // Keep camera feed clean: clear canvas overlay without drawing MediaPipe hand skeleton lines/joints
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        const currentTargets = latestLandmarksRef.current;
-        if (currentTargets && currentTargets.length > 0) {
-          const dt = lastRafTime ? Math.max(1, timestamp - lastRafTime) : 16.6;
-          lastRafTime = timestamp;
-
-          const smoothedHands = interpolateHands(
-            prevLandmarksRef.current,
-            currentTargets,
-            0.45,
-            {
-              adaptive: true,
-              extrapolateMs: Math.min(50, rollingLatencyRef.current || 35),
-              deltaTimeMs: dt,
-            }
-          );
-          prevLandmarksRef.current = smoothedHands;
-
-          const activeHandToDraw = targetActiveHandRef.current
-            ? smoothedHands.find((h) => h.anatomicalSide === targetActiveHandRef.current?.anatomicalSide) || targetActiveHandRef.current
-            : null;
-
-          drawAllMinigameHands(
-            ctx,
-            smoothedHands,
-            canvas.width,
-            canvas.height,
-            activeHandToDraw,
-            currentDwellProgressRef.current,
-            isBothHandsWarningRef.current,
-            isMirrored
-          );
-        } else {
-          prevLandmarksRef.current = [];
-        }
+      }
+      prevLandmarksRef.current = [];
+      if (false && lastRafTime) {
+        lastRafTime = timestamp;
       }
 
       animFrame = requestAnimationFrame(frameLoop);

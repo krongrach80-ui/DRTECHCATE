@@ -658,6 +658,8 @@ export interface ResilientStaffEntry {
 
 export const RESILIENT_STAFF_REGISTRY = new Map<string, ResilientStaffEntry>();
 
+const FACE_MIN_MARGIN = 0.08;
+
 function l2Normalize(vector: number[]): number[] {
   let sumSq = 0;
   for (let i = 0; i < vector.length; i++) {
@@ -2593,7 +2595,7 @@ export class ApiClient {
 
                   // Decisive binary outcome (no borderline 4-digit PIN prompt during face scan)
                   const isMatchThreshold = rawCos >= 0.78 && dist <= 0.68;
-                  if (isMatchThreshold && rpcMargin >= 0.06) {
+                  if (isMatchThreshold && rpcMargin >= FACE_MIN_MARGIN) {
                     return {
                       ok: true,
                       matched: true,
@@ -2650,6 +2652,8 @@ export class ApiClient {
                   const scored = evaluateCandidate(sp);
                   if (scored) {
                     scoredPatients.push(scored);
+                  } else if (sp?.registration_status !== 'archived') {
+                    console.warn(`[FACE-AUTH] Skipped active patient ${sp?.id || sp?.hn || 'unknown'} without valid face descriptor`);
                   }
                 }
               }
@@ -2688,7 +2692,6 @@ export class ApiClient {
         // Sort scored candidates descending by raw cosine similarity
         scoredPatients.sort((a, b) => b.rawCos - a.rawCos);
         const top1 = scoredPatients[0] || null;
-        const isSingleUserInDb = livePatientsMap.size === 1;
 
         if (top1) {
           const targetId = top1.patient?.id || top1.patient?.patient_id;
@@ -2724,43 +2727,7 @@ export class ApiClient {
           const normalizedMatch = liveSource ? normalizePatientRecord(liveSource) : null;
           const finalPercentage = Math.min(100, Math.max(0, Math.round(Math.max(top1.rawCos, top1.calSim) * 100)));
 
-          // Guard 1: Single User Database Strict Guard
-          // When exactly 1 patient is in the DB, strangers must NEVER be suggested as ambiguous candidates (no PIN prompt)
-          // Normalized acceptance threshold: rawCos >= 0.72 or calSim >= 0.72 AND dist <= 0.65
-          if (isSingleUserInDb) {
-            if (normalizedMatch && (top1.rawCos >= 0.72 || top1.calSim >= 0.72) && top1.dist <= 0.65) {
-              return {
-                ok: true,
-                matched: true,
-                patient: normalizedMatch,
-                similarityPercentage: finalPercentage,
-                cosineSimilarity: Number(top1.calSim.toFixed(4)),
-                rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
-                distance: top1.dist,
-                data: {
-                  matched: true,
-                  patient: normalizedMatch,
-                },
-              } as T;
-            } else {
-              // Below threshold in single-user DB -> FAIL CLOSED STRANGER REJECTION
-              return {
-                ok: true,
-                matched: false,
-                patient: null,
-                candidate: null,
-                candidateName: undefined,
-                candidateHn: undefined,
-                similarityPercentage: finalPercentage < 50 ? finalPercentage : 0,
-                cosineSimilarity: Number(top1.calSim.toFixed(4)),
-                rawCosineSimilarity: Number(top1.rawCos.toFixed(4)),
-                distance: top1.dist,
-                message: '⚠️ ไม่พบบัญชีในระบบ (ความแม่นยำไม่ถึงเกณฑ์ 74%) เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาติดต่อเจ้าหน้าที่',
-              } as T;
-            }
-          }
-
-          // Guard 2: Multi-User Database Margin Verification with Deduplication of same-person profiles
+          // Unified Multi-User & Single-User Margin Verification with Deduplication of same-person profiles
           let runnerUpCand: ScoredPatient | null = null;
           for (let i = 1; i < scoredPatients.length; i++) {
             const cand = scoredPatients[i];
@@ -2776,8 +2743,8 @@ export class ApiClient {
 
           const margin = runnerUpCand ? (top1.rawCos - runnerUpCand.rawCos) : 1.0;
 
-          // Decisive binary outcome (no borderline 4-digit PIN prompt during face scan)
-          if (normalizedMatch && top1.rawCos >= 0.78 && top1.dist <= 0.68 && margin >= 0.06) {
+          // Decisive binary outcome (no borderline 4-digit PIN prompt during face scan, uniform threshold)
+          if (normalizedMatch && top1.rawCos >= 0.78 && top1.dist <= 0.68 && margin >= FACE_MIN_MARGIN) {
             return {
               ok: true,
               matched: true,

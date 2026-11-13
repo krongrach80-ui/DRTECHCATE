@@ -1077,7 +1077,7 @@ export class SmartOnboardingService {
             }
             const rpcMargin = runnerUpSim !== null ? rawSim - runnerUpSim : 1.0;
 
-            if (rawSim >= 0.78 && topDist <= 0.68 && rpcMargin >= 0.06) {
+            if (rawSim >= 0.78 && topDist <= 0.68 && rpcMargin >= BIOMETRIC_CONFIG.MARGIN_MIN) {
               const builtRecord = this.buildLivePatientRecord(topMatch);
               logger.info(
                 `[FACE-AUTH-RPC] Server RPC Match: ${builtRecord.first_name} (${builtRecord.hn}) | Similarity: ${calPercent}%`
@@ -1107,7 +1107,9 @@ export class SmartOnboardingService {
         const timeoutPromise = new Promise<{ data: null }>((resolve) =>
           setTimeout(() => resolve({ data: null }), 8000)
         );
-        const queryPromise = supabase.from('patients').select('id, hn, registration_status');
+        const queryPromise = supabase
+          .from('patients')
+          .select('id, hn, first_name, last_name, age, sex, phone, injury, registration_status, history');
         const res = await Promise.race([queryPromise, timeoutPromise]);
         dbPatients = res && 'data' in res ? res.data : null;
 
@@ -1149,6 +1151,8 @@ export class SmartOnboardingService {
               } else {
                 records.push(builtRecord);
               }
+            } else {
+              logger.warn(`[FACE-AUTH] Skipped active patient ${p.id || p.hn} without valid face descriptor`);
             }
           }
         }

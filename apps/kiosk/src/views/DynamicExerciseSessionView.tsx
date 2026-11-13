@@ -802,7 +802,7 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
   }>({ supported: false, min: 1, max: 1, step: 0.1, current: 1 });
   const [fitMode, setFitMode] = useState<'contain' | 'cover'>('cover');
   const [boostLighting, setBoostLighting] = useState<boolean>(false);
-  const [showGuideSilhouette, setShowGuideSilhouette] = useState<boolean>(true);
+  const [showGuideSilhouette, setShowGuideSilhouette] = useState<boolean>(false);
   const [replayVideoSrc, setReplayVideoSrc] = useState<string | null>(() => {
     if (typeof window !== 'undefined' && window.location.search.includes('replay=1')) {
       return resolvedConfig.mediaUrl || '/assets/exercises/shoulder-pendulum.svg';
@@ -1133,8 +1133,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
     };
   }, [exerciseConfig, resolvedConfig]);
 
-  const [showSkeletonOverlay, setShowSkeletonOverlay] = useState<boolean>(true);
-  const showSkeletonRef = useRef<boolean>(true);
+  const [showSkeletonOverlay, setShowSkeletonOverlay] = useState<boolean>(false);
+  const showSkeletonRef = useRef<boolean>(false);
   useEffect(() => {
     showSkeletonRef.current = showSkeletonOverlay;
   }, [showSkeletonOverlay]);
@@ -2267,174 +2267,8 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
           }
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-          if (!showSkeletonRef.current) {
-            ctx.clearRect(0, 0, displayW, displayH);
-            return;
-          }
-
+          // Visual MediaPipe skeleton/landmark overlay disabled: keep camera video clean
           ctx.clearRect(0, 0, displayW, displayH);
-
-          const currState = currentPoseStateRef.current;
-          const prevState = previousPoseStateRef.current;
-          const currentFitMode = fitModeRef.current;
-          const videoW = vEl.videoWidth;
-          const videoH = vEl.videoHeight;
-          const renderPoints: {
-            [idx: number]: {
-              x: number;
-              y: number;
-              visibility: number;
-              inFrame: boolean;
-              decayAlpha: number;
-            };
-          } = {};
-
-          if (currState && currState.landmarks && currState.inFrame) {
-            const currLms = currState.landmarks;
-            const prevLms = prevState?.landmarks;
-            const tCurr = currState.timestampMs;
-            const tPrev = prevState?.timestampMs ?? tCurr - 33;
-            const dtInference = Math.max(tCurr - tPrev, 10);
-            const elapsedSinceInference = Math.max(0, nowMs - tCurr);
-            const predictDt = Math.min(elapsedSinceInference, 35);
-
-            currLms.forEach((lm: any, idx: number) => {
-              let normX = lm.x;
-              let normY = lm.y;
-              const vis = lm.visibility ?? 1.0;
-
-              if (prevLms && prevLms[idx] && predictDt > 0 && !latestAmbiguousJointsRef.current.has(idx)) {
-                const vx = (lm.x - prevLms[idx].x) / dtInference;
-                const vy = (lm.y - prevLms[idx].y) / dtInference;
-                normX = Math.max(-0.05, Math.min(1.05, lm.x + vx * predictDt));
-                normY = Math.max(-0.05, Math.min(1.05, lm.y + vy * predictDt));
-              }
-
-              const proj = projectLandmarkToCanvas(
-                { x: normX, y: normY, visibility: vis },
-                videoW,
-                videoH,
-                displayW,
-                displayH,
-                true,
-                currentFitMode
-              );
-
-              const isAmbiguousJoint = latestAmbiguousJointsRef.current.has(idx);
-              if (proj && proj.inFrame && vis >= ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY && !isAmbiguousJoint) {
-                canvasSmoothedPointsRef.current[idx] = {
-                  x: proj.x,
-                  y: proj.y,
-                  visibility: vis,
-                  lastSeenMs: nowMs,
-                  inFrame: true,
-                };
-                renderPoints[idx] = {
-                  x: proj.x,
-                  y: proj.y,
-                  visibility: vis,
-                  inFrame: true,
-                  decayAlpha: 1.0,
-                };
-              }
-            });
-          }
-
-          const LOST_GRACE_MS = 200;
-          for (let idx = 0; idx < 33; idx++) {
-            if (latestAmbiguousJointsRef.current.has(idx)) {
-              delete canvasSmoothedPointsRef.current[idx];
-              continue;
-            }
-            if (!renderPoints[idx]) {
-              const prevSmoothed = canvasSmoothedPointsRef.current[idx];
-              if (prevSmoothed) {
-                const elapsedSinceSeen = nowMs - prevSmoothed.lastSeenMs;
-                if (elapsedSinceSeen <= LOST_GRACE_MS) {
-                  const decayAlpha = Math.max(0, 1 - elapsedSinceSeen / LOST_GRACE_MS);
-                  renderPoints[idx] = {
-                    x: prevSmoothed.x,
-                    y: prevSmoothed.y,
-                    visibility: prevSmoothed.visibility * decayAlpha,
-                    inFrame: prevSmoothed.inFrame,
-                    decayAlpha,
-                  };
-                } else {
-                  delete canvasSmoothedPointsRef.current[idx];
-                }
-              }
-            }
-          }
-
-          const currentEval = latestEvalResultRef.current;
-          const strokeColor =
-            currentEval?.formRating === 'error'
-              ? '#fbbf24'
-              : currentEval?.formRating === 'warning'
-                ? '#00f5d4'
-                : '#10b981';
-
-          const currentActiveSide =
-            activeSideRef.current || resolvedConfigRef.current.side || 'both';
-          const skeletonFilter = getActiveExerciseSkeletonFilter(
-            resolvedConfigRef.current,
-            currentActiveSide
-          );
-          const isNeckExercise = skeletonFilter.category === 'neck';
-          const activeColor = strokeColor;
-          const lineThickness = Math.max(3, Math.round(Math.min(displayW, displayH) * 0.008));
-
-          for (const [idxA, idxB] of skeletonFilter.connections) {
-            if (latestAmbiguousJointsRef.current.has(idxA) || latestAmbiguousJointsRef.current.has(idxB)) {
-              continue;
-            }
-            const ptA = renderPoints[idxA];
-            const ptB = renderPoints[idxB];
-            if (
-              ptA &&
-              ptB &&
-              ptA.inFrame &&
-              ptB.inFrame &&
-              (ptA.visibility ?? 0) >= ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY &&
-              (ptB.visibility ?? 0) >= ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY
-            ) {
-              const lineAlpha = Math.min(ptA.decayAlpha ?? 1.0, ptB.decayAlpha ?? 1.0);
-              ctx.lineWidth = lineThickness;
-              ctx.lineCap = 'round';
-              ctx.strokeStyle = applyAlphaToColor(activeColor, lineAlpha);
-              ctx.beginPath();
-              ctx.moveTo(ptA.x, ptA.y);
-              ctx.lineTo(ptB.x, ptB.y);
-              ctx.stroke();
-            }
-          }
-
-          const fingerJointIndices = [17, 18, 19, 20, 21, 22];
-          const jointBaseRadius = Math.max(4, Math.min(9, Math.min(displayW, displayH) * 0.011));
-
-          for (const idx of skeletonFilter.jointIndices) {
-            if (latestAmbiguousJointsRef.current.has(idx)) continue;
-            const pt = renderPoints[idx];
-            if (!pt || !pt.inFrame || (pt.visibility ?? 0) < ARM_STABILIZER_CONFIG.MIN_LANDMARK_VISIBILITY) continue;
-
-            const jointAlpha = pt.decayAlpha ?? 1.0;
-            const isFinger = fingerJointIndices.includes(idx);
-            const radius = isFinger ? Math.max(2.5, jointBaseRadius * 0.55) : jointBaseRadius;
-
-            ctx.beginPath();
-            ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
-            ctx.fillStyle = applyAlphaToColor(activeColor, jointAlpha);
-            ctx.fill();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = applyAlphaToColor('#ffffff', jointAlpha);
-            ctx.stroke();
-
-            if (showDebugRef.current && (idx >= 11 || isNeckExercise)) {
-              ctx.font = 'bold 11px sans-serif';
-              ctx.fillStyle = applyAlphaToColor('#38bdf8', jointAlpha);
-              ctx.fillText(`#${idx} (${pt.visibility.toFixed(2)})`, pt.x + 10, pt.y - 6);
-            }
-          }
         };
 
         scheduleInference();
@@ -3028,29 +2862,9 @@ export const DynamicExerciseSessionView: React.FC<DynamicExerciseSessionViewProp
                 <span className="opacity-80">({hudState.accuracyTotalFrames}f)</span>
               </button>
             )}
-            <button
-              type="button"
-              id="kiosk-quick-toggle-skeleton-btn"
-              data-testid="kiosk-quick-toggle-skeleton-btn"
-              onClick={() => setShowSkeletonOverlay((prev) => !prev)}
-              className={`exercise-touch-btn flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-[clamp(0.75rem,1.2vw,0.875rem)] font-bold backdrop-blur-md border cursor-pointer shadow-lg ${
-                showSkeletonOverlay
-                  ? 'bg-teal-500/90 hover:bg-teal-400 text-slate-950 border-teal-300 shadow-teal-500/20'
-                  : 'bg-slate-900/80 text-slate-300 border-slate-700/80 hover:bg-slate-800/90 hover:text-white'
-              }`}
-            >
-              <span className="text-base leading-none">🦴</span>
-              <span className="font-semibold hidden sm:inline">
-                {lang === 'zh-CN'
-                  ? (showSkeletonOverlay ? '隐藏骨骼线' : '显示骨骼线')
-                  : lang === 'en-US'
-                    ? (showSkeletonOverlay ? 'Hide Skeleton' : 'Show Skeleton')
-                    : (showSkeletonOverlay ? 'ซ่อนเส้นโครงร่าง' : 'แสดงเส้นโครงร่าง')}
-              </span>
-            </button>
           </div>
 
-          {(showGuideSilhouette || hudState.repPhase === 'WAITING_FOR_FRAMING') && (
+          {showGuideSilhouette && (
             <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center opacity-30 p-4">
               <svg
                 viewBox="0 0 400 400"

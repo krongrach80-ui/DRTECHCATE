@@ -54,9 +54,12 @@ describe('DynamicExerciseSessionView - Section 2.2 Specifications', () => {
   });
 
   describe('2. Skeleton Overlay Toggle & Pose Connections', () => {
-    it('2.1 default skeleton overlay state must be true (enabled initially)', () => {
-      const defaultState = true;
-      expect(defaultState).toBe(true);
+    it('2.1 default skeleton overlay state must be false (disabled by default to keep camera clean)', () => {
+      const viewSource = fs.readFileSync(
+        path.resolve(__dirname, '../views/DynamicExerciseSessionView.tsx'),
+        'utf-8'
+      );
+      expect(viewSource).toContain('const [showSkeletonOverlay, setShowSkeletonOverlay] = useState<boolean>(false);');
     });
 
     it('2.2 body skeleton connections include arms, hands, legs, and feet WITHOUT torso lines', () => {

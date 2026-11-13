@@ -4,6 +4,30 @@
  * Conforms to US NIST SP 800-63B + Thailand PDPA + Hospital-Grade Identity Verification
  */
 
+const readNumericEnv = (key: string, fallback: number): number => {
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env[key] !== undefined) {
+      const parsed = Number(process.env[key]);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  } catch {
+    // Browser-safe fallback
+  }
+  return fallback;
+};
+
+/** Euclidean Distance threshold for 1:N face login matching (configurable via FACE_MATCH_THRESHOLD, default 0.45) */
+export const MATCH_THRESHOLD = readNumericEnv('FACE_MATCH_THRESHOLD', 0.45);
+
+/** Minimum distance/margin gap between top-1 and runner-up account (configurable via FACE_MIN_MARGIN, default 0.08) */
+export const MIN_MARGIN = readNumericEnv('FACE_MIN_MARGIN', 0.08);
+
+/** Consecutive matching frames required for the exact same account before granting login (default 3 out of 5) */
+export const REQUIRED_CONSECUTIVE_FRAMES = readNumericEnv('FACE_REQUIRED_CONSECUTIVE_FRAMES', 3);
+
+/** Sliding frame window size for consecutive frame verification */
+export const CONSECUTIVE_FRAME_WINDOW = readNumericEnv('FACE_CONSECUTIVE_FRAME_WINDOW', 5);
+
 export const BIOMETRIC_CONFIG = {
   /** จำนวนเฟรมชีวมาตรที่ต้องเก็บและเฉลี่ยเวกเตอร์ที่ผ่าน Liveness ก่อนส่งเทียบ (อย่างน้อย 8 เฟรม) */
   FRAMES_PER_SCAN: 8,

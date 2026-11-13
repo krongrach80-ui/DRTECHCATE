@@ -2255,6 +2255,9 @@ export const SmartLoginView: React.FC<SmartLoginViewProps> = ({
     lastInferenceTickRef.current = 0;
     sampleFramesRef.current = [];
     lowSimFramesRef.current = 0;
+    lockedTargetRef.current = null;
+    setMatchedPatient(null);
+    setUnrecognizedAlert(null);
     setCountdownValue(3);
     setRealtimeScore(null);
     setFloatingToast(null);

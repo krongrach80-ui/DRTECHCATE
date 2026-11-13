@@ -13034,10 +13034,24 @@ var init_service9 = __esm({
 });
 
 // packages/smart-biometric-core/src/biometricConfig.ts
-var BIOMETRIC_CONFIG;
+var readNumericEnv, MATCH_THRESHOLD, MIN_MARGIN, REQUIRED_CONSECUTIVE_FRAMES, CONSECUTIVE_FRAME_WINDOW, BIOMETRIC_CONFIG;
 var init_biometricConfig = __esm({
   "packages/smart-biometric-core/src/biometricConfig.ts"() {
     "use strict";
+    readNumericEnv = (key, fallback) => {
+      try {
+        if (typeof process !== "undefined" && process.env && process.env[key] !== void 0) {
+          const parsed = Number(process.env[key]);
+          if (Number.isFinite(parsed) && parsed > 0) return parsed;
+        }
+      } catch {
+      }
+      return fallback;
+    };
+    MATCH_THRESHOLD = readNumericEnv("FACE_MATCH_THRESHOLD", 0.45);
+    MIN_MARGIN = readNumericEnv("FACE_MIN_MARGIN", 0.08);
+    REQUIRED_CONSECUTIVE_FRAMES = readNumericEnv("FACE_REQUIRED_CONSECUTIVE_FRAMES", 3);
+    CONSECUTIVE_FRAME_WINDOW = readNumericEnv("FACE_CONSECUTIVE_FRAME_WINDOW", 5);
     BIOMETRIC_CONFIG = {
       /** จำนวนเฟรมชีวมาตรที่ต้องเก็บและเฉลี่ยเวกเตอร์ที่ผ่าน Liveness ก่อนส่งเทียบ (อย่างน้อย 8 เฟรม) */
       FRAMES_PER_SCAN: 8,
@@ -13929,7 +13943,7 @@ var init_service10 = __esm({
                   }
                 }
                 const rpcMargin = runnerUpSim !== null ? rawSim - runnerUpSim : 1;
-                if (rawSim >= 0.78 && topDist <= 0.68 && rpcMargin >= 0.06) {
+                if (rawSim >= 0.78 && topDist <= 0.68 && rpcMargin >= BIOMETRIC_CONFIG.MARGIN_MIN) {
                   const builtRecord = this.buildLivePatientRecord(topMatch);
                   logger.info(
                     `[FACE-AUTH-RPC] Server RPC Match: ${builtRecord.first_name} (${builtRecord.hn}) | Similarity: ${calPercent}%`
@@ -13956,7 +13970,7 @@ var init_service10 = __esm({
             const timeoutPromise = new Promise(
               (resolve) => setTimeout(() => resolve({ data: null }), 8e3)
             );
-            const queryPromise = supabase.from("patients").select("id, hn, registration_status");
+            const queryPromise = supabase.from("patients").select("id, hn, first_name, last_name, age, sex, phone, injury, registration_status, history");
             const res = await Promise.race([queryPromise, timeoutPromise]);
             dbPatients = res && "data" in res ? res.data : null;
             if (!dbPatients || !Array.isArray(dbPatients)) {
@@ -13993,6 +14007,8 @@ var init_service10 = __esm({
                   } else {
                     records.push(builtRecord);
                   }
+                } else {
+                  logger.warn(`[FACE-AUTH] Skipped active patient ${p.id || p.hn} without valid face descriptor`);
                 }
               }
             }

@@ -41,42 +41,16 @@ export const LiveMotionCaptureCalibrator: React.FC<LiveMotionCaptureCalibratorPr
   const [samplesCount, setSamplesCount] = useState<number>(0);
 
   const drawJointOnCanvas = useCallback(
-    (landmarks: PoseEngineLandmark[]) => {
+    (_landmarks: PoseEngineLandmark[]) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
+      // Visual MediaPipe skeleton overlay disabled: keep camera video clean
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const w = canvas.width;
-      const h = canvas.height;
-
-      if (
-        landmarks.length > triplet.pointA &&
-        landmarks.length > triplet.vertex &&
-        landmarks.length > triplet.pointB
-      ) {
-        const pA = landmarks[triplet.pointA];
-        const pV = landmarks[triplet.vertex];
-        const pB = landmarks[triplet.pointB];
-
-        // Draw lines
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = '#10b981';
-        ctx.beginPath();
-        ctx.moveTo(pA.x * w, pA.y * h);
-        ctx.lineTo(pV.x * w, pV.y * h);
-        ctx.lineTo(pB.x * w, pB.y * h);
-        ctx.stroke();
-
-        // Draw vertex circle
-        ctx.fillStyle = '#f59e0b';
-        ctx.beginPath();
-        ctx.arc(pV.x * w, pV.y * h, 8, 0, 2 * Math.PI);
-        ctx.fill();
-      }
     },
-    [triplet]
+    []
   );
 
   // Initialize camera and tracking loop
