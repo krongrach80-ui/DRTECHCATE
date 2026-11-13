@@ -36,25 +36,28 @@ describe('Kiosk Face Recognition — Controlled Account Not Found & Privacy Suit
     vi.restoreAllMocks();
   });
 
-  // TEST 01: Account Not Found after 2 confirmed rounds within 10s MAX_CONFIRM_WINDOW_MS
-  it('TEST 01: Confirms Account Not Found on Round 2 within 10s MAX_CONFIRM_WINDOW_MS and renders centered controlled modal without PIN', () => {
-    expect(KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_CONFIRM_ROUNDS).toBe(2);
+  // TEST 01: Account Not Found immediately on single decisive scan (Round 1)
+  it('TEST 01: Confirms Account Not Found immediately on Round 1 and renders centered controlled modal without PIN', () => {
+    expect(KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_CONFIRM_ROUNDS).toBe(1);
     expect(KIOSK_NOT_FOUND_CONFIG.MAX_CONFIRM_WINDOW_MS).toBe(10000);
     expect(KIOSK_NOT_FOUND_CONFIG.NOT_FOUND_IDLE_MS).toBe(30000);
     expect(KIOSK_NOT_FOUND_CONFIG.RETRY_COOLDOWN_MS).toBe(1500);
 
     const tRound1End = 10_000;
     const round1 = evaluateNoMatchRound({ count: 0, firstTimestamp: 0 }, tRound1End, KIOSK_NOT_FOUND_CONFIG);
-    expect(round1.confirmedNotFound).toBe(false);
+    expect(round1.confirmedNotFound).toBe(true);
     expect(round1.nextTracker).toEqual({ count: 1, firstTimestamp: tRound1End });
 
-    // Round 2 finishes after 1.5s cooldown + 3s countdown + 1.2s network RTT (5.7s total <= 10s)
-    const round2 = evaluateNoMatchRound(round1.nextTracker, tRound1End + 5700, KIOSK_NOT_FOUND_CONFIG);
-    expect(round2.confirmedNotFound).toBe(true);
-    expect(round2.nextTracker.count).toBe(2);
+    // Multi-round window behavior check with explicit 2-round custom config
+    const customConfig = { MAX_CONFIRM_WINDOW_MS: 10000, NOT_FOUND_CONFIRM_ROUNDS: 2 };
+    const customRound1 = evaluateNoMatchRound({ count: 0, firstTimestamp: 0 }, tRound1End, customConfig);
+    expect(customRound1.confirmedNotFound).toBe(false);
+    const customRound2 = evaluateNoMatchRound(customRound1.nextTracker, tRound1End + 5700, customConfig);
+    expect(customRound2.confirmedNotFound).toBe(true);
+    expect(customRound2.nextTracker.count).toBe(2);
 
     // Expired > 10s resets cleanly back to Round 1
-    const expired = evaluateNoMatchRound(round1.nextTracker, tRound1End + 10_500, KIOSK_NOT_FOUND_CONFIG);
+    const expired = evaluateNoMatchRound(customRound1.nextTracker, tRound1End + 10_500, customConfig);
     expect(expired.confirmedNotFound).toBe(false);
     expect(expired.nextTracker).toEqual({ count: 1, firstTimestamp: tRound1End + 10_500 });
 
